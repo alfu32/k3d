@@ -58,7 +58,7 @@ class PushPullTool(
             val ray = camera.getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
             val hit = faceStore.pickTriangle(ray) ?: return false
             val faceNormal = facingNormal(hit.normal, ray.direction)
-            val coplanar = faceStore.collectCoplanar(hit.triangle)
+            val coplanar = faceStore.collectCoplanarConnected(hit.triangle)
             activeTriangles = if (coplanar.isNotEmpty()) coplanar else listOf(hit.triangle)
             anchorPoint = Vector3(hit.point)
             this.normal = faceNormal
