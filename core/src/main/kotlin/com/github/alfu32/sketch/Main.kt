@@ -32,6 +32,7 @@ import com.github.alfu32.sketch.input.Snapper
 import com.github.alfu32.sketch.input.ToolPointerProcessor
 import com.github.alfu32.sketch.model.DraftFaceStore
 import com.github.alfu32.sketch.model.DraftLineStore
+import com.github.alfu32.sketch.model.ModelCleanup
 import com.github.alfu32.sketch.tools.CircleTool
 import com.github.alfu32.sketch.tools.LineTool
 import com.github.alfu32.sketch.tools.RectangleTool
@@ -67,6 +68,7 @@ class Main : ApplicationAdapter() {
     private lateinit var statusModel: StatusModel
     private lateinit var lineStore: DraftLineStore
     private lateinit var faceStore: DraftFaceStore
+    private lateinit var modelCleanup: ModelCleanup
     private lateinit var guideManager: GuideManager
     private lateinit var snapper: Snapper
     private var lastSnap: SnapResult? = null
@@ -85,8 +87,8 @@ class Main : ApplicationAdapter() {
             update()
         }
 
-        cameraController = CameraInputController(camera).apply {
-            rotateButton = Input.Buttons.LEFT
+        cameraController = ShiftCameraController(camera).apply {
+            rotateButton = Input.Buttons.RIGHT
             translateButton = Input.Buttons.RIGHT
         }
         statusModel = StatusModel(
@@ -96,6 +98,7 @@ class Main : ApplicationAdapter() {
         )
         lineStore = DraftLineStore()
         faceStore = DraftFaceStore()
+        modelCleanup = ModelCleanup(lineStore, faceStore)
         guideManager = GuideManager()
         snapper = Snapper(camera, lineStore, guideManager, gridSpacing)
         toolController = ToolController(
@@ -113,8 +116,8 @@ class Main : ApplicationAdapter() {
                 SimpleTool(ToolId.ERASER, "Click to erase edges.")
             )
         )
-        toolInput = ToolInputProcessor(toolController, guideManager) { lastSnap }
-        uiOverlay = SketchUiOverlay(toolController, statusModel)
+        toolInput = ToolInputProcessor(toolController, guideManager, ::runCleanup) { lastSnap }
+        uiOverlay = SketchUiOverlay(toolController, statusModel, ::runCleanup)
         toolPointer = ToolPointerProcessor(toolController, snapper)
         Gdx.input.inputProcessor = InputMultiplexer(
             uiOverlay.stage,
@@ -146,7 +149,6 @@ class Main : ApplicationAdapter() {
         shapeRenderer.projectionMatrix = camera.combined
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         drawGrid(20, 1f)
-        drawDraftLines()
         shapeRenderer.end()
 
         modelBatch.begin(camera)
@@ -159,6 +161,7 @@ class Main : ApplicationAdapter() {
         drawAxes(2.5f)
         drawGuides()
         drawCursor()
+        drawDraftLines()
         toolController.render(shapeRenderer)
         shapeRenderer.end()
 
@@ -228,13 +231,12 @@ class Main : ApplicationAdapter() {
 
     private fun drawGuides() {
         val extent = gridSpacing * 10f
-        if (guideManager.gridGuideActive) {
-            drawGuidePlane(guideManager.gridGuideCenter, Vector3(1f, 0f, 0f), Vector3(0f, 1f, 0f), extent)
-            drawGuidePlane(guideManager.gridGuideCenter, Vector3(1f, 0f, 0f), Vector3(0f, 0f, 1f), extent)
-            drawGuidePlane(guideManager.gridGuideCenter, Vector3(0f, 1f, 0f), Vector3(0f, 0f, 1f), extent)
+        guideManager.getGridGuides().forEach { center ->
+            drawGuidePlane(center, Vector3(1f, 0f, 0f), Vector3(0f, 1f, 0f), extent)
+            drawGuidePlane(center, Vector3(1f, 0f, 0f), Vector3(0f, 0f, 1f), extent)
+            drawGuidePlane(center, Vector3(0f, 1f, 0f), Vector3(0f, 0f, 1f), extent)
         }
-        if (guideManager.axisGuideActive) {
-            val center = guideManager.axisGuideCenter
+        guideManager.getAxisGuides().forEach { center ->
             shapeRenderer.color = Color(0.85f, 0.25f, 0.25f, 1f)
             shapeRenderer.line(center.x - extent, center.y, center.z, center.x + extent, center.y, center.z)
             shapeRenderer.color = Color(0.35f, 0.45f, 0.95f, 1f)
@@ -295,6 +297,31 @@ class Main : ApplicationAdapter() {
                 segment.start.x, segment.start.y, segment.start.z,
                 segment.end.x, segment.end.y, segment.end.z
             )
+        }
+    }
+
+    private fun runCleanup() {
+        val startEdges = lineStore.getSegments().size
+        val startFaces = faceStore.getTriangles().size
+        statusModel.message = "Cleanup start | edges $startEdges faces $startFaces"
+        modelCleanup.run()
+        val endEdges = lineStore.getSegments().size
+        val endFaces = faceStore.getTriangles().size
+        statusModel.message = "Cleanup done | edges $endEdges faces $endFaces"
+    }
+
+    private class ShiftCameraController(camera: PerspectiveCamera) : CameraInputController(camera) {
+        override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
+            val shift = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) ||
+                Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT)
+            if (shift) {
+                translateButton = Input.Buttons.RIGHT
+                rotateButton = -1
+            } else {
+                rotateButton = Input.Buttons.RIGHT
+                translateButton = -1
+            }
+            return super.touchDown(screenX, screenY, pointer, button)
         }
     }
 

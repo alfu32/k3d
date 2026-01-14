@@ -3,42 +3,27 @@ package com.github.alfu32.sketch.input
 import com.badlogic.gdx.math.Vector3
 
 class GuideManager {
-    var gridGuideActive: Boolean = false
-        private set
-    var axisGuideActive: Boolean = false
-        private set
+    private val gridGuides = mutableListOf<Vector3>()
+    private val axisGuides = mutableListOf<Vector3>()
 
-    val gridGuideCenter: Vector3 = Vector3()
-    val axisGuideCenter: Vector3 = Vector3()
-
-    fun setGridGuideAt(point: Vector3) {
-        gridGuideCenter.set(point)
-        gridGuideActive = true
+    fun addGridGuide(point: Vector3) {
+        gridGuides.add(Vector3(point))
     }
 
-    fun setAxisGuideAt(point: Vector3) {
-        axisGuideCenter.set(point)
-        axisGuideActive = true
+    fun addAxisGuide(point: Vector3) {
+        axisGuides.add(Vector3(point))
     }
 
-    fun toggleGridGuide(point: Vector3) {
-        if (gridGuideActive) {
-            gridGuideCenter.set(point)
-        } else {
-            setGridGuideAt(point)
-        }
-    }
+    fun getGridGuides(): List<Vector3> = gridGuides
 
-    fun toggleAxisGuide(point: Vector3) {
-        if (axisGuideActive) {
-            axisGuideCenter.set(point)
-        } else {
-            setAxisGuideAt(point)
-        }
-    }
+    fun getAxisGuides(): List<Vector3> = axisGuides
+
+    fun hasGridGuides(): Boolean = gridGuides.isNotEmpty()
+
+    fun hasAxisGuides(): Boolean = axisGuides.isNotEmpty()
 
     fun clear() {
-        gridGuideActive = false
-        axisGuideActive = false
+        gridGuides.clear()
+        axisGuides.clear()
     }
 }

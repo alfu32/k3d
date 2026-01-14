@@ -16,17 +16,16 @@ class Snapper(
     private val snapPixels: Float = 12f
 ) {
     private val tmp = Vector3()
-    private val tmp2 = Vector3()
     private val epsilon = 1e-2f
 
     fun compute(screenX: Int, screenY: Int): SnapResult {
         val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
-        val basePoint = Vector3()
-        val baseHit = intersectGround(ray, basePoint)
-        val baseNormal = facingNormal(Vector3(0f, 1f, 0f), ray.direction)
+        val baseHit = pickBaseHit(ray)
+        val basePoint = baseHit?.point
+        val baseNormal = baseHit?.normal
         var best: SnapCandidate? = null
 
-        if (baseHit) {
+        if (basePoint != null && baseNormal != null) {
             best = SnapCandidate(basePoint, baseNormal, SnapType.NONE, Float.MAX_VALUE)
             snapToGrid(basePoint, baseNormal, screenX, screenY)?.let {
                 best = pickBetter(best, it)
@@ -49,13 +48,13 @@ class Snapper(
             }
         }
 
-        if (guideManager.gridGuideActive) {
+        if (guideManager.hasGridGuides()) {
             snapToGridGuides(ray, screenX, screenY)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
         }
 
-        if (guideManager.axisGuideActive) {
+        if (guideManager.hasAxisGuides() && baseNormal != null) {
             snapToAxisGuides(ray, baseNormal, screenX, screenY)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
@@ -68,17 +67,37 @@ class Snapper(
         return SnapResult(candidate.world, candidate.normal, candidate.type, screenX, screenY, true)
     }
 
-    private fun intersectGround(ray: com.badlogic.gdx.math.collision.Ray, out: Vector3): Boolean {
+    private fun intersectGround(ray: com.badlogic.gdx.math.collision.Ray): PlaneHit? {
         val dirY = ray.direction.y
         if (abs(dirY) < epsilon) {
-            return false
+            return null
         }
         val t = -ray.origin.y / dirY
         if (t <= 0f) {
-            return false
+            return null
         }
-        out.set(ray.origin).mulAdd(ray.direction, t)
-        return true
+        val point = Vector3(ray.origin).mulAdd(ray.direction, t)
+        val normal = facingNormal(Vector3(0f, 1f, 0f), ray.direction)
+        return PlaneHit(point, normal, t)
+    }
+
+    private fun pickBaseHit(ray: com.badlogic.gdx.math.collision.Ray): PlaneHit? {
+        var best = intersectGround(ray)
+        val guides = guideManager.getGridGuides()
+        for (center in guides) {
+            val planes = listOf(
+                PlaneGuide(Vector3(0f, 0f, 1f), Vector3(1f, 0f, 0f), Vector3(0f, 1f, 0f)),
+                PlaneGuide(Vector3(0f, 1f, 0f), Vector3(1f, 0f, 0f), Vector3(0f, 0f, 1f)),
+                PlaneGuide(Vector3(1f, 0f, 0f), Vector3(0f, 1f, 0f), Vector3(0f, 0f, 1f))
+            )
+            for (plane in planes) {
+                val hit = intersectPlane(ray, center, plane.normal)
+                if (hit != null && (best == null || hit.t < best.t)) {
+                    best = hit
+                }
+            }
+        }
+        return best
     }
 
     private fun facingNormal(normal: Vector3, rayDir: Vector3): Vector3 {
@@ -159,20 +178,21 @@ class Snapper(
 
     private fun snapToGridGuides(ray: com.badlogic.gdx.math.collision.Ray, screenX: Int, screenY: Int): SnapCandidate? {
         val candidates = mutableListOf<SnapCandidate>()
-        val center = guideManager.gridGuideCenter
-        val planes = listOf(
-            PlaneGuide(Vector3(0f, 0f, 1f), Vector3(1f, 0f, 0f), Vector3(0f, 1f, 0f)),
-            PlaneGuide(Vector3(0f, 1f, 0f), Vector3(1f, 0f, 0f), Vector3(0f, 0f, 1f)),
-            PlaneGuide(Vector3(1f, 0f, 0f), Vector3(0f, 1f, 0f), Vector3(0f, 0f, 1f))
-        )
-        planes.forEach { plane ->
-            val hit = intersectPlane(ray, center, plane.normal, tmp2)
-            if (hit) {
-                val snapped = snapPointOnPlane(tmp2, center, plane.axisU, plane.axisV)
-                val dist = screenDistance(snapped, screenX, screenY)
-                if (dist <= snapPixels) {
-                    val normal = facingNormal(Vector3(plane.normal), ray.direction)
-                    candidates.add(SnapCandidate(snapped, normal, SnapType.GRID_GUIDE, dist))
+        guideManager.getGridGuides().forEach { center ->
+            val planes = listOf(
+                PlaneGuide(Vector3(0f, 0f, 1f), Vector3(1f, 0f, 0f), Vector3(0f, 1f, 0f)),
+                PlaneGuide(Vector3(0f, 1f, 0f), Vector3(1f, 0f, 0f), Vector3(0f, 0f, 1f)),
+                PlaneGuide(Vector3(1f, 0f, 0f), Vector3(0f, 1f, 0f), Vector3(0f, 0f, 1f))
+            )
+            planes.forEach { plane ->
+                val hit = intersectPlane(ray, center, plane.normal)
+                if (hit != null) {
+                    val snapped = snapPointOnPlane(hit.point, center, plane.axisU, plane.axisV)
+                    val dist = screenDistance(snapped, screenX, screenY)
+                    if (dist <= snapPixels) {
+                        val normal = facingNormal(Vector3(plane.normal), ray.direction)
+                        candidates.add(SnapCandidate(snapped, normal, SnapType.GRID_GUIDE, dist))
+                    }
                 }
             }
         }
@@ -185,24 +205,25 @@ class Snapper(
         screenX: Int,
         screenY: Int
     ): SnapCandidate? {
-        val center = guideManager.axisGuideCenter
-        val extent = gridSpacing * 10f
-        val axes = listOf(
-            Vector3(1f, 0f, 0f),
-            Vector3(0f, 1f, 0f),
-            Vector3(0f, 0f, 1f)
-        )
         var best: SnapCandidate? = null
-        axes.forEach { axis ->
-            val result = closestPointRayLine(ray, center, axis)
-            if (result != null) {
-                val (point, s) = result
-                if (s >= -extent && s <= extent) {
-                    val dist = screenDistance(point, screenX, screenY)
-                    if (dist <= snapPixels) {
-                        val normal = Vector3(baseNormal)
-                        val candidate = SnapCandidate(point, normal, SnapType.AXIS_GUIDE, dist)
-                        best = pickBetter(best, candidate)
+        guideManager.getAxisGuides().forEach { center ->
+            val extent = gridSpacing * 10f
+            val axes = listOf(
+                Vector3(1f, 0f, 0f),
+                Vector3(0f, 1f, 0f),
+                Vector3(0f, 0f, 1f)
+            )
+            axes.forEach { axis ->
+                val result = closestPointRayLine(ray, center, axis)
+                if (result != null) {
+                    val (point, s) = result
+                    if (s >= -extent && s <= extent) {
+                        val dist = screenDistance(point, screenX, screenY)
+                        if (dist <= snapPixels) {
+                            val normal = Vector3(baseNormal)
+                            val candidate = SnapCandidate(point, normal, SnapType.AXIS_GUIDE, dist)
+                            best = pickBetter(best, candidate)
+                        }
                     }
                 }
             }
@@ -210,17 +231,18 @@ class Snapper(
         return best
     }
 
-    private fun intersectPlane(ray: com.badlogic.gdx.math.collision.Ray, point: Vector3, normal: Vector3, out: Vector3): Boolean {
+    private fun intersectPlane(ray: com.badlogic.gdx.math.collision.Ray, point: Vector3, normal: Vector3): PlaneHit? {
         val denom = normal.dot(ray.direction)
         if (abs(denom) < epsilon) {
-            return false
+            return null
         }
         val t = Vector3(point).sub(ray.origin).dot(normal) / denom
         if (t <= 0f) {
-            return false
+            return null
         }
-        out.set(ray.origin).mulAdd(ray.direction, t)
-        return true
+        val hitPoint = Vector3(ray.origin).mulAdd(ray.direction, t)
+        val facing = facingNormal(Vector3(normal), ray.direction)
+        return PlaneHit(hitPoint, facing, t)
     }
 
     private fun snapPointOnPlane(point: Vector3, origin: Vector3, axisU: Vector3, axisV: Vector3): Vector3 {
@@ -301,5 +323,11 @@ class Snapper(
         val normal: Vector3,
         val axisU: Vector3,
         val axisV: Vector3
+    )
+
+    private data class PlaneHit(
+        val point: Vector3,
+        val normal: Vector3,
+        val t: Float
     )
 }

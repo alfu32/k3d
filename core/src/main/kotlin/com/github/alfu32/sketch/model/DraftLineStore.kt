@@ -61,6 +61,15 @@ class DraftLineStore {
 
     fun getSegments(): List<Segment> = segments
 
+    fun cleanup() {
+        if (segments.isEmpty()) {
+            return
+        }
+        val snapshot = segments.toList()
+        segments.clear()
+        snapshot.forEach { addSegment(it.start, it.end) }
+    }
+
     private data class PointOnSegment(val t: Float, val point: Vector3)
 
     private data class Intersection(val point: Vector3, val s: Float, val t: Float)

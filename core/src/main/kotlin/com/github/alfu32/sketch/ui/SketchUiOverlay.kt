@@ -18,7 +18,8 @@ import com.kotcrab.vis.ui.widget.VisTable
 
 class SketchUiOverlay(
     private val controller: ToolController,
-    private val status: StatusModel
+    private val status: StatusModel,
+    private val cleanupAction: () -> Unit
 ) {
     val stage: Stage = Stage(ScreenViewport())
     private val toolButtons = mutableMapOf<ToolId, VisImageTextButton>()
@@ -99,6 +100,15 @@ class SketchUiOverlay(
             toolButtons[toolId] = button
         }
 
+        toolbar.add(VisLabel("Actions")).padTop(8f).row()
+        val cleanupButton = VisImageTextButton("Cleanup", createActionIconDrawable(Color(0.55f, 0.85f, 0.65f, 1f)))
+        cleanupButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                cleanupAction()
+            }
+        })
+        toolbar.add(cleanupButton).left().row()
+
         return toolbar
     }
 
@@ -133,6 +143,19 @@ class SketchUiOverlay(
         pixmap.setColor(color)
         pixmap.fillRectangle(2, 2, size - 4, size - 4)
 
+        val texture = Texture(pixmap)
+        pixmap.dispose()
+        iconTextures.add(texture)
+        return TextureRegionDrawable(TextureRegion(texture))
+    }
+
+    private fun createActionIconDrawable(color: Color): TextureRegionDrawable {
+        val size = 16
+        val pixmap = Pixmap(size, size, Pixmap.Format.RGBA8888)
+        pixmap.setColor(Color(0.1f, 0.1f, 0.1f, 1f))
+        pixmap.fill()
+        pixmap.setColor(color)
+        pixmap.fillRectangle(2, 2, size - 4, size - 4)
         val texture = Texture(pixmap)
         pixmap.dispose()
         iconTextures.add(texture)

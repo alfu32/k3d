@@ -10,6 +10,7 @@ import com.github.alfu32.sketch.ui.ToolId
 class ToolInputProcessor(
     private val controller: ToolController,
     private val guideManager: GuideManager,
+    private val cleanupAction: () -> Unit,
     private val lastSnapProvider: () -> SnapResult?
 ) : InputAdapter() {
     override fun keyDown(keycode: Int): Boolean {
@@ -36,12 +37,20 @@ class ToolInputProcessor(
                     val alt = Gdx.input.isKeyPressed(Input.Keys.ALT_LEFT) ||
                         Gdx.input.isKeyPressed(Input.Keys.ALT_RIGHT)
                     if (alt) {
-                        guideManager.toggleAxisGuide(point)
+                        guideManager.addAxisGuide(point)
                     } else {
-                        guideManager.toggleGridGuide(point)
+                        guideManager.addGridGuide(point)
                     }
                 }
                 return true
+            }
+            Input.Keys.L -> {
+                val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
+                    Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+                if (ctrl) {
+                    cleanupAction()
+                    return true
+                }
             }
         }
         return false

@@ -35,6 +35,19 @@ class DraftFaceStore {
 
     fun getTriangles(): List<Triangle> = triangles
 
+    fun cleanupCoplanarFaces() {
+        if (triangles.isEmpty()) {
+            return
+        }
+        val groups = triangles.groupBy { planeKey(it) }
+        val merged = mutableListOf<Triangle>()
+        groups.values.forEach { group ->
+            mergeCoplanarGroup(group, merged)
+        }
+        triangles.clear()
+        triangles.addAll(merged)
+    }
+
     private fun removeClosingPoint(points: List<Vector3>): List<Vector3> {
         if (points.size < 2) {
             return points
@@ -64,5 +77,114 @@ class DraftFaceStore {
             return Vector3(0f, 1f, 0f)
         }
         return normal.nor()
+    }
+
+    private data class VertexKey(val x: Int, val y: Int, val z: Int)
+
+    private data class EdgeKey(val a: VertexKey, val b: VertexKey)
+
+    private data class Edge(val from: VertexKey, val to: VertexKey)
+
+    private fun planeKey(triangle: Triangle): List<Int> {
+        val normal = Vector3(triangle.b).sub(triangle.a).crs(Vector3(triangle.c).sub(triangle.a))
+        if (normal.len2() <= epsilonSq) {
+            return listOf(0, 0, 0, 0)
+        }
+        normal.nor()
+        if (normal.y < 0f || (normal.y == 0f && (normal.x < 0f || (normal.x == 0f && normal.z < 0f)))) {
+            normal.scl(-1f)
+        }
+        val d = -normal.dot(triangle.a)
+        return listOf(
+            quant(normal.x),
+            quant(normal.y),
+            quant(normal.z),
+            quant(d)
+        )
+    }
+
+    private fun quant(value: Float): Int = kotlin.math.round(value / epsilon).toInt()
+
+    private fun vertexKey(point: Vector3): VertexKey {
+        return VertexKey(quant(point.x), quant(point.y), quant(point.z))
+    }
+
+    private fun mergeCoplanarGroup(group: List<Triangle>, output: MutableList<Triangle>) {
+        if (group.size == 1) {
+            output.add(group.first())
+            return
+        }
+        val keyToPoint = mutableMapOf<VertexKey, Vector3>()
+        val edgeCount = mutableMapOf<EdgeKey, Int>()
+        group.forEach { tri ->
+            val a = vertexKey(tri.a).also { keyToPoint.putIfAbsent(it, Vector3(tri.a)) }
+            val b = vertexKey(tri.b).also { keyToPoint.putIfAbsent(it, Vector3(tri.b)) }
+            val c = vertexKey(tri.c).also { keyToPoint.putIfAbsent(it, Vector3(tri.c)) }
+            listOf(Pair(a, b), Pair(b, c), Pair(c, a)).forEach { (u, v) ->
+                val edgeKey = if (compareKeys(u, v) <= 0) EdgeKey(u, v) else EdgeKey(v, u)
+                edgeCount[edgeKey] = (edgeCount[edgeKey] ?: 0) + 1
+            }
+        }
+
+        val boundaryEdges = edgeCount.filterValues { it == 1 }.keys
+        if (boundaryEdges.size < 3) {
+            output.addAll(group)
+            return
+        }
+        val adjacency = mutableMapOf<VertexKey, MutableList<Edge>>()
+        boundaryEdges.forEach { edge ->
+            adjacency.getOrPut(edge.a) { mutableListOf() }.add(Edge(edge.a, edge.b))
+            adjacency.getOrPut(edge.b) { mutableListOf() }.add(Edge(edge.b, edge.a))
+        }
+
+        val loop = mutableListOf<Vector3>()
+        val used = mutableSetOf<EdgeKey>()
+        val startEdge = boundaryEdges.first()
+        var current = startEdge.a
+        var next = startEdge.b
+        val startPoint = keyToPoint[current]
+        if (startPoint == null) {
+            output.addAll(group)
+            return
+        }
+        loop.add(startPoint)
+        while (true) {
+            val edgeKey = if (compareKeys(current, next) <= 0) EdgeKey(current, next) else EdgeKey(next, current)
+            used.add(edgeKey)
+            loop.add(keyToPoint[next] ?: break)
+            val candidates = adjacency[next].orEmpty()
+            val candidate = candidates.firstOrNull { edge ->
+                val key = if (compareKeys(edge.from, edge.to) <= 0) EdgeKey(edge.from, edge.to) else EdgeKey(edge.to, edge.from)
+                !used.contains(key)
+            } ?: break
+            current = candidate.from
+            next = candidate.to
+            if (next == startEdge.a) {
+                break
+            }
+        }
+
+        if (loop.size < 4) {
+            output.addAll(group)
+            return
+        }
+        val normal = computeNormal(loop)
+        val origin = loop.first()
+        for (i in 1 until loop.size - 2) {
+            val a = origin
+            val b = loop[i]
+            val c = loop[i + 1]
+            if (Vector3(b).sub(a).crs(Vector3(c).sub(a)).dot(normal) < 0f) {
+                output.add(Triangle(Vector3(a), Vector3(c), Vector3(b)))
+            } else {
+                output.add(Triangle(Vector3(a), Vector3(b), Vector3(c)))
+            }
+        }
+    }
+
+    private fun compareKeys(a: VertexKey, b: VertexKey): Int {
+        if (a.x != b.x) return a.x.compareTo(b.x)
+        if (a.y != b.y) return a.y.compareTo(b.y)
+        return a.z.compareTo(b.z)
     }
 }
