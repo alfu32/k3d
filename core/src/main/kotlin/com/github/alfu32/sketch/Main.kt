@@ -7,17 +7,25 @@ import com.badlogic.gdx.InputMultiplexer
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.Mesh
-import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.PerspectiveCamera
 import com.badlogic.gdx.graphics.VertexAttribute
 import com.badlogic.gdx.graphics.VertexAttributes
+import com.badlogic.gdx.graphics.g3d.Environment
+import com.badlogic.gdx.graphics.g3d.Material
+import com.badlogic.gdx.graphics.g3d.ModelBatch
+import com.badlogic.gdx.graphics.g3d.Renderable
+import com.badlogic.gdx.graphics.g3d.RenderableProvider
+import com.badlogic.gdx.graphics.g3d.attributes.BlendingAttribute
+import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute
+import com.badlogic.gdx.graphics.g3d.attributes.IntAttribute
+import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight
+import com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight
 import com.badlogic.gdx.graphics.g3d.utils.CameraInputController
-import com.badlogic.gdx.graphics.glutils.FrameBuffer
-import com.badlogic.gdx.graphics.glutils.ShaderProgram
+import com.badlogic.gdx.graphics.g3d.utils.DepthShaderProvider
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
-import com.badlogic.gdx.graphics.OrthographicCamera
-import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.math.Vector3
+import com.badlogic.gdx.utils.Array
+import com.badlogic.gdx.utils.Pool
 import com.github.alfu32.sketch.input.GuideManager
 import com.github.alfu32.sketch.input.SnapResult
 import com.github.alfu32.sketch.input.Snapper
@@ -42,23 +50,16 @@ class Main : ApplicationAdapter() {
     private lateinit var shapeRenderer: ShapeRenderer
     private lateinit var faceMesh: Mesh
     private lateinit var groundMesh: Mesh
-    private lateinit var depthShader: ShaderProgram
-    private lateinit var mainShader: ShaderProgram
-    private lateinit var shadowBuffer: FrameBuffer
-    private lateinit var shadowTexture: Texture
-    private lateinit var lightCamera: OrthographicCamera
-    private val lightDir = Vector3(-1f, -1f, -0.6f).nor()
-    private val fillDir = Vector3(1.2f, 1.8f, 0.5f).nor()
-    private val ambientStrength = 0.55f
-    private val fillStrength = 0.25f
-    private val shadowDarkness = 0.35f
-    private val groundShadowOpacity = 0.55f
-    private val faceShadowOpacity = 0.85f
-    private val faceShadowNormalOffset = 0.002f
-    private val groundShadowNormalOffset = 0.0f
-    private val shadowBias = 0.0015f
-    private val shadowMapSize = 4096
-    private val shadowSlopeBias = 0.01f
+    private lateinit var modelBatch: ModelBatch
+    private lateinit var shadowBatch: ModelBatch
+    private lateinit var environment: Environment
+    private lateinit var shadowLight: DirectionalShadowLight
+    private lateinit var faceFrontMaterial: Material
+    private lateinit var faceBackMaterial: Material
+    private lateinit var groundMaterial: Material
+    private lateinit var faceFrontRenderable: MeshRenderableProvider
+    private lateinit var faceBackRenderable: MeshRenderableProvider
+    private lateinit var groundRenderable: MeshRenderableProvider
     private lateinit var toolController: ToolController
     private lateinit var toolInput: ToolInputProcessor
     private lateinit var uiOverlay: SketchUiOverlay
@@ -101,7 +102,7 @@ class Main : ApplicationAdapter() {
             statusModel,
             listOf(
                 SimpleTool(ToolId.SELECT, "Select entities."),
-                LineTool(lineStore),
+                LineTool(lineStore, faceStore),
                 RectangleTool(lineStore, faceStore),
                 CircleTool(lineStore, faceStore),
                 SimpleTool(ToolId.PUSH_PULL, "Click face then drag."),
@@ -123,10 +124,9 @@ class Main : ApplicationAdapter() {
         )
 
         shapeRenderer = ShapeRenderer()
-        setupShaders()
-        setupShadowMap()
-        setupLightCamera()
+        setupLighting()
         setupMeshes()
+        setupRenderables()
     }
 
     override fun render() {
@@ -134,7 +134,7 @@ class Main : ApplicationAdapter() {
         updateCursorStatus()
 
         updateFaceMesh()
-        updateLightCameraBounds()
+        shadowLight.update(camera)
         renderShadowPass()
 
         Gdx.gl.glViewport(0, 0, Gdx.graphics.width, Gdx.graphics.height)
@@ -142,16 +142,23 @@ class Main : ApplicationAdapter() {
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
 
-        renderMainPass()
-
         Gdx.gl.glLineWidth(4f)
         shapeRenderer.projectionMatrix = camera.combined
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         drawGrid(20, 1f)
+        drawDraftLines()
+        shapeRenderer.end()
+
+        modelBatch.begin(camera)
+        modelBatch.render(faceFrontRenderable, environment)
+        modelBatch.render(faceBackRenderable, environment)
+        modelBatch.render(groundRenderable, environment)
+        modelBatch.end()
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         drawAxes(2.5f)
         drawGuides()
         drawCursor()
-        drawDraftLines()
         toolController.render(shapeRenderer)
         shapeRenderer.end()
 
@@ -176,9 +183,9 @@ class Main : ApplicationAdapter() {
         shapeRenderer.dispose()
         faceMesh.dispose()
         groundMesh.dispose()
-        depthShader.dispose()
-        mainShader.dispose()
-        shadowBuffer.dispose()
+        modelBatch.dispose()
+        shadowBatch.dispose()
+        shadowLight.dispose()
         uiOverlay.dispose()
         if (VisUI.isLoaded()) {
             VisUI.dispose()
@@ -291,125 +298,35 @@ class Main : ApplicationAdapter() {
         }
     }
 
-    private fun setupShaders() {
-        ShaderProgram.pedantic = false
-        depthShader = ShaderProgram(
-            """
-            attribute vec3 a_position;
-            uniform mat4 u_lightVP;
-            void main() {
-                gl_Position = u_lightVP * vec4(a_position, 1.0);
-            }
-            """.trimIndent(),
-            """
-            #ifdef GL_ES
-            precision mediump float;
-            #endif
-            void main() {
-                float depth = gl_FragCoord.z;
-                gl_FragColor = vec4(depth, depth, depth, 1.0);
-            }
-            """.trimIndent()
-        )
-        if (!depthShader.isCompiled) {
-            error("Depth shader failed: ${depthShader.log}")
+    private fun setupLighting() {
+        environment = Environment()
+        shadowLight = DirectionalShadowLight(
+            4096,
+            4096,
+            60f,
+            60f,
+            1f,
+            300f
+        ).apply {
+            set(0.5f, 0.5f, 0.5f, -0.5f, -1.8f, -1.2f)
+            setColor(Color(0f, 0f, 0f, 0.85f))
+            environment.add(this)
+            environment.shadowMap = this
         }
-
-        mainShader = ShaderProgram(
-            """
-            #ifdef GL_ES
-            precision mediump float;
-            #endif
-            attribute vec3 a_position;
-            attribute vec3 a_normal;
-            uniform mat4 u_projView;
-            uniform mat4 u_lightVP;
-            uniform mediump vec3 u_lightDir;
-            uniform float u_shadowNormalOffset;
-            varying vec3 v_normal;
-            varying vec4 v_shadowCoord;
-            void main() {
-                v_normal = a_normal;
-                vec3 shadowPos = a_position - u_lightDir * u_shadowNormalOffset;
-                v_shadowCoord = u_lightVP * vec4(shadowPos, 1.0);
-                gl_Position = u_projView * vec4(a_position, 1.0);
-            }
-            """.trimIndent(),
-            """
-            #ifdef GL_ES
-            precision mediump float;
-            #endif
-            uniform mediump vec3 u_lightDir;
-            uniform mediump vec3 u_fillDir;
-            uniform float u_ambient;
-            uniform float u_fillStrength;
-            uniform vec4 u_color;
-            uniform sampler2D u_shadowMap;
-            uniform float u_shadowBias;
-            uniform float u_shadowSlopeBias;
-            uniform float u_shadowDarkness;
-            uniform float u_receiveShadows;
-            uniform float u_shadowOpacity;
-            uniform vec2 u_shadowTexelSize;
-            varying vec3 v_normal;
-            varying vec4 v_shadowCoord;
-
-            float shadowFactor(float ndl) {
-                if (u_receiveShadows < 0.5) {
-                    return 1.0;
-                }
-                vec3 proj = v_shadowCoord.xyz / v_shadowCoord.w;
-                vec2 uv = proj.xy * 0.5 + 0.5;
-                float depth = proj.z * 0.5 + 0.5;
-                if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
-                    return 1.0;
-                }
-                float bias = u_shadowBias + u_shadowSlopeBias * (1.0 - ndl);
-                vec2 o = u_shadowTexelSize * 0.5;
-                float hit0 = (depth - bias) > texture2D(u_shadowMap, uv + vec2(-o.x, -o.y)).r ? 1.0 : 0.0;
-                float hit1 = (depth - bias) > texture2D(u_shadowMap, uv + vec2(o.x, -o.y)).r ? 1.0 : 0.0;
-                float hit2 = (depth - bias) > texture2D(u_shadowMap, uv + vec2(-o.x, o.y)).r ? 1.0 : 0.0;
-                float hit3 = (depth - bias) > texture2D(u_shadowMap, uv + vec2(o.x, o.y)).r ? 1.0 : 0.0;
-                float shadowHit = (hit0 + hit1 + hit2 + hit3) * 0.25;
-                float shadowFactor = mix(1.0, u_shadowDarkness, shadowHit);
-                return mix(1.0, shadowFactor, u_shadowOpacity);
-            }
-
-            void main() {
-                vec3 n = normalize(v_normal);
-                if (!gl_FrontFacing) {
-                    n = -n;
-                }
-                vec3 l0 = normalize(-u_lightDir);
-                vec3 l1 = normalize(-u_fillDir);
-                float diff0 = max(dot(n, l0), 0.0);
-                float diff1 = max(dot(n, l1), 0.0);
-                float shadow = shadowFactor(diff0);
-                float lighting = u_ambient + diff0 * shadow + diff1 * u_fillStrength;
-                vec3 color = u_color.rgb * lighting;
-                gl_FragColor = vec4(color, u_color.a);
-            }
-            """.trimIndent()
+        environment.add(
+            DirectionalLight()
+                .set(0.6f, 0.6f, 0.6f, -0.5f, -1.8f, -1.2f)
+                .setColor(Color(0.6f, 0.6f, 0.6f, 0.9f))
         )
-        if (!mainShader.isCompiled) {
-            error("Main shader failed: ${mainShader.log}")
-        }
-    }
-
-    private fun setupShadowMap() {
-        shadowBuffer = FrameBuffer(Pixmap.Format.RGBA8888, shadowMapSize, shadowMapSize, true)
-        shadowTexture = shadowBuffer.colorBufferTexture
-        shadowTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest)
-    }
-
-    private fun setupLightCamera() {
-        val size = 60f
-        lightCamera = OrthographicCamera(size, size)
-        lightCamera.position.set(Vector3(lightDir).scl(-40f))
-        lightCamera.lookAt(0f, 0f, 0f)
-        lightCamera.near = 1f
-        lightCamera.far = 200f
-        lightCamera.update()
+        environment.add(
+            DirectionalLight()
+                .set(0.08f, 0.08f, 0.08f, 1.2f, 1.8f, 0.5f)
+                .setColor(Color(0.08f, 0.08f, 0.08f, 0.15f))
+        )
+        environment.set(ColorAttribute(ColorAttribute.AmbientLight, 0.82f, 0.82f, 0.82f, 0.95f))
+        environment.set(ColorAttribute(ColorAttribute.Specular, 0.5f, 0.5f, 0.9f, 0.7f))
+        modelBatch = ModelBatch()
+        shadowBatch = ModelBatch(DepthShaderProvider())
     }
 
     private fun setupMeshes() {
@@ -418,6 +335,25 @@ class Main : ApplicationAdapter() {
             VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal")
         )
         groundMesh = buildGroundMesh(120f)
+    }
+
+    private fun setupRenderables() {
+        faceFrontMaterial = Material(
+            ColorAttribute.createDiffuse(Color(0.93f, 0.93f, 0.93f, 1f)),
+            IntAttribute(IntAttribute.CullFace, GL20.GL_BACK)
+        )
+        faceBackMaterial = Material(
+            ColorAttribute.createDiffuse(Color(0.8f, 0.83f, 0.93f, 1f)),
+            IntAttribute(IntAttribute.CullFace, GL20.GL_FRONT)
+        )
+        groundMaterial = Material(
+            ColorAttribute.createDiffuse(Color(0.72f, 0.70f, 0.60f, 0.5f)),
+            BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, 0.5f),
+            IntAttribute(IntAttribute.CullFace, GL20.GL_BACK)
+        )
+        faceFrontRenderable = MeshRenderableProvider(faceMesh, faceFrontMaterial, GL20.GL_TRIANGLES)
+        faceBackRenderable = MeshRenderableProvider(faceMesh, faceBackMaterial, GL20.GL_TRIANGLES)
+        groundRenderable = MeshRenderableProvider(groundMesh, groundMaterial, GL20.GL_TRIANGLES)
     }
 
     private fun updateFaceMesh() {
@@ -440,37 +376,10 @@ class Main : ApplicationAdapter() {
                 VertexAttribute(VertexAttributes.Usage.Position, 3, "a_position"),
                 VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal")
             )
+            faceFrontRenderable = MeshRenderableProvider(faceMesh, faceFrontMaterial, GL20.GL_TRIANGLES)
+            faceBackRenderable = MeshRenderableProvider(faceMesh, faceBackMaterial, GL20.GL_TRIANGLES)
         }
         faceMesh.setVertices(vertices)
-    }
-
-    private fun updateLightCameraBounds() {
-        val triangles = faceStore.getTriangles()
-        if (triangles.isEmpty()) {
-            return
-        }
-        val min = Vector3(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-        val max = Vector3(Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY)
-        triangles.forEach { tri ->
-            listOf(tri.a, tri.b, tri.c).forEach { v ->
-                min.x = kotlin.math.min(min.x, v.x)
-                min.y = kotlin.math.min(min.y, v.y)
-                min.z = kotlin.math.min(min.z, v.z)
-                max.x = kotlin.math.max(max.x, v.x)
-                max.y = kotlin.math.max(max.y, v.y)
-                max.z = kotlin.math.max(max.z, v.z)
-            }
-        }
-        val center = Vector3(min).add(max).scl(0.5f)
-        val extents = Vector3(max).sub(min)
-        val size = kotlin.math.max(extents.x, kotlin.math.max(extents.y, extents.z)) + 10f
-        lightCamera.viewportWidth = size
-        lightCamera.viewportHeight = size
-        lightCamera.position.set(Vector3(center).sub(Vector3(lightDir).scl(size)))
-        lightCamera.lookAt(center)
-        lightCamera.near = 0.1f
-        lightCamera.far = size * 4f
-        lightCamera.update()
     }
 
     private fun writeVertex(buffer: FloatArray, start: Int, pos: Vector3, normal: Vector3): Int {
@@ -501,55 +410,31 @@ class Main : ApplicationAdapter() {
     }
 
     private fun renderShadowPass() {
-        shadowBuffer.begin()
-        Gdx.gl.glViewport(0, 0, shadowMapSize, shadowMapSize)
-        Gdx.gl.glClearColor(1f, 1f, 1f, 1f)
-        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
-        Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
-        Gdx.gl.glEnable(GL20.GL_CULL_FACE)
-        Gdx.gl.glCullFace(GL20.GL_BACK)
-        Gdx.gl.glEnable(GL20.GL_POLYGON_OFFSET_FILL)
-        Gdx.gl.glPolygonOffset(1f, 1.5f)
-        depthShader.bind()
-        depthShader.setUniformMatrix("u_lightVP", lightCamera.combined)
-        if (faceMesh.numVertices > 0) {
-            faceMesh.render(depthShader, GL20.GL_TRIANGLES)
-        }
-        Gdx.gl.glDisable(GL20.GL_POLYGON_OFFSET_FILL)
-        Gdx.gl.glDisable(GL20.GL_CULL_FACE)
-        shadowBuffer.end()
+        shadowLight.begin(Vector3.Zero, shadowLight.direction)
+        shadowBatch.begin(shadowLight.camera)
+        shadowBatch.render(faceFrontRenderable)
+        shadowBatch.render(faceBackRenderable)
+        shadowBatch.end()
+        shadowLight.end()
     }
 
-    private fun renderMainPass() {
-        mainShader.bind()
-        mainShader.setUniformMatrix("u_projView", camera.combined)
-        mainShader.setUniformMatrix("u_lightVP", lightCamera.combined)
-        mainShader.setUniformf("u_lightDir", lightDir)
-        mainShader.setUniformf("u_fillDir", fillDir)
-        mainShader.setUniformf("u_ambient", ambientStrength)
-        mainShader.setUniformf("u_fillStrength", fillStrength)
-        mainShader.setUniformf("u_shadowBias", shadowBias)
-        mainShader.setUniformf("u_shadowSlopeBias", shadowSlopeBias)
-        mainShader.setUniformf("u_shadowDarkness", shadowDarkness)
-        mainShader.setUniformi("u_shadowMap", 0)
-        mainShader.setUniformf("u_shadowTexelSize", 1f / shadowMapSize.toFloat(), 1f / shadowMapSize.toFloat())
-        shadowTexture.bind(0)
-
-        Gdx.gl.glDisable(GL20.GL_CULL_FACE)
-        mainShader.setUniformf("u_color", 0.8f, 0.8f, 0.8f, 1f)
-        mainShader.setUniformf("u_receiveShadows", 1f)
-        mainShader.setUniformf("u_shadowOpacity", faceShadowOpacity)
-        mainShader.setUniformf("u_shadowNormalOffset", faceShadowNormalOffset)
-        if (faceMesh.numVertices > 0) {
-            faceMesh.render(mainShader, GL20.GL_TRIANGLES)
+    private class MeshRenderableProvider(
+        private val mesh: Mesh,
+        private val material: Material,
+        private val primitiveType: Int
+    ) : RenderableProvider {
+        override fun getRenderables(renderables: Array<Renderable>, pool: Pool<Renderable>) {
+            if (mesh.numVertices == 0) {
+                return
+            }
+            val renderable = pool.obtain()
+            renderable.material = material
+            renderable.meshPart.mesh = mesh
+            renderable.meshPart.offset = 0
+            renderable.meshPart.size = mesh.numVertices
+            renderable.meshPart.primitiveType = primitiveType
+            renderable.worldTransform.idt()
+            renderables.add(renderable)
         }
-
-        Gdx.gl.glEnable(GL20.GL_CULL_FACE)
-        Gdx.gl.glCullFace(GL20.GL_BACK)
-        mainShader.setUniformf("u_color", 0.72f, 0.70f, 0.60f, 0.5f)
-        mainShader.setUniformf("u_receiveShadows", 1f)
-        mainShader.setUniformf("u_shadowOpacity", groundShadowOpacity)
-        mainShader.setUniformf("u_shadowNormalOffset", groundShadowNormalOffset)
-        groundMesh.render(mainShader, GL20.GL_TRIANGLES)
     }
 }
