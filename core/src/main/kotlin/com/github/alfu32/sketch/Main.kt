@@ -35,6 +35,7 @@ import com.github.alfu32.sketch.model.DraftLineStore
 import com.github.alfu32.sketch.model.ModelCleanup
 import com.github.alfu32.sketch.tools.CircleTool
 import com.github.alfu32.sketch.tools.LineTool
+import com.github.alfu32.sketch.tools.PushPullTool
 import com.github.alfu32.sketch.tools.RectangleTool
 import com.github.alfu32.sketch.ui.SimpleTool
 import com.github.alfu32.sketch.ui.SketchUiOverlay
@@ -108,7 +109,7 @@ class Main : ApplicationAdapter() {
                 LineTool(lineStore, faceStore),
                 RectangleTool(lineStore, faceStore),
                 CircleTool(lineStore, faceStore),
-                SimpleTool(ToolId.PUSH_PULL, "Click face then drag."),
+                PushPullTool(lineStore, faceStore, camera),
                 SimpleTool(ToolId.MOVE, "Select and move."),
                 SimpleTool(ToolId.ROTATE, "Select and rotate."),
                 SimpleTool(ToolId.SCALE, "Select and scale."),
@@ -157,6 +158,8 @@ class Main : ApplicationAdapter() {
         modelBatch.render(groundRenderable, environment)
         modelBatch.end()
 
+        Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
+        Gdx.gl.glDepthMask(true)
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         drawAxes(2.5f)
         drawGuides()

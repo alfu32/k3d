@@ -4,6 +4,7 @@ import com.badlogic.gdx.math.Vector3
 
 class DraftFaceStore {
     data class Triangle(val a: Vector3, val b: Vector3, val c: Vector3)
+    data class Hit(val triangle: Triangle, val point: Vector3, val normal: Vector3, val t: Float)
 
     private val triangles = mutableListOf<Triangle>()
     private val epsilon = 1e-4f
@@ -34,6 +35,39 @@ class DraftFaceStore {
     }
 
     fun getTriangles(): List<Triangle> = triangles
+
+    fun pickTriangle(ray: com.badlogic.gdx.math.collision.Ray): Hit? {
+        var best: Hit? = null
+        triangles.forEach { tri ->
+            val hit = intersectRayTriangle(ray, tri) ?: return@forEach
+            if (best == null || hit.t < best!!.t) {
+                best = hit
+            }
+        }
+        return best
+    }
+
+    fun collectCoplanar(base: Triangle, normalEps: Float = 1e-3f, distEps: Float = 1e-3f): List<Triangle> {
+        val baseNormal = Vector3(base.b).sub(base.a).crs(Vector3(base.c).sub(base.a))
+        if (baseNormal.len2() <= epsilonSq) {
+            return listOf(base)
+        }
+        baseNormal.nor()
+        val baseD = -baseNormal.dot(base.a)
+        return triangles.filter { tri ->
+            val n = Vector3(tri.b).sub(tri.a).crs(Vector3(tri.c).sub(tri.a))
+            if (n.len2() <= epsilonSq) {
+                return@filter false
+            }
+            n.nor()
+            var d = -n.dot(tri.a)
+            if (n.dot(baseNormal) < 0f) {
+                n.scl(-1f)
+                d = -d
+            }
+            kotlin.math.abs(1f - n.dot(baseNormal)) <= normalEps && kotlin.math.abs(d - baseD) <= distEps
+        }
+    }
 
     fun cleanupCoplanarFaces() {
         if (triangles.isEmpty()) {
@@ -77,6 +111,37 @@ class DraftFaceStore {
             return Vector3(0f, 1f, 0f)
         }
         return normal.nor()
+    }
+
+    private fun intersectRayTriangle(
+        ray: com.badlogic.gdx.math.collision.Ray,
+        tri: Triangle
+    ): Hit? {
+        val edge1 = Vector3(tri.b).sub(tri.a)
+        val edge2 = Vector3(tri.c).sub(tri.a)
+        val pvec = Vector3(ray.direction).crs(edge2)
+        val det = edge1.dot(pvec)
+        if (kotlin.math.abs(det) < epsilon) {
+            return null
+        }
+        val invDet = 1f / det
+        val tvec = Vector3(ray.origin).sub(tri.a)
+        val u = tvec.dot(pvec) * invDet
+        if (u < 0f || u > 1f) {
+            return null
+        }
+        val qvec = Vector3(tvec).crs(edge1)
+        val v = ray.direction.dot(qvec) * invDet
+        if (v < 0f || u + v > 1f) {
+            return null
+        }
+        val t = edge2.dot(qvec) * invDet
+        if (t <= 0f) {
+            return null
+        }
+        val point = Vector3(ray.origin).mulAdd(ray.direction, t)
+        val normal = edge1.crs(edge2).nor()
+        return Hit(tri, point, normal, t)
     }
 
     private data class VertexKey(val x: Int, val y: Int, val z: Int)
