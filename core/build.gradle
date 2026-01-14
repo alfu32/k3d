@@ -1,0 +1,22 @@
+[compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
+eclipse.project.name = appName + '-core'
+
+dependencies {
+  api "com.badlogicgames.gdx:gdx-freetype:$gdxVersion"
+  api "com.badlogicgames.gdx:gdx:$gdxVersion"
+  api "com.github.tommyettinger:libgdx-utils:$utilsVersion"
+  api "com.kotcrab.vis:vis-ui:$visUiVersion"
+  api "io.github.libktx:ktx-freetype:$ktxVersion"
+  api "io.github.libktx:ktx-graphics:$ktxVersion"
+  api "io.github.libktx:ktx-json:$ktxVersion"
+  api "io.github.libktx:ktx-math:$ktxVersion"
+  api "io.github.libktx:ktx-style:$ktxVersion"
+  api "io.github.libktx:ktx-vis-style:$ktxVersion"
+  api "io.github.libktx:ktx-vis:$ktxVersion"
+  api "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
+  api "org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutinesVersion"
+
+  if(enableGraalNative == 'true') {
+    implementation "io.github.berstanio:gdx-svmhelper-annotations:$graalHelperVersion"
+  }
+}
