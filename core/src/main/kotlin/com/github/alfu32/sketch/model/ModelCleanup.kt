@@ -6,6 +6,5 @@ class ModelCleanup(
 ) {
     fun run() {
         lineStore.cleanup()
-        faceStore.cleanupCoplanarFaces()
     }
 }

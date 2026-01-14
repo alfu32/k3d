@@ -56,7 +56,6 @@ class DraftLineStore {
             }
         }
 
-        mergeColinearSegments()
     }
 
     fun getSegments(): List<Segment> = segments
@@ -159,37 +158,4 @@ class DraftLineStore {
         return result
     }
 
-    private fun mergeColinearSegments() {
-        var changed = true
-        while (changed) {
-            changed = false
-            outer@ for (i in segments.indices) {
-                val a = segments[i]
-                for (j in i + 1 until segments.size) {
-                    val b = segments[j]
-                    val shared = sharedEndpoint(a, b) ?: continue
-                    val dirA = Vector3(a.end).sub(a.start).nor()
-                    val dirB = Vector3(b.end).sub(b.start).nor()
-                    if (dirA.crs(dirB).len2() > epsilonSq) {
-                        continue
-                    }
-                    val otherA = if (shared.dst2(a.start) <= epsilonSq) a.end else a.start
-                    val otherB = if (shared.dst2(b.start) <= epsilonSq) b.end else b.start
-                    segments.removeAt(j)
-                    segments.removeAt(i)
-                    segments.add(Segment(Vector3(otherA), Vector3(otherB)))
-                    changed = true
-                    break@outer
-                }
-            }
-        }
-    }
-
-    private fun sharedEndpoint(a: Segment, b: Segment): Vector3? {
-        if (a.start.dst2(b.start) <= epsilonSq) return a.start
-        if (a.start.dst2(b.end) <= epsilonSq) return a.start
-        if (a.end.dst2(b.start) <= epsilonSq) return a.end
-        if (a.end.dst2(b.end) <= epsilonSq) return a.end
-        return null
-    }
 }
