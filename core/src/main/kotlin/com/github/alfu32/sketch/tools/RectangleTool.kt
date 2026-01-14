@@ -61,8 +61,8 @@ class RectangleTool(
                 val b = corners[(i + 1) % 4]
                 lineStore.addSegment(a, b)
             }
-            faceStore.addTriangle(corners[0], corners[2], corners[1])
-            faceStore.addTriangle(corners[0], corners[3], corners[2])
+            val preferred = normal ?: pickNormal ?: Vector3(0f, 1f, 0f)
+            addRectangleFace(corners, preferred)
             anchor = null
             pickNormal = null
             status.message = "Click to start rectangle."
@@ -93,6 +93,17 @@ class RectangleTool(
         val p2 = Vector3(p1).mulAdd(basis.axisV, v)
         val p3 = Vector3(start).mulAdd(basis.axisV, v)
         return listOf(p0, p1, p2, p3)
+    }
+
+    private fun addRectangleFace(corners: List<Vector3>, preferredNormal: Vector3) {
+        val normal = Vector3(corners[1]).sub(corners[0]).crs(Vector3(corners[2]).sub(corners[0]))
+        if (normal.dot(preferredNormal) >= 0f) {
+            faceStore.addTriangle(corners[0], corners[1], corners[2])
+            faceStore.addTriangle(corners[0], corners[2], corners[3])
+        } else {
+            faceStore.addTriangle(corners[0], corners[2], corners[1])
+            faceStore.addTriangle(corners[0], corners[3], corners[2])
+        }
     }
 
     private fun clearTransient() {

@@ -21,7 +21,7 @@ class LineTool(
     private val hover = Vector3()
     private var hasHover = false
     private val polylinePoints = mutableListOf<Vector3>()
-    private var planeNormal: Vector3? = null
+    private var preferredNormal: Vector3? = null
     private val epsilonSq = 1e-4f
 
     override fun onEnter(status: StatusModel) {
@@ -53,7 +53,7 @@ class LineTool(
         }
         if (anchor == null) {
             anchor = Vector3(world)
-            planeNormal = normal?.cpy()
+            preferredNormal = normal?.cpy()
             polylinePoints.clear()
             polylinePoints.add(Vector3(world))
             status.message = "Click to finish segment. Esc cancels."
@@ -64,13 +64,17 @@ class LineTool(
             anchor = Vector3(end)
             polylinePoints.add(Vector3(end))
             if (polylinePoints.size >= 3 && polylinePoints.first().dst2(end) <= epsilonSq) {
-                faceStore.addPolygon(polylinePoints, planeNormal)
+                val facing = normal ?: preferredNormal
+                faceStore.addPolygon(polylinePoints, facing)
                 polylinePoints.clear()
                 polylinePoints.add(Vector3(end))
                 status.message = "Face created. Click to continue line. Esc cancels."
             } else {
                 status.message = "Click to continue line. Esc cancels."
             }
+        }
+        if (normal != null) {
+            preferredNormal = normal.cpy()
         }
         return true
     }
@@ -87,6 +91,6 @@ class LineTool(
         anchor = null
         hasHover = false
         polylinePoints.clear()
-        planeNormal = null
+        preferredNormal = null
     }
 }
