@@ -54,10 +54,11 @@ class Main : ApplicationAdapter() {
     private val shadowDarkness = 0.35f
     private val groundShadowOpacity = 0.55f
     private val faceShadowOpacity = 0.85f
-    private val faceShadowNormalOffset = 0.01f
+    private val faceShadowNormalOffset = 0.002f
     private val groundShadowNormalOffset = 0.0f
-    private val shadowBias = 0.0035f
+    private val shadowBias = 0.0015f
     private val shadowMapSize = 4096
+    private val shadowSlopeBias = 0.01f
     private lateinit var toolController: ToolController
     private lateinit var toolInput: ToolInputProcessor
     private lateinit var uiOverlay: SketchUiOverlay
@@ -185,7 +186,7 @@ class Main : ApplicationAdapter() {
     }
 
     private fun drawGrid(halfSize: Int, step: Float) {
-        shapeRenderer.color = Color(0.25f, 0.27f, 0.30f, 1f)
+        shapeRenderer.color = Color(0.35f, 0.37f, 0.39f, 1f)
         for (i in -halfSize..halfSize) {
             val offset = i * step
             shapeRenderer.line(-halfSize * step, 0f, offset, halfSize * step, 0f, offset)
@@ -281,7 +282,7 @@ class Main : ApplicationAdapter() {
         if (segments.isEmpty()) {
             return
         }
-        shapeRenderer.color = Color(0.85f, 0.65f, 0.2f, 1f)
+        shapeRenderer.color = Color(0.2f, 0.2f, 0.2f, 1f)
         segments.forEach { segment ->
             shapeRenderer.line(
                 segment.start.x, segment.start.y, segment.start.z,
@@ -316,16 +317,20 @@ class Main : ApplicationAdapter() {
 
         mainShader = ShaderProgram(
             """
+            #ifdef GL_ES
+            precision mediump float;
+            #endif
             attribute vec3 a_position;
             attribute vec3 a_normal;
             uniform mat4 u_projView;
             uniform mat4 u_lightVP;
+            uniform mediump vec3 u_lightDir;
             uniform float u_shadowNormalOffset;
             varying vec3 v_normal;
             varying vec4 v_shadowCoord;
             void main() {
                 v_normal = a_normal;
-                vec3 shadowPos = a_position + a_normal * u_shadowNormalOffset;
+                vec3 shadowPos = a_position - u_lightDir * u_shadowNormalOffset;
                 v_shadowCoord = u_lightVP * vec4(shadowPos, 1.0);
                 gl_Position = u_projView * vec4(a_position, 1.0);
             }
@@ -334,13 +339,14 @@ class Main : ApplicationAdapter() {
             #ifdef GL_ES
             precision mediump float;
             #endif
-            uniform vec3 u_lightDir;
-            uniform vec3 u_fillDir;
+            uniform mediump vec3 u_lightDir;
+            uniform mediump vec3 u_fillDir;
             uniform float u_ambient;
             uniform float u_fillStrength;
             uniform vec4 u_color;
             uniform sampler2D u_shadowMap;
             uniform float u_shadowBias;
+            uniform float u_shadowSlopeBias;
             uniform float u_shadowDarkness;
             uniform float u_receiveShadows;
             uniform float u_shadowOpacity;
@@ -348,7 +354,7 @@ class Main : ApplicationAdapter() {
             varying vec3 v_normal;
             varying vec4 v_shadowCoord;
 
-            float shadowFactor() {
+            float shadowFactor(float ndl) {
                 if (u_receiveShadows < 0.5) {
                     return 1.0;
                 }
@@ -358,11 +364,12 @@ class Main : ApplicationAdapter() {
                 if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
                     return 1.0;
                 }
+                float bias = u_shadowBias + u_shadowSlopeBias * (1.0 - ndl);
                 vec2 o = u_shadowTexelSize * 0.5;
-                float hit0 = (depth - u_shadowBias) > texture2D(u_shadowMap, uv + vec2(-o.x, -o.y)).r ? 1.0 : 0.0;
-                float hit1 = (depth - u_shadowBias) > texture2D(u_shadowMap, uv + vec2(o.x, -o.y)).r ? 1.0 : 0.0;
-                float hit2 = (depth - u_shadowBias) > texture2D(u_shadowMap, uv + vec2(-o.x, o.y)).r ? 1.0 : 0.0;
-                float hit3 = (depth - u_shadowBias) > texture2D(u_shadowMap, uv + vec2(o.x, o.y)).r ? 1.0 : 0.0;
+                float hit0 = (depth - bias) > texture2D(u_shadowMap, uv + vec2(-o.x, -o.y)).r ? 1.0 : 0.0;
+                float hit1 = (depth - bias) > texture2D(u_shadowMap, uv + vec2(o.x, -o.y)).r ? 1.0 : 0.0;
+                float hit2 = (depth - bias) > texture2D(u_shadowMap, uv + vec2(-o.x, o.y)).r ? 1.0 : 0.0;
+                float hit3 = (depth - bias) > texture2D(u_shadowMap, uv + vec2(o.x, o.y)).r ? 1.0 : 0.0;
                 float shadowHit = (hit0 + hit1 + hit2 + hit3) * 0.25;
                 float shadowFactor = mix(1.0, u_shadowDarkness, shadowHit);
                 return mix(1.0, shadowFactor, u_shadowOpacity);
@@ -377,7 +384,7 @@ class Main : ApplicationAdapter() {
                 vec3 l1 = normalize(-u_fillDir);
                 float diff0 = max(dot(n, l0), 0.0);
                 float diff1 = max(dot(n, l1), 0.0);
-                float shadow = shadowFactor();
+                float shadow = shadowFactor(diff0);
                 float lighting = u_ambient + diff0 * shadow + diff1 * u_fillStrength;
                 vec3 color = u_color.rgb * lighting;
                 gl_FragColor = vec4(color, u_color.a);
@@ -499,15 +506,17 @@ class Main : ApplicationAdapter() {
         Gdx.gl.glClearColor(1f, 1f, 1f, 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
-        Gdx.gl.glDisable(GL20.GL_CULL_FACE)
+        Gdx.gl.glEnable(GL20.GL_CULL_FACE)
+        Gdx.gl.glCullFace(GL20.GL_BACK)
         Gdx.gl.glEnable(GL20.GL_POLYGON_OFFSET_FILL)
-        Gdx.gl.glPolygonOffset(2f, 4f)
+        Gdx.gl.glPolygonOffset(1f, 1.5f)
         depthShader.bind()
         depthShader.setUniformMatrix("u_lightVP", lightCamera.combined)
         if (faceMesh.numVertices > 0) {
             faceMesh.render(depthShader, GL20.GL_TRIANGLES)
         }
         Gdx.gl.glDisable(GL20.GL_POLYGON_OFFSET_FILL)
+        Gdx.gl.glDisable(GL20.GL_CULL_FACE)
         shadowBuffer.end()
     }
 
@@ -520,6 +529,7 @@ class Main : ApplicationAdapter() {
         mainShader.setUniformf("u_ambient", ambientStrength)
         mainShader.setUniformf("u_fillStrength", fillStrength)
         mainShader.setUniformf("u_shadowBias", shadowBias)
+        mainShader.setUniformf("u_shadowSlopeBias", shadowSlopeBias)
         mainShader.setUniformf("u_shadowDarkness", shadowDarkness)
         mainShader.setUniformi("u_shadowMap", 0)
         mainShader.setUniformf("u_shadowTexelSize", 1f / shadowMapSize.toFloat(), 1f / shadowMapSize.toFloat())
