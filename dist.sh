@@ -47,7 +47,7 @@ do
 done
 
 export LAUNCHER_LINUX=dist/katechup3d-editor
-cat > LAUNCHER_LINUX <<LAUNCHERLINUXSCRIPT
+cat > $LAUNCHER_LINUX <<LAUNCHERLINUXSCRIPT
 #!/bin/bash
 
 java -jar "Katechup3d-1.0.0.jar" 1280x960 "$1"
@@ -55,7 +55,7 @@ LAUNCHERLINUXSCRIPT
 chmod +x $LAUNCHER_LINUX
 
 export WINDOWS_INSTALLER=dist/katechup3d.install.cmd
-cat > WINDOWS_INSTALLER <<WININSTALLSCRIPT
+cat > $WINDOWS_INSTALLER <<WININSTALLSCRIPT
 @echo off
 setlocal
 

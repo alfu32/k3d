@@ -52,6 +52,7 @@ class Main : ApplicationAdapter() {
     private lateinit var cameraController: CameraInputController
     private lateinit var shapeRenderer: ShapeRenderer
     private lateinit var faceMesh: Mesh
+    private lateinit var selectedFaceMesh: Mesh
     private lateinit var groundMesh: Mesh
     private lateinit var modelBatch: ModelBatch
     private lateinit var shadowBatch: ModelBatch
@@ -59,10 +60,13 @@ class Main : ApplicationAdapter() {
     private lateinit var shadowLight: DirectionalShadowLight
     private lateinit var faceFrontMaterial: Material
     private lateinit var faceBackMaterial: Material
+    private lateinit var selectedFaceMaterial: Material
     private lateinit var groundMaterial: Material
     private lateinit var faceFrontRenderable: MeshRenderableProvider
     private lateinit var faceBackRenderable: MeshRenderableProvider
+    private lateinit var selectedFaceRenderable: MeshRenderableProvider
     private lateinit var groundRenderable: MeshRenderableProvider
+    private var selectedFaceVertexCount = 0
     private lateinit var toolController: ToolController
     private lateinit var toolInput: ToolInputProcessor
     private lateinit var uiOverlay: SketchUiOverlay
@@ -139,6 +143,7 @@ class Main : ApplicationAdapter() {
         updateCursorStatus()
 
         updateFaceMesh()
+        updateSelectedFaceMesh()
         shadowLight.update(camera)
         renderShadowPass()
 
@@ -159,8 +164,15 @@ class Main : ApplicationAdapter() {
         modelBatch.render(groundRenderable, environment)
         modelBatch.end()
 
-        Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
-        Gdx.gl.glDepthMask(true)
+        if (selectedFaceVertexCount > 0) {
+            Gdx.gl.glEnable(GL20.GL_BLEND)
+            Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
+            modelBatch.begin(camera)
+            modelBatch.render(selectedFaceRenderable, environment)
+            modelBatch.end()
+            Gdx.gl.glDisable(GL20.GL_BLEND)
+        }
+
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         drawAxes(2.5f)
         drawGuides()
@@ -190,6 +202,7 @@ class Main : ApplicationAdapter() {
     override fun dispose() {
         shapeRenderer.dispose()
         faceMesh.dispose()
+        selectedFaceMesh.dispose()
         groundMesh.dispose()
         modelBatch.dispose()
         shadowBatch.dispose()
@@ -308,21 +321,12 @@ class Main : ApplicationAdapter() {
     private fun drawSelectionHighlights() {
         val selectedEdges = lineStore.getSelected()
         if (selectedEdges.isNotEmpty()) {
-            shapeRenderer.color = Color(1f, 0.65f, 0.2f, 1f)
+            shapeRenderer.color = Color(0.25f, 0.55f, 0.95f, 1f)
             selectedEdges.forEach { segment ->
                 shapeRenderer.line(
                     segment.start.x, segment.start.y, segment.start.z,
                     segment.end.x, segment.end.y, segment.end.z
                 )
-            }
-        }
-        val selectedFaces = faceStore.getSelected()
-        if (selectedFaces.isNotEmpty()) {
-            shapeRenderer.color = Color(1f, 0.8f, 0.25f, 1f)
-            selectedFaces.forEach { tri ->
-                shapeRenderer.line(tri.a.x, tri.a.y, tri.a.z, tri.b.x, tri.b.y, tri.b.z)
-                shapeRenderer.line(tri.b.x, tri.b.y, tri.b.z, tri.c.x, tri.c.y, tri.c.z)
-                shapeRenderer.line(tri.c.x, tri.c.y, tri.c.z, tri.a.x, tri.a.y, tri.a.z)
             }
         }
     }
@@ -401,6 +405,10 @@ class Main : ApplicationAdapter() {
             VertexAttribute(VertexAttributes.Usage.Position, 3, "a_position"),
             VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal")
         )
+        selectedFaceMesh = Mesh(false, 1, 0,
+            VertexAttribute(VertexAttributes.Usage.Position, 3, "a_position"),
+            VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal")
+        )
         groundMesh = buildGroundMesh(120f)
     }
 
@@ -413,6 +421,11 @@ class Main : ApplicationAdapter() {
             ColorAttribute.createDiffuse(Color(0.8f, 0.83f, 0.93f, 1f)),
             IntAttribute(IntAttribute.CullFace, GL20.GL_FRONT)
         )
+        selectedFaceMaterial = Material(
+            ColorAttribute.createDiffuse(Color(0.4f, 0.7f, 0.95f, 0.28f)),
+            BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, 0.28f),
+            IntAttribute(IntAttribute.CullFace, 0)
+        )
         groundMaterial = Material(
             ColorAttribute.createDiffuse(Color(0.72f, 0.70f, 0.60f, 0.5f)),
             BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, 0.5f),
@@ -420,6 +433,7 @@ class Main : ApplicationAdapter() {
         )
         faceFrontRenderable = MeshRenderableProvider(faceMesh, faceFrontMaterial, GL20.GL_TRIANGLES)
         faceBackRenderable = MeshRenderableProvider(faceMesh, faceBackMaterial, GL20.GL_TRIANGLES)
+        selectedFaceRenderable = MeshRenderableProvider(selectedFaceMesh, selectedFaceMaterial, GL20.GL_TRIANGLES)
         groundRenderable = MeshRenderableProvider(groundMesh, groundMaterial, GL20.GL_TRIANGLES)
     }
 
@@ -447,6 +461,33 @@ class Main : ApplicationAdapter() {
             faceBackRenderable = MeshRenderableProvider(faceMesh, faceBackMaterial, GL20.GL_TRIANGLES)
         }
         faceMesh.setVertices(vertices)
+    }
+
+    private fun updateSelectedFaceMesh() {
+        val selected = faceStore.getSelected()
+        val vertexCount = selected.size * 3
+        if (vertexCount == 0) {
+            selectedFaceVertexCount = 0
+            return
+        }
+        val vertices = FloatArray(vertexCount * 6)
+        var idx = 0
+        selected.forEach { tri ->
+            val normal = Vector3(tri.b).sub(tri.a).crs(Vector3(tri.c).sub(tri.a)).nor()
+            idx = writeVertex(vertices, idx, tri.a, normal)
+            idx = writeVertex(vertices, idx, tri.b, normal)
+            idx = writeVertex(vertices, idx, tri.c, normal)
+        }
+        if (selectedFaceMesh.maxVertices < vertexCount) {
+            selectedFaceMesh.dispose()
+            selectedFaceMesh = Mesh(false, vertexCount, 0,
+                VertexAttribute(VertexAttributes.Usage.Position, 3, "a_position"),
+                VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal")
+            )
+            selectedFaceRenderable = MeshRenderableProvider(selectedFaceMesh, selectedFaceMaterial, GL20.GL_TRIANGLES)
+        }
+        selectedFaceMesh.setVertices(vertices)
+        selectedFaceVertexCount = vertexCount
     }
 
     private fun writeVertex(buffer: FloatArray, start: Int, pos: Vector3, normal: Vector3): Int {
