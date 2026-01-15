@@ -23,6 +23,7 @@ import com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight
 import com.badlogic.gdx.graphics.g3d.utils.CameraInputController
 import com.badlogic.gdx.graphics.g3d.utils.DepthShaderProvider
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
+import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.utils.Array
 import com.badlogic.gdx.utils.Pool
@@ -181,6 +182,24 @@ class Main : ApplicationAdapter() {
         drawDraftLines()
         toolController.render(shapeRenderer)
         shapeRenderer.end()
+
+        val windowRect = (toolController.activeTool() as? SelectTool)
+            ?.windowRect(Gdx.graphics.width, Gdx.graphics.height)
+        if (windowRect != null) {
+            Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
+            Gdx.gl.glEnable(GL20.GL_BLEND)
+            Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
+            shapeRenderer.projectionMatrix = uiOverlay.stage.camera.combined
+            shapeRenderer.transformMatrix = Matrix4().idt()
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
+            shapeRenderer.color = Color(0.25f, 0.55f, 0.95f, 0.18f)
+            shapeRenderer.rect(windowRect.x, windowRect.y, windowRect.width, windowRect.height)
+            shapeRenderer.end()
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
+            shapeRenderer.color = Color(0.25f, 0.55f, 0.95f, 0.9f)
+            shapeRenderer.rect(windowRect.x, windowRect.y, windowRect.width, windowRect.height)
+            shapeRenderer.end()
+        }
 
         Gdx.gl.glDisable(GL20.GL_CULL_FACE)
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)

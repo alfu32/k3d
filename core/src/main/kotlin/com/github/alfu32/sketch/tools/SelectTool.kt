@@ -17,10 +17,13 @@ class SelectTool(
     private val faceStore: DraftFaceStore,
     private val camera: Camera
 ) : Tool {
+    data class WindowRect(val x: Float, val y: Float, val width: Float, val height: Float)
+
     override val id: ToolId = ToolId.SELECT
     override val message: String = "Select entities."
     private val doubleClickMs = 350L
     private val clickDistanceSq = 36
+    private val dragDistanceSq = 49
     private var lastClickTime = 0L
     private var lastClickX = 0
     private var lastClickY = 0
@@ -28,6 +31,13 @@ class SelectTool(
     private var volumeStart: Vector3? = null
     private var volumeEnd: Vector3? = null
     private var selectingVolume = false
+    private var selectingWindow = false
+    private var windowDragActive = false
+    private var windowStartX = 0
+    private var windowStartY = 0
+    private var windowEndX = 0
+    private var windowEndY = 0
+    private var pendingVolumeStart: Vector3? = null
 
     override fun onEnter(status: StatusModel) {
         status.message = "Select entities."
@@ -39,12 +49,24 @@ class SelectTool(
         selectingVolume = false
         volumeStart = null
         volumeEnd = null
+        selectingWindow = false
+        windowDragActive = false
+        pendingVolumeStart = null
         status.message = "Selection cleared."
     }
 
     override fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
         if (selectingVolume && valid && world != null) {
             volumeEnd = Vector3(world)
+        }
+        if (selectingWindow && Gdx.input.isButtonPressed(Input.Buttons.LEFT)) {
+            windowEndX = Gdx.input.x
+            windowEndY = Gdx.input.y
+            val dx = windowEndX - windowStartX
+            val dy = windowEndY - windowStartY
+            if (dx * dx + dy * dy >= dragDistanceSq) {
+                windowDragActive = true
+            }
         }
     }
 
@@ -67,25 +89,46 @@ class SelectTool(
             }
             return false
         }
-        val clickType = updateClickCount()
         val ray = camera.getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
         val faceHit = faceStore.pickTriangle(ray)
         val edgeHit = lineStore.pickSegment(ray, camera, Gdx.input.x, Gdx.input.y)
         val pickedFace = faceHit != null
         val pickedEdge = edgeHit != null
         if (!pickedFace && !pickedEdge) {
-            if (valid && world != null) {
-                selectingVolume = true
-                volumeStart = Vector3(world)
-                volumeEnd = Vector3(world)
-                status.message = "Volume select: pick second corner."
-                return true
-            }
-            return false
+            selectingWindow = true
+            windowDragActive = false
+            windowStartX = Gdx.input.x
+            windowStartY = Gdx.input.y
+            windowEndX = windowStartX
+            windowEndY = windowStartY
+            pendingVolumeStart = if (valid && world != null) Vector3(world) else null
+            return true
         }
+        val clickType = updateClickCount()
         if (clickType >= 3) {
             clickCount = 0
-            status.message = "Triple-click reserved."
+            val pickFace = pickedFace && (!pickedEdge || faceHit!!.t <= edgeHit!!.t)
+            if (pickFace) {
+                val group = faceStore.collectConnected(faceHit!!.triangle)
+                val allSelected = group.all { faceStore.isSelected(it) }
+                if (allSelected) {
+                    group.forEach { faceStore.removeSelection(it) }
+                    status.message = "Connected faces deselected."
+                } else {
+                    group.forEach { faceStore.addSelection(it) }
+                    status.message = "Connected faces selected."
+                }
+            } else {
+                val group = lineStore.collectConnected(edgeHit!!.segment)
+                val allSelected = group.all { lineStore.isSelected(it) }
+                if (allSelected) {
+                    group.forEach { lineStore.removeSelection(it) }
+                    status.message = "Connected edges deselected."
+                } else {
+                    group.forEach { lineStore.addSelection(it) }
+                    status.message = "Connected edges selected."
+                }
+            }
             return true
         }
         if (clickType == 2 && pickedFace) {
@@ -120,6 +163,54 @@ class SelectTool(
         return true
     }
 
+    override fun onPointerUp(
+        status: StatusModel,
+        world: Vector3?,
+        normal: Vector3?,
+        valid: Boolean,
+        button: Int
+    ): Boolean {
+        if (button != Input.Buttons.LEFT) {
+            return false
+        }
+        if (selectingWindow) {
+            selectingWindow = false
+            if (windowDragActive) {
+                val rect = windowRectTopLeft()
+                if (rect != null) {
+                    faceStore.clearSelection()
+                    lineStore.clearSelection()
+                    val faces = selectFacesInWindow(rect)
+                    val edges = selectEdgesInWindow(rect)
+                    status.message = "Window select | edges $edges faces $faces"
+                    return true
+                }
+            } else if (pendingVolumeStart != null) {
+                selectingVolume = true
+                volumeStart = pendingVolumeStart
+                volumeEnd = pendingVolumeStart?.cpy()
+                status.message = "Volume select: pick second corner."
+                pendingVolumeStart = null
+                return true
+            }
+            pendingVolumeStart = null
+        }
+        return false
+    }
+
+    fun windowRect(screenWidth: Int, screenHeight: Int): WindowRect? {
+        if (!windowDragActive) {
+            return null
+        }
+        val minX = kotlin.math.min(windowStartX, windowEndX).toFloat()
+        val maxX = kotlin.math.max(windowStartX, windowEndX).toFloat()
+        val minY = kotlin.math.min(windowStartY, windowEndY).toFloat()
+        val maxY = kotlin.math.max(windowStartY, windowEndY).toFloat()
+        val bottom = screenHeight - maxY
+        val top = screenHeight - minY
+        return WindowRect(minX, bottom, maxX - minX, top - bottom)
+    }
+
     override fun render(renderer: ShapeRenderer) {
         val start = volumeStart ?: return
         val end = volumeEnd ?: return
@@ -152,6 +243,66 @@ class SelectTool(
         val faceCount = faceStore.selectInVolume(min, max, replace = true)
         val edgeCount = lineStore.selectInVolume(min, max, replace = true)
         status.message = "Volume select | edges $edgeCount faces $faceCount"
+    }
+
+    private data class WindowRectTopLeft(
+        val minX: Float,
+        val maxX: Float,
+        val minY: Float,
+        val maxY: Float
+    )
+
+    private fun windowRectTopLeft(): WindowRectTopLeft? {
+        if (!windowDragActive) {
+            return null
+        }
+        val minX = kotlin.math.min(windowStartX, windowEndX).toFloat()
+        val maxX = kotlin.math.max(windowStartX, windowEndX).toFloat()
+        val minY = kotlin.math.min(windowStartY, windowEndY).toFloat()
+        val maxY = kotlin.math.max(windowStartY, windowEndY).toFloat()
+        return WindowRectTopLeft(minX, maxX, minY, maxY)
+    }
+
+    private fun selectFacesInWindow(rect: WindowRectTopLeft): Int {
+        var count = 0
+        faceStore.getTriangles().forEach { tri ->
+            val a = projectToScreen(tri.a)
+            val b = projectToScreen(tri.b)
+            val c = projectToScreen(tri.c)
+            if (pointInRect(a, rect) && pointInRect(b, rect) && pointInRect(c, rect)) {
+                if (faceStore.addSelection(tri)) {
+                    count++
+                }
+            }
+        }
+        return count
+    }
+
+    private fun selectEdgesInWindow(rect: WindowRectTopLeft): Int {
+        var count = 0
+        lineStore.getSegments().forEach { segment ->
+            val a = projectToScreen(segment.start)
+            val b = projectToScreen(segment.end)
+            if (pointInRect(a, rect) && pointInRect(b, rect)) {
+                if (lineStore.addSelection(segment)) {
+                    count++
+                }
+            }
+        }
+        return count
+    }
+
+    private fun projectToScreen(point: Vector3): Vector3 {
+        val projected = camera.project(Vector3(point))
+        projected.y = Gdx.graphics.height - projected.y
+        return projected
+    }
+
+    private fun pointInRect(point: Vector3, rect: WindowRectTopLeft): Boolean {
+        return point.x >= rect.minX &&
+            point.x <= rect.maxX &&
+            point.y >= rect.minY &&
+            point.y <= rect.maxY
     }
 
     private fun updateClickCount(): Int {

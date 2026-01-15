@@ -34,6 +34,10 @@ class ToolController(
         return activeTool.id
     }
 
+    fun activeTool(): Tool {
+        return activeTool
+    }
+
     fun cancelActiveTool() {
         activeTool.onCancel(status)
         resetToDefault()

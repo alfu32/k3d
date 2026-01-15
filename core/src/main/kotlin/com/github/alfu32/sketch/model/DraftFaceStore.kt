@@ -144,6 +144,46 @@ class DraftFaceStore {
         return result
     }
 
+    fun collectConnected(base: Triangle): List<Triangle> {
+        if (triangles.isEmpty()) {
+            return emptyList()
+        }
+        val edgeMap = mutableMapOf<EdgeKey, MutableList<Triangle>>()
+        triangles.forEach { tri ->
+            val edges = listOf(
+                edgeKey(tri.a, tri.b),
+                edgeKey(tri.b, tri.c),
+                edgeKey(tri.c, tri.a)
+            )
+            edges.forEach { key ->
+                edgeMap.getOrPut(key) { mutableListOf() }.add(tri)
+            }
+        }
+        val result = mutableListOf<Triangle>()
+        val queue = ArrayDeque<Triangle>()
+        val visited = mutableSetOf<Triangle>()
+        queue.add(base)
+        visited.add(base)
+        while (queue.isNotEmpty()) {
+            val current = queue.removeFirst()
+            result.add(current)
+            val edges = listOf(
+                edgeKey(current.a, current.b),
+                edgeKey(current.b, current.c),
+                edgeKey(current.c, current.a)
+            )
+            edges.forEach { key ->
+                edgeMap[key].orEmpty().forEach { neighbor ->
+                    if (neighbor !in visited) {
+                        visited.add(neighbor)
+                        queue.add(neighbor)
+                    }
+                }
+            }
+        }
+        return result
+    }
+
     fun cleanupCoplanarFaces() {
         if (triangles.isEmpty()) {
             return

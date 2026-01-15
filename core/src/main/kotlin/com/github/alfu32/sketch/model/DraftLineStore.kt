@@ -64,6 +64,14 @@ class DraftLineStore {
 
     fun getSelected(): Set<Segment> = selected
 
+    fun isSelected(segment: Segment): Boolean = selected.contains(segment)
+
+    fun addSelection(segment: Segment): Boolean = selected.add(segment)
+
+    fun removeSelection(segment: Segment) {
+        selected.remove(segment)
+    }
+
     fun toggleSelection(segment: Segment) {
         if (!selected.add(segment)) {
             selected.remove(segment)
@@ -117,6 +125,38 @@ class DraftLineStore {
             }
         }
         return best
+    }
+
+    fun collectConnected(base: Segment): List<Segment> {
+        if (segments.isEmpty()) {
+            return emptyList()
+        }
+        val endpointMap = mutableMapOf<VertexKey, MutableList<Segment>>()
+        segments.forEach { segment ->
+            val a = vertexKey(segment.start)
+            val b = vertexKey(segment.end)
+            endpointMap.getOrPut(a) { mutableListOf() }.add(segment)
+            endpointMap.getOrPut(b) { mutableListOf() }.add(segment)
+        }
+        val result = mutableListOf<Segment>()
+        val queue = ArrayDeque<Segment>()
+        val visited = mutableSetOf<Segment>()
+        queue.add(base)
+        visited.add(base)
+        while (queue.isNotEmpty()) {
+            val current = queue.removeFirst()
+            result.add(current)
+            val a = vertexKey(current.start)
+            val b = vertexKey(current.end)
+            val neighbors = endpointMap[a].orEmpty() + endpointMap[b].orEmpty()
+            neighbors.forEach { neighbor ->
+                if (neighbor !in visited) {
+                    visited.add(neighbor)
+                    queue.add(neighbor)
+                }
+            }
+        }
+        return result
     }
 
     private fun closestRaySegment(
@@ -311,5 +351,13 @@ class DraftLineStore {
         }
         return true
     }
+
+    private data class VertexKey(val x: Int, val y: Int, val z: Int)
+
+    private fun vertexKey(point: Vector3): VertexKey {
+        return VertexKey(quant(point.x), quant(point.y), quant(point.z))
+    }
+
+    private fun quant(value: Float): Int = kotlin.math.round(value / epsilon).toInt()
 
 }
