@@ -57,7 +57,7 @@ class SelectTool(
 
     override fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
         if (selectingVolume && valid && world != null) {
-            volumeEnd = Vector3(world)
+            setVolumeBounds(volumeStart ?: world, world)
         }
         if (selectingWindow && Gdx.input.isButtonPressed(Input.Buttons.LEFT)) {
             windowEndX = Gdx.input.x
@@ -82,7 +82,7 @@ class SelectTool(
         }
         if (selectingVolume) {
             if (valid && world != null) {
-                volumeEnd = Vector3(world)
+                setVolumeBounds(volumeStart ?: world, world)
                 finalizeVolumeSelection(status)
                 selectingVolume = false
                 return true
@@ -174,26 +174,28 @@ class SelectTool(
             return false
         }
         if (selectingWindow) {
+            windowEndX = Gdx.input.x
+            windowEndY = Gdx.input.y
+            val rect = if (windowDragActive) windowRectTopLeft() else null
+            val hadDrag = windowDragActive
             selectingWindow = false
-            if (windowDragActive) {
-                val rect = windowRectTopLeft()
-                if (rect != null) {
-                    faceStore.clearSelection()
-                    lineStore.clearSelection()
-                    val faces = selectFacesInWindow(rect)
-                    val edges = selectEdgesInWindow(rect)
-                    status.message = "Window select | edges $edges faces $faces"
-                    return true
-                }
+            windowDragActive = false
+            if (rect != null) {
+                faceStore.clearSelection()
+                lineStore.clearSelection()
+                val faces = selectFacesInWindow(rect)
+                val edges = selectEdgesInWindow(rect)
+                status.message = "Window select | edges $edges faces $faces"
+                return true
             } else if (pendingVolumeStart != null) {
                 selectingVolume = true
-                volumeStart = pendingVolumeStart
-                volumeEnd = pendingVolumeStart?.cpy()
+                setVolumeBounds(pendingVolumeStart!!, pendingVolumeStart!!)
                 status.message = "Volume select: pick second corner."
                 pendingVolumeStart = null
                 return true
             }
             pendingVolumeStart = null
+            return hadDrag
         }
         return false
     }
@@ -230,18 +232,8 @@ class SelectTool(
     private fun finalizeVolumeSelection(status: StatusModel) {
         val start = volumeStart ?: return
         val end = volumeEnd ?: return
-        val min = Vector3(
-            kotlin.math.min(start.x, end.x),
-            kotlin.math.min(start.y, end.y),
-            kotlin.math.min(start.z, end.z)
-        )
-        val max = Vector3(
-            kotlin.math.max(start.x, end.x),
-            kotlin.math.max(start.y, end.y),
-            kotlin.math.max(start.z, end.z)
-        )
-        val faceCount = faceStore.selectInVolume(min, max, replace = true)
-        val edgeCount = lineStore.selectInVolume(min, max, replace = true)
+        val faceCount = faceStore.selectInVolume(start, end, replace = true)
+        val edgeCount = lineStore.selectInVolume(start, end, replace = true)
         status.message = "Volume select | edges $edgeCount faces $faceCount"
     }
 
@@ -322,6 +314,21 @@ class SelectTool(
         lastClickX = x
         lastClickY = y
         return clickCount
+    }
+
+    private fun setVolumeBounds(a: Vector3, b: Vector3) {
+        val min = Vector3(
+            kotlin.math.min(a.x, b.x),
+            kotlin.math.min(a.y, b.y),
+            kotlin.math.min(a.z, b.z)
+        )
+        val max = Vector3(
+            kotlin.math.max(a.x, b.x),
+            kotlin.math.max(a.y, b.y),
+            kotlin.math.max(a.z, b.z)
+        )
+        volumeStart = min
+        volumeEnd = max
     }
 
 }
