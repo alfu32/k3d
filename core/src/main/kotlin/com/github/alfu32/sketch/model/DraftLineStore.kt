@@ -74,6 +74,21 @@ class DraftLineStore {
         selected.clear()
     }
 
+    fun selectInVolume(min: Vector3, max: Vector3, replace: Boolean = true): Int {
+        if (replace) {
+            selected.clear()
+        }
+        var count = 0
+        segments.forEach { segment ->
+            if (segmentIntersectsAabb(segment.start, segment.end, min, max)) {
+                if (selected.add(segment)) {
+                    count++
+                }
+            }
+        }
+        return count
+    }
+
     fun cleanup() {
         if (segments.isEmpty()) {
             return
@@ -238,6 +253,63 @@ class DraftLineStore {
             }
         }
         return result
+    }
+
+    private fun segmentIntersectsAabb(a: Vector3, b: Vector3, min: Vector3, max: Vector3): Boolean {
+        var tmin = 0f
+        var tmax = 1f
+
+        val dx = b.x - a.x
+        if (kotlin.math.abs(dx) < epsilon) {
+            if (a.x < min.x || a.x > max.x) return false
+        } else {
+            val inv = 1f / dx
+            var t1 = (min.x - a.x) * inv
+            var t2 = (max.x - a.x) * inv
+            if (t1 > t2) {
+                val tmp = t1
+                t1 = t2
+                t2 = tmp
+            }
+            tmin = kotlin.math.max(tmin, t1)
+            tmax = kotlin.math.min(tmax, t2)
+            if (tmin > tmax) return false
+        }
+
+        val dy = b.y - a.y
+        if (kotlin.math.abs(dy) < epsilon) {
+            if (a.y < min.y || a.y > max.y) return false
+        } else {
+            val inv = 1f / dy
+            var t1 = (min.y - a.y) * inv
+            var t2 = (max.y - a.y) * inv
+            if (t1 > t2) {
+                val tmp = t1
+                t1 = t2
+                t2 = tmp
+            }
+            tmin = kotlin.math.max(tmin, t1)
+            tmax = kotlin.math.min(tmax, t2)
+            if (tmin > tmax) return false
+        }
+
+        val dz = b.z - a.z
+        if (kotlin.math.abs(dz) < epsilon) {
+            if (a.z < min.z || a.z > max.z) return false
+        } else {
+            val inv = 1f / dz
+            var t1 = (min.z - a.z) * inv
+            var t2 = (max.z - a.z) * inv
+            if (t1 > t2) {
+                val tmp = t1
+                t1 = t2
+                t2 = tmp
+            }
+            tmin = kotlin.math.max(tmin, t1)
+            tmax = kotlin.math.min(tmax, t2)
+            if (tmin > tmax) return false
+        }
+        return true
     }
 
 }

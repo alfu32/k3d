@@ -322,12 +322,14 @@ class Main : ApplicationAdapter() {
         val selectedEdges = lineStore.getSelected()
         if (selectedEdges.isNotEmpty()) {
             shapeRenderer.color = Color(0.25f, 0.55f, 0.95f, 1f)
+            Gdx.gl.glLineWidth(6f)
             selectedEdges.forEach { segment ->
                 shapeRenderer.line(
                     segment.start.x, segment.start.y, segment.start.z,
                     segment.end.x, segment.end.y, segment.end.z
                 )
             }
+            Gdx.gl.glLineWidth(4f)
         }
     }
 
@@ -422,8 +424,8 @@ class Main : ApplicationAdapter() {
             IntAttribute(IntAttribute.CullFace, GL20.GL_FRONT)
         )
         selectedFaceMaterial = Material(
-            ColorAttribute.createDiffuse(Color(0.4f, 0.7f, 0.95f, 0.28f)),
-            BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, 0.28f),
+            ColorAttribute.createDiffuse(Color(0.35f, 0.7f, 0.95f, 0.45f)),
+            BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, 0.45f),
             IntAttribute(IntAttribute.CullFace, 0)
         )
         groundMaterial = Material(

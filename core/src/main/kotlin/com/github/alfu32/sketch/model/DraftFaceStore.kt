@@ -37,6 +37,14 @@ class DraftFaceStore {
 
     fun getSelected(): Set<Triangle> = selected
 
+    fun isSelected(triangle: Triangle): Boolean = selected.contains(triangle)
+
+    fun addSelection(triangle: Triangle): Boolean = selected.add(triangle)
+
+    fun removeSelection(triangle: Triangle) {
+        selected.remove(triangle)
+    }
+
     fun toggleSelection(triangle: Triangle) {
         if (!selected.add(triangle)) {
             selected.remove(triangle)
@@ -45,6 +53,21 @@ class DraftFaceStore {
 
     fun clearSelection() {
         selected.clear()
+    }
+
+    fun selectInVolume(min: Vector3, max: Vector3, replace: Boolean = true): Int {
+        if (replace) {
+            selected.clear()
+        }
+        var count = 0
+        triangles.forEach { tri ->
+            if (triangleIntersectsAabb(tri, min, max)) {
+                if (selected.add(tri)) {
+                    count++
+                }
+            }
+        }
+        return count
     }
 
     fun pickTriangle(ray: com.badlogic.gdx.math.collision.Ray): Hit? {
@@ -198,6 +221,81 @@ class DraftFaceStore {
                 break
             }
         }
+    }
+
+    private fun triangleIntersectsAabb(triangle: Triangle, min: Vector3, max: Vector3): Boolean {
+        if (pointInsideAabb(triangle.a, min, max) ||
+            pointInsideAabb(triangle.b, min, max) ||
+            pointInsideAabb(triangle.c, min, max)) {
+            return true
+        }
+        if (segmentIntersectsAabb(triangle.a, triangle.b, min, max)) return true
+        if (segmentIntersectsAabb(triangle.b, triangle.c, min, max)) return true
+        if (segmentIntersectsAabb(triangle.c, triangle.a, min, max)) return true
+        return false
+    }
+
+    private fun pointInsideAabb(point: Vector3, min: Vector3, max: Vector3): Boolean {
+        return point.x >= min.x - epsilon && point.x <= max.x + epsilon &&
+            point.y >= min.y - epsilon && point.y <= max.y + epsilon &&
+            point.z >= min.z - epsilon && point.z <= max.z + epsilon
+    }
+
+    private fun segmentIntersectsAabb(a: Vector3, b: Vector3, min: Vector3, max: Vector3): Boolean {
+        var tmin = 0f
+        var tmax = 1f
+
+        val dx = b.x - a.x
+        if (kotlin.math.abs(dx) < epsilon) {
+            if (a.x < min.x || a.x > max.x) return false
+        } else {
+            val inv = 1f / dx
+            var t1 = (min.x - a.x) * inv
+            var t2 = (max.x - a.x) * inv
+            if (t1 > t2) {
+                val tmp = t1
+                t1 = t2
+                t2 = tmp
+            }
+            tmin = kotlin.math.max(tmin, t1)
+            tmax = kotlin.math.min(tmax, t2)
+            if (tmin > tmax) return false
+        }
+
+        val dy = b.y - a.y
+        if (kotlin.math.abs(dy) < epsilon) {
+            if (a.y < min.y || a.y > max.y) return false
+        } else {
+            val inv = 1f / dy
+            var t1 = (min.y - a.y) * inv
+            var t2 = (max.y - a.y) * inv
+            if (t1 > t2) {
+                val tmp = t1
+                t1 = t2
+                t2 = tmp
+            }
+            tmin = kotlin.math.max(tmin, t1)
+            tmax = kotlin.math.min(tmax, t2)
+            if (tmin > tmax) return false
+        }
+
+        val dz = b.z - a.z
+        if (kotlin.math.abs(dz) < epsilon) {
+            if (a.z < min.z || a.z > max.z) return false
+        } else {
+            val inv = 1f / dz
+            var t1 = (min.z - a.z) * inv
+            var t2 = (max.z - a.z) * inv
+            if (t1 > t2) {
+                val tmp = t1
+                t1 = t2
+                t2 = tmp
+            }
+            tmin = kotlin.math.max(tmin, t1)
+            tmax = kotlin.math.min(tmax, t2)
+            if (tmin > tmax) return false
+        }
+        return true
     }
 
     private fun projectTo2D(points: List<Vector3>, normal: Vector3): List<Vector2> {

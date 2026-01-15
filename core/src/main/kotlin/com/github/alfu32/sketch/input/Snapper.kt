@@ -29,7 +29,8 @@ class Snapper(
         var best: SnapCandidate? = null
 
         faceStore.pickTriangle(ray)?.let { hit ->
-            val candidate = SnapCandidate(hit.point, hit.normal, SnapType.FACE, 0f, hit.t, SnapSource.FACE)
+            val faceNormal = facingNormal(Vector3(hit.normal), ray.direction)
+            val candidate = SnapCandidate(hit.point, faceNormal, SnapType.FACE, 0f, hit.t, SnapSource.FACE)
             best = pickBetter(best, candidate)
         }
 
