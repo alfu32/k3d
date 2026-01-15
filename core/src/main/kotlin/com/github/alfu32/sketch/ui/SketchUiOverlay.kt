@@ -20,6 +20,8 @@ class SketchUiOverlay(
     private val controller: ToolController,
     private val status: StatusModel,
     private val cleanupAction: () -> Unit,
+    private val deleteSelectionAction: () -> Unit,
+    private val flipFacesAction: () -> Unit,
     private val selectionInfoProvider: () -> SelectionInfo
 ) {
     val stage: Stage = Stage(ScreenViewport())
@@ -116,6 +118,22 @@ class SketchUiOverlay(
             }
         })
         toolbar.add(cleanupButton).left().row()
+
+        val deleteButton = VisImageTextButton("Delete", createActionIconDrawable(Color(0.9f, 0.45f, 0.45f, 1f)))
+        deleteButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                deleteSelectionAction()
+            }
+        })
+        toolbar.add(deleteButton).left().row()
+
+        val flipButton = VisImageTextButton("Flip Faces", createActionIconDrawable(Color(0.45f, 0.65f, 0.95f, 1f)))
+        flipButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                flipFacesAction()
+            }
+        })
+        toolbar.add(flipButton).left().row()
 
         return toolbar
     }

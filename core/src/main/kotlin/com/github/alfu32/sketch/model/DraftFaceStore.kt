@@ -55,6 +55,39 @@ class DraftFaceStore {
         selected.clear()
     }
 
+    fun flipSelected(): Int {
+        if (selected.isEmpty()) {
+            return 0
+        }
+        val oldSelected = selected.toSet()
+        val newSelected = mutableSetOf<Triangle>()
+        val newTriangles = mutableListOf<Triangle>()
+        triangles.forEach { tri ->
+            if (oldSelected.contains(tri)) {
+                val flipped = Triangle(Vector3(tri.a), Vector3(tri.c), Vector3(tri.b))
+                newTriangles.add(flipped)
+                newSelected.add(flipped)
+            } else {
+                newTriangles.add(tri)
+            }
+        }
+        triangles.clear()
+        triangles.addAll(newTriangles)
+        selected.clear()
+        selected.addAll(newSelected)
+        return newSelected.size
+    }
+
+    fun deleteSelected(): Int {
+        if (selected.isEmpty()) {
+            return 0
+        }
+        val before = triangles.size
+        triangles.removeAll(selected)
+        selected.clear()
+        return before - triangles.size
+    }
+
     fun selectInVolume(min: Vector3, max: Vector3, replace: Boolean = true): Int {
         if (replace) {
             selected.clear()

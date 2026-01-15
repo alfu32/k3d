@@ -123,8 +123,21 @@ class Main : ApplicationAdapter() {
                 SimpleTool(ToolId.ERASER, "Click to erase edges.")
             )
         )
-        toolInput = ToolInputProcessor(toolController, guideManager, ::runCleanup, ::clearSelection) { lastSnap }
-        uiOverlay = SketchUiOverlay(toolController, statusModel, ::runCleanup, ::selectionInfo)
+        toolInput = ToolInputProcessor(
+            toolController,
+            guideManager,
+            ::runCleanup,
+            ::clearSelection,
+            ::deleteSelection
+        ) { lastSnap }
+        uiOverlay = SketchUiOverlay(
+            toolController,
+            statusModel,
+            ::runCleanup,
+            ::deleteSelection,
+            ::flipSelectedFaces,
+            ::selectionInfo
+        )
         toolPointer = ToolPointerProcessor(toolController, snapper)
         Gdx.input.inputProcessor = InputMultiplexer(
             uiOverlay.stage,
@@ -370,6 +383,17 @@ class Main : ApplicationAdapter() {
         lineStore.clearSelection()
         faceStore.clearSelection()
         statusModel.message = "Selection cleared."
+    }
+
+    private fun deleteSelection() {
+        val edges = lineStore.deleteSelected()
+        val faces = faceStore.deleteSelected()
+        statusModel.message = "Deleted | edges $edges faces $faces"
+    }
+
+    private fun flipSelectedFaces() {
+        val flipped = faceStore.flipSelected()
+        statusModel.message = "Flipped faces: $flipped"
     }
 
     private fun selectionInfo(): SketchUiOverlay.SelectionInfo {

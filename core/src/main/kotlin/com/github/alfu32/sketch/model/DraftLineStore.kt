@@ -82,6 +82,16 @@ class DraftLineStore {
         selected.clear()
     }
 
+    fun deleteSelected(): Int {
+        if (selected.isEmpty()) {
+            return 0
+        }
+        val before = segments.size
+        segments.removeAll(selected)
+        selected.clear()
+        return before - segments.size
+    }
+
     fun selectInVolume(min: Vector3, max: Vector3, replace: Boolean = true): Int {
         if (replace) {
             selected.clear()

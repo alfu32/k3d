@@ -12,6 +12,7 @@ class ToolInputProcessor(
     private val guideManager: GuideManager,
     private val cleanupAction: () -> Unit,
     private val clearSelectionAction: () -> Unit,
+    private val deleteSelectionAction: () -> Unit,
     private val lastSnapProvider: () -> SnapResult?
 ) : InputAdapter() {
     override fun keyDown(keycode: Int): Boolean {
@@ -24,6 +25,10 @@ class ToolInputProcessor(
                 controller.cancelActiveTool()
                 return true
             }
+            Input.Keys.DEL, Input.Keys.FORWARD_DEL -> {
+                deleteSelectionAction()
+                return true
+            }
             Input.Keys.BACKSPACE -> {
                 controller.backspaceInput()
                 return true
@@ -32,17 +37,19 @@ class ToolInputProcessor(
                 controller.commitInput()
                 return true
             }
+            Input.Keys.T -> {
+                val snap = lastSnapProvider()
+                val point = snap?.world
+                if (snap != null && snap.valid && point != null) {
+                    guideManager.addAxisGuide(point)
+                }
+                return true
+            }
             Input.Keys.G -> {
                 val snap = lastSnapProvider()
                 val point = snap?.world
                 if (snap != null && snap.valid && point != null) {
-                    val alt = Gdx.input.isKeyPressed(Input.Keys.ALT_LEFT) ||
-                        Gdx.input.isKeyPressed(Input.Keys.ALT_RIGHT)
-                    if (alt) {
-                        guideManager.addAxisGuide(point)
-                    } else {
-                        guideManager.addGridGuide(point)
-                    }
+                    guideManager.addGridGuide(point)
                 }
                 return true
             }
