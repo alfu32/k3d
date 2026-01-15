@@ -47,4 +47,4 @@ do
 done
 
 
-cp scripts/katechup3d-* ./dist/
+cp scripts/katechup3d* ./dist/
