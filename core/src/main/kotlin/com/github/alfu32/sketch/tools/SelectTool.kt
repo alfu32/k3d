@@ -228,7 +228,7 @@ class SelectTool(
         val maxY = kotlin.math.max(start.y, end.y)
         val maxZ = kotlin.math.max(start.z, end.z)
         renderer.color = com.badlogic.gdx.graphics.Color(0.25f, 0.55f, 0.95f, 0.35f)
-        renderer.box(minX, minY, minZ, maxX - minX, maxY - minY, maxZ - minZ)
+        drawWireBox(renderer, minX, minY, minZ, maxX, maxY, maxZ)
     }
 
     private fun finalizeVolumeSelection(status: StatusModel) {
@@ -331,6 +331,32 @@ class SelectTool(
             kotlin.math.max(start.z, end.z)
         )
         return min to max
+    }
+
+    private fun drawWireBox(
+        renderer: ShapeRenderer,
+        minX: Float,
+        minY: Float,
+        minZ: Float,
+        maxX: Float,
+        maxY: Float,
+        maxZ: Float
+    ) {
+        // Bottom rectangle
+        renderer.line(minX, minY, minZ, maxX, minY, minZ)
+        renderer.line(maxX, minY, minZ, maxX, minY, maxZ)
+        renderer.line(maxX, minY, maxZ, minX, minY, maxZ)
+        renderer.line(minX, minY, maxZ, minX, minY, minZ)
+        // Top rectangle
+        renderer.line(minX, maxY, minZ, maxX, maxY, minZ)
+        renderer.line(maxX, maxY, minZ, maxX, maxY, maxZ)
+        renderer.line(maxX, maxY, maxZ, minX, maxY, maxZ)
+        renderer.line(minX, maxY, maxZ, minX, maxY, minZ)
+        // Vertical edges
+        renderer.line(minX, minY, minZ, minX, maxY, minZ)
+        renderer.line(maxX, minY, minZ, maxX, maxY, minZ)
+        renderer.line(maxX, minY, maxZ, maxX, maxY, maxZ)
+        renderer.line(minX, minY, maxZ, minX, maxY, maxZ)
     }
 
 }
