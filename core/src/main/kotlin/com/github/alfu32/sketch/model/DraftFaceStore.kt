@@ -3,17 +3,22 @@ package com.github.alfu32.sketch.model
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
 
-class DraftFaceStore {
+class DraftFaceStore(
+    private val defaultColor: com.badlogic.gdx.graphics.Color = com.badlogic.gdx.graphics.Color(0.93f, 0.93f, 0.93f, 1f)
+) {
     data class Triangle(val a: Vector3, val b: Vector3, val c: Vector3)
     data class Hit(val triangle: Triangle, val point: Vector3, val normal: Vector3, val t: Float)
 
     private val triangles = mutableListOf<Triangle>()
     private val selected = mutableSetOf<Triangle>()
+    private val colors = mutableMapOf<Triangle, com.badlogic.gdx.graphics.Color>()
     private val epsilon = 1e-4f
     private val epsilonSq = epsilon * epsilon
 
     fun addTriangle(a: Vector3, b: Vector3, c: Vector3) {
-        triangles.add(Triangle(Vector3(a), Vector3(b), Vector3(c)))
+        val triangle = Triangle(Vector3(a), Vector3(b), Vector3(c))
+        triangles.add(triangle)
+        colors[triangle] = com.badlogic.gdx.graphics.Color(defaultColor)
     }
 
     fun addPolygon(points: List<Vector3>, preferredNormal: Vector3? = null) {
@@ -36,6 +41,10 @@ class DraftFaceStore {
     fun getTriangles(): List<Triangle> = triangles
 
     fun getSelected(): Set<Triangle> = selected
+
+    fun colorFor(triangle: Triangle): com.badlogic.gdx.graphics.Color {
+        return colors[triangle] ?: defaultColor
+    }
 
     fun isSelected(triangle: Triangle): Boolean = selected.contains(triangle)
 
@@ -65,6 +74,7 @@ class DraftFaceStore {
         triangles.forEach { tri ->
             if (oldSelected.contains(tri)) {
                 val flipped = Triangle(Vector3(tri.a), Vector3(tri.c), Vector3(tri.b))
+                colors[flipped] = colors.remove(tri) ?: com.badlogic.gdx.graphics.Color(defaultColor)
                 newTriangles.add(flipped)
                 newSelected.add(flipped)
             } else {
@@ -83,9 +93,24 @@ class DraftFaceStore {
             return 0
         }
         val before = triangles.size
+        selected.forEach { colors.remove(it) }
         triangles.removeAll(selected)
         selected.clear()
         return before - triangles.size
+    }
+
+    fun paintSelected(color: com.badlogic.gdx.graphics.Color): Int {
+        if (selected.isEmpty()) {
+            return 0
+        }
+        selected.forEach { triangle ->
+            colors[triangle] = com.badlogic.gdx.graphics.Color(color)
+        }
+        return selected.size
+    }
+
+    fun paintTriangle(triangle: Triangle, color: com.badlogic.gdx.graphics.Color) {
+        colors[triangle] = com.badlogic.gdx.graphics.Color(color)
     }
 
     fun selectInVolume(min: Vector3, max: Vector3, replace: Boolean = true): Int {

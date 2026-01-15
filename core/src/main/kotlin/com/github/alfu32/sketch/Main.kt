@@ -36,6 +36,7 @@ import com.github.alfu32.sketch.model.DraftLineStore
 import com.github.alfu32.sketch.model.ModelCleanup
 import com.github.alfu32.sketch.tools.CircleTool
 import com.github.alfu32.sketch.tools.LineTool
+import com.github.alfu32.sketch.tools.PaintTool
 import com.github.alfu32.sketch.tools.PushPullTool
 import com.github.alfu32.sketch.tools.RectangleTool
 import com.github.alfu32.sketch.tools.SelectTool
@@ -104,7 +105,7 @@ class Main : ApplicationAdapter() {
             inputBuffer = ""
         )
         lineStore = DraftLineStore()
-        faceStore = DraftFaceStore()
+        faceStore = DraftFaceStore(Color(0.8f, 0.8f, 0.8f, 1f))
         modelCleanup = ModelCleanup(lineStore, faceStore)
         guideManager = GuideManager()
         snapper = Snapper(camera, lineStore, faceStore, guideManager, gridSpacing)
@@ -119,7 +120,7 @@ class Main : ApplicationAdapter() {
                 SimpleTool(ToolId.MOVE, "Select and move."),
                 SimpleTool(ToolId.ROTATE, "Select and rotate."),
                 SimpleTool(ToolId.SCALE, "Select and scale."),
-                SimpleTool(ToolId.PAINT, "Click to paint faces."),
+                PaintTool(faceStore, camera) { statusModel.paintColor.cpy() },
                 SimpleTool(ToolId.ERASER, "Click to erase edges.")
             )
         )
@@ -452,18 +453,20 @@ class Main : ApplicationAdapter() {
     private fun setupMeshes() {
         faceMesh = Mesh(false, 1, 0,
             VertexAttribute(VertexAttributes.Usage.Position, 3, "a_position"),
-            VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal")
+            VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal"),
+            VertexAttribute(VertexAttributes.Usage.ColorUnpacked, 4, "a_color")
         )
         selectedFaceMesh = Mesh(false, 1, 0,
             VertexAttribute(VertexAttributes.Usage.Position, 3, "a_position"),
-            VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal")
+            VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal"),
+            VertexAttribute(VertexAttributes.Usage.ColorUnpacked, 4, "a_color")
         )
         groundMesh = buildGroundMesh(120f)
     }
 
     private fun setupRenderables() {
         faceFrontMaterial = Material(
-            ColorAttribute.createDiffuse(Color(0.93f, 0.93f, 0.93f, 1f)),
+            ColorAttribute.createDiffuse(Color.WHITE),
             IntAttribute(IntAttribute.CullFace, GL20.GL_BACK)
         )
         faceBackMaterial = Material(
@@ -471,8 +474,8 @@ class Main : ApplicationAdapter() {
             IntAttribute(IntAttribute.CullFace, GL20.GL_FRONT)
         )
         selectedFaceMaterial = Material(
-            ColorAttribute.createDiffuse(Color(0.35f, 0.7f, 0.95f, 0.45f)),
-            BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, 0.45f),
+            ColorAttribute.createDiffuse(Color.WHITE),
+            BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, 0.6f),
             IntAttribute(IntAttribute.CullFace, 0)
         )
         groundMaterial = Material(
@@ -492,19 +495,21 @@ class Main : ApplicationAdapter() {
         if (vertexCount == 0) {
             return
         }
-        val vertices = FloatArray(vertexCount * 6)
+        val vertices = FloatArray(vertexCount * 10)
         var idx = 0
         triangles.forEach { tri ->
             val normal = Vector3(tri.b).sub(tri.a).crs(Vector3(tri.c).sub(tri.a)).nor()
-            idx = writeVertex(vertices, idx, tri.a, normal)
-            idx = writeVertex(vertices, idx, tri.b, normal)
-            idx = writeVertex(vertices, idx, tri.c, normal)
+            val color = faceStore.colorFor(tri)
+            idx = writeVertex(vertices, idx, tri.a, normal, color)
+            idx = writeVertex(vertices, idx, tri.b, normal, color)
+            idx = writeVertex(vertices, idx, tri.c, normal, color)
         }
         if (faceMesh.maxVertices < vertexCount) {
             faceMesh.dispose()
             faceMesh = Mesh(false, vertexCount, 0,
                 VertexAttribute(VertexAttributes.Usage.Position, 3, "a_position"),
-                VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal")
+                VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal"),
+                VertexAttribute(VertexAttributes.Usage.ColorUnpacked, 4, "a_color")
             )
             faceFrontRenderable = MeshRenderableProvider(faceMesh, faceFrontMaterial, GL20.GL_TRIANGLES)
             faceBackRenderable = MeshRenderableProvider(faceMesh, faceBackMaterial, GL20.GL_TRIANGLES)
@@ -519,19 +524,21 @@ class Main : ApplicationAdapter() {
             selectedFaceVertexCount = 0
             return
         }
-        val vertices = FloatArray(vertexCount * 6)
+        val vertices = FloatArray(vertexCount * 10)
         var idx = 0
+        val highlight = Color(0.35f, 0.7f, 0.95f, 0.6f)
         selected.forEach { tri ->
             val normal = Vector3(tri.b).sub(tri.a).crs(Vector3(tri.c).sub(tri.a)).nor()
-            idx = writeVertex(vertices, idx, tri.a, normal)
-            idx = writeVertex(vertices, idx, tri.b, normal)
-            idx = writeVertex(vertices, idx, tri.c, normal)
+            idx = writeVertex(vertices, idx, tri.a, normal, highlight)
+            idx = writeVertex(vertices, idx, tri.b, normal, highlight)
+            idx = writeVertex(vertices, idx, tri.c, normal, highlight)
         }
         if (selectedFaceMesh.maxVertices < vertexCount) {
             selectedFaceMesh.dispose()
             selectedFaceMesh = Mesh(false, vertexCount, 0,
                 VertexAttribute(VertexAttributes.Usage.Position, 3, "a_position"),
-                VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal")
+                VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal"),
+                VertexAttribute(VertexAttributes.Usage.ColorUnpacked, 4, "a_color")
             )
             selectedFaceRenderable = MeshRenderableProvider(selectedFaceMesh, selectedFaceMaterial, GL20.GL_TRIANGLES)
         }
@@ -539,7 +546,13 @@ class Main : ApplicationAdapter() {
         selectedFaceVertexCount = vertexCount
     }
 
-    private fun writeVertex(buffer: FloatArray, start: Int, pos: Vector3, normal: Vector3): Int {
+    private fun writeVertex(
+        buffer: FloatArray,
+        start: Int,
+        pos: Vector3,
+        normal: Vector3,
+        color: Color
+    ): Int {
         var i = start
         buffer[i++] = pos.x
         buffer[i++] = pos.y
@@ -547,6 +560,10 @@ class Main : ApplicationAdapter() {
         buffer[i++] = normal.x
         buffer[i++] = normal.y
         buffer[i++] = normal.z
+        buffer[i++] = color.r
+        buffer[i++] = color.g
+        buffer[i++] = color.b
+        buffer[i++] = color.a
         return i
     }
 

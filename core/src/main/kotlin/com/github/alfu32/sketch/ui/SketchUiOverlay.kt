@@ -7,7 +7,6 @@ import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.ui.ButtonGroup
-import com.badlogic.gdx.scenes.scene2d.ui.Image
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
@@ -15,6 +14,8 @@ import com.badlogic.gdx.utils.viewport.ScreenViewport
 import com.kotcrab.vis.ui.widget.VisImageTextButton
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisTable
+import com.kotcrab.vis.ui.widget.color.ColorPicker
+import com.kotcrab.vis.ui.widget.color.ColorPickerListener
 
 class SketchUiOverlay(
     private val controller: ToolController,
@@ -33,6 +34,9 @@ class SketchUiOverlay(
     private val cursorLabel = VisLabel()
     private val selectionEdgesLabel = VisLabel()
     private val selectionFacesLabel = VisLabel()
+    private var paintColorButton: VisImageTextButton? = null
+    private var lastPaintColor = Color(-1f, -1f, -1f, -1f)
+    private var colorPicker: ColorPicker? = null
 
     init {
         val root = Table()
@@ -64,6 +68,7 @@ class SketchUiOverlay(
         selectionEdgesLabel.setText("Edges: ${selection.edgeCount}")
         selectionFacesLabel.setText("Faces: ${selection.faceCount}")
         toolButtons[status.activeTool]?.isChecked = true
+        updatePaintColorButton()
     }
 
     fun act(delta: Float) {
@@ -118,6 +123,15 @@ class SketchUiOverlay(
             }
         })
         toolbar.add(cleanupButton).left().row()
+
+        val colorButton = VisImageTextButton("Color", createActionIconDrawable(status.paintColor))
+        colorButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                showColorPicker()
+            }
+        })
+        toolbar.add(colorButton).left().row()
+        paintColorButton = colorButton
 
         val deleteButton = VisImageTextButton("Delete", createActionIconDrawable(Color(0.9f, 0.45f, 0.45f, 1f)))
         deleteButton.addListener(object : ClickListener() {
@@ -195,6 +209,58 @@ class SketchUiOverlay(
         pixmap.dispose()
         iconTextures.add(texture)
         return TextureRegionDrawable(TextureRegion(texture))
+    }
+
+    private fun updatePaintColorButton() {
+        val button = paintColorButton ?: return
+        if (sameColor(status.paintColor, lastPaintColor)) {
+            return
+        }
+        lastPaintColor = Color(status.paintColor)
+        button.image.drawable = createActionIconDrawable(status.paintColor)
+    }
+
+    private fun showColorPicker() {
+        if (colorPicker == null) {
+            colorPicker = ColorPicker("Paint Color").apply {
+                setListener(object : ColorPickerListener {
+                    override fun changed(color: Color?) {
+                        if (color != null) {
+                            status.paintColor.set(color)
+                        }
+                    }
+
+                    override fun canceled(oldColor: Color?) {
+                        if (oldColor != null) {
+                            status.paintColor.set(oldColor)
+                        }
+                    }
+
+                    override fun reset(oldColor: Color?, newColor: Color?) {
+                        if (newColor != null) {
+                            status.paintColor.set(newColor)
+                        }
+                    }
+
+                    override fun finished(color: Color?) {
+                        if (color != null) {
+                            status.paintColor.set(color)
+                        }
+                    }
+                })
+            }
+        }
+        val picker = colorPicker ?: return
+        picker.color = Color(status.paintColor)
+        if (picker.stage == null) {
+            stage.addActor(picker)
+        }
+        picker.centerWindow()
+        picker.fadeIn()
+    }
+
+    private fun sameColor(a: Color, b: Color): Boolean {
+        return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a
     }
 
     data class SelectionInfo(val edgeCount: Int, val faceCount: Int)
