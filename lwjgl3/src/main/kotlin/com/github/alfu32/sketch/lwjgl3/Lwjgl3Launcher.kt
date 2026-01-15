@@ -4,6 +4,7 @@ package com.github.alfu32.sketch.lwjgl3
 
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration
+import com.github.alfu32.sketch.Katechup3dVersion
 import com.github.alfu32.sketch.Main
 
 /** Launches the desktop (LWJGL3) application. */
@@ -12,7 +13,8 @@ fun main() {
     if (StartupHelper.startNewJvmIfRequired())
       return
     Lwjgl3Application(Main(), Lwjgl3ApplicationConfiguration().apply {
-        setTitle("Katechup3d")
+        var ver = Katechup3dVersion()
+        setTitle("Katechup3d ${ver.buildGitTag} ${ver.buildGitBranch} ${ver.buildGitCommit} ${ver.buildDate.substring(0..10)}")
         //// Vsync limits the frames per second to what your hardware can display, and helps eliminate
         //// screen tearing. This setting doesn't always work on Linux, so the line after is a safeguard.
         useVsync(true)
