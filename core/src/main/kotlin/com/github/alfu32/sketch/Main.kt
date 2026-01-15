@@ -165,6 +165,9 @@ class Main : ApplicationAdapter() {
         modelBatch.render(groundRenderable, environment)
         modelBatch.end()
 
+        Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
+        Gdx.gl.glDepthMask(true)
+
         if (selectedFaceVertexCount > 0) {
             Gdx.gl.glEnable(GL20.GL_BLEND)
             Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
@@ -199,6 +202,7 @@ class Main : ApplicationAdapter() {
             shapeRenderer.color = Color(0.25f, 0.55f, 0.95f, 0.9f)
             shapeRenderer.rect(windowRect.x, windowRect.y, windowRect.width, windowRect.height)
             shapeRenderer.end()
+            Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
         }
 
         Gdx.gl.glDisable(GL20.GL_CULL_FACE)

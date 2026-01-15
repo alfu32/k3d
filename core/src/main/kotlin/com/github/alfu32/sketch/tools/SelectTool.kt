@@ -28,8 +28,8 @@ class SelectTool(
     private var lastClickX = 0
     private var lastClickY = 0
     private var clickCount = 0
-    private var volumeStart: Vector3? = null
-    private var volumeEnd: Vector3? = null
+    private var volumeStartRaw: Vector3? = null
+    private var volumeEndRaw: Vector3? = null
     private var selectingVolume = false
     private var selectingWindow = false
     private var windowDragActive = false
@@ -47,8 +47,8 @@ class SelectTool(
         lineStore.clearSelection()
         faceStore.clearSelection()
         selectingVolume = false
-        volumeStart = null
-        volumeEnd = null
+        volumeStartRaw = null
+        volumeEndRaw = null
         selectingWindow = false
         windowDragActive = false
         pendingVolumeStart = null
@@ -57,7 +57,7 @@ class SelectTool(
 
     override fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
         if (selectingVolume && valid && world != null) {
-            setVolumeBounds(volumeStart ?: world, world)
+            volumeEndRaw = Vector3(world)
         }
         if (selectingWindow && Gdx.input.isButtonPressed(Input.Buttons.LEFT)) {
             windowEndX = Gdx.input.x
@@ -82,7 +82,7 @@ class SelectTool(
         }
         if (selectingVolume) {
             if (valid && world != null) {
-                setVolumeBounds(volumeStart ?: world, world)
+                volumeEndRaw = Vector3(world)
                 finalizeVolumeSelection(status)
                 selectingVolume = false
                 return true
@@ -189,7 +189,8 @@ class SelectTool(
                 return true
             } else if (pendingVolumeStart != null) {
                 selectingVolume = true
-                setVolumeBounds(pendingVolumeStart!!, pendingVolumeStart!!)
+                volumeStartRaw = Vector3(pendingVolumeStart)
+                volumeEndRaw = Vector3(pendingVolumeStart)
                 status.message = "Volume select: pick second corner."
                 pendingVolumeStart = null
                 return true
@@ -214,8 +215,9 @@ class SelectTool(
     }
 
     override fun render(renderer: ShapeRenderer) {
-        val start = volumeStart ?: return
-        val end = volumeEnd ?: return
+        val bounds = volumeBounds() ?: return
+        val start = bounds.first
+        val end = bounds.second
         if (!selectingVolume) {
             return
         }
@@ -230,10 +232,9 @@ class SelectTool(
     }
 
     private fun finalizeVolumeSelection(status: StatusModel) {
-        val start = volumeStart ?: return
-        val end = volumeEnd ?: return
-        val faceCount = faceStore.selectInVolume(start, end, replace = true)
-        val edgeCount = lineStore.selectInVolume(start, end, replace = true)
+        val bounds = volumeBounds() ?: return
+        val faceCount = faceStore.selectInVolume(bounds.first, bounds.second, replace = true)
+        val edgeCount = lineStore.selectInVolume(bounds.first, bounds.second, replace = true)
         status.message = "Volume select | edges $edgeCount faces $faceCount"
     }
 
@@ -316,19 +317,20 @@ class SelectTool(
         return clickCount
     }
 
-    private fun setVolumeBounds(a: Vector3, b: Vector3) {
+    private fun volumeBounds(): Pair<Vector3, Vector3>? {
+        val start = volumeStartRaw ?: return null
+        val end = volumeEndRaw ?: return null
         val min = Vector3(
-            kotlin.math.min(a.x, b.x),
-            kotlin.math.min(a.y, b.y),
-            kotlin.math.min(a.z, b.z)
+            kotlin.math.min(start.x, end.x),
+            kotlin.math.min(start.y, end.y),
+            kotlin.math.min(start.z, end.z)
         )
         val max = Vector3(
-            kotlin.math.max(a.x, b.x),
-            kotlin.math.max(a.y, b.y),
-            kotlin.math.max(a.z, b.z)
+            kotlin.math.max(start.x, end.x),
+            kotlin.math.max(start.y, end.y),
+            kotlin.math.max(start.z, end.z)
         )
-        volumeStart = min
-        volumeEnd = max
+        return min to max
     }
 
 }
