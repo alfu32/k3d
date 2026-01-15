@@ -1,5 +1,6 @@
 package com.github.alfu32.sketch.model
 
+import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
 
 class DraftFaceStore {
@@ -28,10 +29,7 @@ class DraftFaceStore {
         if (target != null && normal.dot(target) < 0f) {
             ordered = ordered.asReversed()
         }
-        val origin = ordered.first()
-        for (i in 1 until ordered.size - 1) {
-            addTriangle(origin, ordered[i], ordered[i + 1])
-        }
+        triangulatePolygon(ordered)
     }
 
     fun getTriangles(): List<Triangle> = triangles
@@ -152,6 +150,103 @@ class DraftFaceStore {
             return Vector3(0f, 1f, 0f)
         }
         return normal.nor()
+    }
+
+    private fun triangulatePolygon(points: List<Vector3>) {
+        if (points.size < 3) {
+            return
+        }
+        val normal = computeNormal(points)
+        val projected = projectTo2D(points, normal)
+        val indices = points.indices.toMutableList()
+        if (signedArea(projected) < 0f) {
+            indices.reverse()
+        }
+        var guard = 0
+        while (indices.size > 2 && guard < 10000) {
+            guard++
+            var earFound = false
+            for (i in indices.indices) {
+                val prev = indices[(i - 1 + indices.size) % indices.size]
+                val curr = indices[i]
+                val next = indices[(i + 1) % indices.size]
+                if (!isConvex(projected[prev], projected[curr], projected[next])) {
+                    continue
+                }
+                if (containsPoint(projected, indices, prev, curr, next)) {
+                    continue
+                }
+                addTriangle(points[prev], points[curr], points[next])
+                indices.removeAt(i)
+                earFound = true
+                break
+            }
+            if (!earFound) {
+                break
+            }
+        }
+    }
+
+    private fun projectTo2D(points: List<Vector3>, normal: Vector3): List<Vector2> {
+        val absX = kotlin.math.abs(normal.x)
+        val absY = kotlin.math.abs(normal.y)
+        val absZ = kotlin.math.abs(normal.z)
+        return points.map { p ->
+            when {
+                absX >= absY && absX >= absZ -> Vector2(p.y, p.z)
+                absY >= absX && absY >= absZ -> Vector2(p.x, p.z)
+                else -> Vector2(p.x, p.y)
+            }
+        }
+    }
+
+    private fun signedArea(points: List<Vector2>): Float {
+        var area = 0f
+        for (i in points.indices) {
+            val a = points[i]
+            val b = points[(i + 1) % points.size]
+            area += (a.x * b.y - b.x * a.y)
+        }
+        return area * 0.5f
+    }
+
+    private fun isConvex(a: Vector2, b: Vector2, c: Vector2): Boolean {
+        val cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+        return cross > epsilon
+    }
+
+    private fun containsPoint(points: List<Vector2>, indices: List<Int>, a: Int, b: Int, c: Int): Boolean {
+        val pa = points[a]
+        val pb = points[b]
+        val pc = points[c]
+        for (index in indices) {
+            if (index == a || index == b || index == c) {
+                continue
+            }
+            val p = points[index]
+            if (pointInTriangle(p, pa, pb, pc)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun pointInTriangle(p: Vector2, a: Vector2, b: Vector2, c: Vector2): Boolean {
+        val v0x = c.x - a.x
+        val v0y = c.y - a.y
+        val v1x = b.x - a.x
+        val v1y = b.y - a.y
+        val v2x = p.x - a.x
+        val v2y = p.y - a.y
+        val dot00 = v0x * v0x + v0y * v0y
+        val dot01 = v0x * v1x + v0y * v1y
+        val dot02 = v0x * v2x + v0y * v2y
+        val dot11 = v1x * v1x + v1y * v1y
+        val dot12 = v1x * v2x + v1y * v2y
+        val invDen = 1f / (dot00 * dot11 - dot01 * dot01)
+        val u = (dot11 * dot02 - dot01 * dot12) * invDen
+        val v = (dot00 * dot12 - dot01 * dot02) * invDen
+        return u >= -epsilon && v >= -epsilon && u + v <= 1f + epsilon
     }
 
     private fun intersectRayTriangle(
