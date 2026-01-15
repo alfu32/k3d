@@ -1,0 +1,3 @@
+#!/bin/bash
+
+java -jar "voxd31-editor-desktop-jvm1.8-0.11.0.jar" 1280x960 "$1"
