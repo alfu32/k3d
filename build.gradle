@@ -60,7 +60,7 @@ configure(subprojects) {
 
 subprojects {
   version = "$projectVersion"
-  ext.appName = 'sketch3dkt'
+  ext.appName = 'Katechup3d'
   repositories {
     mavenCentral()
     // You may want to remove the following line if you have errors downloading dependencies.
@@ -70,4 +70,4 @@ subprojects {
   }
 }
 
-eclipse.project.name = 'sketch3dkt' + '-parent'
+eclipse.project.name = 'Katechup3d' + '-parent'

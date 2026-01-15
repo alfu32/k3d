@@ -1,5 +1,5 @@
 # Sketch3D-KT
-
+![img.png](img.png)
 Sketch3D-KT is a Kotlin + libGDX desktop application for interactively creating and editing simple 3D geometry. It focuses on direct modeling with edges and planar faces, real-time snapping, and tool-driven workflows.
 
 ## What it does today
@@ -23,3 +23,6 @@ Sketch3D-KT is a Kotlin + libGDX desktop application for interactively creating 
 ## Status
 
 This is an active work-in-progress. APIs and behavior may change as modeling and topology features evolve.
+
+
+![img01.png](img01.png)
