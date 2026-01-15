@@ -4,8 +4,10 @@ import com.badlogic.gdx.math.Vector3
 
 class DraftLineStore {
     data class Segment(val start: Vector3, val end: Vector3)
+    data class Hit(val segment: Segment, val point: Vector3, val t: Float)
 
     private val segments = mutableListOf<Segment>()
+    private val selected = mutableSetOf<Segment>()
     private val epsilon = 1e-3f
     private val epsilonSq = epsilon * epsilon
 
@@ -60,6 +62,18 @@ class DraftLineStore {
 
     fun getSegments(): List<Segment> = segments
 
+    fun getSelected(): Set<Segment> = selected
+
+    fun toggleSelection(segment: Segment) {
+        if (!selected.add(segment)) {
+            selected.remove(segment)
+        }
+    }
+
+    fun clearSelection() {
+        selected.clear()
+    }
+
     fun cleanup() {
         if (segments.isEmpty()) {
             return
@@ -67,6 +81,74 @@ class DraftLineStore {
         val snapshot = segments.toList()
         segments.clear()
         snapshot.forEach { addSegment(it.start, it.end) }
+    }
+
+    fun pickSegment(
+        ray: com.badlogic.gdx.math.collision.Ray,
+        camera: com.badlogic.gdx.graphics.Camera,
+        screenX: Int,
+        screenY: Int,
+        maxPixels: Float = 12f
+    ): Hit? {
+        var best: Hit? = null
+        val dir = Vector3(ray.direction).nor()
+        segments.forEach { segment ->
+            val hit = closestRaySegment(ray.origin, dir, segment) ?: return@forEach
+            val screenDist = screenDistance(camera, hit.point, screenX, screenY)
+            if (screenDist <= maxPixels) {
+                if (best == null || hit.t < best!!.t) {
+                    best = hit
+                }
+            }
+        }
+        return best
+    }
+
+    private fun closestRaySegment(
+        rayOrigin: Vector3,
+        rayDir: Vector3,
+        segment: Segment
+    ): Hit? {
+        val a = segment.start
+        val b = segment.end
+        val e = Vector3(b).sub(a)
+        val r = Vector3(rayOrigin).sub(a)
+        val aDot = rayDir.dot(rayDir)
+        val eDot = e.dot(e)
+        val f = rayDir.dot(e)
+        val c = rayDir.dot(r)
+        val g = e.dot(r)
+        val denom = aDot * eDot - f * f
+        var t: Float
+        var s: Float
+        if (kotlin.math.abs(denom) > epsilon) {
+            t = (f * g - eDot * c) / denom
+            s = (aDot * g - f * c) / denom
+            s = s.coerceIn(0f, 1f)
+            t = (-c + f * s) / aDot
+        } else {
+            s = (g / eDot).coerceIn(0f, 1f)
+            t = (-c + f * s) / aDot
+        }
+        if (t <= 0f) {
+            t = 0f
+            s = (g / eDot).coerceIn(0f, 1f)
+        }
+        val pointOnRay = Vector3(rayOrigin).mulAdd(rayDir, t)
+        val pointOnSeg = Vector3(a).mulAdd(e, s)
+        return Hit(segment, pointOnSeg, t)
+    }
+
+    private fun screenDistance(
+        camera: com.badlogic.gdx.graphics.Camera,
+        world: Vector3,
+        screenX: Int,
+        screenY: Int
+    ): Float {
+        val projected = camera.project(Vector3(world))
+        val dx = projected.x - screenX
+        val dy = (com.badlogic.gdx.Gdx.graphics.height - projected.y) - screenY
+        return kotlin.math.sqrt(dx * dx + dy * dy)
     }
 
     private data class PointOnSegment(val t: Float, val point: Vector3)

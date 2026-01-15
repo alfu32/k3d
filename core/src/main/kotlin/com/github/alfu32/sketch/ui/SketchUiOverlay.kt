@@ -19,7 +19,8 @@ import com.kotcrab.vis.ui.widget.VisTable
 class SketchUiOverlay(
     private val controller: ToolController,
     private val status: StatusModel,
-    private val cleanupAction: () -> Unit
+    private val cleanupAction: () -> Unit,
+    private val selectionInfoProvider: () -> SelectionInfo
 ) {
     val stage: Stage = Stage(ScreenViewport())
     private val toolButtons = mutableMapOf<ToolId, VisImageTextButton>()
@@ -28,6 +29,8 @@ class SketchUiOverlay(
     private val messageLabel = VisLabel()
     private val inputLabel = VisLabel()
     private val cursorLabel = VisLabel()
+    private val selectionEdgesLabel = VisLabel()
+    private val selectionFacesLabel = VisLabel()
 
     init {
         val root = Table()
@@ -35,9 +38,11 @@ class SketchUiOverlay(
         stage.addActor(root)
 
         val toolbar = buildToolbar()
+        val selectionPanel = buildSelectionPanel()
         val mainRow = Table()
         mainRow.add(toolbar).top().left().pad(8f)
         mainRow.add().expand().fill()
+        mainRow.add(selectionPanel).top().right().pad(8f)
 
         root.add(mainRow).expand().fill().row()
         root.add(buildStatusBar()).expandX().fillX().pad(6f)
@@ -46,6 +51,7 @@ class SketchUiOverlay(
     }
 
     fun updateFromStatus() {
+        val selection = selectionInfoProvider()
         toolLabel.setText("Tool: ${status.activeTool.displayName}")
         messageLabel.setText(status.message)
         inputLabel.setText(if (status.inputBuffer.isNotEmpty()) "Input: ${status.inputBuffer}" else "")
@@ -53,6 +59,8 @@ class SketchUiOverlay(
             "Screen: ${status.cursorScreenX}, ${status.cursorScreenY} | " +
                 "World: ${status.cursorWorld} | ${status.cursorSnapLabel}"
         )
+        selectionEdgesLabel.setText("Edges: ${selection.edgeCount}")
+        selectionFacesLabel.setText("Faces: ${selection.faceCount}")
         toolButtons[status.activeTool]?.isChecked = true
     }
 
@@ -122,6 +130,15 @@ class SketchUiOverlay(
         return bar
     }
 
+    private fun buildSelectionPanel(): VisTable {
+        val panel = VisTable()
+        panel.defaults().pad(4f).left()
+        panel.add(VisLabel("Selection")).row()
+        panel.add(selectionEdgesLabel).row()
+        panel.add(selectionFacesLabel).row()
+        return panel
+    }
+
     private fun createIconDrawable(toolId: ToolId): TextureRegionDrawable {
         val color = when (toolId) {
             ToolId.SELECT -> Color(0.85f, 0.85f, 0.85f, 1f)
@@ -161,4 +178,6 @@ class SketchUiOverlay(
         iconTextures.add(texture)
         return TextureRegionDrawable(TextureRegion(texture))
     }
+
+    data class SelectionInfo(val edgeCount: Int, val faceCount: Int)
 }

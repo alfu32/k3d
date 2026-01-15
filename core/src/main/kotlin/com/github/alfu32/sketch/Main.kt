@@ -37,6 +37,7 @@ import com.github.alfu32.sketch.tools.CircleTool
 import com.github.alfu32.sketch.tools.LineTool
 import com.github.alfu32.sketch.tools.PushPullTool
 import com.github.alfu32.sketch.tools.RectangleTool
+import com.github.alfu32.sketch.tools.SelectTool
 import com.github.alfu32.sketch.ui.SimpleTool
 import com.github.alfu32.sketch.ui.SketchUiOverlay
 import com.github.alfu32.sketch.ui.StatusModel
@@ -101,11 +102,11 @@ class Main : ApplicationAdapter() {
         faceStore = DraftFaceStore()
         modelCleanup = ModelCleanup(lineStore, faceStore)
         guideManager = GuideManager()
-        snapper = Snapper(camera, lineStore, guideManager, gridSpacing)
+        snapper = Snapper(camera, lineStore, faceStore, guideManager, gridSpacing)
         toolController = ToolController(
             statusModel,
             listOf(
-                SimpleTool(ToolId.SELECT, "Select entities."),
+                SelectTool(lineStore, faceStore, camera),
                 LineTool(lineStore, faceStore),
                 RectangleTool(lineStore, faceStore),
                 CircleTool(lineStore, faceStore),
@@ -117,8 +118,8 @@ class Main : ApplicationAdapter() {
                 SimpleTool(ToolId.ERASER, "Click to erase edges.")
             )
         )
-        toolInput = ToolInputProcessor(toolController, guideManager, ::runCleanup) { lastSnap }
-        uiOverlay = SketchUiOverlay(toolController, statusModel, ::runCleanup)
+        toolInput = ToolInputProcessor(toolController, guideManager, ::runCleanup, ::clearSelection) { lastSnap }
+        uiOverlay = SketchUiOverlay(toolController, statusModel, ::runCleanup, ::selectionInfo)
         toolPointer = ToolPointerProcessor(toolController, snapper)
         Gdx.input.inputProcessor = InputMultiplexer(
             uiOverlay.stage,
@@ -164,6 +165,7 @@ class Main : ApplicationAdapter() {
         drawAxes(2.5f)
         drawGuides()
         drawCursor()
+        drawSelectionHighlights()
         drawDraftLines()
         toolController.render(shapeRenderer)
         shapeRenderer.end()
@@ -303,6 +305,28 @@ class Main : ApplicationAdapter() {
         }
     }
 
+    private fun drawSelectionHighlights() {
+        val selectedEdges = lineStore.getSelected()
+        if (selectedEdges.isNotEmpty()) {
+            shapeRenderer.color = Color(1f, 0.65f, 0.2f, 1f)
+            selectedEdges.forEach { segment ->
+                shapeRenderer.line(
+                    segment.start.x, segment.start.y, segment.start.z,
+                    segment.end.x, segment.end.y, segment.end.z
+                )
+            }
+        }
+        val selectedFaces = faceStore.getSelected()
+        if (selectedFaces.isNotEmpty()) {
+            shapeRenderer.color = Color(1f, 0.8f, 0.25f, 1f)
+            selectedFaces.forEach { tri ->
+                shapeRenderer.line(tri.a.x, tri.a.y, tri.a.z, tri.b.x, tri.b.y, tri.b.z)
+                shapeRenderer.line(tri.b.x, tri.b.y, tri.b.z, tri.c.x, tri.c.y, tri.c.z)
+                shapeRenderer.line(tri.c.x, tri.c.y, tri.c.z, tri.a.x, tri.a.y, tri.a.z)
+            }
+        }
+    }
+
     private fun runCleanup() {
         val startEdges = lineStore.getSegments().size
         val startFaces = faceStore.getTriangles().size
@@ -311,6 +335,19 @@ class Main : ApplicationAdapter() {
         val endEdges = lineStore.getSegments().size
         val endFaces = faceStore.getTriangles().size
         statusModel.message = "Cleanup done | edges $endEdges faces $endFaces"
+    }
+
+    private fun clearSelection() {
+        lineStore.clearSelection()
+        faceStore.clearSelection()
+        statusModel.message = "Selection cleared."
+    }
+
+    private fun selectionInfo(): SketchUiOverlay.SelectionInfo {
+        return SketchUiOverlay.SelectionInfo(
+            edgeCount = lineStore.getSelected().size,
+            faceCount = faceStore.getSelected().size
+        )
     }
 
     private class ShiftCameraController(camera: PerspectiveCamera) : CameraInputController(camera) {

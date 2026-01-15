@@ -11,6 +11,7 @@ class ToolInputProcessor(
     private val controller: ToolController,
     private val guideManager: GuideManager,
     private val cleanupAction: () -> Unit,
+    private val clearSelectionAction: () -> Unit,
     private val lastSnapProvider: () -> SnapResult?
 ) : InputAdapter() {
     override fun keyDown(keycode: Int): Boolean {
@@ -19,6 +20,7 @@ class ToolInputProcessor(
                 if (controller.activeToolId() == ToolId.SELECT) {
                     guideManager.clear()
                 }
+                clearSelectionAction()
                 controller.cancelActiveTool()
                 return true
             }

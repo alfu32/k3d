@@ -2,7 +2,9 @@ package com.github.alfu32.sketch.input
 
 import com.badlogic.gdx.graphics.Camera
 import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
+import com.github.alfu32.sketch.model.DraftFaceStore
 import com.github.alfu32.sketch.model.DraftLineStore
 import kotlin.math.abs
 import kotlin.math.round
@@ -11,6 +13,7 @@ import kotlin.math.sqrt
 class Snapper(
     private val camera: Camera,
     private val lineStore: DraftLineStore,
+    private val faceStore: DraftFaceStore,
     private val guideManager: GuideManager,
     private val gridSpacing: Float = 1f,
     private val snapPixels: Float = 12f
@@ -25,25 +28,29 @@ class Snapper(
         val baseNormal = baseHit?.normal
         var best: SnapCandidate? = null
 
+        faceStore.pickTriangle(ray)?.let { hit ->
+            val candidate = SnapCandidate(hit.point, hit.normal, SnapType.FACE, 0f, hit.t, SnapSource.FACE)
+            best = pickBetter(best, candidate)
+        }
+
         if (basePoint != null && baseNormal != null) {
-            best = SnapCandidate(basePoint, baseNormal, SnapType.NONE, Float.MAX_VALUE)
-            snapToGrid(basePoint, baseNormal, screenX, screenY)?.let {
+            snapToGrid(basePoint, baseNormal, screenX, screenY, ray)?.let {
                 best = pickBetter(best, it)
             }
 
-            snapToLineEndpoints(baseNormal, screenX, screenY)?.let { candidate ->
+            snapToLineEndpoints(baseNormal, screenX, screenY, ray)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
 
-            snapToLineMidpoints(baseNormal, screenX, screenY)?.let { candidate ->
+            snapToLineMidpoints(baseNormal, screenX, screenY, ray)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
 
-            snapToGridLines(basePoint, baseNormal, screenX, screenY)?.let { candidate ->
+            snapToGridLines(basePoint, baseNormal, screenX, screenY, ray)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
 
-            snapToLineSegments(basePoint, baseNormal, screenX, screenY)?.let { candidate ->
+            snapToLineSegments(basePoint, baseNormal, screenX, screenY, ray)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
         }
@@ -61,7 +68,11 @@ class Snapper(
         }
 
         if (best == null) {
-            return SnapResult(null, null, SnapType.NONE, screenX, screenY, false)
+            return if (basePoint != null && baseNormal != null) {
+                SnapResult(basePoint, baseNormal, SnapType.NONE, screenX, screenY, true)
+            } else {
+                SnapResult(null, null, SnapType.NONE, screenX, screenY, false)
+            }
         }
         val candidate = best ?: return SnapResult(null, null, SnapType.NONE, screenX, screenY, false)
         return SnapResult(candidate.world, candidate.normal, candidate.type, screenX, screenY, true)
@@ -108,25 +119,27 @@ class Snapper(
         }
     }
 
-    private fun snapToGrid(base: Vector3, normal: Vector3, screenX: Int, screenY: Int): SnapCandidate? {
+    private fun snapToGrid(base: Vector3, normal: Vector3, screenX: Int, screenY: Int, ray: com.badlogic.gdx.math.collision.Ray): SnapCandidate? {
         val gx = round(base.x / gridSpacing) * gridSpacing
         val gz = round(base.z / gridSpacing) * gridSpacing
         val candidate = Vector3(gx, 0f, gz)
         val dist = screenDistance(candidate, screenX, screenY)
+        val t = rayT(ray, candidate) ?: return null
         return if (dist <= snapPixels) {
-            SnapCandidate(candidate, Vector3(normal), SnapType.GRID, dist)
+            SnapCandidate(candidate, Vector3(normal), SnapType.GRID, dist, t, SnapSource.GRID)
         } else {
             null
         }
     }
 
-    private fun snapToLineEndpoints(normal: Vector3, screenX: Int, screenY: Int): SnapCandidate? {
+    private fun snapToLineEndpoints(normal: Vector3, screenX: Int, screenY: Int, ray: com.badlogic.gdx.math.collision.Ray): SnapCandidate? {
         var best: SnapCandidate? = null
         lineStore.getSegments().forEach { segment ->
             listOf(segment.start, segment.end).forEach { point ->
                 val dist = screenDistance(point, screenX, screenY)
                 if (dist <= snapPixels) {
-                    val candidate = SnapCandidate(Vector3(point), Vector3(normal), SnapType.ENDPOINT, dist)
+                    val t = rayT(ray, point) ?: return@forEach
+                    val candidate = SnapCandidate(Vector3(point), Vector3(normal), SnapType.ENDPOINT, dist, t, SnapSource.LINE_ENDPOINT)
                     best = pickBetter(best, candidate)
                 }
             }
@@ -134,33 +147,35 @@ class Snapper(
         return best
     }
 
-    private fun snapToLineMidpoints(normal: Vector3, screenX: Int, screenY: Int): SnapCandidate? {
+    private fun snapToLineMidpoints(normal: Vector3, screenX: Int, screenY: Int, ray: com.badlogic.gdx.math.collision.Ray): SnapCandidate? {
         var best: SnapCandidate? = null
         lineStore.getSegments().forEach { segment ->
             val midpoint = Vector3(segment.start).add(segment.end).scl(0.5f)
             val dist = screenDistance(midpoint, screenX, screenY)
             if (dist <= snapPixels) {
-                val candidate = SnapCandidate(midpoint, Vector3(normal), SnapType.MIDPOINT, dist)
+                val t = rayT(ray, midpoint) ?: return@forEach
+                val candidate = SnapCandidate(midpoint, Vector3(normal), SnapType.MIDPOINT, dist, t, SnapSource.LINE_MIDPOINT)
                 best = pickBetter(best, candidate)
             }
         }
         return best
     }
 
-    private fun snapToLineSegments(base: Vector3, normal: Vector3, screenX: Int, screenY: Int): SnapCandidate? {
+    private fun snapToLineSegments(base: Vector3, normal: Vector3, screenX: Int, screenY: Int, ray: com.badlogic.gdx.math.collision.Ray): SnapCandidate? {
         var best: SnapCandidate? = null
         lineStore.getSegments().forEach { segment ->
             val closest = closestPointOnSegment(base, segment.start, segment.end)
             val dist = screenDistance(closest, screenX, screenY)
             if (dist <= snapPixels) {
-                val candidate = SnapCandidate(closest, Vector3(normal), SnapType.LINE, dist)
+                val t = rayT(ray, closest) ?: return@forEach
+                val candidate = SnapCandidate(closest, Vector3(normal), SnapType.LINE, dist, t, SnapSource.LINE_SEGMENT)
                 best = pickBetter(best, candidate)
             }
         }
         return best
     }
 
-    private fun snapToGridLines(base: Vector3, normal: Vector3, screenX: Int, screenY: Int): SnapCandidate? {
+    private fun snapToGridLines(base: Vector3, normal: Vector3, screenX: Int, screenY: Int, ray: com.badlogic.gdx.math.collision.Ray): SnapCandidate? {
         val gx = round(base.x / gridSpacing) * gridSpacing
         val gz = round(base.z / gridSpacing) * gridSpacing
         val candidateX = Vector3(gx, 0f, base.z)
@@ -169,15 +184,17 @@ class Snapper(
         val distZ = screenDistance(candidateZ, screenX, screenY)
         val bestCandidate = if (distX <= distZ) candidateX else candidateZ
         val bestDist = minOf(distX, distZ)
+        val t = rayT(ray, bestCandidate) ?: return null
         return if (bestDist <= snapPixels) {
-            SnapCandidate(bestCandidate, Vector3(normal), SnapType.GRID_LINE, bestDist)
+            SnapCandidate(bestCandidate, Vector3(normal), SnapType.GRID_LINE, bestDist, t, SnapSource.GRID_LINE)
         } else {
             null
         }
     }
 
     private fun snapToGridGuides(ray: com.badlogic.gdx.math.collision.Ray, screenX: Int, screenY: Int): SnapCandidate? {
-        val candidates = mutableListOf<SnapCandidate>()
+        var best: SnapCandidate? = null
+        var bestT = Float.POSITIVE_INFINITY
         guideManager.getGridGuides().forEach { center ->
             val planes = listOf(
                 PlaneGuide(Vector3(0f, 0f, 1f), Vector3(1f, 0f, 0f), Vector3(0f, 1f, 0f)),
@@ -191,12 +208,18 @@ class Snapper(
                     val dist = screenDistance(snapped, screenX, screenY)
                     if (dist <= snapPixels) {
                         val normal = facingNormal(Vector3(plane.normal), ray.direction)
-                        candidates.add(SnapCandidate(snapped, normal, SnapType.GRID_GUIDE, dist))
+                        val candidate = SnapCandidate(snapped, normal, SnapType.GRID_GUIDE, dist, hit.t, SnapSource.GRID_GUIDE)
+                        if (hit.t < bestT - epsilon) {
+                            bestT = hit.t
+                            best = candidate
+                        } else if (kotlin.math.abs(hit.t - bestT) <= epsilon) {
+                            best = pickBetter(best, candidate)
+                        }
                     }
                 }
             }
         }
-        return candidates.minByOrNull { it.scoreKey() }
+        return best
     }
 
     private fun snapToAxisGuides(
@@ -216,12 +239,12 @@ class Snapper(
             axes.forEach { axis ->
                 val result = closestPointRayLine(ray, center, axis)
                 if (result != null) {
-                    val (point, s) = result
+                    val (point, s, tRay) = result
                     if (s >= -extent && s <= extent) {
                         val dist = screenDistance(point, screenX, screenY)
                         if (dist <= snapPixels) {
                             val normal = Vector3(baseNormal)
-                            val candidate = SnapCandidate(point, normal, SnapType.AXIS_GUIDE, dist)
+                            val candidate = SnapCandidate(point, normal, SnapType.AXIS_GUIDE, dist, tRay, SnapSource.AXIS_GUIDE)
                             best = pickBetter(best, candidate)
                         }
                     }
@@ -260,7 +283,7 @@ class Snapper(
         ray: com.badlogic.gdx.math.collision.Ray,
         linePoint: Vector3,
         lineDir: Vector3
-    ): Pair<Vector3, Float>? {
+    ): Triple<Vector3, Float, Float>? {
         val p = ray.origin
         val d = ray.direction
         val q = linePoint
@@ -282,7 +305,7 @@ class Snapper(
             return null
         }
         val pointOnLine = Vector3(q).mulAdd(e, s)
-        return Pair(pointOnLine, s)
+        return Triple(pointOnLine, s, t)
     }
 
     private fun closestPointOnSegment(point: Vector3, a: Vector3, b: Vector3): Vector3 {
@@ -303,20 +326,41 @@ class Snapper(
         if (current == null) {
             return next
         }
-        val currentKey = current.scoreKey()
-        val nextKey = next.scoreKey()
-        return if (nextKey < currentKey) next else current
+        return if (next.t + epsilon < current.t) next else current
+    }
+
+    fun collectSelectionPoints(): List<SelectionPoint> {
+        val points = mutableListOf<SelectionPoint>()
+        lineStore.getSegments().forEach { segment ->
+            points.add(SelectionPoint(projectScreen(segment.start), Vector3(segment.start), null, SelectionSource.EDGE))
+            points.add(SelectionPoint(projectScreen(segment.end), Vector3(segment.end), null, SelectionSource.EDGE))
+        }
+        faceStore.getTriangles().forEach { tri ->
+            val centroid = Vector3(tri.a).add(tri.b).add(tri.c).scl(1f / 3f)
+            val normal = Vector3(tri.b).sub(tri.a).crs(Vector3(tri.c).sub(tri.a)).nor()
+            points.add(SelectionPoint(projectScreen(centroid), centroid, normal, SelectionSource.FACE))
+        }
+        return points
+    }
+
+    private fun projectScreen(world: Vector3): Vector2 {
+        val projected = camera.project(tmp.set(world))
+        return Vector2(projected.x, Gdx.graphics.height - projected.y)
     }
 
     private fun SnapCandidate.scoreKey(): Float {
-        return (1000 - type.priority * 100).toFloat() + distance
+        val sourceWeight = (1000 - source.priority * 100).toFloat()
+        val typeWeight = (100 - type.priority) * 0.1f
+        return sourceWeight + typeWeight + distance
     }
 
     private data class SnapCandidate(
         val world: Vector3,
         val normal: Vector3,
         val type: SnapType,
-        val distance: Float
+        val distance: Float,
+        val t: Float,
+        val source: SnapSource
     )
 
     private data class PlaneGuide(
@@ -325,6 +369,33 @@ class Snapper(
         val axisV: Vector3
     )
 
+    private enum class SnapSource(val priority: Int) {
+        LINE_ENDPOINT(6),
+        LINE_MIDPOINT(5),
+        LINE_SEGMENT(4),
+        GRID(3),
+        GRID_LINE(2),
+        GRID_GUIDE(2),
+        AXIS_GUIDE(2),
+        FACE(1)
+    }
+
+    data class SelectionPoint(
+        val screen: Vector2,
+        val world: Vector3,
+        val normal: Vector3?,
+        val source: SelectionSource
+    )
+
+    enum class SelectionSource {
+        EDGE,
+        FACE
+    }
+
+    private fun rayT(ray: com.badlogic.gdx.math.collision.Ray, point: Vector3): Float? {
+        val t = Vector3(point).sub(ray.origin).dot(ray.direction)
+        return if (t > 0f) t else null
+    }
     private data class PlaneHit(
         val point: Vector3,
         val normal: Vector3,

@@ -8,5 +8,6 @@ enum class SnapType(val label: String, val priority: Int) {
     LINE("Line", 1),
     GRID_LINE("Grid Line", 1),
     GRID_GUIDE("Grid Guide", 2),
-    AXIS_GUIDE("Axis Guide", 2)
+    AXIS_GUIDE("Axis Guide", 2),
+    FACE("Face", 0)
 }

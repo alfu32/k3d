@@ -8,6 +8,7 @@ class DraftFaceStore {
     data class Hit(val triangle: Triangle, val point: Vector3, val normal: Vector3, val t: Float)
 
     private val triangles = mutableListOf<Triangle>()
+    private val selected = mutableSetOf<Triangle>()
     private val epsilon = 1e-4f
     private val epsilonSq = epsilon * epsilon
 
@@ -33,6 +34,18 @@ class DraftFaceStore {
     }
 
     fun getTriangles(): List<Triangle> = triangles
+
+    fun getSelected(): Set<Triangle> = selected
+
+    fun toggleSelection(triangle: Triangle) {
+        if (!selected.add(triangle)) {
+            selected.remove(triangle)
+        }
+    }
+
+    fun clearSelection() {
+        selected.clear()
+    }
 
     fun pickTriangle(ray: com.badlogic.gdx.math.collision.Ray): Hit? {
         var best: Hit? = null
