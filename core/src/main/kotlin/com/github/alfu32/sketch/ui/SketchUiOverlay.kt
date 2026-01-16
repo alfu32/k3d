@@ -327,7 +327,7 @@ class SketchUiOverlay(
 
     private fun applyWhiteButtonStyle(button: VisImageTextButton) {
         val drawable = whiteButtonDrawable ?: createWhiteButtonDrawable().also { whiteButtonDrawable = it }
-        val style = ImageTextButton.ImageTextButtonStyle(button.style)
+        val style = button.style
         style.up = drawable
         style.down = drawable
         style.checked = drawable
@@ -337,7 +337,6 @@ class SketchUiOverlay(
         style.overFontColor = Color.BLACK
         style.checkedFontColor = Color.BLACK
         style.disabledFontColor = Color.DARK_GRAY
-        button.style = style
     }
 
     private fun createWhiteButtonDrawable(): TextureRegionDrawable {
