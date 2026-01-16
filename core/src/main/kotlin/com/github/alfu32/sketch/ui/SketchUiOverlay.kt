@@ -1,5 +1,6 @@
 package com.github.alfu32.sketch.ui
 
+import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.Texture
@@ -28,6 +29,8 @@ class SketchUiOverlay(
     val stage: Stage = Stage(ScreenViewport())
     private val toolButtons = mutableMapOf<ToolId, VisImageTextButton>()
     private val iconTextures = mutableListOf<Texture>()
+    private val iconDrawables = mutableMapOf<String, TextureRegionDrawable>()
+    private var iconsTexture: Texture? = null
     private val toolLabel = VisLabel()
     private val messageLabel = VisLabel()
     private val copyLabel = VisLabel()
@@ -40,6 +43,7 @@ class SketchUiOverlay(
     private var colorPicker: ColorPicker? = null
 
     init {
+        iconDrawables.putAll(loadIconDrawables())
         val root = Table()
         root.setFillParent(true)
         stage.addActor(root)
@@ -94,6 +98,7 @@ class SketchUiOverlay(
     fun dispose() {
         stage.dispose()
         iconTextures.forEach { it.dispose() }
+        iconsTexture?.dispose()
     }
 
     private fun buildToolbar(): VisTable {
@@ -124,6 +129,7 @@ class SketchUiOverlay(
 
         toolbar.add(VisLabel("Actions")).padTop(8f).row()
         val cleanupButton = VisImageTextButton("Cleanup", createActionIconDrawable(Color(0.55f, 0.85f, 0.65f, 1f)))
+        cleanupButton.image.drawable = iconFor("cleanup", cleanupButton.image.drawable)
         cleanupButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 cleanupAction()
@@ -132,6 +138,7 @@ class SketchUiOverlay(
         toolbar.add(cleanupButton).left().row()
 
         val colorButton = VisImageTextButton("Color", createActionIconDrawable(status.paintColor))
+        colorButton.image.drawable = iconFor("color", colorButton.image.drawable)
         colorButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 showColorPicker()
@@ -141,6 +148,7 @@ class SketchUiOverlay(
         paintColorButton = colorButton
 
         val deleteButton = VisImageTextButton("Delete", createActionIconDrawable(Color(0.9f, 0.45f, 0.45f, 1f)))
+        deleteButton.image.drawable = iconFor("delete", deleteButton.image.drawable)
         deleteButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 deleteSelectionAction()
@@ -149,6 +157,7 @@ class SketchUiOverlay(
         toolbar.add(deleteButton).left().row()
 
         val flipButton = VisImageTextButton("Flip Faces", createActionIconDrawable(Color(0.45f, 0.65f, 0.95f, 1f)))
+        flipButton.image.drawable = iconFor("flip_faces", flipButton.image.drawable)
         flipButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 flipFacesAction()
@@ -180,6 +189,21 @@ class SketchUiOverlay(
     }
 
     private fun createIconDrawable(toolId: ToolId): TextureRegionDrawable {
+        val iconName = when (toolId) {
+            ToolId.SELECT -> "select"
+            ToolId.LINE -> "line"
+            ToolId.RECTANGLE -> "rectangle"
+            ToolId.SURFACE_RECTANGLE -> "surface_rect"
+            ToolId.QUAD -> "quad"
+            ToolId.CIRCLE -> "circle"
+            ToolId.PUSH_PULL -> "push_pull"
+            ToolId.MOVE -> "move"
+            ToolId.ROTATE -> "rotate"
+            ToolId.SCALE -> "scale"
+            ToolId.PAINT -> "paint"
+            ToolId.ERASER -> "eraser"
+        }
+        iconDrawables[iconName]?.let { return it }
         val color = when (toolId) {
             ToolId.SELECT -> Color(0.85f, 0.85f, 0.85f, 1f)
             ToolId.LINE -> Color(0.95f, 0.75f, 0.25f, 1f)
@@ -226,8 +250,16 @@ class SketchUiOverlay(
             return
         }
         lastPaintColor = Color(status.paintColor)
-        updateButtonIcon(paintColorButton, status.paintColor)
-        updateButtonIcon(toolButtons[ToolId.PAINT], status.paintColor)
+        if (iconDrawables.containsKey("color")) {
+            paintColorButton?.image?.setColor(status.paintColor)
+        } else {
+            updateButtonIcon(paintColorButton, status.paintColor)
+        }
+        if (iconDrawables.containsKey("paint")) {
+            toolButtons[ToolId.PAINT]?.image?.setColor(status.paintColor)
+        } else {
+            updateButtonIcon(toolButtons[ToolId.PAINT], status.paintColor)
+        }
     }
 
     private fun showColorPicker() {
@@ -284,6 +316,39 @@ class SketchUiOverlay(
 
     private fun sameColor(a: Color, b: Color): Boolean {
         return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a
+    }
+
+    private fun iconFor(name: String, fallback: TextureRegionDrawable?): TextureRegionDrawable {
+        return iconDrawables[name] ?: fallback ?: createActionIconDrawable(Color(0.3f, 0.3f, 0.3f, 1f))
+    }
+
+    private fun loadIconDrawables(): Map<String, TextureRegionDrawable> {
+        val mapping = mutableMapOf<String, TextureRegionDrawable>()
+        val mappingFile = Gdx.files.internal("icons.mapping.csv")
+        val textureFile = Gdx.files.internal("icons.png")
+        if (!mappingFile.exists() || !textureFile.exists()) {
+            return mapping
+        }
+        val texture = Texture(textureFile)
+        iconsTexture = texture
+        val lines = mappingFile.readString("UTF-8").lines().filter { it.isNotBlank() }
+        lines.drop(1).forEach { line ->
+            val parts = line.split('|')
+            if (parts.size < 8) {
+                return@forEach
+            }
+            val name = parts[1].trim()
+            val startX = parts[4].trim().toInt()
+            val endX = parts[5].trim().toInt()
+            val startY = parts[6].trim().toInt()
+            val endY = parts[7].trim().toInt()
+            val width = endX - startX + 1
+            val height = endY - startY + 1
+            val y = texture.height - endY - 1
+            val region = TextureRegion(texture, startX, y, width, height)
+            mapping[name] = TextureRegionDrawable(region)
+        }
+        return mapping
     }
 
     data class SelectionInfo(val edgeCount: Int, val faceCount: Int)
