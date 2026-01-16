@@ -8,13 +8,30 @@ class DraftLineStore {
 
     private val segments = mutableListOf<Segment>()
     private val selected = mutableSetOf<Segment>()
+    private var onChange: (() -> Unit)? = null
+    private var suppressChange = false
     private val epsilon = 1e-3f
     private val epsilonSq = epsilon * epsilon
+
+    fun setChangeListener(listener: () -> Unit) {
+        onChange = listener
+    }
+
+    fun withChangeSuppressed(block: () -> Unit) {
+        val prev = suppressChange
+        suppressChange = true
+        try {
+            block()
+        } finally {
+            suppressChange = prev
+        }
+    }
 
     fun addSegment(start: Vector3, end: Vector3) {
         if (start.dst2(end) <= epsilonSq) {
             return
         }
+        val before = segments.size
         val newStart = snapToExistingEndpoint(start) ?: Vector3(start)
         val newEnd = snapToExistingEndpoint(end) ?: Vector3(end)
         val splitPoints = mutableListOf(PointOnSegment(0f, newStart), PointOnSegment(1f, newEnd))
@@ -58,6 +75,9 @@ class DraftLineStore {
             }
         }
 
+        if (segments.size != before) {
+            notifyChange()
+        }
     }
 
     fun getSegments(): List<Segment> = segments
@@ -89,6 +109,7 @@ class DraftLineStore {
         val before = segments.size
         segments.removeAll(selected)
         selected.clear()
+        notifyChange()
         return before - segments.size
     }
 
@@ -114,6 +135,7 @@ class DraftLineStore {
         segments.addAll(newSegments)
         selected.clear()
         selected.addAll(newSelected)
+        notifyChange()
         return newSelected.size
     }
 
@@ -139,6 +161,15 @@ class DraftLineStore {
         val snapshot = segments.toList()
         segments.clear()
         snapshot.forEach { addSegment(it.start, it.end) }
+        notifyChange()
+    }
+
+    fun clearAll() {
+        if (segments.isNotEmpty()) {
+            segments.clear()
+            selected.clear()
+            notifyChange()
+        }
     }
 
     fun pickSegment(
@@ -330,6 +361,11 @@ class DraftLineStore {
         return result
     }
 
+    private fun notifyChange() {
+        if (!suppressChange) {
+            onChange?.invoke()
+        }
+    }
     private fun segmentIntersectsAabb(a: Vector3, b: Vector3, min: Vector3, max: Vector3): Boolean {
         var tmin = 0f
         var tmax = 1f

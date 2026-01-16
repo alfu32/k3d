@@ -33,6 +33,7 @@ import com.github.alfu32.sketch.input.Snapper
 import com.github.alfu32.sketch.input.ToolPointerProcessor
 import com.github.alfu32.sketch.model.DraftFaceStore
 import com.github.alfu32.sketch.model.DraftLineStore
+import com.github.alfu32.sketch.model.ModelPersistence
 import com.github.alfu32.sketch.model.ModelCleanup
 import com.github.alfu32.sketch.tools.CircleTool
 import com.github.alfu32.sketch.tools.LineTool
@@ -52,7 +53,7 @@ import com.github.alfu32.sketch.ui.ToolInputProcessor
 import com.kotcrab.vis.ui.VisUI
 
 /** [com.badlogic.gdx.ApplicationListener] implementation shared by all platforms. */
-class Main : ApplicationAdapter() {
+class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : ApplicationAdapter() {
     private lateinit var camera: PerspectiveCamera
     private lateinit var cameraController: CameraInputController
     private lateinit var shapeRenderer: ShapeRenderer
@@ -84,6 +85,7 @@ class Main : ApplicationAdapter() {
     private lateinit var snapper: Snapper
     private var lastSnap: SnapResult? = null
     private val gridSpacing = 1f
+    private lateinit var modelFile: java.io.File
 
     override fun create() {
         if (!VisUI.isLoaded()) {
@@ -150,6 +152,11 @@ class Main : ApplicationAdapter() {
             toolInput,
             cameraController
         )
+
+        modelFile = resolveModelFile(startupArgs)
+        loadModel()
+        lineStore.setChangeListener { saveModel() }
+        faceStore.setChangeListener { saveModel() }
 
         shapeRenderer = ShapeRenderer()
         setupLighting()
@@ -378,10 +385,15 @@ class Main : ApplicationAdapter() {
         val startEdges = lineStore.getSegments().size
         val startFaces = faceStore.getTriangles().size
         statusModel.message = "Cleanup start | edges $startEdges faces $startFaces"
-        modelCleanup.run()
+        lineStore.withChangeSuppressed {
+            faceStore.withChangeSuppressed {
+                modelCleanup.run()
+            }
+        }
         val endEdges = lineStore.getSegments().size
         val endFaces = faceStore.getTriangles().size
         statusModel.message = "Cleanup done | edges $endEdges faces $endFaces"
+        saveModel()
     }
 
     private fun clearSelection() {
@@ -399,6 +411,42 @@ class Main : ApplicationAdapter() {
     private fun flipSelectedFaces() {
         val flipped = faceStore.flipSelected()
         statusModel.message = "Flipped faces: $flipped"
+    }
+
+    private fun saveModel() {
+        ModelPersistence.save(modelFile, lineStore, faceStore)
+    }
+
+    private fun loadModel() {
+        if (modelFile.exists()) {
+            val backup = java.io.File(modelFile.absolutePath + ".bak")
+            modelFile.copyTo(backup, overwrite = true)
+            lineStore.withChangeSuppressed {
+                faceStore.withChangeSuppressed {
+                    ModelPersistence.load(modelFile, lineStore, faceStore)
+                }
+            }
+            statusModel.message = "Loaded ${modelFile.name}"
+        } else {
+            saveModel()
+            statusModel.message = "Created ${modelFile.name}"
+        }
+    }
+
+    private fun resolveModelFile(args: kotlin.Array<String>): java.io.File {
+        var fileArg: String? = null
+        var i = 0
+        while (i < args.size) {
+            if (args[i] == "--file" && i + 1 < args.size) {
+                fileArg = args[i + 1]
+                break
+            }
+            i++
+        }
+        if (fileArg.isNullOrBlank()) {
+            fileArg = "sketch3d.json"
+        }
+        return java.io.File(fileArg).absoluteFile
     }
 
     private fun selectionInfo(): SketchUiOverlay.SelectionInfo {

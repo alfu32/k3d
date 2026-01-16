@@ -12,13 +12,37 @@ class DraftFaceStore(
     private val triangles = mutableListOf<Triangle>()
     private val selected = mutableSetOf<Triangle>()
     private val colors = mutableMapOf<Triangle, com.badlogic.gdx.graphics.Color>()
+    private var onChange: (() -> Unit)? = null
+    private var suppressChange = false
     private val epsilon = 1e-4f
     private val epsilonSq = epsilon * epsilon
+
+    fun setChangeListener(listener: () -> Unit) {
+        onChange = listener
+    }
+
+    fun withChangeSuppressed(block: () -> Unit) {
+        val prev = suppressChange
+        suppressChange = true
+        try {
+            block()
+        } finally {
+            suppressChange = prev
+        }
+    }
 
     fun addTriangle(a: Vector3, b: Vector3, c: Vector3) {
         val triangle = Triangle(Vector3(a), Vector3(b), Vector3(c))
         triangles.add(triangle)
         colors[triangle] = com.badlogic.gdx.graphics.Color(defaultColor)
+        notifyChange()
+    }
+
+    fun addTriangle(a: Vector3, b: Vector3, c: Vector3, color: com.badlogic.gdx.graphics.Color) {
+        val triangle = Triangle(Vector3(a), Vector3(b), Vector3(c))
+        triangles.add(triangle)
+        colors[triangle] = com.badlogic.gdx.graphics.Color(color)
+        notifyChange()
     }
 
     fun addPolygon(points: List<Vector3>, preferredNormal: Vector3? = null) {
@@ -85,6 +109,7 @@ class DraftFaceStore(
         triangles.addAll(newTriangles)
         selected.clear()
         selected.addAll(newSelected)
+        notifyChange()
         return newSelected.size
     }
 
@@ -96,7 +121,33 @@ class DraftFaceStore(
         selected.forEach { colors.remove(it) }
         triangles.removeAll(selected)
         selected.clear()
+        notifyChange()
         return before - triangles.size
+    }
+
+    fun clearAll() {
+        if (triangles.isNotEmpty()) {
+            triangles.clear()
+            selected.clear()
+            colors.clear()
+            notifyChange()
+        }
+    }
+
+    fun paintSelected(color: com.badlogic.gdx.graphics.Color): Int {
+        if (selected.isEmpty()) {
+            return 0
+        }
+        selected.forEach { triangle ->
+            colors[triangle] = com.badlogic.gdx.graphics.Color(color)
+        }
+        notifyChange()
+        return selected.size
+    }
+
+    fun paintTriangle(triangle: Triangle, color: com.badlogic.gdx.graphics.Color) {
+        colors[triangle] = com.badlogic.gdx.graphics.Color(color)
+        notifyChange()
     }
 
     fun transformSelected(transform: (Vector3) -> Vector3): Int {
@@ -130,21 +181,8 @@ class DraftFaceStore(
         selected.addAll(newSelected)
         colors.clear()
         colors.putAll(newColors)
+        notifyChange()
         return newSelected.size
-    }
-
-    fun paintSelected(color: com.badlogic.gdx.graphics.Color): Int {
-        if (selected.isEmpty()) {
-            return 0
-        }
-        selected.forEach { triangle ->
-            colors[triangle] = com.badlogic.gdx.graphics.Color(color)
-        }
-        return selected.size
-    }
-
-    fun paintTriangle(triangle: Triangle, color: com.badlogic.gdx.graphics.Color) {
-        colors[triangle] = com.badlogic.gdx.graphics.Color(color)
     }
 
     fun selectInVolume(min: Vector3, max: Vector3, replace: Boolean = true): Int {
@@ -636,5 +674,11 @@ class DraftFaceStore(
         if (a.x != b.x) return a.x.compareTo(b.x)
         if (a.y != b.y) return a.y.compareTo(b.y)
         return a.z.compareTo(b.z)
+    }
+
+    private fun notifyChange() {
+        if (!suppressChange) {
+            onChange?.invoke()
+        }
     }
 }

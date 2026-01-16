@@ -8,11 +8,11 @@ import com.github.alfu32.sketch.Katechup3dVersion
 import com.github.alfu32.sketch.Main
 
 /** Launches the desktop (LWJGL3) application. */
-fun main() {
+fun main(args: Array<String>) {
     // This handles macOS support and helps on Windows.
     if (StartupHelper.startNewJvmIfRequired())
       return
-    Lwjgl3Application(Main(), Lwjgl3ApplicationConfiguration().apply {
+    Lwjgl3Application(Main(args), Lwjgl3ApplicationConfiguration().apply {
         var ver = Katechup3dVersion()
         setTitle("Katechup3d ${ver.buildGitTag} ${ver.buildGitBranch} ${ver.buildGitCommit} ${ver.buildDate.substring(0..10)}")
         //// Vsync limits the frames per second to what your hardware can display, and helps eliminate
