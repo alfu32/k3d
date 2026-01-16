@@ -47,18 +47,21 @@ do
 done
 
 export LAUNCHER_LINUX=dist/katechup3d-editor
-cat > $LAUNCHER_LINUX <<LAUNCHERLINUXSCRIPT
-#!/bin/bash
+# cat > $LAUNCHER_LINUX <<LAUNCHERLINUXSCRIPT
+# #!/bin/bash
+#
+# INSTALL_PATH="$(cd "\$(dirname "\$0")" && pwd)"
+# RUN_PATH="$(pwd)"
+#
+# if [[ -n "\$1" ]]; then
+#   java -jar "\$INSTALL_PATH/katechup3d-editor.jar" --file "\$1"
+# else
+#   java -jar "\$INSTALL_PATH/katechup3d-editor.jar"
+# fi
+# LAUNCHERLINUXSCRIPT
+# chmod +x $LAUNCHER_LINUX
 
-INSTALL_PATH="$(cd "\$(dirname "\$0")" && pwd)"
-RUN_PATH="$(pwd)"
-
-if [[ -n "\$1" ]]; then
-  java -jar "\$INSTALL_PATH/katechup3d-editor.jar" --file "\$1"
-else
-  java -jar "\$INSTALL_PATH/katechup3d-editor.jar"
-fi
-LAUNCHERLINUXSCRIPT
+cp scripts/katechup3d-editor $LAUNCHER_LINUX
 chmod +x $LAUNCHER_LINUX
 
 export WINDOWS_INSTALLER=dist/katechup3d.install.cmd
