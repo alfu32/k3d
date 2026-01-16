@@ -91,7 +91,7 @@ set "SCRIPT_PATH=%SCRIPT_PATH:~0,-1%"
 echo Java Version: %JAVA_VERSION%
 echo Script Path: %SCRIPT_PATH%
 
-echo "java -jar %SCRIPT_PATH%\\katechup3d-editor.jar --file \"%%1\"" > Katechup3d.cmd
+echo "java -jar %SCRIPT_PATH%\\katechup3d-editor.jar edit --file \"%%1\"" > Katechup3d.cmd
 
 echo Windows Registry Editor Version 5.00^
      ^

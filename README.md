@@ -25,6 +25,7 @@ KaTeChup3d is a Kotlin + libGDX (jvm) desktop application for interactively crea
 
 This is an active work-in-progress. APIs and behavior may change as modeling and topology features evolve.
 
+![img_10.png](documentation/img_10.png)
 ![img.png](documentation/img.png)
 ![img_1.png](documentation/img_1.png)
 ![img_2.png](documentation/img_2.png)
