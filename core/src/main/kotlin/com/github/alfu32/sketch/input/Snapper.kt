@@ -250,6 +250,16 @@ class Snapper(
                             val t = rayT(ray, snappedPoint) ?: return@forEach
                             val candidate = SnapCandidate(snappedPoint, normal, SnapType.AXIS_GUIDE, dist, t, SnapSource.AXIS_GUIDE)
                             best = pickBetter(best, candidate)
+                            return@forEach
+                        }
+                    }
+                    if (s >= -extent && s <= extent) {
+                        val dist = screenDistance(point, screenX, screenY)
+                        if (dist <= snapPixels) {
+                            val normal = Vector3(baseNormal)
+                            val t = rayT(ray, point) ?: return@forEach
+                            val candidate = SnapCandidate(point, normal, SnapType.AXIS_GUIDE, dist, t, SnapSource.AXIS_GUIDE)
+                            best = pickBetter(best, candidate)
                         }
                     }
                 }
