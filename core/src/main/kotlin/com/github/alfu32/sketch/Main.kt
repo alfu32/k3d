@@ -187,8 +187,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         shapeRenderer.end()
 
         modelBatch.begin(camera)
-        modelBatch.render(faceFrontRenderable, environment)
         modelBatch.render(faceBackRenderable, environment)
+        modelBatch.render(faceFrontRenderable, environment)
         modelBatch.render(groundRenderable, environment)
         modelBatch.end()
 
@@ -531,10 +531,12 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private fun setupRenderables() {
         faceFrontMaterial = Material(
             ColorAttribute.createDiffuse(Color.WHITE),
+            BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, 1f),
             IntAttribute(IntAttribute.CullFace, GL20.GL_BACK)
         )
         faceBackMaterial = Material(
             ColorAttribute.createDiffuse(Color(0.8f, 0.83f, 0.93f, 1f)),
+            BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, 1f),
             IntAttribute(IntAttribute.CullFace, GL20.GL_FRONT)
         )
         selectedFaceMaterial = Material(
