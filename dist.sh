@@ -61,6 +61,8 @@ export LAUNCHER_LINUX=dist/katechup3d-editor
 # LAUNCHERLINUXSCRIPT
 # chmod +x $LAUNCHER_LINUX
 
+mv dist/Katechup3d-*.jar dist/katechup3d-editor.jar
+
 cp scripts/katechup3d-editor $LAUNCHER_LINUX
 chmod +x $LAUNCHER_LINUX
 
