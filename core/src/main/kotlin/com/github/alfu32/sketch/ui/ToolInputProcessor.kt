@@ -46,7 +46,7 @@ class ToolInputProcessor(
                 val snap = lastSnapProvider()
                 val point = snap?.world
                 if (snap != null && snap.valid && point != null) {
-                    guideManager.addAxisGuide(point)
+                    guideManager.addAxisGuide(point, snap.normal)
                 }
                 return true
             }
@@ -54,7 +54,7 @@ class ToolInputProcessor(
                 val snap = lastSnapProvider()
                 val point = snap?.world
                 if (snap != null && snap.valid && point != null) {
-                    guideManager.addGridGuide(point)
+                    guideManager.addGridGuide(point, snap.normal)
                 }
                 return true
             }

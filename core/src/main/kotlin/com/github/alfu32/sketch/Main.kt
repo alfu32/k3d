@@ -299,18 +299,28 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun drawGuides() {
         val extent = gridSpacing * 10f
-        guideManager.getGridGuides().forEach { center ->
-            drawGuidePlane(center, Vector3(1f, 0f, 0f), Vector3(0f, 1f, 0f), extent)
-            drawGuidePlane(center, Vector3(1f, 0f, 0f), Vector3(0f, 0f, 1f), extent)
-            drawGuidePlane(center, Vector3(0f, 1f, 0f), Vector3(0f, 0f, 1f), extent)
+        guideManager.getGridGuides().forEach { guide ->
+            drawGuidePlane(guide.origin, guide.axisU, guide.axisV, extent)
+            drawGuidePlane(guide.origin, guide.axisU, guide.axisW, extent)
+            drawGuidePlane(guide.origin, guide.axisV, guide.axisW, extent)
         }
-        guideManager.getAxisGuides().forEach { center ->
-            shapeRenderer.color = Color(0.85f, 0.25f, 0.25f, 1f)
-            shapeRenderer.line(center.x - extent, center.y, center.z, center.x + extent, center.y, center.z)
-            shapeRenderer.color = Color(0.35f, 0.45f, 0.95f, 1f)
-            shapeRenderer.line(center.x, center.y - extent, center.z, center.x, center.y + extent, center.z)
-            shapeRenderer.color = Color(0.25f, 0.85f, 0.35f, 1f)
-            shapeRenderer.line(center.x, center.y, center.z - extent, center.x, center.y, center.z + extent)
+        guideManager.getAxisGuides().forEach { guide ->
+            val origin = guide.origin
+            val axisU = guide.axisU
+            val axisV = guide.axisV
+            val axisW = guide.axisW
+            shapeRenderer.color = axisColor(axisU)
+            val uStart = Vector3(origin).mulAdd(axisU, -extent)
+            val uEnd = Vector3(origin).mulAdd(axisU, extent)
+            shapeRenderer.line(uStart.x, uStart.y, uStart.z, uEnd.x, uEnd.y, uEnd.z)
+            shapeRenderer.color = axisColor(axisV)
+            val vStart = Vector3(origin).mulAdd(axisV, -extent)
+            val vEnd = Vector3(origin).mulAdd(axisV, extent)
+            shapeRenderer.line(vStart.x, vStart.y, vStart.z, vEnd.x, vEnd.y, vEnd.z)
+            shapeRenderer.color = axisColor(axisW)
+            val wStart = Vector3(origin).mulAdd(axisW, -extent)
+            val wEnd = Vector3(origin).mulAdd(axisW, extent)
+            shapeRenderer.line(wStart.x, wStart.y, wStart.z, wEnd.x, wEnd.y, wEnd.z)
         }
     }
 

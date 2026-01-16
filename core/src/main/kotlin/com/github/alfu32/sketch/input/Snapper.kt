@@ -196,16 +196,16 @@ class Snapper(
     private fun snapToGridGuides(ray: com.badlogic.gdx.math.collision.Ray, screenX: Int, screenY: Int): SnapCandidate? {
         var best: SnapCandidate? = null
         var bestT = Float.POSITIVE_INFINITY
-        guideManager.getGridGuides().forEach { center ->
+        guideManager.getGridGuides().forEach { guide ->
             val planes = listOf(
-                PlaneGuide(Vector3(0f, 0f, 1f), Vector3(1f, 0f, 0f), Vector3(0f, 1f, 0f)),
-                PlaneGuide(Vector3(0f, 1f, 0f), Vector3(1f, 0f, 0f), Vector3(0f, 0f, 1f)),
-                PlaneGuide(Vector3(1f, 0f, 0f), Vector3(0f, 1f, 0f), Vector3(0f, 0f, 1f))
+                PlaneGuide(Vector3(guide.axisW), Vector3(guide.axisU), Vector3(guide.axisV)),
+                PlaneGuide(Vector3(guide.axisV), Vector3(guide.axisU), Vector3(guide.axisW)),
+                PlaneGuide(Vector3(guide.axisU), Vector3(guide.axisV), Vector3(guide.axisW))
             )
             planes.forEach { plane ->
-                val hit = intersectPlane(ray, center, plane.normal)
+                val hit = intersectPlane(ray, guide.origin, plane.normal)
                 if (hit != null) {
-                    val snapped = snapPointOnPlane(hit.point, center, plane.axisU, plane.axisV)
+                    val snapped = snapPointOnPlane(hit.point, guide.origin, plane.axisU, plane.axisV)
                     val dist = screenDistance(snapped, screenX, screenY)
                     if (dist <= snapPixels) {
                         val normal = facingNormal(Vector3(plane.normal), ray.direction)
@@ -230,20 +230,20 @@ class Snapper(
         screenY: Int
     ): SnapCandidate? {
         var best: SnapCandidate? = null
-        guideManager.getAxisGuides().forEach { center ->
+        guideManager.getAxisGuides().forEach { guide ->
             val extent = gridSpacing * 10f
             val axes = listOf(
-                Vector3(1f, 0f, 0f),
-                Vector3(0f, 1f, 0f),
-                Vector3(0f, 0f, 1f)
+                Vector3(guide.axisU),
+                Vector3(guide.axisV),
+                Vector3(guide.axisW)
             )
             axes.forEach { axis ->
-                val result = closestPointRayLine(ray, center, axis)
+                val result = closestPointRayLine(ray, guide.origin, axis)
                 if (result != null) {
                     val (point, s, tRay) = result
                     val snappedS = round(s / gridSpacing) * gridSpacing
                     if (snappedS >= -extent && snappedS <= extent) {
-                        val snappedPoint = Vector3(center).mulAdd(axis, snappedS)
+                        val snappedPoint = Vector3(guide.origin).mulAdd(axis, snappedS)
                         val dist = screenDistance(snappedPoint, screenX, screenY)
                         if (dist <= snapPixels) {
                             val normal = Vector3(baseNormal)
