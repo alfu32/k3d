@@ -83,22 +83,23 @@ class PushPullTool(
         val faceNormal = normal ?: return
         renderer.color = Color(0.95f, 0.75f, 0.25f, 1f)
         val offset = Vector3(faceNormal).scl(currentDistance)
-        activeTriangles.forEach { tri ->
-            val a = Vector3(tri.a)
-            val b = Vector3(tri.b)
-            val c = Vector3(tri.c)
+        val boundaryEdges = collectBoundaryEdges(activeTriangles)
+        val verticalKeys = mutableSetOf<VertexKey>()
+        boundaryEdges.forEach { edge ->
+            val a = edge.from
+            val b = edge.to
             val ap = Vector3(a).add(offset)
             val bp = Vector3(b).add(offset)
-            val cp = Vector3(c).add(offset)
             renderer.line(a.x, a.y, a.z, b.x, b.y, b.z)
-            renderer.line(b.x, b.y, b.z, c.x, c.y, c.z)
-            renderer.line(c.x, c.y, c.z, a.x, a.y, a.z)
             renderer.line(ap.x, ap.y, ap.z, bp.x, bp.y, bp.z)
-            renderer.line(bp.x, bp.y, bp.z, cp.x, cp.y, cp.z)
-            renderer.line(cp.x, cp.y, cp.z, ap.x, ap.y, ap.z)
-            renderer.line(a.x, a.y, a.z, ap.x, ap.y, ap.z)
-            renderer.line(b.x, b.y, b.z, bp.x, bp.y, bp.z)
-            renderer.line(c.x, c.y, c.z, cp.x, cp.y, cp.z)
+            val aKey = vertexKey(a)
+            val bKey = vertexKey(b)
+            if (verticalKeys.add(aKey)) {
+                renderer.line(a.x, a.y, a.z, ap.x, ap.y, ap.z)
+            }
+            if (verticalKeys.add(bKey)) {
+                renderer.line(b.x, b.y, b.z, bp.x, bp.y, bp.z)
+            }
         }
     }
 
@@ -108,6 +109,7 @@ class PushPullTool(
         }
         val offset = Vector3(faceNormal).scl(distance)
         val reverse = distance < 0f
+        val boundaryEdges = collectBoundaryEdges(activeTriangles)
         activeTriangles.forEach { tri ->
             val a = Vector3(tri.a)
             val b = Vector3(tri.b)
@@ -121,17 +123,23 @@ class PushPullTool(
             } else {
                 faceStore.addTriangle(ap, cp, bp)
             }
-
+        }
+        val verticalKeys = mutableSetOf<VertexKey>()
+        boundaryEdges.forEach { edge ->
+            val a = edge.from
+            val b = edge.to
+            val ap = Vector3(a).add(offset)
+            val bp = Vector3(b).add(offset)
             addSideQuad(a, b, ap, bp, reverse)
-            addSideQuad(b, c, bp, cp, reverse)
-            addSideQuad(c, a, cp, ap, reverse)
-
             lineStore.addSegment(ap, bp)
-            lineStore.addSegment(bp, cp)
-            lineStore.addSegment(cp, ap)
-            lineStore.addSegment(a, ap)
-            lineStore.addSegment(b, bp)
-            lineStore.addSegment(c, cp)
+            val aKey = vertexKey(a)
+            val bKey = vertexKey(b)
+            if (verticalKeys.add(aKey)) {
+                lineStore.addSegment(a, ap)
+            }
+            if (verticalKeys.add(bKey)) {
+                lineStore.addSegment(b, bp)
+            }
         }
     }
 
@@ -155,5 +163,49 @@ class PushPullTool(
 
     private fun facingNormal(normal: Vector3, rayDir: Vector3): Vector3 {
         return if (normal.dot(rayDir) > 0f) Vector3(normal).scl(-1f) else Vector3(normal)
+    }
+
+    private data class VertexKey(val x: Int, val y: Int, val z: Int)
+
+    private data class EdgeKey(val a: VertexKey, val b: VertexKey)
+
+    private data class DirectedEdge(val from: Vector3, val to: Vector3)
+
+    private fun collectBoundaryEdges(triangles: List<DraftFaceStore.Triangle>): List<DirectedEdge> {
+        val edgeCount = mutableMapOf<EdgeKey, Int>()
+        val edgeDirs = mutableMapOf<EdgeKey, DirectedEdge>()
+        triangles.forEach { tri ->
+            val edges = listOf(
+                Pair(tri.a, tri.b),
+                Pair(tri.b, tri.c),
+                Pair(tri.c, tri.a)
+            )
+            edges.forEach { (from, to) ->
+                val key = edgeKey(from, to)
+                edgeCount[key] = (edgeCount[key] ?: 0) + 1
+                if (!edgeDirs.containsKey(key)) {
+                    edgeDirs[key] = DirectedEdge(Vector3(from), Vector3(to))
+                }
+            }
+        }
+        return edgeCount.filterValues { it == 1 }.keys.mapNotNull { key -> edgeDirs[key] }
+    }
+
+    private fun edgeKey(a: Vector3, b: Vector3): EdgeKey {
+        val va = vertexKey(a)
+        val vb = vertexKey(b)
+        return if (compareKeys(va, vb) <= 0) EdgeKey(va, vb) else EdgeKey(vb, va)
+    }
+
+    private fun vertexKey(point: Vector3): VertexKey {
+        val eps = 1e-3f
+        fun quant(value: Float): Int = kotlin.math.round(value / eps).toInt()
+        return VertexKey(quant(point.x), quant(point.y), quant(point.z))
+    }
+
+    private fun compareKeys(a: VertexKey, b: VertexKey): Int {
+        if (a.x != b.x) return a.x.compareTo(b.x)
+        if (a.y != b.y) return a.y.compareTo(b.y)
+        return a.z.compareTo(b.z)
     }
 }

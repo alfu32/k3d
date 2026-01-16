@@ -222,13 +222,12 @@ class SketchUiOverlay(
     }
 
     private fun updatePaintColorButton() {
-        val button = paintColorButton ?: return
         if (sameColor(status.paintColor, lastPaintColor)) {
             return
         }
         lastPaintColor = Color(status.paintColor)
-        button.image.drawable = createActionIconDrawable(status.paintColor)
-        button.invalidateHierarchy()
+        updateButtonIcon(paintColorButton, status.paintColor)
+        updateButtonIcon(toolButtons[ToolId.PAINT], status.paintColor)
     }
 
     private fun showColorPicker() {
@@ -268,6 +267,19 @@ class SketchUiOverlay(
         }
         picker.centerWindow()
         picker.fadeIn()
+    }
+
+    private fun updateButtonIcon(button: VisImageTextButton?, color: Color) {
+        val target = button ?: return
+        val drawable = createActionIconDrawable(color)
+        if (target.image != null) {
+            target.image.drawable = drawable
+        } else {
+            val style = target.style
+            style.imageUp = drawable
+            target.style = style
+        }
+        target.invalidateHierarchy()
     }
 
     private fun sameColor(a: Color, b: Color): Boolean {
