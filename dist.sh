@@ -50,7 +50,14 @@ export LAUNCHER_LINUX=dist/katechup3d-editor
 cat > $LAUNCHER_LINUX <<LAUNCHERLINUXSCRIPT
 #!/bin/bash
 
-java -jar "Katechup3d-1.0.0.jar" 1280x960 "$1"
+INSTALL_PATH="$(cd "\$(dirname "\$0")" && pwd)"
+RUN_PATH="$(pwd)"
+
+if [[ -n "\$1" ]]; then
+  java -jar "\$INSTALL_PATH/katechup3d-editor.jar" --file "\$1"
+else
+  java -jar "\$INSTALL_PATH/katechup3d-editor.jar"
+fi
 LAUNCHERLINUXSCRIPT
 chmod +x $LAUNCHER_LINUX
 
@@ -79,7 +86,7 @@ set "SCRIPT_PATH=%SCRIPT_PATH:~0,-1%"
 echo Java Version: %JAVA_VERSION%
 echo Script Path: %SCRIPT_PATH%
 
-echo "java -jar %SCRIPT_PATH%\\Katechup3d-1.0.0.jar.jar 1280x960 default.kt3" > Katechup3d.cmd
+echo "java -jar %SCRIPT_PATH%\\katechup3d-editor.jar --file \"%%1\"" > Katechup3d.cmd
 
 echo Windows Registry Editor Version 5.00^
      ^
