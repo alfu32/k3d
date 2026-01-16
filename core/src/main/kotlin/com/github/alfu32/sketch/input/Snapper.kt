@@ -241,11 +241,14 @@ class Snapper(
                 val result = closestPointRayLine(ray, center, axis)
                 if (result != null) {
                     val (point, s, tRay) = result
-                    if (s >= -extent && s <= extent) {
-                        val dist = screenDistance(point, screenX, screenY)
+                    val snappedS = round(s / gridSpacing) * gridSpacing
+                    if (snappedS >= -extent && snappedS <= extent) {
+                        val snappedPoint = Vector3(center).mulAdd(axis, snappedS)
+                        val dist = screenDistance(snappedPoint, screenX, screenY)
                         if (dist <= snapPixels) {
                             val normal = Vector3(baseNormal)
-                            val candidate = SnapCandidate(point, normal, SnapType.AXIS_GUIDE, dist, tRay, SnapSource.AXIS_GUIDE)
+                            val t = rayT(ray, snappedPoint) ?: return@forEach
+                            val candidate = SnapCandidate(snappedPoint, normal, SnapType.AXIS_GUIDE, dist, t, SnapSource.AXIS_GUIDE)
                             best = pickBetter(best, candidate)
                         }
                     }

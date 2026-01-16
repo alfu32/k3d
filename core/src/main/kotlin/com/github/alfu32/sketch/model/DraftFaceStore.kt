@@ -99,6 +99,40 @@ class DraftFaceStore(
         return before - triangles.size
     }
 
+    fun transformSelected(transform: (Vector3) -> Vector3): Int {
+        if (selected.isEmpty()) {
+            return 0
+        }
+        val oldSelected = selected.toSet()
+        val newSelected = mutableSetOf<Triangle>()
+        val newTriangles = mutableListOf<Triangle>()
+        val newColors = mutableMapOf<Triangle, com.badlogic.gdx.graphics.Color>()
+
+        triangles.forEach { tri ->
+            val color = colors[tri] ?: defaultColor
+            if (oldSelected.contains(tri)) {
+                val a = transform(Vector3(tri.a))
+                val b = transform(Vector3(tri.b))
+                val c = transform(Vector3(tri.c))
+                val next = Triangle(a, b, c)
+                newTriangles.add(next)
+                newSelected.add(next)
+                newColors[next] = com.badlogic.gdx.graphics.Color(color)
+            } else {
+                newTriangles.add(tri)
+                newColors[tri] = com.badlogic.gdx.graphics.Color(color)
+            }
+        }
+
+        triangles.clear()
+        triangles.addAll(newTriangles)
+        selected.clear()
+        selected.addAll(newSelected)
+        colors.clear()
+        colors.putAll(newColors)
+        return newSelected.size
+    }
+
     fun paintSelected(color: com.badlogic.gdx.graphics.Color): Int {
         if (selected.isEmpty()) {
             return 0

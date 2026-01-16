@@ -92,6 +92,31 @@ class DraftLineStore {
         return before - segments.size
     }
 
+    fun transformSelected(transform: (Vector3) -> Vector3): Int {
+        if (selected.isEmpty()) {
+            return 0
+        }
+        val oldSelected = selected.toSet()
+        val newSelected = mutableSetOf<Segment>()
+        val newSegments = mutableListOf<Segment>()
+        segments.forEach { segment ->
+            if (oldSelected.contains(segment)) {
+                val a = transform(Vector3(segment.start))
+                val b = transform(Vector3(segment.end))
+                val next = Segment(a, b)
+                newSegments.add(next)
+                newSelected.add(next)
+            } else {
+                newSegments.add(segment)
+            }
+        }
+        segments.clear()
+        segments.addAll(newSegments)
+        selected.clear()
+        selected.addAll(newSelected)
+        return newSelected.size
+    }
+
     fun selectInVolume(min: Vector3, max: Vector3, replace: Boolean = true): Int {
         if (replace) {
             selected.clear()

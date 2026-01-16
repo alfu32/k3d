@@ -4,6 +4,7 @@ enum class ToolId(val displayName: String) {
     SELECT("Select"),
     LINE("Line"),
     RECTANGLE("Rectangle"),
+    QUAD("Quad"),
     CIRCLE("Circle"),
     PUSH_PULL("Push/Pull"),
     MOVE("Move"),

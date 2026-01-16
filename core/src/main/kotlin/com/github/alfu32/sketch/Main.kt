@@ -36,9 +36,12 @@ import com.github.alfu32.sketch.model.DraftLineStore
 import com.github.alfu32.sketch.model.ModelCleanup
 import com.github.alfu32.sketch.tools.CircleTool
 import com.github.alfu32.sketch.tools.LineTool
+import com.github.alfu32.sketch.tools.MoveTool
 import com.github.alfu32.sketch.tools.PaintTool
 import com.github.alfu32.sketch.tools.PushPullTool
+import com.github.alfu32.sketch.tools.QuadTool
 import com.github.alfu32.sketch.tools.RectangleTool
+import com.github.alfu32.sketch.tools.RotateTool
 import com.github.alfu32.sketch.tools.SelectTool
 import com.github.alfu32.sketch.ui.SimpleTool
 import com.github.alfu32.sketch.ui.SketchUiOverlay
@@ -115,10 +118,11 @@ class Main : ApplicationAdapter() {
                 SelectTool(lineStore, faceStore, camera),
                 LineTool(lineStore, faceStore),
                 RectangleTool(lineStore, faceStore),
+                QuadTool(lineStore, faceStore),
                 CircleTool(lineStore, faceStore),
                 PushPullTool(lineStore, faceStore, camera),
-                SimpleTool(ToolId.MOVE, "Select and move."),
-                SimpleTool(ToolId.ROTATE, "Select and rotate."),
+                MoveTool(lineStore, faceStore),
+                RotateTool(lineStore, faceStore),
                 SimpleTool(ToolId.SCALE, "Select and scale."),
                 PaintTool(faceStore, camera) { statusModel.paintColor.cpy() },
                 SimpleTool(ToolId.ERASER, "Click to erase edges.")

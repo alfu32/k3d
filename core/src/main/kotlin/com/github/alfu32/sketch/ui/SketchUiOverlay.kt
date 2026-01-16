@@ -176,6 +176,7 @@ class SketchUiOverlay(
             ToolId.SELECT -> Color(0.85f, 0.85f, 0.85f, 1f)
             ToolId.LINE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.RECTANGLE -> Color(0.35f, 0.75f, 0.95f, 1f)
+            ToolId.QUAD -> Color(0.55f, 0.85f, 0.95f, 1f)
             ToolId.CIRCLE -> Color(0.95f, 0.55f, 0.75f, 1f)
             ToolId.PUSH_PULL -> Color(0.45f, 0.95f, 0.55f, 1f)
             ToolId.MOVE -> Color(0.95f, 0.45f, 0.35f, 1f)
