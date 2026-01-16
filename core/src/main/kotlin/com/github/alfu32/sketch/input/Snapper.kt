@@ -96,14 +96,14 @@ class Snapper(
     private fun pickBaseHit(ray: com.badlogic.gdx.math.collision.Ray): PlaneHit? {
         var best = intersectGround(ray)
         val guides = guideManager.getGridGuides()
-        for (center in guides) {
+        for (guide in guides) {
             val planes = listOf(
-                PlaneGuide(Vector3(0f, 0f, 1f), Vector3(1f, 0f, 0f), Vector3(0f, 1f, 0f)),
-                PlaneGuide(Vector3(0f, 1f, 0f), Vector3(1f, 0f, 0f), Vector3(0f, 0f, 1f)),
-                PlaneGuide(Vector3(1f, 0f, 0f), Vector3(0f, 1f, 0f), Vector3(0f, 0f, 1f))
+                PlaneGuide(Vector3(guide.axisW), Vector3(guide.axisU), Vector3(guide.axisV)),
+                PlaneGuide(Vector3(guide.axisV), Vector3(guide.axisU), Vector3(guide.axisW)),
+                PlaneGuide(Vector3(guide.axisU), Vector3(guide.axisV), Vector3(guide.axisW))
             )
             for (plane in planes) {
-                val hit = intersectPlane(ray, center, plane.normal)
+                val hit = intersectPlane(ray, guide.origin, plane.normal)
                 if (hit != null && (best == null || hit.t < best.t)) {
                     best = hit
                 }
