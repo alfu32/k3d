@@ -227,7 +227,19 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             shapeRenderer.end()
             shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
             shapeRenderer.color = Color(0.25f, 0.55f, 0.95f, 0.9f)
-            shapeRenderer.rect(windowRect.x, windowRect.y, windowRect.width, windowRect.height)
+            if (windowRect.dashed) {
+                drawDashedRect(
+                    shapeRenderer,
+                    windowRect.x,
+                    windowRect.y,
+                    windowRect.width,
+                    windowRect.height,
+                    6f,
+                    4f
+                )
+            } else {
+                shapeRenderer.rect(windowRect.x, windowRect.y, windowRect.width, windowRect.height)
+            }
             shapeRenderer.end()
             Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
         }
@@ -345,6 +357,51 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             axis.x > 0.5f -> Color(0.85f, 0.25f, 0.25f, 1f)
             axis.y > 0.5f -> Color(0.35f, 0.45f, 0.95f, 1f)
             else -> Color(0.25f, 0.85f, 0.35f, 1f)
+        }
+    }
+
+    private fun drawDashedRect(
+        renderer: ShapeRenderer,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        dash: Float,
+        gap: Float
+    ) {
+        drawDashedLine(renderer, x, y, x + width, y, dash, gap)
+        drawDashedLine(renderer, x + width, y, x + width, y + height, dash, gap)
+        drawDashedLine(renderer, x + width, y + height, x, y + height, dash, gap)
+        drawDashedLine(renderer, x, y + height, x, y, dash, gap)
+    }
+
+    private fun drawDashedLine(
+        renderer: ShapeRenderer,
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
+        dash: Float,
+        gap: Float
+    ) {
+        val dx = x2 - x1
+        val dy = y2 - y1
+        val length = kotlin.math.sqrt(dx * dx + dy * dy)
+        if (length <= 0.001f) {
+            return
+        }
+        val step = dash + gap
+        val nx = dx / length
+        val ny = dy / length
+        var dist = 0f
+        while (dist < length) {
+            val segment = kotlin.math.min(dash, length - dist)
+            val sx = x1 + nx * dist
+            val sy = y1 + ny * dist
+            val ex = x1 + nx * (dist + segment)
+            val ey = y1 + ny * (dist + segment)
+            renderer.line(sx, sy, ex, ey)
+            dist += step
         }
     }
 

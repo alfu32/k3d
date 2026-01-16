@@ -6,6 +6,7 @@ import com.badlogic.gdx.graphics.Camera
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.utils.TimeUtils
+import com.badlogic.gdx.math.Vector2
 import com.github.alfu32.sketch.model.DraftFaceStore
 import com.github.alfu32.sketch.model.DraftLineStore
 import com.github.alfu32.sketch.ui.StatusModel
@@ -17,7 +18,7 @@ class SelectTool(
     private val faceStore: DraftFaceStore,
     private val camera: Camera
 ) : Tool {
-    data class WindowRect(val x: Float, val y: Float, val width: Float, val height: Float)
+    data class WindowRect(val x: Float, val y: Float, val width: Float, val height: Float, val dashed: Boolean)
 
     override val id: ToolId = ToolId.SELECT
     override val message: String = "Select entities."
@@ -38,6 +39,7 @@ class SelectTool(
     private var windowEndX = 0
     private var windowEndY = 0
     private var pendingVolumeStart: Vector3? = null
+    private enum class SelectionMode { REPLACE, ADD, REMOVE }
 
     override fun onEnter(status: StatusModel) {
         status.message = "Select entities."
@@ -181,10 +183,14 @@ class SelectTool(
             selectingWindow = false
             windowDragActive = false
             if (rect != null) {
-                faceStore.clearSelection()
-                lineStore.clearSelection()
-                val faces = selectFacesInWindow(rect)
-                val edges = selectEdgesInWindow(rect)
+                val includeIntersect = windowStartX > windowEndX
+                val mode = selectionMode()
+                if (mode == SelectionMode.REPLACE) {
+                    faceStore.clearSelection()
+                    lineStore.clearSelection()
+                }
+                val faces = selectFacesInWindow(rect, includeIntersect, mode)
+                val edges = selectEdgesInWindow(rect, includeIntersect, mode)
                 status.message = "Window select | edges $edges faces $faces"
                 return true
             } else if (pendingVolumeStart != null) {
@@ -211,7 +217,8 @@ class SelectTool(
         val maxY = kotlin.math.max(windowStartY, windowEndY).toFloat()
         val bottom = screenHeight - maxY
         val top = screenHeight - minY
-        return WindowRect(minX, bottom, maxX - minX, top - bottom)
+        val dashed = windowStartX > windowEndX
+        return WindowRect(minX, bottom, maxX - minX, top - bottom, dashed)
     }
 
     override fun render(renderer: ShapeRenderer) {
@@ -256,29 +263,59 @@ class SelectTool(
         return WindowRectTopLeft(minX, maxX, minY, maxY)
     }
 
-    private fun selectFacesInWindow(rect: WindowRectTopLeft): Int {
+    private fun selectFacesInWindow(rect: WindowRectTopLeft, includeIntersect: Boolean, mode: SelectionMode): Int {
         var count = 0
         faceStore.getTriangles().forEach { tri ->
             val a = projectToScreen(tri.a)
             val b = projectToScreen(tri.b)
             val c = projectToScreen(tri.c)
-            if (pointInRect(a, rect) && pointInRect(b, rect) && pointInRect(c, rect)) {
-                if (faceStore.addSelection(tri)) {
-                    count++
+            val matches = if (!includeIntersect) {
+                pointInRect(a, rect) && pointInRect(b, rect) && pointInRect(c, rect)
+            } else {
+                faceIntersectsRect(a, b, c, rect)
+            }
+            if (matches) {
+                when (mode) {
+                    SelectionMode.ADD, SelectionMode.REPLACE -> {
+                        if (faceStore.addSelection(tri)) {
+                            count++
+                        }
+                    }
+                    SelectionMode.REMOVE -> {
+                        if (faceStore.isSelected(tri)) {
+                            faceStore.removeSelection(tri)
+                            count++
+                        }
+                    }
                 }
             }
         }
         return count
     }
 
-    private fun selectEdgesInWindow(rect: WindowRectTopLeft): Int {
+    private fun selectEdgesInWindow(rect: WindowRectTopLeft, includeIntersect: Boolean, mode: SelectionMode): Int {
         var count = 0
         lineStore.getSegments().forEach { segment ->
             val a = projectToScreen(segment.start)
             val b = projectToScreen(segment.end)
-            if (pointInRect(a, rect) && pointInRect(b, rect)) {
-                if (lineStore.addSelection(segment)) {
-                    count++
+            val matches = if (!includeIntersect) {
+                pointInRect(a, rect) && pointInRect(b, rect)
+            } else {
+                segmentIntersectsRect(a, b, rect)
+            }
+            if (matches) {
+                when (mode) {
+                    SelectionMode.ADD, SelectionMode.REPLACE -> {
+                        if (lineStore.addSelection(segment)) {
+                            count++
+                        }
+                    }
+                    SelectionMode.REMOVE -> {
+                        if (lineStore.isSelected(segment)) {
+                            lineStore.removeSelection(segment)
+                            count++
+                        }
+                    }
                 }
             }
         }
@@ -296,6 +333,112 @@ class SelectTool(
             point.x <= rect.maxX &&
             point.y >= rect.minY &&
             point.y <= rect.maxY
+    }
+
+    private fun selectionMode(): SelectionMode {
+        val shift = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) ||
+            Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT)
+        val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
+            Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+        return when {
+            ctrl -> SelectionMode.REMOVE
+            shift -> SelectionMode.ADD
+            else -> SelectionMode.REPLACE
+        }
+    }
+
+    private fun faceIntersectsRect(a: Vector3, b: Vector3, c: Vector3, rect: WindowRectTopLeft): Boolean {
+        if (pointInRect(a, rect) || pointInRect(b, rect) || pointInRect(c, rect)) {
+            return true
+        }
+        val rectPoints = rectCorners(rect)
+        val a2 = Vector2(a.x, a.y)
+        val b2 = Vector2(b.x, b.y)
+        val c2 = Vector2(c.x, c.y)
+        rectPoints.forEach { p ->
+            if (pointInTriangle(p, a2, b2, c2)) {
+                return true
+            }
+        }
+        return segmentIntersectsRect(a, b, rect) ||
+            segmentIntersectsRect(b, c, rect) ||
+            segmentIntersectsRect(c, a, rect)
+    }
+
+    private fun segmentIntersectsRect(a: Vector3, b: Vector3, rect: WindowRectTopLeft): Boolean {
+        if (pointInRect(a, rect) || pointInRect(b, rect)) {
+            return true
+        }
+        val corners = rectCorners(rect)
+        val r0 = corners[0]
+        val r1 = corners[1]
+        val r2 = corners[2]
+        val r3 = corners[3]
+        val a2 = Vector2(a.x, a.y)
+        val b2 = Vector2(b.x, b.y)
+        return segmentsIntersect(a2, b2, r0, r1) ||
+            segmentsIntersect(a2, b2, r1, r2) ||
+            segmentsIntersect(a2, b2, r2, r3) ||
+            segmentsIntersect(a2, b2, r3, r0)
+    }
+
+    private fun rectCorners(rect: WindowRectTopLeft): List<Vector2> {
+        val minX = rect.minX
+        val maxX = rect.maxX
+        val minY = rect.minY
+        val maxY = rect.maxY
+        return listOf(
+            Vector2(minX, minY),
+            Vector2(maxX, minY),
+            Vector2(maxX, maxY),
+            Vector2(minX, maxY)
+        )
+    }
+
+    private fun pointInTriangle(p: Vector2, a: Vector2, b: Vector2, c: Vector2): Boolean {
+        val v0 = Vector2(c).sub(a)
+        val v1 = Vector2(b).sub(a)
+        val v2 = Vector2(p).sub(a)
+        val dot00 = v0.dot(v0)
+        val dot01 = v0.dot(v1)
+        val dot02 = v0.dot(v2)
+        val dot11 = v1.dot(v1)
+        val dot12 = v1.dot(v2)
+        val invDen = 1f / (dot00 * dot11 - dot01 * dot01)
+        val u = (dot11 * dot02 - dot01 * dot12) * invDen
+        val v = (dot00 * dot12 - dot01 * dot02) * invDen
+        return u >= -1e-4f && v >= -1e-4f && u + v <= 1f + 1e-4f
+    }
+
+    private fun segmentsIntersect(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vector2): Boolean {
+        val o1 = orientation(p1, p2, q1)
+        val o2 = orientation(p1, p2, q2)
+        val o3 = orientation(q1, q2, p1)
+        val o4 = orientation(q1, q2, p2)
+        if (o1 != o2 && o3 != o4) {
+            return true
+        }
+        return o1 == 0 && onSegment(p1, q1, p2) ||
+            o2 == 0 && onSegment(p1, q2, p2) ||
+            o3 == 0 && onSegment(q1, p1, q2) ||
+            o4 == 0 && onSegment(q1, p2, q2)
+    }
+
+    private fun orientation(a: Vector2, b: Vector2, c: Vector2): Int {
+        val value = (b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y)
+        val eps = 1e-6f
+        return when {
+            kotlin.math.abs(value) < eps -> 0
+            value > 0f -> 1
+            else -> 2
+        }
+    }
+
+    private fun onSegment(a: Vector2, b: Vector2, c: Vector2): Boolean {
+        return b.x <= maxOf(a.x, c.x) + 1e-6f &&
+            b.x + 1e-6f >= minOf(a.x, c.x) &&
+            b.y <= maxOf(a.y, c.y) + 1e-6f &&
+            b.y + 1e-6f >= minOf(a.y, c.y)
     }
 
     private fun updateClickCount(): Int {
