@@ -117,6 +117,7 @@ class SketchUiOverlay(
             val icon = createIconDrawable(toolId)
             val button = VisImageTextButton(toolId.displayName, icon)
             applyWhiteButtonStyle(button)
+            applyIconStyle(button, icon)
             button.setChecked(toolId == status.activeTool)
             button.addListener(object : ClickListener() {
                 override fun clicked(event: InputEvent?, x: Float, y: Float) {
@@ -133,7 +134,7 @@ class SketchUiOverlay(
         toolbar.add(VisLabel("Actions")).padTop(8f).row()
         val cleanupButton = VisImageTextButton("Cleanup", createActionIconDrawable(Color(0.55f, 0.85f, 0.65f, 1f)))
         applyWhiteButtonStyle(cleanupButton)
-        cleanupButton.image.drawable = iconFor("cleanup", cleanupButton.image.drawable)
+        applyIconStyle(cleanupButton, iconFor("cleanup", cleanupButton.image.drawable))
         cleanupButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 cleanupAction()
@@ -143,7 +144,7 @@ class SketchUiOverlay(
 
         val colorButton = VisImageTextButton("Color", createActionIconDrawable(status.paintColor))
         applyWhiteButtonStyle(colorButton)
-        colorButton.image.drawable = iconFor("color", colorButton.image.drawable)
+        applyIconStyle(colorButton, iconFor("color", colorButton.image.drawable))
         colorButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 showColorPicker()
@@ -154,7 +155,7 @@ class SketchUiOverlay(
 
         val deleteButton = VisImageTextButton("Delete", createActionIconDrawable(Color(0.9f, 0.45f, 0.45f, 1f)))
         applyWhiteButtonStyle(deleteButton)
-        deleteButton.image.drawable = iconFor("delete", deleteButton.image.drawable)
+        applyIconStyle(deleteButton, iconFor("delete", deleteButton.image.drawable))
         deleteButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 deleteSelectionAction()
@@ -164,7 +165,7 @@ class SketchUiOverlay(
 
         val flipButton = VisImageTextButton("Flip Faces", createActionIconDrawable(Color(0.45f, 0.65f, 0.95f, 1f)))
         applyWhiteButtonStyle(flipButton)
-        flipButton.image.drawable = iconFor("flip_faces", flipButton.image.drawable)
+        applyIconStyle(flipButton, iconFor("flip_faces", flipButton.image.drawable))
         flipButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 flipFacesAction()
@@ -323,6 +324,15 @@ class SketchUiOverlay(
 
     private fun sameColor(a: Color, b: Color): Boolean {
         return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a
+    }
+
+    private fun applyIconStyle(button: VisImageTextButton, icon: TextureRegionDrawable) {
+        val style = button.style
+        style.imageUp = icon
+        style.imageDown = icon
+        style.imageChecked = icon
+        style.imageOver = icon
+        button.image?.drawable = icon
     }
 
     private fun applyWhiteButtonStyle(button: VisImageTextButton) {
