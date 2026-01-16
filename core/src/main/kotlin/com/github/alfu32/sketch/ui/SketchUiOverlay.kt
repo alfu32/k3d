@@ -272,13 +272,13 @@ class SketchUiOverlay(
     private fun updateButtonIcon(button: VisImageTextButton?, color: Color) {
         val target = button ?: return
         val drawable = createActionIconDrawable(color)
-        if (target.image != null) {
-            target.image.drawable = drawable
-        } else {
-            val style = target.style
-            style.imageUp = drawable
-            target.style = style
-        }
+        val style = target.style
+        style.imageUp = drawable
+        style.imageDown = drawable
+        style.imageChecked = drawable
+        style.imageOver = drawable
+        target.style = style
+        target.image?.drawable = drawable
         target.invalidateHierarchy()
     }
 
