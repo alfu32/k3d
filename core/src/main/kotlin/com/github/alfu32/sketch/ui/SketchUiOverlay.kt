@@ -318,8 +318,9 @@ class SketchUiOverlay(
         return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a
     }
 
-    private fun iconFor(name: String, fallback: TextureRegionDrawable?): TextureRegionDrawable {
-        return iconDrawables[name] ?: fallback ?: createActionIconDrawable(Color(0.3f, 0.3f, 0.3f, 1f))
+    private fun iconFor(name: String, fallback: com.badlogic.gdx.scenes.scene2d.utils.Drawable?): TextureRegionDrawable {
+        return iconDrawables[name] ?: (fallback as? TextureRegionDrawable)
+            ?: createActionIconDrawable(Color(0.3f, 0.3f, 0.3f, 1f))
     }
 
     private fun loadIconDrawables(): Map<String, TextureRegionDrawable> {
