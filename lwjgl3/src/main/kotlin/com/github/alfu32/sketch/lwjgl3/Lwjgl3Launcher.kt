@@ -103,7 +103,7 @@ private fun runUpdate() {
         return
     }
     val tempFile = File(installDir, "${jarFile.name}.download")
-    val url = URL("https://github.com/alfu32/katechup3d/releases/download/latest/katechup3d-editor.jar")
+    val url = URL("https://github.com/alfu32/katechup3d/releases/latest/download/katechup3d-editor.jar")
     try {
         url.openStream().use { input ->
             tempFile.outputStream().use { output ->
