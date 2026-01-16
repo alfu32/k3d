@@ -386,8 +386,7 @@ class SketchUiOverlay(
             val endY = parts[7].trim().toInt()
             val width = endX - startX + 1
             val height = endY - startY + 1
-            val y = texture.height - endY - 1
-            val region = TextureRegion(texture, startX, y, width, height)
+            val region = TextureRegion(texture, startX, startY, width, height)
             mapping[name] = TextureRegionDrawable(region)
         }
         return mapping
