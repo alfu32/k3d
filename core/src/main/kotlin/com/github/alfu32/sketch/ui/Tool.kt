@@ -21,6 +21,12 @@ interface Tool {
         status.message = "Canceled."
     }
 
+    fun supportsCopyMode(): Boolean = false
+
+    fun onCopyModeChanged(status: StatusModel, enabled: Boolean) {
+        // Default no-op.
+    }
+
     fun onTextInput(status: StatusModel, text: String) {
         status.inputBuffer = text
     }

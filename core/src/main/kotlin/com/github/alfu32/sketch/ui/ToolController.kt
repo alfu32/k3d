@@ -22,8 +22,12 @@ class ToolController(
         activeTool.onExit(status)
         activeTool = next
         status.activeTool = activeTool.id
+        status.copyMode = false
         status.clearInput()
         activeTool.onEnter(status)
+        if (activeTool.supportsCopyMode()) {
+            activeTool.onCopyModeChanged(status, status.copyMode)
+        }
     }
 
     fun resetToDefault() {
@@ -76,5 +80,14 @@ class ToolController(
 
     fun render(renderer: ShapeRenderer) {
         activeTool.render(renderer)
+    }
+
+    fun toggleCopyMode(): Boolean {
+        if (!activeTool.supportsCopyMode()) {
+            return false
+        }
+        status.copyMode = !status.copyMode
+        activeTool.onCopyModeChanged(status, status.copyMode)
+        return true
     }
 }

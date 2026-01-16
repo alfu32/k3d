@@ -40,6 +40,17 @@ class RotateTool(
         status.message = "Canceled."
     }
 
+    override fun supportsCopyMode(): Boolean = true
+
+    override fun onCopyModeChanged(status: StatusModel, enabled: Boolean) {
+        status.message = when {
+            center == null -> "Pick rotation center."
+            axisDir == null -> "Pick axis direction."
+            reference == null -> "Pick reference point."
+            else -> "Pick final point."
+        }
+    }
+
     override fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
         if (valid && world != null) {
             hover.set(world)
@@ -90,13 +101,23 @@ class RotateTool(
         val angle = MathUtils.atan2(axis.dot(cross), v1.dot(v2))
         val degrees = angle * MathUtils.radiansToDegrees
         val quaternion = Quaternion().setFromAxis(axis, degrees)
-        val movedFaces = faceStore.transformSelected { point ->
-            Vector3(point).sub(c).mul(quaternion).add(c)
+        if (status.copyMode) {
+            val movedFaces = faceStore.copySelected { point ->
+                Vector3(point).sub(c).mul(quaternion).add(c)
+            }
+            val movedEdges = lineStore.copySelected { point ->
+                Vector3(point).sub(c).mul(quaternion).add(c)
+            }
+            status.message = "Copied | edges $movedEdges faces $movedFaces"
+        } else {
+            val movedFaces = faceStore.transformSelected { point ->
+                Vector3(point).sub(c).mul(quaternion).add(c)
+            }
+            val movedEdges = lineStore.transformSelected { point ->
+                Vector3(point).sub(c).mul(quaternion).add(c)
+            }
+            status.message = "Rotated | edges $movedEdges faces $movedFaces"
         }
-        val movedEdges = lineStore.transformSelected { point ->
-            Vector3(point).sub(c).mul(quaternion).add(c)
-        }
-        status.message = "Rotated | edges $movedEdges faces $movedFaces"
         clearTransient()
         return true
     }

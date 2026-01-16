@@ -30,6 +30,7 @@ class SketchUiOverlay(
     private val iconTextures = mutableListOf<Texture>()
     private val toolLabel = VisLabel()
     private val messageLabel = VisLabel()
+    private val copyLabel = VisLabel()
     private val inputLabel = VisLabel()
     private val cursorLabel = VisLabel()
     private val selectionEdgesLabel = VisLabel()
@@ -60,6 +61,12 @@ class SketchUiOverlay(
         val selection = selectionInfoProvider()
         toolLabel.setText("Tool: ${status.activeTool.displayName}")
         messageLabel.setText(status.message)
+        val copyText = if (status.activeTool == ToolId.MOVE || status.activeTool == ToolId.ROTATE) {
+            if (status.copyMode) "Copy: On" else "Copy: Off"
+        } else {
+            ""
+        }
+        copyLabel.setText(copyText)
         inputLabel.setText(if (status.inputBuffer.isNotEmpty()) "Input: ${status.inputBuffer}" else "")
         cursorLabel.setText(
             "Screen: ${status.cursorScreenX}, ${status.cursorScreenY} | " +
@@ -157,6 +164,7 @@ class SketchUiOverlay(
         bar.defaults().pad(4f)
         bar.add(toolLabel).left()
         bar.add(messageLabel).expandX().left()
+        bar.add(copyLabel).left()
         bar.add(cursorLabel).expandX().left()
         bar.add(inputLabel).right()
         return bar
@@ -176,6 +184,7 @@ class SketchUiOverlay(
             ToolId.SELECT -> Color(0.85f, 0.85f, 0.85f, 1f)
             ToolId.LINE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.RECTANGLE -> Color(0.35f, 0.75f, 0.95f, 1f)
+            ToolId.SURFACE_RECTANGLE -> Color(0.35f, 0.85f, 0.65f, 1f)
             ToolId.QUAD -> Color(0.55f, 0.85f, 0.95f, 1f)
             ToolId.CIRCLE -> Color(0.95f, 0.55f, 0.75f, 1f)
             ToolId.PUSH_PULL -> Color(0.45f, 0.95f, 0.55f, 1f)
@@ -219,6 +228,7 @@ class SketchUiOverlay(
         }
         lastPaintColor = Color(status.paintColor)
         button.image.drawable = createActionIconDrawable(status.paintColor)
+        button.invalidateHierarchy()
     }
 
     private fun showColorPicker() {

@@ -35,6 +35,16 @@ class MoveTool(
         status.message = "Canceled."
     }
 
+    override fun supportsCopyMode(): Boolean = true
+
+    override fun onCopyModeChanged(status: StatusModel, enabled: Boolean) {
+        if (start == null) {
+            status.message = "Pick reference point."
+        } else {
+            status.message = "Pick destination point."
+        }
+    }
+
     override fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
         if (valid && world != null) {
             hover.set(world)
@@ -61,9 +71,15 @@ class MoveTool(
             status.message = "No movement."
             return true
         }
-        val movedFaces = faceStore.transformSelected { point -> Vector3(point).add(delta) }
-        val movedEdges = lineStore.transformSelected { point -> Vector3(point).add(delta) }
-        status.message = "Moved | edges $movedEdges faces $movedFaces"
+        if (status.copyMode) {
+            val movedFaces = faceStore.copySelected { point -> Vector3(point).add(delta) }
+            val movedEdges = lineStore.copySelected { point -> Vector3(point).add(delta) }
+            status.message = "Copied | edges $movedEdges faces $movedFaces"
+        } else {
+            val movedFaces = faceStore.transformSelected { point -> Vector3(point).add(delta) }
+            val movedEdges = lineStore.transformSelected { point -> Vector3(point).add(delta) }
+            status.message = "Moved | edges $movedEdges faces $movedFaces"
+        }
         clearTransient()
         return true
     }

@@ -17,6 +17,11 @@ class ToolInputProcessor(
 ) : InputAdapter() {
     override fun keyDown(keycode: Int): Boolean {
         when (keycode) {
+            Input.Keys.CONTROL_LEFT, Input.Keys.CONTROL_RIGHT -> {
+                if (controller.toggleCopyMode()) {
+                    return true
+                }
+            }
             Input.Keys.ESCAPE -> {
                 if (controller.activeToolId() == ToolId.SELECT) {
                     guideManager.clear()

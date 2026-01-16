@@ -185,6 +185,28 @@ class DraftFaceStore(
         return newSelected.size
     }
 
+    fun copySelected(transform: (Vector3) -> Vector3): Int {
+        if (selected.isEmpty()) {
+            return 0
+        }
+        val original = selected.toList()
+        val newSelected = mutableSetOf<Triangle>()
+        original.forEach { tri ->
+            val color = colors[tri] ?: defaultColor
+            val a = transform(Vector3(tri.a))
+            val b = transform(Vector3(tri.b))
+            val c = transform(Vector3(tri.c))
+            val next = Triangle(a, b, c)
+            triangles.add(next)
+            colors[next] = com.badlogic.gdx.graphics.Color(color)
+            newSelected.add(next)
+        }
+        selected.clear()
+        selected.addAll(newSelected)
+        notifyChange()
+        return newSelected.size
+    }
+
     fun selectInVolume(min: Vector3, max: Vector3, replace: Boolean = true): Int {
         if (replace) {
             selected.clear()

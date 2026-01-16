@@ -139,6 +139,25 @@ class DraftLineStore {
         return newSelected.size
     }
 
+    fun copySelected(transform: (Vector3) -> Vector3): Int {
+        if (selected.isEmpty()) {
+            return 0
+        }
+        val original = selected.toList()
+        val newSelected = mutableSetOf<Segment>()
+        original.forEach { segment ->
+            val a = transform(Vector3(segment.start))
+            val b = transform(Vector3(segment.end))
+            val next = Segment(a, b)
+            segments.add(next)
+            newSelected.add(next)
+        }
+        selected.clear()
+        selected.addAll(newSelected)
+        notifyChange()
+        return newSelected.size
+    }
+
     fun selectInVolume(min: Vector3, max: Vector3, replace: Boolean = true): Int {
         if (replace) {
             selected.clear()

@@ -43,6 +43,7 @@ import com.github.alfu32.sketch.tools.PushPullTool
 import com.github.alfu32.sketch.tools.QuadTool
 import com.github.alfu32.sketch.tools.RectangleTool
 import com.github.alfu32.sketch.tools.RotateTool
+import com.github.alfu32.sketch.tools.SurfaceRectangleTool
 import com.github.alfu32.sketch.tools.SelectTool
 import com.github.alfu32.sketch.ui.SimpleTool
 import com.github.alfu32.sketch.ui.SketchUiOverlay
@@ -120,6 +121,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 SelectTool(lineStore, faceStore, camera),
                 LineTool(lineStore, faceStore),
                 RectangleTool(lineStore, faceStore),
+                SurfaceRectangleTool(lineStore, faceStore),
                 QuadTool(lineStore, faceStore),
                 CircleTool(lineStore, faceStore),
                 PushPullTool(lineStore, faceStore, camera),

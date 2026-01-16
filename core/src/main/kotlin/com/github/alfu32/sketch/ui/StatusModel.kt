@@ -8,7 +8,8 @@ class StatusModel(
     var cursorScreenY: Int = 0,
     var cursorWorld: String = "",
     var cursorSnapLabel: String = "",
-    var paintColor: com.badlogic.gdx.graphics.Color = com.badlogic.gdx.graphics.Color(0.8f, 0.8f, 0.8f, 1f)
+    var paintColor: com.badlogic.gdx.graphics.Color = com.badlogic.gdx.graphics.Color(0.8f, 0.8f, 0.8f, 1f),
+    var copyMode: Boolean = false
 ) {
     fun clearInput() {
         inputBuffer = ""
