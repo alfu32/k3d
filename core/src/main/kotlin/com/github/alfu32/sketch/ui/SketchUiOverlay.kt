@@ -7,6 +7,7 @@ import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.Stage
+import com.badlogic.gdx.scenes.scene2d.ui.ImageTextButton
 import com.badlogic.gdx.scenes.scene2d.ui.ButtonGroup
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
@@ -31,6 +32,7 @@ class SketchUiOverlay(
     private val iconTextures = mutableListOf<Texture>()
     private val iconDrawables = mutableMapOf<String, TextureRegionDrawable>()
     private var iconsTexture: Texture? = null
+    private var whiteButtonDrawable: TextureRegionDrawable? = null
     private val toolLabel = VisLabel()
     private val messageLabel = VisLabel()
     private val copyLabel = VisLabel()
@@ -114,6 +116,7 @@ class SketchUiOverlay(
         ToolId.values().forEach { toolId ->
             val icon = createIconDrawable(toolId)
             val button = VisImageTextButton(toolId.displayName, icon)
+            applyWhiteButtonStyle(button)
             button.setChecked(toolId == status.activeTool)
             button.addListener(object : ClickListener() {
                 override fun clicked(event: InputEvent?, x: Float, y: Float) {
@@ -129,6 +132,7 @@ class SketchUiOverlay(
 
         toolbar.add(VisLabel("Actions")).padTop(8f).row()
         val cleanupButton = VisImageTextButton("Cleanup", createActionIconDrawable(Color(0.55f, 0.85f, 0.65f, 1f)))
+        applyWhiteButtonStyle(cleanupButton)
         cleanupButton.image.drawable = iconFor("cleanup", cleanupButton.image.drawable)
         cleanupButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
@@ -138,6 +142,7 @@ class SketchUiOverlay(
         toolbar.add(cleanupButton).left().row()
 
         val colorButton = VisImageTextButton("Color", createActionIconDrawable(status.paintColor))
+        applyWhiteButtonStyle(colorButton)
         colorButton.image.drawable = iconFor("color", colorButton.image.drawable)
         colorButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
@@ -148,6 +153,7 @@ class SketchUiOverlay(
         paintColorButton = colorButton
 
         val deleteButton = VisImageTextButton("Delete", createActionIconDrawable(Color(0.9f, 0.45f, 0.45f, 1f)))
+        applyWhiteButtonStyle(deleteButton)
         deleteButton.image.drawable = iconFor("delete", deleteButton.image.drawable)
         deleteButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
@@ -157,6 +163,7 @@ class SketchUiOverlay(
         toolbar.add(deleteButton).left().row()
 
         val flipButton = VisImageTextButton("Flip Faces", createActionIconDrawable(Color(0.45f, 0.65f, 0.95f, 1f)))
+        applyWhiteButtonStyle(flipButton)
         flipButton.image.drawable = iconFor("flip_faces", flipButton.image.drawable)
         flipButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
@@ -316,6 +323,31 @@ class SketchUiOverlay(
 
     private fun sameColor(a: Color, b: Color): Boolean {
         return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a
+    }
+
+    private fun applyWhiteButtonStyle(button: VisImageTextButton) {
+        val drawable = whiteButtonDrawable ?: createWhiteButtonDrawable().also { whiteButtonDrawable = it }
+        val style = ImageTextButton.ImageTextButtonStyle(button.style)
+        style.up = drawable
+        style.down = drawable
+        style.checked = drawable
+        style.over = drawable
+        style.fontColor = Color.BLACK
+        style.downFontColor = Color.BLACK
+        style.overFontColor = Color.BLACK
+        style.checkedFontColor = Color.BLACK
+        style.disabledFontColor = Color.DARK_GRAY
+        button.style = style
+    }
+
+    private fun createWhiteButtonDrawable(): TextureRegionDrawable {
+        val pixmap = Pixmap(2, 2, Pixmap.Format.RGBA8888)
+        pixmap.setColor(Color.WHITE)
+        pixmap.fill()
+        val texture = Texture(pixmap)
+        pixmap.dispose()
+        iconTextures.add(texture)
+        return TextureRegionDrawable(TextureRegion(texture))
     }
 
     private fun iconFor(name: String, fallback: com.badlogic.gdx.scenes.scene2d.utils.Drawable?): TextureRegionDrawable {
