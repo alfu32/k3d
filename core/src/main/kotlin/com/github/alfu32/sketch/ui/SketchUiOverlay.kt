@@ -29,10 +29,13 @@ class SketchUiOverlay(
 ) {
     val stage: Stage = Stage(ScreenViewport())
     private val toolButtons = mutableMapOf<ToolId, VisImageTextButton>()
+    private val buttonLabels = mutableMapOf<VisImageTextButton, String>()
+    private val hoveredButtons = mutableSetOf<VisImageTextButton>()
     private val iconTextures = mutableListOf<Texture>()
     private val iconDrawables = mutableMapOf<String, TextureRegionDrawable>()
     private var iconsTexture: Texture? = null
     private var whiteButtonDrawable: TextureRegionDrawable? = null
+    private var darkBarDrawable: TextureRegionDrawable? = null
     private val toolLabel = VisLabel()
     private val messageLabel = VisLabel()
     private val copyLabel = VisLabel()
@@ -58,7 +61,7 @@ class SketchUiOverlay(
         mainRow.add(selectionPanel).top().right().pad(8f)
 
         root.add(mainRow).expand().fill().row()
-        root.add(buildStatusBar()).expandX().fillX().pad(6f)
+        root.add(buildStatusBar()).expandX().fillX().bottom().pad(0f)
 
         updateFromStatus()
     }
@@ -82,6 +85,7 @@ class SketchUiOverlay(
         selectionFacesLabel.setText("Faces: ${selection.faceCount}")
         toolButtons[status.activeTool]?.isChecked = true
         updatePaintColorButton()
+        updateButtonLabels()
     }
 
     fun act(delta: Float) {
@@ -105,7 +109,7 @@ class SketchUiOverlay(
 
     private fun buildToolbar(): VisTable {
         val toolbar = VisTable()
-        toolbar.defaults().pad(4f).left()
+        toolbar.defaults().pad(4f).padRight(6f).left()
         toolbar.add(VisLabel("Tools")).row()
 
         val group = ButtonGroup<VisImageTextButton>()
@@ -124,60 +128,81 @@ class SketchUiOverlay(
                     controller.setTool(toolId)
                 }
             })
-            val cell = toolbar.add(button)
+            val cell = toolbar.add(button).padRight(6f)
             cell.left()
             toolbar.row()
             group.add(button)
             toolButtons[toolId] = button
+            buttonLabels[button] = toolId.displayName
+            button.addListener(object : ClickListener() {
+                override fun enter(event: InputEvent?, x: Float, y: Float, pointer: Int, fromActor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                    hoveredButtons.add(button)
+                    updateButtonLabels()
+                }
+
+                override fun exit(event: InputEvent?, x: Float, y: Float, pointer: Int, toActor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                    hoveredButtons.remove(button)
+                    updateButtonLabels()
+                }
+            })
         }
 
         toolbar.add(VisLabel("Actions")).padTop(8f).row()
         val cleanupButton = VisImageTextButton("Cleanup", createActionIconDrawable(Color(0.55f, 0.85f, 0.65f, 1f)))
         applyWhiteButtonStyle(cleanupButton)
         applyIconStyle(cleanupButton, iconFor("cleanup", cleanupButton.image.drawable))
+        buttonLabels[cleanupButton] = "Cleanup"
+        cleanupButton.addListener(hoverListener(cleanupButton))
         cleanupButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 cleanupAction()
             }
         })
-        toolbar.add(cleanupButton).left().row()
+        toolbar.add(cleanupButton).left().padRight(6f).row()
 
         val colorButton = VisImageTextButton("Color", createActionIconDrawable(status.paintColor))
         applyWhiteButtonStyle(colorButton)
         applyIconStyle(colorButton, iconFor("color", colorButton.image.drawable))
+        buttonLabels[colorButton] = "Color"
+        colorButton.addListener(hoverListener(colorButton))
         colorButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 showColorPicker()
             }
         })
-        toolbar.add(colorButton).left().row()
+        toolbar.add(colorButton).left().padRight(6f).row()
         paintColorButton = colorButton
 
         val deleteButton = VisImageTextButton("Delete", createActionIconDrawable(Color(0.9f, 0.45f, 0.45f, 1f)))
         applyWhiteButtonStyle(deleteButton)
         applyIconStyle(deleteButton, iconFor("delete", deleteButton.image.drawable))
+        buttonLabels[deleteButton] = "Delete"
+        deleteButton.addListener(hoverListener(deleteButton))
         deleteButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 deleteSelectionAction()
             }
         })
-        toolbar.add(deleteButton).left().row()
+        toolbar.add(deleteButton).left().padRight(6f).row()
 
         val flipButton = VisImageTextButton("Flip Faces", createActionIconDrawable(Color(0.45f, 0.65f, 0.95f, 1f)))
         applyWhiteButtonStyle(flipButton)
         applyIconStyle(flipButton, iconFor("flip_faces", flipButton.image.drawable))
+        buttonLabels[flipButton] = "Flip Faces"
+        flipButton.addListener(hoverListener(flipButton))
         flipButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 flipFacesAction()
             }
         })
-        toolbar.add(flipButton).left().row()
+        toolbar.add(flipButton).left().padRight(6f).row()
 
         return toolbar
     }
 
     private fun buildStatusBar(): VisTable {
         val bar = VisTable()
+        bar.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         bar.defaults().pad(4f)
         bar.add(toolLabel).left()
         bar.add(messageLabel).expandX().left()
@@ -189,7 +214,8 @@ class SketchUiOverlay(
 
     private fun buildSelectionPanel(): VisTable {
         val panel = VisTable()
-        panel.defaults().pad(4f).left()
+        panel.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        panel.defaults().pad(8f).left()
         panel.add(VisLabel("Selection")).row()
         panel.add(selectionEdgesLabel).row()
         panel.add(selectionFacesLabel).row()
@@ -335,6 +361,33 @@ class SketchUiOverlay(
         button.image?.drawable = icon
     }
 
+    private fun updateButtonLabels() {
+        buttonLabels.forEach { (button, label) ->
+            val isTool = toolButtons.containsValue(button)
+            val show = if (isTool) {
+                val toolId = toolButtons.entries.firstOrNull { it.value == button }?.key
+                toolId == status.activeTool || hoveredButtons.contains(button)
+            } else {
+                hoveredButtons.contains(button)
+            }
+            button.setText(if (show) label else "")
+        }
+    }
+
+    private fun hoverListener(button: VisImageTextButton): ClickListener {
+        return object : ClickListener() {
+            override fun enter(event: InputEvent?, x: Float, y: Float, pointer: Int, fromActor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                hoveredButtons.add(button)
+                updateButtonLabels()
+            }
+
+            override fun exit(event: InputEvent?, x: Float, y: Float, pointer: Int, toActor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                hoveredButtons.remove(button)
+                updateButtonLabels()
+            }
+        }
+    }
+
     private fun applyWhiteButtonStyle(button: VisImageTextButton) {
         val drawable = whiteButtonDrawable ?: createWhiteButtonDrawable().also { whiteButtonDrawable = it }
         val style = button.style
@@ -352,6 +405,16 @@ class SketchUiOverlay(
     private fun createWhiteButtonDrawable(): TextureRegionDrawable {
         val pixmap = Pixmap(2, 2, Pixmap.Format.RGBA8888)
         pixmap.setColor(Color.WHITE)
+        pixmap.fill()
+        val texture = Texture(pixmap)
+        pixmap.dispose()
+        iconTextures.add(texture)
+        return TextureRegionDrawable(TextureRegion(texture))
+    }
+
+    private fun createDarkBarDrawable(): TextureRegionDrawable {
+        val pixmap = Pixmap(2, 2, Pixmap.Format.RGBA8888)
+        pixmap.setColor(Color.valueOf("555555"))
         pixmap.fill()
         val texture = Texture(pixmap)
         pixmap.dispose()
