@@ -143,7 +143,7 @@ private fun runUpdate() {
 
 private fun locateJarFile(): File? {
     return try {
-        val uri = Lwjgl3Launcher::class.java.protectionDomain.codeSource.location.toURI()
+        val uri = Main::class.java.protectionDomain.codeSource.location.toURI()
         val file = File(uri)
         if (file.isFile && file.name.endsWith(".jar")) file else null
     } catch (_: Exception) {
