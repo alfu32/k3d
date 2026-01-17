@@ -16,6 +16,7 @@ import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 import com.kotcrab.vis.ui.widget.VisImageTextButton
 import com.kotcrab.vis.ui.widget.VisLabel
+import com.kotcrab.vis.ui.widget.VisCheckBox
 import com.kotcrab.vis.ui.widget.VisSlider
 import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.color.ColorPicker
@@ -30,7 +31,9 @@ class SketchUiOverlay(
     private val flipFacesAction: () -> Unit,
     private val selectionInfoProvider: () -> SelectionInfo,
     private val lightingSettings: LightingSettings,
-    private val lightingChanged: (LightingSettings) -> Unit
+    private val lightingChanged: (LightingSettings) -> Unit,
+    private val shadowSettings: ShadowSettings,
+    private val shadowChanged: (ShadowSettings) -> Unit
 ) {
     val stage: Stage = Stage(ScreenViewport())
     private val toolButtons = mutableMapOf<ToolId, VisImageTextButton>()
@@ -301,6 +304,28 @@ class SketchUiOverlay(
                 lightingChanged(lightingSettings)
             }
         ).growX().row()
+        panel.add(VisLabel("Shadow Settings")).padTop(6f).row()
+        panel.add(
+            buildShadowSlider("Shadow bias", shadowSettings.shadowBias, 0f, 4096f) { value ->
+                shadowSettings.shadowBias = value
+                shadowChanged(shadowSettings)
+            }
+        ).growX().row()
+        panel.add(
+            buildShadowSlider("Normal bias", shadowSettings.shadowNormalBias, 0f, 8192f) { value ->
+                shadowSettings.shadowNormalBias = value
+                shadowChanged(shadowSettings)
+            }
+        ).growX().row()
+        panel.add(
+            buildPcfSlider("PCF", shadowSettings.pcfMode) { mode ->
+                shadowSettings.pcfMode = mode
+                shadowChanged(shadowSettings)
+            }
+        ).growX().row()
+        panel.add(
+            buildShadowToggles()
+        ).growX().row()
         panel.isVisible = false
         lightingPanel = panel
         return panel
@@ -326,6 +351,76 @@ class SketchUiOverlay(
         })
         row.add(title).left().padRight(6f)
         row.add(slider).width(140f).left()
+        return row
+    }
+
+    private fun buildShadowSlider(
+        label: String,
+        initial: Float,
+        min: Float,
+        max: Float,
+        onChange: (Float) -> Unit
+    ): VisTable {
+        val row = VisTable()
+        row.defaults().left()
+        val title = VisLabel("$label: ${formatValue(initial)}")
+        val slider = VisSlider(min, max, 1f, false).apply {
+            value = initial
+        }
+        slider.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                val value = slider.value
+                title.setText("$label: ${formatValue(value)}")
+                onChange(value)
+            }
+        })
+        row.add(title).left().padRight(6f)
+        row.add(slider).width(140f).left()
+        return row
+    }
+
+    private fun buildPcfSlider(
+        label: String,
+        initial: Int,
+        onChange: (Int) -> Unit
+    ): VisTable {
+        val row = VisTable()
+        row.defaults().left()
+        val title = VisLabel("$label: ${initial}x${initial}")
+        val slider = VisSlider(1f, 3f, 1f, false).apply {
+            value = initial.toFloat()
+        }
+        slider.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                val mode = slider.value.toInt().coerceIn(1, 3)
+                title.setText("$label: ${mode}x${mode}")
+                onChange(mode)
+            }
+        })
+        row.add(title).left().padRight(6f)
+        row.add(slider).width(140f).left()
+        return row
+    }
+
+    private fun buildShadowToggles(): VisTable {
+        val row = VisTable()
+        row.defaults().left().padRight(8f)
+        val useCsm = VisCheckBox("Use CSM", shadowSettings.useCsm)
+        useCsm.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                shadowSettings.useCsm = useCsm.isChecked
+                shadowChanged(shadowSettings)
+            }
+        })
+        val dither = VisCheckBox("Dither Shadows", shadowSettings.dither)
+        dither.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                shadowSettings.dither = dither.isChecked
+                shadowChanged(shadowSettings)
+            }
+        })
+        row.add(useCsm)
+        row.add(dither)
         return row
     }
 

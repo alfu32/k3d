@@ -35,6 +35,7 @@ import com.github.alfu32.sketch.model.DraftFaceStore
 import com.github.alfu32.sketch.model.DraftLineStore
 import com.github.alfu32.sketch.model.ModelPersistence
 import com.github.alfu32.sketch.model.ModelCleanup
+import com.github.alfu32.sketch.render.SketchShaderProvider
 import com.github.alfu32.sketch.tools.CircleTool
 import com.github.alfu32.sketch.tools.LineTool
 import com.github.alfu32.sketch.tools.MoveTool
@@ -48,6 +49,7 @@ import com.github.alfu32.sketch.tools.SelectTool
 import com.github.alfu32.sketch.ui.SimpleTool
 import com.github.alfu32.sketch.ui.SketchUiOverlay
 import com.github.alfu32.sketch.ui.LightingSettings
+import com.github.alfu32.sketch.ui.ShadowSettings
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.ToolController
 import com.github.alfu32.sketch.ui.ToolId
@@ -89,15 +91,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private var lastSnap: SnapResult? = null
     private val gridSpacing = 1f
     private lateinit var modelFile: java.io.File
-    private var shadowLightValue = 1f
+    private var shadowLightValue = 0.59f
     private var shadowLightAlpha = 0.5f
-    private var directionalLightValue = 1f
+    private var directionalLightValue = 0.73f
     private var directionalLightAlpha = 1f
-    private var ambientLightValue = 0.76f
-    private var ambientLightAlpha = 0.2f
-    private var specularLightValue = 0.95f
+    private var ambientLightValue = 0.59f
+    private var ambientLightAlpha = 1f
+    private var specularLightValue = 0.2f
     private var specularLightAlpha = 0.95f
     private lateinit var lightingSettings: LightingSettings
+    private var shadowBias = 365f
+    private var shadowNormalBias = 5620f
+    private var shadowPcfMode = 1
+    private var shadowDither = false
+    private var shadowUseCsm = true
+    private lateinit var shadowSettings: ShadowSettings
 
     override fun create() {
         if (!VisUI.isLoaded()) {
@@ -160,6 +168,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             specularLightValue = specularLightValue,
             specularLightAlpha = specularLightAlpha
         )
+        shadowSettings = ShadowSettings(
+            shadowBias = shadowBias,
+            shadowNormalBias = shadowNormalBias,
+            pcfMode = shadowPcfMode,
+            dither = shadowDither,
+            useCsm = shadowUseCsm
+        )
         uiOverlay = SketchUiOverlay(
             toolController,
             statusModel,
@@ -168,7 +183,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::flipSelectedFaces,
             ::selectionInfo,
             lightingSettings,
-            ::applyLightingSettings
+            ::applyLightingSettings,
+            shadowSettings,
+            ::applyShadowSettings
         )
         toolPointer = ToolPointerProcessor(toolController, snapper)
         Gdx.input.inputProcessor = InputMultiplexer(
@@ -584,7 +601,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 .setColor(Color(0.005f, 0.005f, 0.005f, 0.15f))
         )
         updateLighting()
-        modelBatch = ModelBatch()
+        modelBatch = ModelBatch(SketchShaderProvider({ shadowSettings }, { shadowLight }))
         shadowBatch = ModelBatch(DepthShaderProvider())
     }
 
@@ -598,6 +615,14 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         specularLightValue = settings.specularLightValue
         specularLightAlpha = settings.specularLightAlpha
         updateLighting()
+    }
+
+    private fun applyShadowSettings(settings: ShadowSettings) {
+        shadowBias = settings.shadowBias
+        shadowNormalBias = settings.shadowNormalBias
+        shadowPcfMode = settings.pcfMode
+        shadowDither = settings.dither
+        shadowUseCsm = settings.useCsm
     }
 
     private fun updateLighting() {
