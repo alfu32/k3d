@@ -10,14 +10,17 @@ import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.ui.ImageTextButton
 import com.badlogic.gdx.scenes.scene2d.ui.ButtonGroup
 import com.badlogic.gdx.scenes.scene2d.ui.Table
+import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 import com.kotcrab.vis.ui.widget.VisImageTextButton
 import com.kotcrab.vis.ui.widget.VisLabel
+import com.kotcrab.vis.ui.widget.VisSlider
 import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.color.ColorPicker
 import com.kotcrab.vis.ui.widget.color.ColorPickerListener
+import java.util.Locale
 
 class SketchUiOverlay(
     private val controller: ToolController,
@@ -25,7 +28,9 @@ class SketchUiOverlay(
     private val cleanupAction: () -> Unit,
     private val deleteSelectionAction: () -> Unit,
     private val flipFacesAction: () -> Unit,
-    private val selectionInfoProvider: () -> SelectionInfo
+    private val selectionInfoProvider: () -> SelectionInfo,
+    private val lightingSettings: LightingSettings,
+    private val lightingChanged: (LightingSettings) -> Unit
 ) {
     val stage: Stage = Stage(ScreenViewport())
     private val toolButtons = mutableMapOf<ToolId, VisImageTextButton>()
@@ -46,6 +51,7 @@ class SketchUiOverlay(
     private var paintColorButton: VisImageTextButton? = null
     private var lastPaintColor = Color(-1f, -1f, -1f, -1f)
     private var colorPicker: ColorPicker? = null
+    private var lightingPanel: VisTable? = null
 
     init {
         iconDrawables.putAll(loadIconDrawables())
@@ -55,10 +61,14 @@ class SketchUiOverlay(
 
         val toolbar = buildToolbar()
         val selectionPanel = buildSelectionPanel()
+        val lightingPanel = buildLightingPanel()
+        val rightColumn = Table()
+        rightColumn.add(selectionPanel).top().right().row()
+        rightColumn.add(lightingPanel).top().right().padTop(6f).row()
         val mainRow = Table()
         mainRow.add(toolbar).top().left().pad(8f)
         mainRow.add().expand().fill()
-        mainRow.add(selectionPanel).top().right().pad(8f)
+        mainRow.add(rightColumn).top().right().pad(8f)
 
         root.add(mainRow).expand().fill().row()
         root.add(buildStatusBar()).expandX().fillX().bottom().pad(0f)
@@ -197,6 +207,22 @@ class SketchUiOverlay(
         })
         toolbar.add(flipButton).left().padRight(6f).row()
 
+        val lightingFallback = createActionIconDrawable(Color(0.95f, 0.85f, 0.2f, 1f))
+        val lightingIcon = iconFor("lighting", lightingFallback)
+        val lightingButton = VisImageTextButton("Lighting", lightingIcon)
+        applyWhiteButtonStyle(lightingButton)
+        applyIconStyle(lightingButton, lightingIcon)
+        buttonLabels[lightingButton] = "Lighting"
+        lightingButton.addListener(hoverListener(lightingButton))
+        lightingButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                lightingPanel?.let { panel ->
+                    panel.isVisible = !panel.isVisible
+                }
+            }
+        })
+        toolbar.add(lightingButton).left().padRight(6f).row()
+
         return toolbar
     }
 
@@ -220,6 +246,91 @@ class SketchUiOverlay(
         panel.add(selectionEdgesLabel).row()
         panel.add(selectionFacesLabel).row()
         return panel
+    }
+
+    private fun buildLightingPanel(): VisTable {
+        val panel = VisTable()
+        panel.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        panel.defaults().pad(6f).left().growX()
+        panel.add(VisLabel("Lighting")).row()
+        panel.add(
+            buildLightingSlider("Shadow value", lightingSettings.shadowLightValue) { value ->
+                lightingSettings.shadowLightValue = value
+                lightingChanged(lightingSettings)
+            }
+        ).growX().row()
+        panel.add(
+            buildLightingSlider("Shadow alpha", lightingSettings.shadowLightAlpha) { value ->
+                lightingSettings.shadowLightAlpha = value
+                lightingChanged(lightingSettings)
+            }
+        ).growX().row()
+        panel.add(
+            buildLightingSlider("Directional value", lightingSettings.directionalLightValue) { value ->
+                lightingSettings.directionalLightValue = value
+                lightingChanged(lightingSettings)
+            }
+        ).growX().row()
+        panel.add(
+            buildLightingSlider("Directional alpha", lightingSettings.directionalLightAlpha) { value ->
+                lightingSettings.directionalLightAlpha = value
+                lightingChanged(lightingSettings)
+            }
+        ).growX().row()
+        panel.add(
+            buildLightingSlider("Ambient value", lightingSettings.ambientLightValue) { value ->
+                lightingSettings.ambientLightValue = value
+                lightingChanged(lightingSettings)
+            }
+        ).growX().row()
+        panel.add(
+            buildLightingSlider("Ambient alpha", lightingSettings.ambientLightAlpha) { value ->
+                lightingSettings.ambientLightAlpha = value
+                lightingChanged(lightingSettings)
+            }
+        ).growX().row()
+        panel.add(
+            buildLightingSlider("Specular value", lightingSettings.specularLightValue) { value ->
+                lightingSettings.specularLightValue = value
+                lightingChanged(lightingSettings)
+            }
+        ).growX().row()
+        panel.add(
+            buildLightingSlider("Specular alpha", lightingSettings.specularLightAlpha) { value ->
+                lightingSettings.specularLightAlpha = value
+                lightingChanged(lightingSettings)
+            }
+        ).growX().row()
+        panel.isVisible = false
+        lightingPanel = panel
+        return panel
+    }
+
+    private fun buildLightingSlider(
+        label: String,
+        initial: Float,
+        onChange: (Float) -> Unit
+    ): VisTable {
+        val row = VisTable()
+        row.defaults().left()
+        val title = VisLabel("$label: ${formatValue(initial)}")
+        val slider = VisSlider(-1f, 1f, 0.01f, false).apply {
+            value = initial
+        }
+        slider.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                val value = slider.value
+                title.setText("$label: ${formatValue(value)}")
+                onChange(value)
+            }
+        })
+        row.add(title).left().padRight(6f)
+        row.add(slider).width(140f).left()
+        return row
+    }
+
+    private fun formatValue(value: Float): String {
+        return String.format(Locale.US, "%.2f", value)
     }
 
     private fun createIconDrawable(toolId: ToolId): TextureRegionDrawable {

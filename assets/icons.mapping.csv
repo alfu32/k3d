@@ -15,3 +15,4 @@ order|name|line|col|start_x|end_x|start_y|end_y
 14|color|4|2|32|63|96|127
 15|delete|4|3|64|95|96|127
 16|flip_faces|4|4|96|127|96|127
+17|lighting|5|1|0|31|128|159

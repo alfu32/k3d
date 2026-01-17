@@ -47,6 +47,7 @@ import com.github.alfu32.sketch.tools.SurfaceRectangleTool
 import com.github.alfu32.sketch.tools.SelectTool
 import com.github.alfu32.sketch.ui.SimpleTool
 import com.github.alfu32.sketch.ui.SketchUiOverlay
+import com.github.alfu32.sketch.ui.LightingSettings
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.ToolController
 import com.github.alfu32.sketch.ui.ToolId
@@ -65,6 +66,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var shadowBatch: ModelBatch
     private lateinit var environment: Environment
     private lateinit var shadowLight: DirectionalShadowLight
+    private lateinit var mainLight: DirectionalLight
     private lateinit var faceFrontMaterial: Material
     private lateinit var faceBackMaterial: Material
     private lateinit var selectedFaceMaterial: Material
@@ -87,6 +89,15 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private var lastSnap: SnapResult? = null
     private val gridSpacing = 1f
     private lateinit var modelFile: java.io.File
+    private var shadowLightValue = 1f
+    private var shadowLightAlpha = 0.5f
+    private var directionalLightValue = 1f
+    private var directionalLightAlpha = 1f
+    private var ambientLightValue = 0.76f
+    private var ambientLightAlpha = 0.2f
+    private var specularLightValue = 0.95f
+    private var specularLightAlpha = 0.95f
+    private lateinit var lightingSettings: LightingSettings
 
     override fun create() {
         if (!VisUI.isLoaded()) {
@@ -139,13 +150,25 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::clearSelection,
             ::deleteSelection
         ) { lastSnap }
+        lightingSettings = LightingSettings(
+            shadowLightValue = shadowLightValue,
+            shadowLightAlpha = shadowLightAlpha,
+            directionalLightValue = directionalLightValue,
+            directionalLightAlpha = directionalLightAlpha,
+            ambientLightValue = ambientLightValue,
+            ambientLightAlpha = ambientLightAlpha,
+            specularLightValue = specularLightValue,
+            specularLightAlpha = specularLightAlpha
+        )
         uiOverlay = SketchUiOverlay(
             toolController,
             statusModel,
             ::runCleanup,
             ::deleteSelection,
             ::flipSelectedFaces,
-            ::selectionInfo
+            ::selectionInfo,
+            lightingSettings,
+            ::applyLightingSettings
         )
         toolPointer = ToolPointerProcessor(toolController, snapper)
         Gdx.input.inputProcessor = InputMultiplexer(
@@ -176,11 +199,12 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         renderShadowPass()
 
         Gdx.gl.glViewport(0, 0, Gdx.graphics.width, Gdx.graphics.height)
-        Gdx.gl.glClearColor(0.62f, 0.68f, 0.72f, 1f)
+        val skyColor=Color(0.6f,0.75f,0.9f,1f,)
+        Gdx.gl.glClearColor(0.6f, 0.75f, 0.9f, 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
 
-        Gdx.gl.glLineWidth(4f)
+        Gdx.gl.glLineWidth(2f)
         shapeRenderer.projectionMatrix = camera.combined
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         drawGrid(20, 1f)
@@ -276,7 +300,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun drawGrid(halfSize: Int, step: Float) {
-        shapeRenderer.color = Color(0.35f, 0.37f, 0.39f, 1f)
+        shapeRenderer.color = Color(0.35f, 0.35f, 0.35f, 1f)
         for (i in -halfSize..halfSize) {
             val offset = i * step
             shapeRenderer.line(-halfSize * step, 0f, offset, halfSize * step, 0f, offset)
@@ -543,32 +567,62 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private fun setupLighting() {
         environment = Environment()
         shadowLight = DirectionalShadowLight(
-            4096,
-            4096,
+            8192,
+            8192,
             60f,
             60f,
             1f,
             300f
-        ).apply {
-            set(0.5f, 0.5f, 0.5f, -0.5f, -1.8f, -1.2f)
-            setColor(Color(0f, 0f, 0f, 0.85f))
-            environment.add(this)
-            environment.shadowMap = this
-        }
+        )
+        environment.add(shadowLight)
+        environment.shadowMap = shadowLight
+        mainLight = DirectionalLight()
+        environment.add(mainLight)
         environment.add(
             DirectionalLight()
-                .set(0.6f, 0.6f, 0.6f, -0.5f, -1.8f, -1.2f)
-                .setColor(Color(0.6f, 0.6f, 0.6f, 0.9f))
+                .set(0.005f, 0.005f, 0.005f, 1.2f, 1.8f, 0.5f)
+                .setColor(Color(0.005f, 0.005f, 0.005f, 0.15f))
         )
-        environment.add(
-            DirectionalLight()
-                .set(0.08f, 0.08f, 0.08f, 1.2f, 1.8f, 0.5f)
-                .setColor(Color(0.08f, 0.08f, 0.08f, 0.15f))
-        )
-        environment.set(ColorAttribute(ColorAttribute.AmbientLight, 0.82f, 0.82f, 0.82f, 0.95f))
-        environment.set(ColorAttribute(ColorAttribute.Specular, 0.5f, 0.5f, 0.9f, 0.7f))
+        updateLighting()
         modelBatch = ModelBatch()
         shadowBatch = ModelBatch(DepthShaderProvider())
+    }
+
+    private fun applyLightingSettings(settings: LightingSettings) {
+        shadowLightValue = settings.shadowLightValue
+        shadowLightAlpha = settings.shadowLightAlpha
+        directionalLightValue = settings.directionalLightValue
+        directionalLightAlpha = settings.directionalLightAlpha
+        ambientLightValue = settings.ambientLightValue
+        ambientLightAlpha = settings.ambientLightAlpha
+        specularLightValue = settings.specularLightValue
+        specularLightAlpha = settings.specularLightAlpha
+        updateLighting()
+    }
+
+    private fun updateLighting() {
+        shadowLight.set(shadowLightValue, shadowLightValue, shadowLightValue, -0.5f, -1.8f, -1.2f)
+        shadowLight.setColor(Color(shadowLightValue, shadowLightValue, shadowLightValue, shadowLightAlpha))
+        mainLight.set(directionalLightValue, directionalLightValue, directionalLightValue, -0.5f, -1.8f, -1.2f)
+        mainLight.color.set(directionalLightValue, directionalLightValue, directionalLightValue, directionalLightAlpha)
+        environment.set(
+            ColorAttribute(
+                ColorAttribute.AmbientLight,
+                ambientLightValue,
+                ambientLightValue,
+                ambientLightValue,
+                ambientLightAlpha
+            )
+        )
+        environment.set(
+            ColorAttribute(
+                ColorAttribute.Specular,
+                specularLightValue,
+                specularLightValue,
+                specularLightValue,
+                specularLightAlpha
+            )
+        )
     }
 
     private fun setupMeshes() {
@@ -602,7 +656,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             IntAttribute(IntAttribute.CullFace, 0)
         )
         groundMaterial = Material(
-            ColorAttribute.createDiffuse(Color(0.72f, 0.70f, 0.60f, 0.5f)),
+            ColorAttribute.createDiffuse(Color(0.9f, 0.9f, 0.9f, 1f)),
             BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, 0.5f),
             IntAttribute(IntAttribute.CullFace, GL20.GL_BACK)
         )
