@@ -46,6 +46,7 @@ import com.github.alfu32.sketch.tools.RectangleTool
 import com.github.alfu32.sketch.tools.RotateTool
 import com.github.alfu32.sketch.tools.SurfaceRectangleTool
 import com.github.alfu32.sketch.tools.SelectTool
+import com.github.alfu32.sketch.tools.ScaleTool
 import com.github.alfu32.sketch.ui.SimpleTool
 import com.github.alfu32.sketch.ui.SketchUiOverlay
 import com.github.alfu32.sketch.ui.LightingSettings
@@ -146,7 +147,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 PushPullTool(lineStore, faceStore, camera),
                 MoveTool(lineStore, faceStore),
                 RotateTool(lineStore, faceStore),
-                SimpleTool(ToolId.SCALE, "Select and scale."),
+                ScaleTool(lineStore, faceStore),
                 PaintTool(faceStore, camera) { statusModel.paintColor.cpy() },
                 SimpleTool(ToolId.ERASER, "Click to erase edges.")
             )
@@ -202,6 +203,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
         shapeRenderer = ShapeRenderer()
         setupLighting()
+        applyLightingSettings(lightingSettings)
+        applyShadowSettings(shadowSettings)
+        uiOverlay.refreshLightingControls()
         setupMeshes()
         setupRenderables()
     }
@@ -303,6 +307,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     override fun dispose() {
+        if (::modelFile.isInitialized && ::lineStore.isInitialized && ::faceStore.isInitialized && ::camera.isInitialized &&
+            ::lightingSettings.isInitialized && ::shadowSettings.isInitialized
+        ) {
+            saveModel()
+        }
         shapeRenderer.dispose()
         faceMesh.dispose()
         selectedFaceMesh.dispose()
@@ -524,7 +533,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun saveModel() {
-        ModelPersistence.save(modelFile, lineStore, faceStore)
+        ModelPersistence.save(modelFile, lineStore, faceStore, camera, lightingSettings, shadowSettings)
     }
 
     private fun loadModel() {
@@ -533,7 +542,17 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             modelFile.copyTo(backup, overwrite = true)
             lineStore.withChangeSuppressed {
                 faceStore.withChangeSuppressed {
-                    ModelPersistence.load(modelFile, lineStore, faceStore)
+                    val result = ModelPersistence.load(
+                        modelFile,
+                        lineStore,
+                        faceStore,
+                        camera,
+                        lightingSettings,
+                        shadowSettings
+                    )
+                    if (result.ok && result.needsResave) {
+                        ModelPersistence.save(modelFile, lineStore, faceStore, camera, lightingSettings, shadowSettings)
+                    }
                 }
             }
             statusModel.message = "Loaded ${modelFile.name}"

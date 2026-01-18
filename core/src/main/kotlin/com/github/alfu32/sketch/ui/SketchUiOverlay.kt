@@ -55,6 +55,7 @@ class SketchUiOverlay(
     private var lastPaintColor = Color(-1f, -1f, -1f, -1f)
     private var colorPicker: ColorPicker? = null
     private var lightingPanel: VisTable? = null
+    private val lightingRefreshers = mutableListOf<() -> Unit>()
 
     init {
         iconDrawables.putAll(loadIconDrawables())
@@ -99,6 +100,10 @@ class SketchUiOverlay(
         toolButtons[status.activeTool]?.isChecked = true
         updatePaintColorButton()
         updateButtonLabels()
+    }
+
+    fun refreshLightingControls() {
+        lightingRefreshers.forEach { it.invoke() }
     }
 
     fun act(delta: Float) {
@@ -342,6 +347,20 @@ class SketchUiOverlay(
         val slider = VisSlider(-1f, 1f, 0.01f, false).apply {
             value = initial
         }
+        lightingRefreshers.add {
+            slider.value = when (label) {
+                "Shadow value" -> lightingSettings.shadowLightValue
+                "Shadow alpha" -> lightingSettings.shadowLightAlpha
+                "Directional value" -> lightingSettings.directionalLightValue
+                "Directional alpha" -> lightingSettings.directionalLightAlpha
+                "Ambient value" -> lightingSettings.ambientLightValue
+                "Ambient alpha" -> lightingSettings.ambientLightAlpha
+                "Specular value" -> lightingSettings.specularLightValue
+                "Specular alpha" -> lightingSettings.specularLightAlpha
+                else -> slider.value
+            }
+            title.setText("$label: ${formatValue(slider.value)}")
+        }
         slider.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
                 val value = slider.value
@@ -367,6 +386,14 @@ class SketchUiOverlay(
         val slider = VisSlider(min, max, 1f, false).apply {
             value = initial
         }
+        lightingRefreshers.add {
+            slider.value = when (label) {
+                "Shadow bias" -> shadowSettings.shadowBias
+                "Normal bias" -> shadowSettings.shadowNormalBias
+                else -> slider.value
+            }
+            title.setText("$label: ${formatValue(slider.value)}")
+        }
         slider.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
                 val value = slider.value
@@ -390,6 +417,11 @@ class SketchUiOverlay(
         val slider = VisSlider(1f, 3f, 1f, false).apply {
             value = initial.toFloat()
         }
+        lightingRefreshers.add {
+            slider.value = shadowSettings.pcfMode.toFloat()
+            val mode = shadowSettings.pcfMode.coerceIn(1, 3)
+            title.setText("$label: ${mode}x${mode}")
+        }
         slider.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
                 val mode = slider.value.toInt().coerceIn(1, 3)
@@ -406,6 +438,9 @@ class SketchUiOverlay(
         val row = VisTable()
         row.defaults().left().padRight(8f)
         val useCsm = VisCheckBox("Use CSM", shadowSettings.useCsm)
+        lightingRefreshers.add {
+            useCsm.isChecked = shadowSettings.useCsm
+        }
         useCsm.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
                 shadowSettings.useCsm = useCsm.isChecked
@@ -413,6 +448,9 @@ class SketchUiOverlay(
             }
         })
         val dither = VisCheckBox("Dither Shadows", shadowSettings.dither)
+        lightingRefreshers.add {
+            dither.isChecked = shadowSettings.dither
+        }
         dither.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
                 shadowSettings.dither = dither.isChecked

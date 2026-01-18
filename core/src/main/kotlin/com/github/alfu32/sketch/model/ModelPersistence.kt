@@ -6,9 +6,16 @@ import com.badlogic.gdx.utils.JsonWriter
 import java.io.File
 
 object ModelPersistence {
-    private const val VERSION = 1
+    private const val VERSION = 2
 
-    fun save(file: File, lineStore: DraftLineStore, faceStore: DraftFaceStore) {
+    fun save(
+        file: File,
+        lineStore: DraftLineStore,
+        faceStore: DraftFaceStore,
+        camera: com.badlogic.gdx.graphics.PerspectiveCamera,
+        lighting: com.github.alfu32.sketch.ui.LightingSettings,
+        shadow: com.github.alfu32.sketch.ui.ShadowSettings
+    ) {
         val snapshot = ModelSnapshot().apply {
             version = VERSION
             segments = lineStore.getSegments().map { segment ->
@@ -18,6 +25,9 @@ object ModelPersistence {
                 val color = faceStore.colorFor(tri)
                 FaceDto(Vec3Dto(tri.a), Vec3Dto(tri.b), Vec3Dto(tri.c), ColorDto(color))
             }.toMutableList()
+            cameraState = CameraDto(camera)
+            lightingState = LightingDto(lighting)
+            shadowState = ShadowDto(shadow)
         }
         val json = Json().apply {
             setOutputType(JsonWriter.OutputType.json)
@@ -27,16 +37,25 @@ object ModelPersistence {
         file.writeText(text)
     }
 
-    fun load(file: File, lineStore: DraftLineStore, faceStore: DraftFaceStore): Boolean {
+    data class LoadResult(val ok: Boolean, val needsResave: Boolean)
+
+    fun load(
+        file: File,
+        lineStore: DraftLineStore,
+        faceStore: DraftFaceStore,
+        camera: com.badlogic.gdx.graphics.PerspectiveCamera,
+        lighting: com.github.alfu32.sketch.ui.LightingSettings,
+        shadow: com.github.alfu32.sketch.ui.ShadowSettings
+    ): LoadResult {
         if (!file.exists() || file.length() == 0L) {
-            return false
+            return LoadResult(false, false)
         }
         val json = Json()
         val snapshot = try {
             json.fromJson(ModelSnapshot::class.java, file.readText())
         } catch (ex: Exception) {
-            return false
-        } ?: return false
+            return LoadResult(false, false)
+        } ?: return LoadResult(false, false)
 
         lineStore.clearAll()
         faceStore.clearAll()
@@ -47,17 +66,29 @@ object ModelPersistence {
             faceStore.addTriangle(
                 face.a.toVector3(),
                 face.b.toVector3(),
-                face.c.toVector3(),
-                face.color.toColor()
-            )
+            face.c.toVector3(),
+            face.color.toColor()
+        )
         }
-        return true
+        snapshot.cameraState?.applyTo(camera)
+        snapshot.lightingState?.applyTo(lighting)
+        snapshot.shadowState?.applyTo(shadow)
+        val needsResave = snapshot.cameraState == null ||
+            snapshot.lightingState == null ||
+            snapshot.shadowState == null ||
+            snapshot.cameraState?.hasNulls() == true ||
+            snapshot.lightingState?.hasNulls() == true ||
+            snapshot.shadowState?.hasNulls() == true
+        return LoadResult(true, needsResave)
     }
 
     class ModelSnapshot {
         var version: Int = VERSION
         var segments: MutableList<SegmentDto> = mutableListOf()
         var faces: MutableList<FaceDto> = mutableListOf()
+        var cameraState: CameraDto? = null
+        var lightingState: LightingDto? = null
+        var shadowState: ShadowDto? = null
     }
 
     class SegmentDto() {
@@ -115,6 +146,108 @@ object ModelPersistence {
 
         fun toColor(): Color {
             return Color(r, g, b, a)
+        }
+    }
+
+    class CameraDto() {
+        var position: Vec3Dto? = null
+        var direction: Vec3Dto? = null
+        var up: Vec3Dto? = null
+        var near: Float? = null
+        var far: Float? = null
+        var fieldOfView: Float? = null
+
+        constructor(camera: com.badlogic.gdx.graphics.PerspectiveCamera) : this() {
+            position = Vec3Dto(camera.position)
+            direction = Vec3Dto(camera.direction)
+            up = Vec3Dto(camera.up)
+            near = camera.near
+            far = camera.far
+            fieldOfView = camera.fieldOfView
+        }
+
+        fun applyTo(camera: com.badlogic.gdx.graphics.PerspectiveCamera) {
+            position?.let { camera.position.set(it.toVector3()) }
+            direction?.let { camera.direction.set(it.toVector3()) }
+            up?.let { camera.up.set(it.toVector3()) }
+            near?.let { camera.near = it }
+            far?.let { camera.far = it }
+            fieldOfView?.let { camera.fieldOfView = it }
+            camera.update()
+        }
+
+        fun hasNulls(): Boolean {
+            return position == null || direction == null || up == null ||
+                near == null || far == null || fieldOfView == null
+        }
+    }
+
+    class LightingDto() {
+        var shadowLightValue: Float? = null
+        var shadowLightAlpha: Float? = null
+        var directionalLightValue: Float? = null
+        var directionalLightAlpha: Float? = null
+        var ambientLightValue: Float? = null
+        var ambientLightAlpha: Float? = null
+        var specularLightValue: Float? = null
+        var specularLightAlpha: Float? = null
+
+        constructor(settings: com.github.alfu32.sketch.ui.LightingSettings) : this() {
+            shadowLightValue = settings.shadowLightValue
+            shadowLightAlpha = settings.shadowLightAlpha
+            directionalLightValue = settings.directionalLightValue
+            directionalLightAlpha = settings.directionalLightAlpha
+            ambientLightValue = settings.ambientLightValue
+            ambientLightAlpha = settings.ambientLightAlpha
+            specularLightValue = settings.specularLightValue
+            specularLightAlpha = settings.specularLightAlpha
+        }
+
+        fun applyTo(settings: com.github.alfu32.sketch.ui.LightingSettings) {
+            shadowLightValue?.let { settings.shadowLightValue = it }
+            shadowLightAlpha?.let { settings.shadowLightAlpha = it }
+            directionalLightValue?.let { settings.directionalLightValue = it }
+            directionalLightAlpha?.let { settings.directionalLightAlpha = it }
+            ambientLightValue?.let { settings.ambientLightValue = it }
+            ambientLightAlpha?.let { settings.ambientLightAlpha = it }
+            specularLightValue?.let { settings.specularLightValue = it }
+            specularLightAlpha?.let { settings.specularLightAlpha = it }
+        }
+
+        fun hasNulls(): Boolean {
+            return shadowLightValue == null || shadowLightAlpha == null ||
+                directionalLightValue == null || directionalLightAlpha == null ||
+                ambientLightValue == null || ambientLightAlpha == null ||
+                specularLightValue == null || specularLightAlpha == null
+        }
+    }
+
+    class ShadowDto() {
+        var shadowBias: Float? = null
+        var shadowNormalBias: Float? = null
+        var pcfMode: Int? = null
+        var dither: Boolean? = null
+        var useCsm: Boolean? = null
+
+        constructor(settings: com.github.alfu32.sketch.ui.ShadowSettings) : this() {
+            shadowBias = settings.shadowBias
+            shadowNormalBias = settings.shadowNormalBias
+            pcfMode = settings.pcfMode
+            dither = settings.dither
+            useCsm = settings.useCsm
+        }
+
+        fun applyTo(settings: com.github.alfu32.sketch.ui.ShadowSettings) {
+            shadowBias?.let { settings.shadowBias = it }
+            shadowNormalBias?.let { settings.shadowNormalBias = it }
+            pcfMode?.let { settings.pcfMode = it }
+            dither?.let { settings.dither = it }
+            useCsm?.let { settings.useCsm = it }
+        }
+
+        fun hasNulls(): Boolean {
+            return shadowBias == null || shadowNormalBias == null ||
+                pcfMode == null || dither == null || useCsm == null
         }
     }
 }
