@@ -11,7 +11,7 @@ import com.badlogic.gdx.math.Vector3
 class EditorCameraController(camera: Camera) : CameraInputController(camera) {
     init {
         // Disable default orbiting and panning
-        rotateButton = -1 // Disable orbiting with any mouse button
+        rotateButton = Input.Buttons.RIGHT // Disable orbiting with any mouse button
         translateButton = -1 // Disable panning with any mouse button
     }
     var translatePressed = false
@@ -55,12 +55,12 @@ class EditorCameraController(camera: Camera) : CameraInputController(camera) {
 
     override fun touchDragged(screenX: Int, screenY: Int, pointer: Int): Boolean {
         // Orbit when Left-Ctrl is pressed and dragging
-        if (Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT)) {
-            rotateButton = Input.Buttons.LEFT // Temporarily enable orbiting
-            val result = super.touchDragged(screenX, screenY, pointer)
-            rotateButton = -1 // Disable again to prevent default behavior
-            return result
-        }
+        // if (Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT)) {
+        //     rotateButton = Input.Buttons.RIGHT // Temporarily enable orbiting
+        //     val result = super.touchDragged(screenX, screenY, pointer)
+        //     rotateButton = -1 // Disable again to prevent default behavior
+        //     return result
+        // }
 
         // Pan when Left-Shift is pressed and dragging
 
@@ -76,7 +76,7 @@ class EditorCameraController(camera: Camera) : CameraInputController(camera) {
             plane.set(0f,0f,0f,0f,1f,0f)
             Intersector.intersectRayPlane(ray, plane,modelDelta)
             val panningScalar=0.5f // * (camera.position.sub(target).len())
-            translateButton = Input.Buttons.LEFT // Temporarily enable panning
+            translateButton = Input.Buttons.RIGHT // Temporarily enable panning
             // Temporarily adjust translateUnits to scale with panningScalar
             val prevTranslateUnits = translateUnits
             translateUnits *= panningScalar*modelDelta.len()

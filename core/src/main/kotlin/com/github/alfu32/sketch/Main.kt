@@ -23,11 +23,8 @@ import com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight
 import com.badlogic.gdx.graphics.g3d.utils.CameraInputController
 import com.badlogic.gdx.graphics.g3d.utils.DepthShaderProvider
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
-import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Matrix4
-import com.badlogic.gdx.math.Plane
 import com.badlogic.gdx.math.Vector3
-import com.badlogic.gdx.math.Intersector
 import com.badlogic.gdx.utils.Array
 import com.badlogic.gdx.utils.Pool
 import com.github.alfu32.sketch.input.GuideManager
@@ -216,7 +213,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     override fun render() {
-        updateCameraControls()
         cameraController.update()
         updateCursorStatus()
 
@@ -366,17 +362,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         shapeRenderer.line(origin, vEnd)
         shapeRenderer.color = Color(0.35f, 0.45f, 0.95f, 1f)
         shapeRenderer.line(origin, wEnd)
-    }
-
-    private fun updateCameraControls() {
-        val target = cameraController.target
-        val distance = camera.position.dst(target)
-        val safeDistance = kotlin.math.max(distance, 0.01f)
-        val fovRad = camera.fieldOfView * MathUtils.degreesToRadians
-        val worldHeight = 2f * safeDistance * kotlin.math.tan(fovRad * 0.5f)
-        val unitsPerPixel = worldHeight / kotlin.math.max(camera.viewportHeight, 1f)
-        cameraController.translateUnits = unitsPerPixel * 60f
-        cameraController.scrollFactor = kotlin.math.max(0.02f, safeDistance * 0.25f)
     }
 
     private fun drawCursor() {
@@ -743,51 +728,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         shapeRenderer.line(c3, c7)
     }
 
-    private class ShiftCameraController(camera: PerspectiveCamera) : CameraInputController(camera) {
-        private val panPlane = Plane()
-        private val panPoint = Vector3()
-        private val lastPanPoint = Vector3()
-        private var panning = false
-
-        override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
-            val shift = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) ||
-                Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT)
-            if (shift) {
-                translateButton = Input.Buttons.RIGHT
-                rotateButton = -1
-            } else {
-                rotateButton = Input.Buttons.RIGHT
-                translateButton = -1
-            }
-            return super.touchDown(screenX, screenY, pointer, button)
-        }
-
-        override fun touchDragged(screenX: Int, screenY: Int, pointer: Int): Boolean {
-            val shift = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) ||
-                Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT)
-            val right = Gdx.input.isButtonPressed(Input.Buttons.RIGHT)
-            if (shift && right) {
-                val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
-                panPlane.set(camera.direction, target)
-                if (!Intersector.intersectRayPlane(ray, panPlane, panPoint)) {
-                    return false
-                }
-                if (!panning) {
-                    lastPanPoint.set(panPoint)
-                    panning = true
-                    return true
-                }
-                val delta = Vector3(lastPanPoint).sub(panPoint)
-                camera.position.add(delta)
-                target.add(delta)
-                camera.update()
-                lastPanPoint.set(panPoint)
-                return true
-            }
-            panning = false
-            return super.touchDragged(screenX, screenY, pointer)
-        }
-    }
 
     private fun setupLighting() {
         environment = Environment()
