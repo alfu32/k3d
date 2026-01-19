@@ -84,7 +84,7 @@ private fun printHelp() {
         """
         Katechup3d Editor
         Commands:
-          edit --file <path>   Open or create a model file (default: sketch3d.json)
+          edit --file <path>   Open or create a model file (default: sketch3d.skate.json)
           version             Show version information
           update              Download and replace the editor jar
           help                Show this help message

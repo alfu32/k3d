@@ -253,6 +253,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         drawAxes(2.5f)
+        drawActiveGroupAxes(1.8f)
         drawGuides()
         drawCursor()
         drawSelectionHighlights()
@@ -343,6 +344,24 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         shapeRenderer.line(0f, 0f, 0f, 0f, length, 0f)
         shapeRenderer.color = Color(0.35f, 0.45f, 0.95f, 1f)
         shapeRenderer.line(0f, 0f, 0f, 0f, 0f, length)
+    }
+
+    private fun drawActiveGroupAxes(length: Float) {
+        val group = scene.activeGroup()
+        if (group === scene.root) {
+            return
+        }
+        val origin = group.worldOrigin()
+        val axes = group.worldAxes()
+        val uEnd = Vector3(origin).mulAdd(axes.u.nor(), length)
+        val vEnd = Vector3(origin).mulAdd(axes.v.nor(), length)
+        val wEnd = Vector3(origin).mulAdd(axes.w.nor(), length)
+        shapeRenderer.color = Color(0.85f, 0.25f, 0.25f, 1f)
+        shapeRenderer.line(origin, uEnd)
+        shapeRenderer.color = Color(0.25f, 0.85f, 0.35f, 1f)
+        shapeRenderer.line(origin, vEnd)
+        shapeRenderer.color = Color(0.35f, 0.45f, 0.95f, 1f)
+        shapeRenderer.line(origin, wEnd)
     }
 
     private fun drawCursor() {
@@ -567,7 +586,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             i++
         }
         if (fileArg.isNullOrBlank()) {
-            fileArg = "sketch3d.json"
+            fileArg = "sketch3d.skate.json"
         }
         return java.io.File(fileArg).absoluteFile
     }

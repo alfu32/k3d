@@ -52,11 +52,27 @@ class Snapper(
                 best = pickBetter(best, candidate)
             }
 
+            snapToLineEndpointsAllGroups(baseNormal, screenX, screenY, ray, group)?.let { candidate ->
+                best = pickBetter(best, candidate)
+            }
+
+            snapToLineMidpointsAllGroups(baseNormal, screenX, screenY, ray, group)?.let { candidate ->
+                best = pickBetter(best, candidate)
+            }
+
             snapToGridLines(basePoint, baseNormal, screenX, screenY, ray)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
 
             snapToLineSegments(group, basePoint, baseNormal, screenX, screenY, ray)?.let { candidate ->
+                best = pickBetter(best, candidate)
+            }
+        } else {
+            val fallbackNormal = facingNormal(Vector3(0f, 1f, 0f), ray.direction)
+            snapToLineEndpointsAllGroups(fallbackNormal, screenX, screenY, ray, group)?.let { candidate ->
+                best = pickBetter(best, candidate)
+            }
+            snapToLineMidpointsAllGroups(fallbackNormal, screenX, screenY, ray, group)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
         }
@@ -176,6 +192,84 @@ class Snapper(
                 val t = rayT(ray, midpoint) ?: return@forEach
                 val candidate = SnapCandidate(midpoint, Vector3(normal), SnapType.MIDPOINT, dist, t, SnapSource.LINE_MIDPOINT)
                 best = pickBetter(best, candidate)
+            }
+        }
+        return best
+    }
+
+    private fun snapToLineEndpointsAllGroups(
+        normal: Vector3,
+        screenX: Int,
+        screenY: Int,
+        ray: com.badlogic.gdx.math.collision.Ray,
+        activeGroup: GroupScene.GroupNode
+    ): SnapCandidate? {
+        var best: SnapCandidate? = null
+        val root = scene.root
+        if (activeGroup !== root) {
+            root.lineStore.getSegments().forEach { segment ->
+                listOf(segment.start, segment.end).forEach { point ->
+                    val dist = screenDistance(point, screenX, screenY)
+                    if (dist <= snapPixels) {
+                        val t = rayT(ray, point) ?: return@forEach
+                        val candidate = SnapCandidate(Vector3(point), Vector3(normal), SnapType.ENDPOINT, dist, t, SnapSource.LINE_ENDPOINT)
+                        best = pickBetter(best, candidate)
+                    }
+                }
+            }
+        }
+        scene.walkGroups(root) { group ->
+            if (group === activeGroup) {
+                return@walkGroups
+            }
+            group.lineStore.getSegments().forEach { segment ->
+                listOf(segment.start, segment.end).forEach { local ->
+                    val point = group.toWorld(local)
+                    val dist = screenDistance(point, screenX, screenY)
+                    if (dist <= snapPixels) {
+                        val t = rayT(ray, point) ?: return@forEach
+                        val candidate = SnapCandidate(Vector3(point), Vector3(normal), SnapType.ENDPOINT, dist, t, SnapSource.LINE_ENDPOINT)
+                        best = pickBetter(best, candidate)
+                    }
+                }
+            }
+        }
+        return best
+    }
+
+    private fun snapToLineMidpointsAllGroups(
+        normal: Vector3,
+        screenX: Int,
+        screenY: Int,
+        ray: com.badlogic.gdx.math.collision.Ray,
+        activeGroup: GroupScene.GroupNode
+    ): SnapCandidate? {
+        var best: SnapCandidate? = null
+        val root = scene.root
+        if (activeGroup !== root) {
+            root.lineStore.getSegments().forEach { segment ->
+                val midpoint = Vector3(segment.start).add(segment.end).scl(0.5f)
+                val dist = screenDistance(midpoint, screenX, screenY)
+                if (dist <= snapPixels) {
+                    val t = rayT(ray, midpoint) ?: return@forEach
+                    val candidate = SnapCandidate(midpoint, Vector3(normal), SnapType.MIDPOINT, dist, t, SnapSource.LINE_MIDPOINT)
+                    best = pickBetter(best, candidate)
+                }
+            }
+        }
+        scene.walkGroups(root) { group ->
+            if (group === activeGroup) {
+                return@walkGroups
+            }
+            group.lineStore.getSegments().forEach { segment ->
+                val midpointLocal = Vector3(segment.start).add(segment.end).scl(0.5f)
+                val midpoint = group.toWorld(midpointLocal)
+                val dist = screenDistance(midpoint, screenX, screenY)
+                if (dist <= snapPixels) {
+                    val t = rayT(ray, midpoint) ?: return@forEach
+                    val candidate = SnapCandidate(midpoint, Vector3(normal), SnapType.MIDPOINT, dist, t, SnapSource.LINE_MIDPOINT)
+                    best = pickBetter(best, candidate)
+                }
             }
         }
         return best
