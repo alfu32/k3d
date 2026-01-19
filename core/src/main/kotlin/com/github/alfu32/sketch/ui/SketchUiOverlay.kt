@@ -74,7 +74,7 @@ class SketchUiOverlay(
     private val selectionEdgesLabel = VisLabel()
     private val selectionFacesLabel = VisLabel()
     private val selectionGroupsLabel = VisLabel()
-    private val groupPanel = VisTable()
+    private val groupPanel = CollapsibleTable()
     private val groupStatusLabel = VisLabel()
     private val groupNameField = VisTextField()
     private val groupGlueCheck = VisCheckBox("Glue to surface")

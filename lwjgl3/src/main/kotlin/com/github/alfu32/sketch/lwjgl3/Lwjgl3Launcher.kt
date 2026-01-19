@@ -6,6 +6,7 @@ import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration
 import com.github.alfu32.sketch.Katechup3dVersion
 import com.github.alfu32.sketch.Main
+import groovy.lang.GroovyShell
 import java.io.File
 import java.net.URL
 
@@ -15,6 +16,7 @@ fun main(args: Array<String>) {
     if (StartupHelper.startNewJvmIfRequired())
       return
     val commandArgs = handleCommand(args) ?: return
+    val (width, height) = parseSize(args)
     Lwjgl3Application(Main(commandArgs), Lwjgl3ApplicationConfiguration().apply {
         var ver = Katechup3dVersion()
         setTitle("Katechup3d ${ver.buildGitTag} ${ver.buildGitBranch} ${ver.buildGitCommit} ${ver.buildDate.substring(0..10)}")
@@ -29,7 +31,7 @@ fun main(args: Array<String>) {
         //// You may also need to configure GPU drivers to fully disable Vsync; this can cause screen tearing.
 
 
-        setWindowedMode(640, 480)
+        setWindowedMode(width, height)
         //// You can change these files; they are in lwjgl3/src/main/resources/ .
         //// They can also be loaded from the root of assets/ .
         setWindowIcon(*(arrayOf(128, 64, 32, 16).map { "libgdx$it.png" }.toTypedArray()))
@@ -51,6 +53,10 @@ private fun handleCommand(args: Array<String>): Array<String>? {
     val command = args[0].lowercase()
     return when (command) {
         "edit" -> args.drop(1).toTypedArray()
+        "groovy" -> {
+            runGroovy(args.drop(1))
+            null
+        }
         "version" -> {
             printVersion()
             null
@@ -64,7 +70,7 @@ private fun handleCommand(args: Array<String>): Array<String>? {
             null
         }
         else -> {
-            if (command.startsWith("--file")) {
+            if (command.startsWith("--file") || command.startsWith("--size")) {
                 return args
             }
             printHelp()
@@ -84,12 +90,49 @@ private fun printHelp() {
         """
         Katechup3d Editor
         Commands:
-          edit --file <path>   Open or create a model file (default: sketch3d.skate.json)
+          edit --file <path> [--size WIDTHxHEIGHT]   Open or create a model file (default: sketch3d.skate.json)
+          groovy <script>      Run a Groovy script file
           version             Show version information
           update              Download and replace the editor jar
           help                Show this help message
         """.trimIndent()
     )
+}
+
+private fun parseSize(args: Array<String>): Pair<Int, Int> {
+    val defaultWidth = 1024
+    val defaultHeight = 768
+    val sizeIndex = args.indexOf("--size")
+    if (sizeIndex == -1 || sizeIndex + 1 >= args.size) {
+        return defaultWidth to defaultHeight
+    }
+    val raw = args[sizeIndex + 1].trim()
+    val parts = raw.lowercase().split('x')
+    if (parts.size != 2) {
+        return defaultWidth to defaultHeight
+    }
+    val width = parts[0].toIntOrNull() ?: return defaultWidth to defaultHeight
+    val height = parts[1].toIntOrNull() ?: return defaultWidth to defaultHeight
+    return width to height
+}
+
+private fun runGroovy(args: List<String>) {
+    val scriptPath = args.firstOrNull()
+    if (scriptPath.isNullOrBlank()) {
+        println("Groovy: missing script file.")
+        return
+    }
+    val file = File(scriptPath)
+    if (!file.exists()) {
+        println("Groovy: file not found: $scriptPath")
+        return
+    }
+    try {
+        val shell = GroovyShell()
+        shell.evaluate(file)
+    } catch (ex: Exception) {
+        println("Groovy: ${ex.message}")
+    }
 }
 
 private fun runUpdate() {
