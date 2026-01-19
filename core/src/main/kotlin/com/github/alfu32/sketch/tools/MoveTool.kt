@@ -4,15 +4,15 @@ import com.badlogic.gdx.Input
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Vector3
-import com.github.alfu32.sketch.model.DraftFaceStore
-import com.github.alfu32.sketch.model.DraftLineStore
+import com.badlogic.gdx.math.Quaternion
+import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
+import kotlin.math.acos
 
 class MoveTool(
-    private val lineStore: DraftLineStore,
-    private val faceStore: DraftFaceStore
+    private val scene: GroupScene
 ) : Tool {
     override val id: ToolId = ToolId.MOVE
     override val message: String = "Pick reference point."
@@ -20,6 +20,7 @@ class MoveTool(
     private var start: Vector3? = null
     private val hover = Vector3()
     private var hasHover = false
+    private var hoverNormal: Vector3? = null
 
     override fun onEnter(status: StatusModel) {
         status.message = "Pick reference point."
@@ -49,8 +50,10 @@ class MoveTool(
         if (valid && world != null) {
             hover.set(world)
             hasHover = true
+            hoverNormal = normal?.cpy()
         } else {
             hasHover = false
+            hoverNormal = null
         }
     }
 
@@ -71,14 +74,26 @@ class MoveTool(
             status.message = "No movement."
             return true
         }
+        val group = scene.activeGroup()
+        val localDelta = group.vectorToLocal(delta)
         if (status.copyMode) {
-            val movedFaces = faceStore.copySelected { point -> Vector3(point).add(delta) }
-            val movedEdges = lineStore.copySelected { point -> Vector3(point).add(delta) }
-            status.message = "Copied | edges $movedEdges faces $movedFaces"
+            val movedFaces = group.faceStore.copySelected { point -> Vector3(point).add(localDelta) }
+            val movedEdges = group.lineStore.copySelected { point -> Vector3(point).add(localDelta) }
+            val movedGroups = scene.copySelectedGroups(
+                { point -> Vector3(point).add(delta) },
+                { vector -> Vector3(vector) }
+            )
+            alignSelectedGroupsIfNeeded()
+            status.message = "Copied | edges $movedEdges faces $movedFaces groups $movedGroups"
         } else {
-            val movedFaces = faceStore.transformSelected { point -> Vector3(point).add(delta) }
-            val movedEdges = lineStore.transformSelected { point -> Vector3(point).add(delta) }
-            status.message = "Moved | edges $movedEdges faces $movedFaces"
+            val movedFaces = group.faceStore.transformSelected { point -> Vector3(point).add(localDelta) }
+            val movedEdges = group.lineStore.transformSelected { point -> Vector3(point).add(localDelta) }
+            val movedGroups = scene.transformSelectedGroups(
+                { point -> Vector3(point).add(delta) },
+                { vector -> Vector3(vector) }
+            )
+            alignSelectedGroupsIfNeeded()
+            status.message = "Moved | edges $movedEdges faces $movedFaces groups $movedGroups"
         }
         clearTransient()
         return true
@@ -95,7 +110,8 @@ class MoveTool(
             renderer.line(startPoint.x, startPoint.y, startPoint.z, hover.x, hover.y, hover.z)
             val delta = Vector3(hover).sub(startPoint)
             if (delta.len2() > 1e-6f) {
-                renderPreview(renderer) { point -> Vector3(point).add(delta) }
+                renderPreview(renderer, delta)
+                renderGroupPreview(renderer, delta)
             }
         }
     }
@@ -109,22 +125,73 @@ class MoveTool(
     private fun clearTransient() {
         start = null
         hasHover = false
+        hoverNormal = null
     }
 
-    private fun renderPreview(renderer: ShapeRenderer, transform: (Vector3) -> Vector3) {
+    private fun renderPreview(renderer: ShapeRenderer, deltaWorld: Vector3) {
         renderer.color = Color(0.25f, 0.85f, 0.55f, 1f)
-        faceStore.getSelected().forEach { tri ->
-            val a = transform(tri.a)
-            val b = transform(tri.b)
-            val c = transform(tri.c)
+        val group = scene.activeGroup()
+        group.faceStore.getSelected().forEach { tri ->
+            val a = group.toWorld(tri.a).add(deltaWorld)
+            val b = group.toWorld(tri.b).add(deltaWorld)
+            val c = group.toWorld(tri.c).add(deltaWorld)
             renderer.line(a.x, a.y, a.z, b.x, b.y, b.z)
             renderer.line(b.x, b.y, b.z, c.x, c.y, c.z)
             renderer.line(c.x, c.y, c.z, a.x, a.y, a.z)
         }
-        lineStore.getSelected().forEach { segment ->
-            val a = transform(segment.start)
-            val b = transform(segment.end)
+        group.lineStore.getSelected().forEach { segment ->
+            val a = group.toWorld(segment.start).add(deltaWorld)
+            val b = group.toWorld(segment.end).add(deltaWorld)
             renderer.line(a.x, a.y, a.z, b.x, b.y, b.z)
+        }
+    }
+
+    private fun renderGroupPreview(renderer: ShapeRenderer, deltaWorld: Vector3) {
+        if (scene.selectedGroups().isEmpty()) {
+            return
+        }
+        renderer.color = Color(0.25f, 0.85f, 0.55f, 1f)
+        scene.selectedGroups().forEach { group ->
+            val bounds = group.worldBounds() ?: return@forEach
+            val min = Vector3(bounds.min).add(deltaWorld)
+            val max = Vector3(bounds.max).add(deltaWorld)
+            renderer.line(min.x, min.y, min.z, max.x, min.y, min.z)
+            renderer.line(max.x, min.y, min.z, max.x, min.y, max.z)
+            renderer.line(max.x, min.y, max.z, min.x, min.y, max.z)
+            renderer.line(min.x, min.y, max.z, min.x, min.y, min.z)
+            renderer.line(min.x, max.y, min.z, max.x, max.y, min.z)
+            renderer.line(max.x, max.y, min.z, max.x, max.y, max.z)
+            renderer.line(max.x, max.y, max.z, min.x, max.y, max.z)
+            renderer.line(min.x, max.y, max.z, min.x, max.y, min.z)
+            renderer.line(min.x, min.y, min.z, min.x, max.y, min.z)
+            renderer.line(max.x, min.y, min.z, max.x, max.y, min.z)
+            renderer.line(max.x, min.y, max.z, max.x, max.y, max.z)
+            renderer.line(min.x, min.y, max.z, min.x, max.y, max.z)
+        }
+    }
+
+    private fun alignSelectedGroupsIfNeeded() {
+        val normal = hoverNormal?.cpy()?.nor() ?: return
+        scene.selectedGroups().forEach { group ->
+            if (!group.gluedToSurface) {
+                return@forEach
+            }
+            val axes = group.worldAxes()
+            val current = axes.w.cpy().nor()
+            if (current.dot(normal) >= 0.999f) {
+                return@forEach
+            }
+            val axis = Vector3(current).crs(normal)
+            val angle = kotlin.math.acos(current.dot(normal).coerceIn(-1f, 1f))
+            if (axis.len2() <= 1e-6f) {
+                return@forEach
+            }
+            val rotation = Quaternion().setFromAxisRad(axis.nor(), angle)
+            val newU = axes.u.cpy().mul(rotation)
+            val newV = axes.v.cpy().mul(rotation)
+            val newW = axes.w.cpy().mul(rotation)
+            val origin = group.worldOrigin()
+            group.setInstanceFromWorld(origin, newU, newV, newW)
         }
     }
 }

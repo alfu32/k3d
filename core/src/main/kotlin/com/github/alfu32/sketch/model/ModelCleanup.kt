@@ -1,10 +1,12 @@
 package com.github.alfu32.sketch.model
 
 class ModelCleanup(
-    private val lineStore: DraftLineStore,
-    private val faceStore: DraftFaceStore
+    private val scene: GroupScene
 ) {
     fun run() {
-        lineStore.cleanup()
+        scene.root.lineStore.cleanup()
+        scene.walkGroups(scene.root) { group ->
+            group.lineStore.cleanup()
+        }
     }
 }

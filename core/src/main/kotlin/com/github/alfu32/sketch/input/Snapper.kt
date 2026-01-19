@@ -4,16 +4,14 @@ import com.badlogic.gdx.graphics.Camera
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
-import com.github.alfu32.sketch.model.DraftFaceStore
-import com.github.alfu32.sketch.model.DraftLineStore
+import com.github.alfu32.sketch.model.GroupScene
 import kotlin.math.abs
 import kotlin.math.round
 import kotlin.math.sqrt
 
 class Snapper(
     private val camera: Camera,
-    private val lineStore: DraftLineStore,
-    private val faceStore: DraftFaceStore,
+    private val scene: GroupScene,
     private val guideManager: GuideManager,
     private val gridSpacing: Float = 1f,
     private val snapPixels: Float = 12f
@@ -23,14 +21,21 @@ class Snapper(
 
     fun compute(screenX: Int, screenY: Int): SnapResult {
         val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
+        val group = scene.activeGroup()
+        val localRay = com.badlogic.gdx.math.collision.Ray(
+            group.toLocal(ray.origin),
+            group.vectorToLocal(ray.direction).nor()
+        )
         val baseHit = pickBaseHit(ray)
         val basePoint = baseHit?.point
         val baseNormal = baseHit?.normal
         var best: SnapCandidate? = null
 
-        faceStore.pickTriangle(ray)?.let { hit ->
-            val faceNormal = facingNormal(Vector3(hit.normal), ray.direction)
-            val candidate = SnapCandidate(hit.point, faceNormal, SnapType.FACE, 0f, hit.t, SnapSource.FACE)
+        group.faceStore.pickTriangle(localRay)?.let { hit ->
+            val worldPoint = group.toWorld(hit.point)
+            val faceNormal = facingNormal(group.vectorToWorld(hit.normal), ray.direction)
+            val t = rayT(ray, worldPoint) ?: return@let
+            val candidate = SnapCandidate(worldPoint, faceNormal, SnapType.FACE, 0f, t, SnapSource.FACE)
             best = pickBetter(best, candidate)
         }
 
@@ -39,11 +44,11 @@ class Snapper(
                 best = pickBetter(best, it)
             }
 
-            snapToLineEndpoints(baseNormal, screenX, screenY, ray)?.let { candidate ->
+            snapToLineEndpoints(group, baseNormal, screenX, screenY, ray)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
 
-            snapToLineMidpoints(baseNormal, screenX, screenY, ray)?.let { candidate ->
+            snapToLineMidpoints(group, baseNormal, screenX, screenY, ray)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
 
@@ -51,7 +56,7 @@ class Snapper(
                 best = pickBetter(best, candidate)
             }
 
-            snapToLineSegments(basePoint, baseNormal, screenX, screenY, ray)?.let { candidate ->
+            snapToLineSegments(group, basePoint, baseNormal, screenX, screenY, ray)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
         }
@@ -133,10 +138,17 @@ class Snapper(
         }
     }
 
-    private fun snapToLineEndpoints(normal: Vector3, screenX: Int, screenY: Int, ray: com.badlogic.gdx.math.collision.Ray): SnapCandidate? {
+    private fun snapToLineEndpoints(
+        group: GroupScene.GroupNode,
+        normal: Vector3,
+        screenX: Int,
+        screenY: Int,
+        ray: com.badlogic.gdx.math.collision.Ray
+    ): SnapCandidate? {
         var best: SnapCandidate? = null
-        lineStore.getSegments().forEach { segment ->
-            listOf(segment.start, segment.end).forEach { point ->
+        group.lineStore.getSegments().forEach { segment ->
+            listOf(segment.start, segment.end).forEach { local ->
+                val point = group.toWorld(local)
                 val dist = screenDistance(point, screenX, screenY)
                 if (dist <= snapPixels) {
                     val t = rayT(ray, point) ?: return@forEach
@@ -148,10 +160,17 @@ class Snapper(
         return best
     }
 
-    private fun snapToLineMidpoints(normal: Vector3, screenX: Int, screenY: Int, ray: com.badlogic.gdx.math.collision.Ray): SnapCandidate? {
+    private fun snapToLineMidpoints(
+        group: GroupScene.GroupNode,
+        normal: Vector3,
+        screenX: Int,
+        screenY: Int,
+        ray: com.badlogic.gdx.math.collision.Ray
+    ): SnapCandidate? {
         var best: SnapCandidate? = null
-        lineStore.getSegments().forEach { segment ->
-            val midpoint = Vector3(segment.start).add(segment.end).scl(0.5f)
+        group.lineStore.getSegments().forEach { segment ->
+            val midpointLocal = Vector3(segment.start).add(segment.end).scl(0.5f)
+            val midpoint = group.toWorld(midpointLocal)
             val dist = screenDistance(midpoint, screenX, screenY)
             if (dist <= snapPixels) {
                 val t = rayT(ray, midpoint) ?: return@forEach
@@ -162,10 +181,19 @@ class Snapper(
         return best
     }
 
-    private fun snapToLineSegments(base: Vector3, normal: Vector3, screenX: Int, screenY: Int, ray: com.badlogic.gdx.math.collision.Ray): SnapCandidate? {
+    private fun snapToLineSegments(
+        group: GroupScene.GroupNode,
+        base: Vector3,
+        normal: Vector3,
+        screenX: Int,
+        screenY: Int,
+        ray: com.badlogic.gdx.math.collision.Ray
+    ): SnapCandidate? {
         var best: SnapCandidate? = null
-        lineStore.getSegments().forEach { segment ->
-            val closest = closestPointOnSegment(base, segment.start, segment.end)
+        group.lineStore.getSegments().forEach { segment ->
+            val start = group.toWorld(segment.start)
+            val end = group.toWorld(segment.end)
+            val closest = closestPointOnSegment(base, start, end)
             val dist = screenDistance(closest, screenX, screenY)
             if (dist <= snapPixels) {
                 val t = rayT(ray, closest) ?: return@forEach
@@ -345,13 +373,19 @@ class Snapper(
 
     fun collectSelectionPoints(): List<SelectionPoint> {
         val points = mutableListOf<SelectionPoint>()
-        lineStore.getSegments().forEach { segment ->
-            points.add(SelectionPoint(projectScreen(segment.start), Vector3(segment.start), null, SelectionSource.EDGE))
-            points.add(SelectionPoint(projectScreen(segment.end), Vector3(segment.end), null, SelectionSource.EDGE))
+        val group = scene.activeGroup()
+        group.lineStore.getSegments().forEach { segment ->
+            val start = group.toWorld(segment.start)
+            val end = group.toWorld(segment.end)
+            points.add(SelectionPoint(projectScreen(start), Vector3(start), null, SelectionSource.EDGE))
+            points.add(SelectionPoint(projectScreen(end), Vector3(end), null, SelectionSource.EDGE))
         }
-        faceStore.getTriangles().forEach { tri ->
-            val centroid = Vector3(tri.a).add(tri.b).add(tri.c).scl(1f / 3f)
-            val normal = Vector3(tri.b).sub(tri.a).crs(Vector3(tri.c).sub(tri.a)).nor()
+        group.faceStore.getTriangles().forEach { tri ->
+            val a = group.toWorld(tri.a)
+            val b = group.toWorld(tri.b)
+            val c = group.toWorld(tri.c)
+            val centroid = Vector3(a).add(b).add(c).scl(1f / 3f)
+            val normal = Vector3(b).sub(a).crs(Vector3(c).sub(a)).nor()
             points.add(SelectionPoint(projectScreen(centroid), centroid, normal, SelectionSource.FACE))
         }
         return points

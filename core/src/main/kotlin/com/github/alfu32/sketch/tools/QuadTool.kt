@@ -4,22 +4,20 @@ import com.badlogic.gdx.Input
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Vector3
-import com.github.alfu32.sketch.model.DraftFaceStore
-import com.github.alfu32.sketch.model.DraftLineStore
+import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
 
 class QuadTool(
-    private val lineStore: DraftLineStore,
-    private val faceStore: DraftFaceStore
+    private val scene: GroupScene
 ) : Tool {
     override val id: ToolId = ToolId.QUAD
     override val message: String = "Pick origin point."
 
-    private var origin: Vector3? = null
-    private var pointB: Vector3? = null
-    private var pickNormal: Vector3? = null
+    private var originWorld: Vector3? = null
+    private var pointBWorld: Vector3? = null
+    private var pickNormalWorld: Vector3? = null
     private val hover = Vector3()
     private var hasHover = false
 
@@ -50,42 +48,47 @@ class QuadTool(
         if (button != Input.Buttons.LEFT || !valid || world == null) {
             return false
         }
-        if (origin == null) {
-            origin = Vector3(world)
-            pickNormal = normal?.cpy()
+        if (originWorld == null) {
+            originWorld = Vector3(world)
+            pickNormalWorld = normal?.cpy()
             status.message = "Pick second point."
             return true
         }
-        if (pointB == null) {
-            pointB = Vector3(world)
+        if (pointBWorld == null) {
+            pointBWorld = Vector3(world)
             status.message = "Pick third point."
             return true
         }
-        val a = origin ?: return false
-        val b = pointB ?: return false
-        val c = Vector3(world)
-        val u = Vector3(b).sub(a)
-        val v = Vector3(c).sub(a)
+        val group = scene.activeGroup()
+        val aWorld = originWorld ?: return false
+        val bWorld = pointBWorld ?: return false
+        val cWorld = Vector3(world)
+        val u = Vector3(bWorld).sub(aWorld)
+        val v = Vector3(cWorld).sub(aWorld)
         if (u.len2() <= 1e-4f || v.len2() <= 1e-4f) {
             status.message = "Points are too close."
             clearTransient()
             return true
         }
-        val d = Vector3(b).add(v)
-        val corners = listOf(Vector3(a), Vector3(b), d, Vector3(c))
+        val dWorld = Vector3(bWorld).add(v)
+        val cornersWorld = listOf(Vector3(aWorld), Vector3(bWorld), dWorld, Vector3(cWorld))
+        val cornersLocal = cornersWorld.map { group.toLocal(it) }
         for (i in 0 until 4) {
-            val p0 = corners[i]
-            val p1 = corners[(i + 1) % 4]
-            lineStore.addSegment(p0, p1)
+            val p0 = cornersLocal[i]
+            val p1 = cornersLocal[(i + 1) % 4]
+            group.lineStore.addSegment(p0, p1)
         }
-        val normalPref = pickNormal ?: Vector3(u).crs(v).nor()
-        val quadNormal = Vector3(u).crs(v)
+        val normalPref = pickNormalWorld?.let { group.vectorToLocal(it) }
+            ?: Vector3(cornersLocal[1]).sub(cornersLocal[0])
+                .crs(Vector3(cornersLocal[2]).sub(cornersLocal[0])).nor()
+        val quadNormal = Vector3(cornersLocal[1]).sub(cornersLocal[0])
+            .crs(Vector3(cornersLocal[2]).sub(cornersLocal[0]))
         if (quadNormal.dot(normalPref) >= 0f) {
-            faceStore.addTriangle(corners[0], corners[1], corners[2])
-            faceStore.addTriangle(corners[0], corners[2], corners[3])
+            group.faceStore.addTriangle(cornersLocal[0], cornersLocal[1], cornersLocal[2])
+            group.faceStore.addTriangle(cornersLocal[0], cornersLocal[2], cornersLocal[3])
         } else {
-            faceStore.addTriangle(corners[0], corners[2], corners[1])
-            faceStore.addTriangle(corners[0], corners[3], corners[2])
+            group.faceStore.addTriangle(cornersLocal[0], cornersLocal[2], cornersLocal[1])
+            group.faceStore.addTriangle(cornersLocal[0], cornersLocal[3], cornersLocal[2])
         }
         clearTransient()
         status.message = "Quad created. Pick origin point."
@@ -93,12 +96,12 @@ class QuadTool(
     }
 
     override fun render(renderer: ShapeRenderer) {
-        val a = origin ?: return
+        val a = originWorld ?: return
         if (!hasHover) {
             return
         }
         renderer.color = Color(0.55f, 0.85f, 0.95f, 1f)
-        val b = pointB
+        val b = pointBWorld
         if (b == null) {
             renderer.line(a.x, a.y, a.z, hover.x, hover.y, hover.z)
             return
@@ -112,9 +115,9 @@ class QuadTool(
     }
 
     private fun clearTransient() {
-        origin = null
-        pointB = null
-        pickNormal = null
+        originWorld = null
+        pointBWorld = null
+        pickNormalWorld = null
         hasHover = false
     }
 }

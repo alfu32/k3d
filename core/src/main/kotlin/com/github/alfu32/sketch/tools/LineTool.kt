@@ -4,24 +4,22 @@ import com.badlogic.gdx.Input
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Vector3
-import com.github.alfu32.sketch.model.DraftFaceStore
-import com.github.alfu32.sketch.model.DraftLineStore
+import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
 
 class LineTool(
-    private val lineStore: DraftLineStore,
-    private val faceStore: DraftFaceStore
+    private val scene: GroupScene
 ) : Tool {
     override val id: ToolId = ToolId.LINE
     override val message: String = "Click to start a line."
 
-    private var anchor: Vector3? = null
+    private var anchorWorld: Vector3? = null
     private val hover = Vector3()
     private var hasHover = false
-    private val polylinePoints = mutableListOf<Vector3>()
-    private var preferredNormal: Vector3? = null
+    private val polylinePointsLocal = mutableListOf<Vector3>()
+    private var preferredNormalLocal: Vector3? = null
     private val epsilonSq = 1e-4f
 
     override fun onEnter(status: StatusModel) {
@@ -51,36 +49,39 @@ class LineTool(
         if (button != Input.Buttons.LEFT || !valid || world == null) {
             return false
         }
-        if (anchor == null) {
-            anchor = Vector3(world)
-            preferredNormal = normal?.cpy()
-            polylinePoints.clear()
-            polylinePoints.add(Vector3(world))
+        val group = scene.activeGroup()
+        if (anchorWorld == null) {
+            anchorWorld = Vector3(world)
+            preferredNormalLocal = normal?.let { group.vectorToLocal(it) }
+            polylinePointsLocal.clear()
+            polylinePointsLocal.add(group.toLocal(world))
             status.message = "Click to finish segment. Esc cancels."
         } else {
-            val start = anchor ?: return false
-            val end = Vector3(world)
-            lineStore.addSegment(start, end)
-            anchor = Vector3(end)
-            polylinePoints.add(Vector3(end))
-            if (polylinePoints.size >= 3 && polylinePoints.first().dst2(end) <= epsilonSq) {
-                val facing = normal ?: preferredNormal
-                faceStore.addPolygon(polylinePoints, facing)
-                polylinePoints.clear()
-                polylinePoints.add(Vector3(end))
+            val startWorld = anchorWorld ?: return false
+            val endWorld = Vector3(world)
+            val startLocal = group.toLocal(startWorld)
+            val endLocal = group.toLocal(endWorld)
+            group.lineStore.addSegment(startLocal, endLocal)
+            anchorWorld = Vector3(endWorld)
+            polylinePointsLocal.add(Vector3(endLocal))
+            if (polylinePointsLocal.size >= 3 && polylinePointsLocal.first().dst2(endLocal) <= epsilonSq) {
+                val facing = normal?.let { group.vectorToLocal(it) } ?: preferredNormalLocal
+                group.faceStore.addPolygon(polylinePointsLocal, facing)
+                polylinePointsLocal.clear()
+                polylinePointsLocal.add(Vector3(endLocal))
                 status.message = "Face created. Click to continue line. Esc cancels."
             } else {
                 status.message = "Click to continue line. Esc cancels."
             }
         }
         if (normal != null) {
-            preferredNormal = normal.cpy()
+            preferredNormalLocal = scene.activeGroup().vectorToLocal(normal)
         }
         return true
     }
 
     override fun render(renderer: ShapeRenderer) {
-        val start = anchor
+        val start = anchorWorld
         if (start != null && hasHover) {
             renderer.color = Color(0.95f, 0.75f, 0.25f, 1f)
             renderer.line(start.x, start.y, start.z, hover.x, hover.y, hover.z)
@@ -88,9 +89,9 @@ class LineTool(
     }
 
     private fun clearTransient() {
-        anchor = null
+        anchorWorld = null
         hasHover = false
-        polylinePoints.clear()
-        preferredNormal = null
+        polylinePointsLocal.clear()
+        preferredNormalLocal = null
     }
 }

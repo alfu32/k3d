@@ -1,30 +1,24 @@
 package com.github.alfu32.sketch.model
 
 import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.utils.Json
 import com.badlogic.gdx.utils.JsonWriter
 import java.io.File
 
 object ModelPersistence {
-    private const val VERSION = 2
+    private const val VERSION = 4
 
     fun save(
         file: File,
-        lineStore: DraftLineStore,
-        faceStore: DraftFaceStore,
+        scene: GroupScene,
         camera: com.badlogic.gdx.graphics.PerspectiveCamera,
         lighting: com.github.alfu32.sketch.ui.LightingSettings,
         shadow: com.github.alfu32.sketch.ui.ShadowSettings
     ) {
         val snapshot = ModelSnapshot().apply {
             version = VERSION
-            segments = lineStore.getSegments().map { segment ->
-                SegmentDto(Vec3Dto(segment.start), Vec3Dto(segment.end))
-            }.toMutableList()
-            faces = faceStore.getTriangles().map { tri ->
-                val color = faceStore.colorFor(tri)
-                FaceDto(Vec3Dto(tri.a), Vec3Dto(tri.b), Vec3Dto(tri.c), ColorDto(color))
-            }.toMutableList()
+            rootGroup = GroupDto.fromGroup(scene.root)
             cameraState = CameraDto(camera)
             lightingState = LightingDto(lighting)
             shadowState = ShadowDto(shadow)
@@ -41,8 +35,7 @@ object ModelPersistence {
 
     fun load(
         file: File,
-        lineStore: DraftLineStore,
-        faceStore: DraftFaceStore,
+        scene: GroupScene,
         camera: com.badlogic.gdx.graphics.PerspectiveCamera,
         lighting: com.github.alfu32.sketch.ui.LightingSettings,
         shadow: com.github.alfu32.sketch.ui.ShadowSettings
@@ -57,18 +50,43 @@ object ModelPersistence {
             return LoadResult(false, false)
         } ?: return LoadResult(false, false)
 
-        lineStore.clearAll()
-        faceStore.clearAll()
-        snapshot.segments.forEach { segment ->
-            lineStore.addSegment(segment.start.toVector3(), segment.end.toVector3())
-        }
-        snapshot.faces.forEach { face ->
-            faceStore.addTriangle(
-                face.a.toVector3(),
-                face.b.toVector3(),
-            face.c.toVector3(),
-            face.color.toColor()
-        )
+        resetScene(scene)
+        if (snapshot.rootGroup != null) {
+            val loaded = snapshot.rootGroup!!.toGroup(scene.defaultFaceColor)
+            scene.root.name = loaded.name
+            scene.root.definitionOrigin.set(loaded.definitionOrigin)
+            scene.root.definitionAxisU.set(loaded.definitionAxisU)
+            scene.root.definitionAxisV.set(loaded.definitionAxisV)
+            scene.root.definitionAxisW.set(loaded.definitionAxisW)
+            scene.root.instanceOrigin.set(loaded.instanceOrigin)
+            scene.root.instanceAxisU.set(loaded.instanceAxisU)
+            scene.root.instanceAxisV.set(loaded.instanceAxisV)
+            scene.root.instanceAxisW.set(loaded.instanceAxisW)
+            scene.root.gluedToSurface = loaded.gluedToSurface
+            scene.root.lineStore.clearAll()
+            scene.root.faceStore.clearAll()
+            loaded.lineStore.getSegments().forEach { seg ->
+                scene.root.lineStore.addSegment(seg.start, seg.end)
+            }
+            loaded.faceStore.getTriangles().forEach { tri ->
+                scene.root.faceStore.addTriangle(tri.a, tri.b, tri.c, loaded.faceStore.colorFor(tri))
+            }
+            loaded.children.forEach { child ->
+                child.parent = scene.root
+                scene.root.children.add(child)
+            }
+        } else {
+            snapshot.segments.forEach { segment ->
+                scene.root.lineStore.addSegment(segment.start.toVector3(), segment.end.toVector3())
+            }
+            snapshot.faces.forEach { face ->
+                scene.root.faceStore.addTriangle(
+                    face.a.toVector3(),
+                    face.b.toVector3(),
+                    face.c.toVector3(),
+                    face.color.toColor()
+                )
+            }
         }
         snapshot.cameraState?.applyTo(camera)
         snapshot.lightingState?.applyTo(lighting)
@@ -76,6 +94,7 @@ object ModelPersistence {
         val needsResave = snapshot.cameraState == null ||
             snapshot.lightingState == null ||
             snapshot.shadowState == null ||
+            snapshot.rootGroup == null ||
             snapshot.cameraState?.hasNulls() == true ||
             snapshot.lightingState?.hasNulls() == true ||
             snapshot.shadowState?.hasNulls() == true
@@ -86,6 +105,7 @@ object ModelPersistence {
         var version: Int = VERSION
         var segments: MutableList<SegmentDto> = mutableListOf()
         var faces: MutableList<FaceDto> = mutableListOf()
+        var rootGroup: GroupDto? = null
         var cameraState: CameraDto? = null
         var lightingState: LightingDto? = null
         var shadowState: ShadowDto? = null
@@ -112,6 +132,100 @@ object ModelPersistence {
             this.b = b
             this.c = c
             this.color = color
+        }
+    }
+
+    class GroupDto() {
+        var id: String = ""
+        var name: String = ""
+        var origin: Vec3Dto = Vec3Dto()
+        var axisU: Vec3Dto = Vec3Dto()
+        var axisV: Vec3Dto = Vec3Dto()
+        var axisW: Vec3Dto = Vec3Dto()
+        var definitionOrigin: Vec3Dto? = null
+        var definitionAxisU: Vec3Dto? = null
+        var definitionAxisV: Vec3Dto? = null
+        var definitionAxisW: Vec3Dto? = null
+        var instanceOrigin: Vec3Dto? = null
+        var instanceAxisU: Vec3Dto? = null
+        var instanceAxisV: Vec3Dto? = null
+        var instanceAxisW: Vec3Dto? = null
+        var gluedToSurface: Boolean = false
+        var segments: MutableList<SegmentDto> = mutableListOf()
+        var faces: MutableList<FaceDto> = mutableListOf()
+        var children: MutableList<GroupDto> = mutableListOf()
+
+        fun toGroup(defaultColor: Color): GroupScene.GroupNode {
+            val defOrigin = definitionOrigin?.toVector3() ?: Vector3()
+            val defAxisU = definitionAxisU?.toVector3() ?: Vector3(1f, 0f, 0f)
+            val defAxisV = definitionAxisV?.toVector3() ?: Vector3(0f, 1f, 0f)
+            val defAxisW = definitionAxisW?.toVector3() ?: Vector3(0f, 0f, 1f)
+            val instOrigin = instanceOrigin?.toVector3() ?: origin.toVector3()
+            val instAxisU = instanceAxisU?.toVector3() ?: axisU.toVector3()
+            val instAxisV = instanceAxisV?.toVector3() ?: axisV.toVector3()
+            val instAxisW = instanceAxisW?.toVector3() ?: axisW.toVector3()
+            val group = GroupScene.GroupNode(
+                id = id.ifBlank { java.util.UUID.randomUUID().toString() },
+                name = name.ifBlank { "Group" },
+                definitionOrigin = defOrigin,
+                definitionAxisU = defAxisU,
+                definitionAxisV = defAxisV,
+                definitionAxisW = defAxisW,
+                instanceOrigin = instOrigin,
+                instanceAxisU = instAxisU,
+                instanceAxisV = instAxisV,
+                instanceAxisW = instAxisW,
+                gluedToSurface = gluedToSurface,
+                lineStore = DraftLineStore(),
+                faceStore = DraftFaceStore(defaultColor)
+            )
+            segments.forEach { segment ->
+                group.lineStore.addSegment(segment.start.toVector3(), segment.end.toVector3())
+            }
+            faces.forEach { face ->
+                group.faceStore.addTriangle(
+                    face.a.toVector3(),
+                    face.b.toVector3(),
+                    face.c.toVector3(),
+                    face.color.toColor()
+                )
+            }
+            children.forEach { child ->
+                val childGroup = child.toGroup(defaultColor)
+                childGroup.parent = group
+                group.children.add(childGroup)
+            }
+            return group
+        }
+
+        companion object {
+            fun fromGroup(group: GroupScene.GroupNode): GroupDto {
+                val dto = GroupDto()
+                dto.id = group.id
+                dto.name = group.name
+                dto.origin = Vec3Dto(group.instanceOrigin)
+                dto.axisU = Vec3Dto(group.instanceAxisU)
+                dto.axisV = Vec3Dto(group.instanceAxisV)
+                dto.axisW = Vec3Dto(group.instanceAxisW)
+                dto.definitionOrigin = Vec3Dto(group.definitionOrigin)
+                dto.definitionAxisU = Vec3Dto(group.definitionAxisU)
+                dto.definitionAxisV = Vec3Dto(group.definitionAxisV)
+                dto.definitionAxisW = Vec3Dto(group.definitionAxisW)
+                dto.instanceOrigin = Vec3Dto(group.instanceOrigin)
+                dto.instanceAxisU = Vec3Dto(group.instanceAxisU)
+                dto.instanceAxisV = Vec3Dto(group.instanceAxisV)
+                dto.instanceAxisW = Vec3Dto(group.instanceAxisW)
+                dto.gluedToSurface = group.gluedToSurface
+                dto.segments = group.lineStore.getSegments().map { seg ->
+                    SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end))
+                }.toMutableList()
+                dto.faces = group.faceStore.getTriangles().map { tri ->
+                    val color = group.faceStore.colorFor(tri)
+                    FaceDto(Vec3Dto(tri.a), Vec3Dto(tri.b), Vec3Dto(tri.c), ColorDto(color))
+                }.toMutableList()
+                dto.children = group.children.map { child -> fromGroup(child) }.toMutableList()
+                return dto
+            }
         }
     }
 
@@ -249,5 +363,13 @@ object ModelPersistence {
             return shadowBias == null || shadowNormalBias == null ||
                 pcfMode == null || dither == null || useCsm == null
         }
+    }
+
+    private fun resetScene(scene: GroupScene) {
+        scene.root.children.clear()
+        scene.root.lineStore.clearAll()
+        scene.root.faceStore.clearAll()
+        scene.clearGroupSelection()
+        scene.resetActiveGroup()
     }
 }

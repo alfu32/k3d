@@ -31,8 +31,7 @@ import com.github.alfu32.sketch.input.GuideManager
 import com.github.alfu32.sketch.input.SnapResult
 import com.github.alfu32.sketch.input.Snapper
 import com.github.alfu32.sketch.input.ToolPointerProcessor
-import com.github.alfu32.sketch.model.DraftFaceStore
-import com.github.alfu32.sketch.model.DraftLineStore
+import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.model.ModelPersistence
 import com.github.alfu32.sketch.model.ModelCleanup
 import com.github.alfu32.sketch.render.SketchShaderProvider
@@ -84,8 +83,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var uiOverlay: SketchUiOverlay
     private lateinit var toolPointer: ToolPointerProcessor
     private lateinit var statusModel: StatusModel
-    private lateinit var lineStore: DraftLineStore
-    private lateinit var faceStore: DraftFaceStore
+    private lateinit var scene: GroupScene
     private lateinit var modelCleanup: ModelCleanup
     private lateinit var guideManager: GuideManager
     private lateinit var snapper: Snapper
@@ -130,25 +128,24 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             message = "Select entities.",
             inputBuffer = ""
         )
-        lineStore = DraftLineStore()
-        faceStore = DraftFaceStore(Color(0.8f, 0.8f, 0.8f, 1f))
-        modelCleanup = ModelCleanup(lineStore, faceStore)
+        scene = GroupScene(Color(0.8f, 0.8f, 0.8f, 1f))
+        modelCleanup = ModelCleanup(scene)
         guideManager = GuideManager()
-        snapper = Snapper(camera, lineStore, faceStore, guideManager, gridSpacing)
+        snapper = Snapper(camera, scene, guideManager, gridSpacing)
         toolController = ToolController(
             statusModel,
             listOf(
-                SelectTool(lineStore, faceStore, camera),
-                LineTool(lineStore, faceStore),
-                RectangleTool(lineStore, faceStore),
-                SurfaceRectangleTool(lineStore, faceStore),
-                QuadTool(lineStore, faceStore),
-                CircleTool(lineStore, faceStore),
-                PushPullTool(lineStore, faceStore, camera),
-                MoveTool(lineStore, faceStore),
-                RotateTool(lineStore, faceStore),
-                ScaleTool(lineStore, faceStore),
-                PaintTool(faceStore, camera) { statusModel.paintColor.cpy() },
+                SelectTool(scene, camera),
+                LineTool(scene),
+                RectangleTool(scene),
+                SurfaceRectangleTool(scene),
+                QuadTool(scene),
+                CircleTool(scene),
+                PushPullTool(scene, camera),
+                MoveTool(scene),
+                RotateTool(scene),
+                ScaleTool(scene),
+                PaintTool(scene, camera) { statusModel.paintColor.cpy() },
                 SimpleTool(ToolId.ERASER, "Click to erase edges.")
             )
         )
@@ -157,7 +154,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             guideManager,
             ::runCleanup,
             ::clearSelection,
-            ::deleteSelection
+            ::deleteSelection,
+            ::groupSelection,
+            ::ungroupSelection,
+            ::exitGroupEditMode
         ) { lastSnap }
         lightingSettings = LightingSettings(
             shadowLightValue = shadowLightValue,
@@ -183,6 +183,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::deleteSelection,
             ::flipSelectedFaces,
             ::selectionInfo,
+            ::groupInfo,
+            ::updateGroupName,
+            ::updateGroupGlue,
             lightingSettings,
             ::applyLightingSettings,
             shadowSettings,
@@ -197,15 +200,14 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         )
 
         modelFile = resolveModelFile(startupArgs)
-        loadModel()
-        lineStore.setChangeListener { saveModel() }
-        faceStore.setChangeListener { saveModel() }
 
         shapeRenderer = ShapeRenderer()
         setupLighting()
+        loadModel()
         applyLightingSettings(lightingSettings)
         applyShadowSettings(shadowSettings)
         uiOverlay.refreshLightingControls()
+        scene.setChangeListener { saveModel() }
         setupMeshes()
         setupRenderables()
     }
@@ -307,7 +309,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     override fun dispose() {
-        if (::modelFile.isInitialized && ::lineStore.isInitialized && ::faceStore.isInitialized && ::camera.isInitialized &&
+        if (::modelFile.isInitialized && ::scene.isInitialized && ::camera.isInitialized &&
             ::lightingSettings.isInitialized && ::shadowSettings.isInitialized
         ) {
             saveModel()
@@ -472,88 +474,80 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun drawDraftLines() {
-        val segments = lineStore.getSegments()
-        if (segments.isEmpty()) {
-            return
-        }
         shapeRenderer.color = Color(0.2f, 0.2f, 0.2f, 1f)
-        segments.forEach { segment ->
-            shapeRenderer.line(
-                segment.start.x, segment.start.y, segment.start.z,
-                segment.end.x, segment.end.y, segment.end.z
-            )
+        scene.collectWorldLines { start, end ->
+            shapeRenderer.line(start.x, start.y, start.z, end.x, end.y, end.z)
         }
     }
 
     private fun drawSelectionHighlights() {
-        val selectedEdges = lineStore.getSelected()
+        val selectedEdges = activeLineStore().getSelected()
         if (selectedEdges.isNotEmpty()) {
             shapeRenderer.color = Color(0.25f, 0.55f, 0.95f, 1f)
             Gdx.gl.glLineWidth(6f)
             selectedEdges.forEach { segment ->
-                shapeRenderer.line(
-                    segment.start.x, segment.start.y, segment.start.z,
-                    segment.end.x, segment.end.y, segment.end.z
-                )
+                val a = activeGroup().toWorld(segment.start)
+                val b = activeGroup().toWorld(segment.end)
+                shapeRenderer.line(a.x, a.y, a.z, b.x, b.y, b.z)
             }
             Gdx.gl.glLineWidth(4f)
         }
+        drawGroupSelectionHighlights()
     }
 
     private fun runCleanup() {
-        val startEdges = lineStore.getSegments().size
-        val startFaces = faceStore.getTriangles().size
+        val startEdges = totalEdgeCount()
+        val startFaces = totalFaceCount()
         statusModel.message = "Cleanup start | edges $startEdges faces $startFaces"
-        lineStore.withChangeSuppressed {
-            faceStore.withChangeSuppressed {
-                modelCleanup.run()
-            }
-        }
-        val endEdges = lineStore.getSegments().size
-        val endFaces = faceStore.getTriangles().size
+        modelCleanup.run()
+        val endEdges = totalEdgeCount()
+        val endFaces = totalFaceCount()
         statusModel.message = "Cleanup done | edges $endEdges faces $endFaces"
         saveModel()
     }
 
     private fun clearSelection() {
-        lineStore.clearSelection()
-        faceStore.clearSelection()
+        scene.clearAllSelections()
         statusModel.message = "Selection cleared."
     }
 
     private fun deleteSelection() {
-        val edges = lineStore.deleteSelected()
-        val faces = faceStore.deleteSelected()
-        statusModel.message = "Deleted | edges $edges faces $faces"
+        val edges = activeLineStore().deleteSelected()
+        val faces = activeFaceStore().deleteSelected()
+        val groups = scene.deleteSelectedGroups()
+        if (edges + faces + groups > 0) {
+            statusModel.message = "Deleted | edges $edges faces $faces groups $groups"
+            if (groups > 0 && edges + faces == 0) {
+                saveModel()
+            }
+        }
     }
 
     private fun flipSelectedFaces() {
-        val flipped = faceStore.flipSelected()
-        statusModel.message = "Flipped faces: $flipped"
+        val flipped = activeFaceStore().flipSelected()
+        if (flipped > 0) {
+            statusModel.message = "Flipped faces: $flipped"
+        }
     }
 
     private fun saveModel() {
-        ModelPersistence.save(modelFile, lineStore, faceStore, camera, lightingSettings, shadowSettings)
+        ModelPersistence.save(modelFile, scene, camera, lightingSettings, shadowSettings)
     }
 
     private fun loadModel() {
         if (modelFile.exists()) {
             val backup = java.io.File(modelFile.absolutePath + ".bak")
             modelFile.copyTo(backup, overwrite = true)
-            lineStore.withChangeSuppressed {
-                faceStore.withChangeSuppressed {
-                    val result = ModelPersistence.load(
-                        modelFile,
-                        lineStore,
-                        faceStore,
-                        camera,
-                        lightingSettings,
-                        shadowSettings
-                    )
-                    if (result.ok && result.needsResave) {
-                        ModelPersistence.save(modelFile, lineStore, faceStore, camera, lightingSettings, shadowSettings)
-                    }
-                }
+            val result = ModelPersistence.load(
+                modelFile,
+                scene,
+                camera,
+                lightingSettings,
+                shadowSettings
+            )
+            scene.applyChangeListenerToAll()
+            if (result.ok && result.needsResave) {
+                ModelPersistence.save(modelFile, scene, camera, lightingSettings, shadowSettings)
             }
             statusModel.message = "Loaded ${modelFile.name}"
         } else {
@@ -580,9 +574,142 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun selectionInfo(): SketchUiOverlay.SelectionInfo {
         return SketchUiOverlay.SelectionInfo(
-            edgeCount = lineStore.getSelected().size,
-            faceCount = faceStore.getSelected().size
+            edgeCount = activeLineStore().getSelected().size,
+            faceCount = activeFaceStore().getSelected().size,
+            groupCount = scene.selectedGroups().size
         )
+    }
+
+    private fun groupInfo(): SketchUiOverlay.GroupInfo? {
+        val editing = scene.isEditing()
+        val target = if (editing) {
+            scene.activeGroup()
+        } else {
+            val selected = scene.selectedGroups()
+            if (selected.size == 1) selected.first() else null
+        }
+        return target?.let {
+            SketchUiOverlay.GroupInfo(it.id, it.name, it.gluedToSurface, editing)
+        }
+    }
+
+    private fun updateGroupName(name: String) {
+        val target = groupPanelTarget() ?: return
+        if (name.isNotBlank() && name != target.name) {
+            target.name = name
+            statusModel.message = "Group renamed."
+            saveModel()
+        }
+    }
+
+    private fun updateGroupGlue(glued: Boolean) {
+        val target = groupPanelTarget() ?: return
+        if (target.gluedToSurface != glued) {
+            target.gluedToSurface = glued
+            statusModel.message = if (glued) "Group glue enabled." else "Group glue disabled."
+            saveModel()
+        }
+    }
+
+    private fun groupPanelTarget(): GroupScene.GroupNode? {
+        return if (scene.isEditing()) {
+            scene.activeGroup()
+        } else {
+            val selected = scene.selectedGroups()
+            if (selected.size == 1) selected.first() else null
+        }
+    }
+
+    private fun groupSelection() {
+        val created = scene.createGroupFromSelection()
+        if (created != null) {
+            statusModel.message = "Grouped."
+            saveModel()
+        }
+    }
+
+    private fun ungroupSelection() {
+        val count = scene.ungroupSelected()
+        if (count > 0) {
+            statusModel.message = "Ungrouped $count group(s)."
+            saveModel()
+        }
+    }
+
+    private fun exitGroupEditMode(): Boolean {
+        if (!scene.isEditing()) {
+            return false
+        }
+        scene.exitGroup()
+        statusModel.message = "Exited group edit."
+        return true
+    }
+
+    private fun activeGroup(): GroupScene.GroupNode = scene.activeGroup()
+
+    private fun activeLineStore(): com.github.alfu32.sketch.model.DraftLineStore {
+        return activeGroup().lineStore
+    }
+
+    private fun activeFaceStore(): com.github.alfu32.sketch.model.DraftFaceStore {
+        return activeGroup().faceStore
+    }
+
+    private fun totalEdgeCount(): Int {
+        var count = scene.root.lineStore.getSegments().size
+        scene.walkGroups(scene.root) { group ->
+            count += group.lineStore.getSegments().size
+        }
+        return count
+    }
+
+    private fun totalFaceCount(): Int {
+        var count = scene.root.faceStore.getTriangles().size
+        scene.walkGroups(scene.root) { group ->
+            count += group.faceStore.getTriangles().size
+        }
+        return count
+    }
+
+    private fun drawGroupSelectionHighlights() {
+        val groups = scene.selectedGroups()
+        if (groups.isEmpty()) {
+            return
+        }
+        shapeRenderer.color = Color(0.25f, 0.55f, 0.95f, 1f)
+        groups.forEach { group ->
+            val bounds = group.worldBounds() ?: return@forEach
+            drawWireBox(
+                bounds.min.x,
+                bounds.min.y,
+                bounds.min.z,
+                bounds.max.x,
+                bounds.max.y,
+                bounds.max.z
+            )
+        }
+    }
+
+    private fun drawWireBox(
+        minX: Float,
+        minY: Float,
+        minZ: Float,
+        maxX: Float,
+        maxY: Float,
+        maxZ: Float
+    ) {
+        shapeRenderer.line(minX, minY, minZ, maxX, minY, minZ)
+        shapeRenderer.line(maxX, minY, minZ, maxX, minY, maxZ)
+        shapeRenderer.line(maxX, minY, maxZ, minX, minY, maxZ)
+        shapeRenderer.line(minX, minY, maxZ, minX, minY, minZ)
+        shapeRenderer.line(minX, maxY, minZ, maxX, maxY, minZ)
+        shapeRenderer.line(maxX, maxY, minZ, maxX, maxY, maxZ)
+        shapeRenderer.line(maxX, maxY, maxZ, minX, maxY, maxZ)
+        shapeRenderer.line(minX, maxY, maxZ, minX, maxY, minZ)
+        shapeRenderer.line(minX, minY, minZ, minX, maxY, minZ)
+        shapeRenderer.line(maxX, minY, minZ, maxX, maxY, minZ)
+        shapeRenderer.line(maxX, minY, maxZ, maxX, maxY, maxZ)
+        shapeRenderer.line(minX, minY, maxZ, minX, maxY, maxZ)
     }
 
     private class ShiftCameraController(camera: PerspectiveCamera) : CameraInputController(camera) {
@@ -711,7 +838,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun updateFaceMesh() {
-        val triangles = faceStore.getTriangles()
+        val triangles = mutableListOf<TriangleWorld>()
+        scene.collectWorldTriangles { a, b, c, color ->
+            triangles.add(TriangleWorld(a, b, c, color))
+        }
         val vertexCount = triangles.size * 3
         if (vertexCount == 0) {
             return
@@ -719,11 +849,14 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val vertices = FloatArray(vertexCount * 10)
         var idx = 0
         triangles.forEach { tri ->
-            val normal = Vector3(tri.b).sub(tri.a).crs(Vector3(tri.c).sub(tri.a)).nor()
-            val color = faceStore.colorFor(tri)
-            idx = writeVertex(vertices, idx, tri.a, normal, color)
-            idx = writeVertex(vertices, idx, tri.b, normal, color)
-            idx = writeVertex(vertices, idx, tri.c, normal, color)
+            val a = tri.a
+            val b = tri.b
+            val c = tri.c
+            val color = tri.color
+            val normal = Vector3(b).sub(a).crs(Vector3(c).sub(a)).nor()
+            idx = writeVertex(vertices, idx, a, normal, color)
+            idx = writeVertex(vertices, idx, b, normal, color)
+            idx = writeVertex(vertices, idx, c, normal, color)
         }
         if (faceMesh.maxVertices < vertexCount) {
             faceMesh.dispose()
@@ -738,8 +871,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         faceMesh.setVertices(vertices)
     }
 
+    private data class TriangleWorld(val a: Vector3, val b: Vector3, val c: Vector3, val color: Color)
+
     private fun updateSelectedFaceMesh() {
-        val selected = faceStore.getSelected()
+        val selected = activeFaceStore().getSelected()
         val vertexCount = selected.size * 3
         if (vertexCount == 0) {
             selectedFaceVertexCount = 0
@@ -748,11 +883,15 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val vertices = FloatArray(vertexCount * 10)
         var idx = 0
         val highlight = Color(0.35f, 0.7f, 0.95f, 0.6f)
+        val group = activeGroup()
         selected.forEach { tri ->
-            val normal = Vector3(tri.b).sub(tri.a).crs(Vector3(tri.c).sub(tri.a)).nor()
-            idx = writeVertex(vertices, idx, tri.a, normal, highlight)
-            idx = writeVertex(vertices, idx, tri.b, normal, highlight)
-            idx = writeVertex(vertices, idx, tri.c, normal, highlight)
+            val a = group.toWorld(tri.a)
+            val b = group.toWorld(tri.b)
+            val c = group.toWorld(tri.c)
+            val normal = Vector3(b).sub(a).crs(Vector3(c).sub(a)).nor()
+            idx = writeVertex(vertices, idx, a, normal, highlight)
+            idx = writeVertex(vertices, idx, b, normal, highlight)
+            idx = writeVertex(vertices, idx, c, normal, highlight)
         }
         if (selectedFaceMesh.maxVertices < vertexCount) {
             selectedFaceMesh.dispose()

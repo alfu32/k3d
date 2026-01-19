@@ -19,6 +19,7 @@ import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisCheckBox
 import com.kotcrab.vis.ui.widget.VisSlider
 import com.kotcrab.vis.ui.widget.VisTable
+import com.kotcrab.vis.ui.widget.VisTextField
 import com.kotcrab.vis.ui.widget.color.ColorPicker
 import com.kotcrab.vis.ui.widget.color.ColorPickerListener
 import java.util.Locale
@@ -30,6 +31,9 @@ class SketchUiOverlay(
     private val deleteSelectionAction: () -> Unit,
     private val flipFacesAction: () -> Unit,
     private val selectionInfoProvider: () -> SelectionInfo,
+    private val groupInfoProvider: () -> GroupInfo?,
+    private val groupNameChanged: (String) -> Unit,
+    private val groupGlueChanged: (Boolean) -> Unit,
     private val lightingSettings: LightingSettings,
     private val lightingChanged: (LightingSettings) -> Unit,
     private val shadowSettings: ShadowSettings,
@@ -51,6 +55,16 @@ class SketchUiOverlay(
     private val cursorLabel = VisLabel()
     private val selectionEdgesLabel = VisLabel()
     private val selectionFacesLabel = VisLabel()
+    private val selectionGroupsLabel = VisLabel()
+    private val groupPanel = VisTable()
+    private val groupStatusLabel = VisLabel()
+    private val groupNameField = VisTextField()
+    private val groupGlueCheck = VisCheckBox("Glue to surface")
+    private var lastGroupName = ""
+    private var lastGroupGlue = false
+    private var lastGroupEditing = false
+    private var lastGroupId = ""
+    private var updatingGroupFields = false
     private var paintColorButton: VisImageTextButton? = null
     private var lastPaintColor = Color(-1f, -1f, -1f, -1f)
     private var colorPicker: ColorPicker? = null
@@ -65,9 +79,11 @@ class SketchUiOverlay(
 
         val toolbar = buildToolbar()
         val selectionPanel = buildSelectionPanel()
+        val groupPanel = buildGroupPanel()
         val lightingPanel = buildLightingPanel()
         val rightColumn = Table()
         rightColumn.add(selectionPanel).top().right().row()
+        rightColumn.add(groupPanel).top().right().padTop(6f).row()
         rightColumn.add(lightingPanel).top().right().padTop(6f).row()
         val mainRow = Table()
         mainRow.add(toolbar).top().left().pad(8f)
@@ -97,6 +113,8 @@ class SketchUiOverlay(
         )
         selectionEdgesLabel.setText("Edges: ${selection.edgeCount}")
         selectionFacesLabel.setText("Faces: ${selection.faceCount}")
+        selectionGroupsLabel.setText("Groups: ${selection.groupCount}")
+        updateGroupPanel()
         toolButtons[status.activeTool]?.isChecked = true
         updatePaintColorButton()
         updateButtonLabels()
@@ -253,7 +271,70 @@ class SketchUiOverlay(
         panel.add(VisLabel("Selection")).row()
         panel.add(selectionEdgesLabel).row()
         panel.add(selectionFacesLabel).row()
+        panel.add(selectionGroupsLabel).row()
         return panel
+    }
+
+    private fun buildGroupPanel(): VisTable {
+        groupPanel.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        groupPanel.defaults().pad(6f).left().growX()
+        groupPanel.add(VisLabel("Group")).left().row()
+        groupPanel.add(groupStatusLabel).left().row()
+        groupPanel.add(VisLabel("Name")).left().row()
+        groupPanel.add(groupNameField).growX().row()
+        groupPanel.add(groupGlueCheck).left().row()
+        groupPanel.isVisible = false
+
+        groupNameField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                if (updatingGroupFields) {
+                    return
+                }
+                groupNameChanged(groupNameField.text)
+            }
+        })
+        groupGlueCheck.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                if (updatingGroupFields) {
+                    return
+                }
+                groupGlueChanged(groupGlueCheck.isChecked)
+            }
+        })
+        return groupPanel
+    }
+
+    private fun updateGroupPanel() {
+        val info = groupInfoProvider()
+        if (info == null) {
+            groupPanel.isVisible = false
+            lastGroupName = ""
+            lastGroupGlue = false
+            lastGroupEditing = false
+            return
+        }
+        groupPanel.isVisible = true
+        val statusText = if (info.editing) {
+            "Editing group: ${info.name}"
+        } else {
+            "Selected group: ${info.name}"
+        }
+        groupStatusLabel.setText(statusText)
+        val selectionChanged = info.id != lastGroupId
+        if (selectionChanged || !groupNameField.hasKeyboardFocus() || info.name != lastGroupName) {
+            updatingGroupFields = true
+            groupNameField.text = info.name
+            updatingGroupFields = false
+        }
+        if (selectionChanged || info.glued != lastGroupGlue) {
+            updatingGroupFields = true
+            groupGlueCheck.isChecked = info.glued
+            updatingGroupFields = false
+        }
+        lastGroupName = info.name
+        lastGroupGlue = info.glued
+        lastGroupEditing = info.editing
+        lastGroupId = info.id
     }
 
     private fun buildLightingPanel(): VisTable {
@@ -699,5 +780,7 @@ class SketchUiOverlay(
         return mapping
     }
 
-    data class SelectionInfo(val edgeCount: Int, val faceCount: Int)
+    data class SelectionInfo(val edgeCount: Int, val faceCount: Int, val groupCount: Int)
+
+    data class GroupInfo(val id: String, val name: String, val glued: Boolean, val editing: Boolean)
 }

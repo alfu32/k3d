@@ -6,23 +6,24 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Quaternion
 import com.badlogic.gdx.math.Vector3
-import com.github.alfu32.sketch.model.DraftFaceStore
-import com.github.alfu32.sketch.model.DraftLineStore
+import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
 
 class RotateTool(
-    private val lineStore: DraftLineStore,
-    private val faceStore: DraftFaceStore
+    private val scene: GroupScene
 ) : Tool {
     override val id: ToolId = ToolId.ROTATE
     override val message: String = "Pick rotation center."
 
-    private var center: Vector3? = null
-    private var axisDir: Vector3? = null
-    private var centerNormal: Vector3? = null
-    private var reference: Vector3? = null
+    private var centerWorld: Vector3? = null
+    private var centerLocal: Vector3? = null
+    private var axisDirWorld: Vector3? = null
+    private var axisDirLocal: Vector3? = null
+    private var centerNormalWorld: Vector3? = null
+    private var referenceWorld: Vector3? = null
+    private var referenceLocal: Vector3? = null
     private val hover = Vector3()
     private var hasHover = false
 
@@ -44,9 +45,9 @@ class RotateTool(
 
     override fun onCopyModeChanged(status: StatusModel, enabled: Boolean) {
         status.message = when {
-            center == null -> "Pick rotation center."
-            axisDir == null -> "Pick axis direction."
-            reference == null -> "Pick reference point."
+            centerWorld == null -> "Pick rotation center."
+            axisDirWorld == null -> "Pick axis direction."
+            referenceWorld == null -> "Pick reference point."
             else -> "Pick final point."
         }
     }
@@ -64,59 +65,74 @@ class RotateTool(
         if (button != Input.Buttons.LEFT || !valid || world == null) {
             return false
         }
-        if (center == null) {
-            center = Vector3(world)
-            centerNormal = normal?.cpy()
+        val group = scene.activeGroup()
+        if (centerWorld == null) {
+            centerWorld = Vector3(world)
+            centerLocal = group.toLocal(world)
+            centerNormalWorld = normal?.cpy()
             status.message = "Pick axis direction."
             return true
         }
-        if (axisDir == null) {
-            val c = center ?: return false
+        if (axisDirWorld == null) {
+            val c = centerWorld ?: return false
             val axis = Vector3(world).sub(c)
-            axisDir = if (axis.len2() <= 1e-4f) {
-                (centerNormal ?: Vector3(0f, 1f, 0f)).cpy().nor()
+            axisDirWorld = if (axis.len2() <= 1e-4f) {
+                (centerNormalWorld ?: Vector3(0f, 1f, 0f)).cpy().nor()
             } else {
                 axis.nor()
             }
+            axisDirLocal = axisDirWorld?.let { group.vectorToLocal(it).nor() }
             status.message = "Pick reference point."
             return true
         }
-        if (reference == null) {
-            reference = Vector3(world)
+        if (referenceWorld == null) {
+            referenceWorld = Vector3(world)
+            referenceLocal = group.toLocal(world)
             status.message = "Pick final point."
             return true
         }
-        val c = center ?: return false
-        val axis = axisDir ?: return false
-        val from = reference ?: return false
-        val to = Vector3(world)
-        val v1 = Vector3(from).sub(c)
-        val v2 = Vector3(to).sub(c)
+        val cWorld = centerWorld ?: return false
+        val cLocal = centerLocal ?: return false
+        val axisW = axisDirWorld ?: return false
+        val axisL = axisDirLocal ?: return false
+        val fromLocal = referenceLocal ?: return false
+        val toLocal = group.toLocal(world)
+        val v1 = Vector3(fromLocal).sub(cLocal)
+        val v2 = Vector3(toLocal).sub(cLocal)
         if (v1.len2() <= 1e-6f || v2.len2() <= 1e-6f) {
             clearTransient()
             status.message = "Rotation vectors are too short."
             return true
         }
         val cross = Vector3(v1).crs(v2)
-        val angle = MathUtils.atan2(axis.dot(cross), v1.dot(v2))
+        val angle = MathUtils.atan2(axisL.dot(cross), v1.dot(v2))
         val degrees = angle * MathUtils.radiansToDegrees
-        val quaternion = Quaternion().setFromAxis(axis, degrees)
+        val quaternionLocal = Quaternion().setFromAxis(axisL, degrees)
+        val quaternionWorld = Quaternion().setFromAxis(axisW, degrees)
         if (status.copyMode) {
-            val movedFaces = faceStore.copySelected { point ->
-                Vector3(point).sub(c).mul(quaternion).add(c)
+            val movedFaces = group.faceStore.copySelected { point ->
+                Vector3(point).sub(cLocal).mul(quaternionLocal).add(cLocal)
             }
-            val movedEdges = lineStore.copySelected { point ->
-                Vector3(point).sub(c).mul(quaternion).add(c)
+            val movedEdges = group.lineStore.copySelected { point ->
+                Vector3(point).sub(cLocal).mul(quaternionLocal).add(cLocal)
             }
-            status.message = "Copied | edges $movedEdges faces $movedFaces"
+            val movedGroups = scene.copySelectedGroups(
+                { point -> Vector3(point).sub(cWorld).mul(quaternionWorld).add(cWorld) },
+                { vector -> Vector3(vector).mul(quaternionWorld) }
+            )
+            status.message = "Copied | edges $movedEdges faces $movedFaces groups $movedGroups"
         } else {
-            val movedFaces = faceStore.transformSelected { point ->
-                Vector3(point).sub(c).mul(quaternion).add(c)
+            val movedFaces = group.faceStore.transformSelected { point ->
+                Vector3(point).sub(cLocal).mul(quaternionLocal).add(cLocal)
             }
-            val movedEdges = lineStore.transformSelected { point ->
-                Vector3(point).sub(c).mul(quaternion).add(c)
+            val movedEdges = group.lineStore.transformSelected { point ->
+                Vector3(point).sub(cLocal).mul(quaternionLocal).add(cLocal)
             }
-            status.message = "Rotated | edges $movedEdges faces $movedFaces"
+            val movedGroups = scene.transformSelectedGroups(
+                { point -> Vector3(point).sub(cWorld).mul(quaternionWorld).add(cWorld) },
+                { vector -> Vector3(vector).mul(quaternionWorld) }
+            )
+            status.message = "Rotated | edges $movedEdges faces $movedFaces groups $movedGroups"
         }
         clearTransient()
         return true
@@ -126,9 +142,9 @@ class RotateTool(
         if (!hasHover) {
             return
         }
-        val c = center ?: return
-        val axis = axisDir
-        val ref = reference
+        val c = centerWorld ?: return
+        val axis = axisDirWorld
+        val ref = referenceWorld
         val axisLen = when {
             ref != null -> Vector3(ref).sub(c).len()
             hasHover -> Vector3(hover).sub(c).len()
@@ -146,40 +162,99 @@ class RotateTool(
         renderer.color = Color(0.25f, 0.85f, 0.35f, 1f)
         renderer.line(c.x, c.y, c.z, hover.x, hover.y, hover.z)
         if (axis != null && ref != null) {
-            val v1 = Vector3(ref).sub(c)
-            val v2 = Vector3(hover).sub(c)
+            val group = scene.activeGroup()
+            val cLocal = centerLocal ?: return
+            val axisLocal = axisDirLocal ?: return
+            val v1 = Vector3(group.toLocal(ref)).sub(cLocal)
+            val v2 = Vector3(group.toLocal(hover)).sub(cLocal)
             if (v1.len2() > 1e-6f && v2.len2() > 1e-6f) {
                 val cross = Vector3(v1).crs(v2)
-                val angle = MathUtils.atan2(axis.dot(cross), v1.dot(v2))
+                val angle = MathUtils.atan2(axisLocal.dot(cross), v1.dot(v2))
                 val degrees = angle * MathUtils.radiansToDegrees
-                val quaternion = Quaternion().setFromAxis(axis, degrees)
-                renderPreview(renderer, c, quaternion)
+                val quaternion = Quaternion().setFromAxis(axisLocal, degrees)
+                renderPreview(renderer, cLocal, quaternion)
+                renderGroupPreview(renderer, c, axis, degrees)
             }
         }
     }
 
     private fun clearTransient() {
-        center = null
-        axisDir = null
-        centerNormal = null
-        reference = null
+        centerWorld = null
+        centerLocal = null
+        axisDirWorld = null
+        axisDirLocal = null
+        centerNormalWorld = null
+        referenceWorld = null
+        referenceLocal = null
         hasHover = false
     }
 
     private fun renderPreview(renderer: ShapeRenderer, center: Vector3, rotation: Quaternion) {
         renderer.color = Color(0.25f, 0.85f, 0.55f, 1f)
-        faceStore.getSelected().forEach { tri ->
+        val group = scene.activeGroup()
+        group.faceStore.getSelected().forEach { tri ->
             val a = Vector3(tri.a).sub(center).mul(rotation).add(center)
             val b = Vector3(tri.b).sub(center).mul(rotation).add(center)
             val c = Vector3(tri.c).sub(center).mul(rotation).add(center)
-            renderer.line(a.x, a.y, a.z, b.x, b.y, b.z)
-            renderer.line(b.x, b.y, b.z, c.x, c.y, c.z)
-            renderer.line(c.x, c.y, c.z, a.x, a.y, a.z)
+            val aw = group.toWorld(a)
+            val bw = group.toWorld(b)
+            val cw = group.toWorld(c)
+            renderer.line(aw.x, aw.y, aw.z, bw.x, bw.y, bw.z)
+            renderer.line(bw.x, bw.y, bw.z, cw.x, cw.y, cw.z)
+            renderer.line(cw.x, cw.y, cw.z, aw.x, aw.y, aw.z)
         }
-        lineStore.getSelected().forEach { segment ->
+        group.lineStore.getSelected().forEach { segment ->
             val a = Vector3(segment.start).sub(center).mul(rotation).add(center)
             val b = Vector3(segment.end).sub(center).mul(rotation).add(center)
-            renderer.line(a.x, a.y, a.z, b.x, b.y, b.z)
+            val aw = group.toWorld(a)
+            val bw = group.toWorld(b)
+            renderer.line(aw.x, aw.y, aw.z, bw.x, bw.y, bw.z)
+        }
+    }
+
+    private fun renderGroupPreview(renderer: ShapeRenderer, centerWorld: Vector3, axisWorld: Vector3, degrees: Float) {
+        if (scene.selectedGroups().isEmpty()) {
+            return
+        }
+        val rotation = Quaternion().setFromAxis(axisWorld, degrees)
+        renderer.color = Color(0.25f, 0.85f, 0.55f, 1f)
+        scene.selectedGroups().forEach { group ->
+            val bounds = group.worldBounds() ?: return@forEach
+            val corners = arrayOf(
+                Vector3(bounds.min.x, bounds.min.y, bounds.min.z),
+                Vector3(bounds.min.x, bounds.min.y, bounds.max.z),
+                Vector3(bounds.min.x, bounds.max.y, bounds.min.z),
+                Vector3(bounds.min.x, bounds.max.y, bounds.max.z),
+                Vector3(bounds.max.x, bounds.min.y, bounds.min.z),
+                Vector3(bounds.max.x, bounds.min.y, bounds.max.z),
+                Vector3(bounds.max.x, bounds.max.y, bounds.min.z),
+                Vector3(bounds.max.x, bounds.max.y, bounds.max.z)
+            )
+            corners.forEach { corner ->
+                corner.sub(centerWorld).mul(rotation).add(centerWorld)
+            }
+            val min = corners.reduce { a, b -> Vector3(
+                kotlin.math.min(a.x, b.x),
+                kotlin.math.min(a.y, b.y),
+                kotlin.math.min(a.z, b.z)
+            ) }
+            val max = corners.reduce { a, b -> Vector3(
+                kotlin.math.max(a.x, b.x),
+                kotlin.math.max(a.y, b.y),
+                kotlin.math.max(a.z, b.z)
+            ) }
+            renderer.line(min.x, min.y, min.z, max.x, min.y, min.z)
+            renderer.line(max.x, min.y, min.z, max.x, min.y, max.z)
+            renderer.line(max.x, min.y, max.z, min.x, min.y, max.z)
+            renderer.line(min.x, min.y, max.z, min.x, min.y, min.z)
+            renderer.line(min.x, max.y, min.z, max.x, max.y, min.z)
+            renderer.line(max.x, max.y, min.z, max.x, max.y, max.z)
+            renderer.line(max.x, max.y, max.z, min.x, max.y, max.z)
+            renderer.line(min.x, max.y, max.z, min.x, max.y, min.z)
+            renderer.line(min.x, min.y, min.z, min.x, max.y, min.z)
+            renderer.line(max.x, min.y, min.z, max.x, max.y, min.z)
+            renderer.line(max.x, min.y, max.z, max.x, max.y, max.z)
+            renderer.line(min.x, min.y, max.z, min.x, max.y, max.z)
         }
     }
 }

@@ -4,13 +4,13 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
 import com.badlogic.gdx.graphics.Camera
 import com.badlogic.gdx.graphics.Color
-import com.github.alfu32.sketch.model.DraftFaceStore
+import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
 
 class PaintTool(
-    private val faceStore: DraftFaceStore,
+    private val scene: GroupScene,
     private val camera: Camera,
     private val colorProvider: () -> Color
 ) : Tool {
@@ -18,7 +18,7 @@ class PaintTool(
     override val message: String = "Paint faces."
 
     override fun onEnter(status: StatusModel) {
-        val applied = faceStore.paintSelected(colorProvider())
+        val applied = scene.activeGroup().faceStore.paintSelected(colorProvider())
         status.message = if (applied > 0) {
             "Paint applied to selection."
         } else {
@@ -36,9 +36,14 @@ class PaintTool(
         if (button != Input.Buttons.LEFT) {
             return false
         }
+        val group = scene.activeGroup()
         val ray = camera.getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
-        val hit = faceStore.pickTriangle(ray) ?: return false
-        faceStore.paintTriangle(hit.triangle, colorProvider())
+        val localRay = com.badlogic.gdx.math.collision.Ray(
+            group.toLocal(ray.origin),
+            group.vectorToLocal(ray.direction).nor()
+        )
+        val hit = group.faceStore.pickTriangle(localRay) ?: return false
+        group.faceStore.paintTriangle(hit.triangle, colorProvider())
         status.message = "Painted face."
         return true
     }

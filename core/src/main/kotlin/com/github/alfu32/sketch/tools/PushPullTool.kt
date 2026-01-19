@@ -6,22 +6,21 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Vector3
 import com.github.alfu32.sketch.model.DraftFaceStore
-import com.github.alfu32.sketch.model.DraftLineStore
+import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
 
 class PushPullTool(
-    private val lineStore: DraftLineStore,
-    private val faceStore: DraftFaceStore,
+    private val scene: GroupScene,
     private val camera: com.badlogic.gdx.graphics.Camera
 ) : Tool {
     override val id: ToolId = ToolId.PUSH_PULL
     override val message: String = "Click face to start push/pull."
 
     private var activeTriangles: List<DraftFaceStore.Triangle> = emptyList()
-    private var anchorPoint: Vector3? = null
-    private var normal: Vector3? = null
+    private var anchorPointLocal: Vector3? = null
+    private var normalLocal: Vector3? = null
     private var currentDistance = 0f
     private var hasHover = false
 
@@ -40,10 +39,12 @@ class PushPullTool(
     }
 
     override fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
-        val anchor = anchorPoint
-        val faceNormal = this.normal
+        val anchor = anchorPointLocal
+        val faceNormal = this.normalLocal
+        val group = scene.activeGroup()
         if (anchor != null && faceNormal != null && valid && world != null) {
-            currentDistance = Vector3(world).sub(anchor).dot(faceNormal)
+            val localWorld = group.toLocal(world)
+            currentDistance = Vector3(localWorld).sub(anchor).dot(faceNormal)
             hasHover = true
         } else {
             hasHover = false
@@ -54,21 +55,24 @@ class PushPullTool(
         if (button != Input.Buttons.LEFT) {
             return false
         }
-        if (anchorPoint == null) {
+        val group = scene.activeGroup()
+        if (anchorPointLocal == null) {
             val ray = camera.getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
-            val hit = faceStore.pickTriangle(ray) ?: return false
-            val faceNormal = facingNormal(hit.normal, ray.direction)
-            val coplanar = faceStore.collectCoplanarConnected(hit.triangle)
+            val localRay = toLocalRay(group, ray)
+            val hit = group.faceStore.pickTriangle(localRay) ?: return false
+            val faceNormal = facingNormal(hit.normal, localRay.direction)
+            val coplanar = group.faceStore.collectCoplanarConnected(hit.triangle)
             activeTriangles = if (coplanar.isNotEmpty()) coplanar else listOf(hit.triangle)
-            anchorPoint = Vector3(hit.point)
-            this.normal = faceNormal
+            anchorPointLocal = Vector3(hit.point)
+            this.normalLocal = faceNormal
             status.message = "Drag to extrude. Click to commit."
             return true
         }
-        val anchor = anchorPoint ?: return false
-        val faceNormal = this.normal ?: return false
+        val anchor = anchorPointLocal ?: return false
+        val faceNormal = this.normalLocal ?: return false
         if (hasHover && valid && world != null) {
-            currentDistance = Vector3(world).sub(anchor).dot(faceNormal)
+            val localWorld = group.toLocal(world)
+            currentDistance = Vector3(localWorld).sub(anchor).dot(faceNormal)
         }
         commitExtrusion(faceNormal, currentDistance)
         clearTransient()
@@ -80,16 +84,21 @@ class PushPullTool(
         if (!hasHover || activeTriangles.isEmpty()) {
             return
         }
-        val faceNormal = normal ?: return
+        val faceNormal = normalLocal ?: return
+        val group = scene.activeGroup()
         renderer.color = Color(0.95f, 0.75f, 0.25f, 1f)
         val offset = Vector3(faceNormal).scl(currentDistance)
         val boundaryEdges = collectBoundaryEdges(activeTriangles)
         val verticalKeys = mutableSetOf<VertexKey>()
         boundaryEdges.forEach { edge ->
-            val a = edge.from
-            val b = edge.to
-            val ap = Vector3(a).add(offset)
-            val bp = Vector3(b).add(offset)
+            val aLocal = edge.from
+            val bLocal = edge.to
+            val apLocal = Vector3(aLocal).add(offset)
+            val bpLocal = Vector3(bLocal).add(offset)
+            val a = group.toWorld(aLocal)
+            val b = group.toWorld(bLocal)
+            val ap = group.toWorld(apLocal)
+            val bp = group.toWorld(bpLocal)
             renderer.line(a.x, a.y, a.z, b.x, b.y, b.z)
             renderer.line(ap.x, ap.y, ap.z, bp.x, bp.y, bp.z)
             val aKey = vertexKey(a)
@@ -107,6 +116,7 @@ class PushPullTool(
         if (activeTriangles.isEmpty() || kotlin.math.abs(distance) <= 1e-4f) {
             return
         }
+        val group = scene.activeGroup()
         val offset = Vector3(faceNormal).scl(distance)
         val reverse = distance < 0f
         val boundaryEdges = collectBoundaryEdges(activeTriangles)
@@ -119,9 +129,9 @@ class PushPullTool(
             val cp = Vector3(c).add(offset)
 
             if (!reverse) {
-                faceStore.addTriangle(ap, bp, cp)
+                group.faceStore.addTriangle(ap, bp, cp)
             } else {
-                faceStore.addTriangle(ap, cp, bp)
+                group.faceStore.addTriangle(ap, cp, bp)
             }
         }
         val verticalKeys = mutableSetOf<VertexKey>()
@@ -131,32 +141,32 @@ class PushPullTool(
             val ap = Vector3(a).add(offset)
             val bp = Vector3(b).add(offset)
             addSideQuad(a, b, ap, bp, reverse)
-            lineStore.addSegment(ap, bp)
+            group.lineStore.addSegment(ap, bp)
             val aKey = vertexKey(a)
             val bKey = vertexKey(b)
             if (verticalKeys.add(aKey)) {
-                lineStore.addSegment(a, ap)
+                group.lineStore.addSegment(a, ap)
             }
             if (verticalKeys.add(bKey)) {
-                lineStore.addSegment(b, bp)
+                group.lineStore.addSegment(b, bp)
             }
         }
     }
 
     private fun addSideQuad(a: Vector3, b: Vector3, ap: Vector3, bp: Vector3, reverse: Boolean) {
         if (!reverse) {
-            faceStore.addTriangle(a, b, bp)
-            faceStore.addTriangle(a, bp, ap)
+            scene.activeGroup().faceStore.addTriangle(a, b, bp)
+            scene.activeGroup().faceStore.addTriangle(a, bp, ap)
         } else {
-            faceStore.addTriangle(a, bp, b)
-            faceStore.addTriangle(a, ap, bp)
+            scene.activeGroup().faceStore.addTriangle(a, bp, b)
+            scene.activeGroup().faceStore.addTriangle(a, ap, bp)
         }
     }
 
     private fun clearTransient() {
         activeTriangles = emptyList()
-        anchorPoint = null
-        normal = null
+        anchorPointLocal = null
+        normalLocal = null
         currentDistance = 0f
         hasHover = false
     }
@@ -207,5 +217,14 @@ class PushPullTool(
         if (a.x != b.x) return a.x.compareTo(b.x)
         if (a.y != b.y) return a.y.compareTo(b.y)
         return a.z.compareTo(b.z)
+    }
+
+    private fun toLocalRay(
+        group: GroupScene.GroupNode,
+        ray: com.badlogic.gdx.math.collision.Ray
+    ): com.badlogic.gdx.math.collision.Ray {
+        val originLocal = group.toLocal(ray.origin)
+        val dirLocal = group.vectorToLocal(ray.direction).nor()
+        return com.badlogic.gdx.math.collision.Ray(originLocal, dirLocal)
     }
 }

@@ -4,23 +4,21 @@ import com.badlogic.gdx.Input
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Vector3
-import com.github.alfu32.sketch.model.DraftFaceStore
-import com.github.alfu32.sketch.model.DraftLineStore
+import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
 
 class SurfaceRectangleTool(
-    private val lineStore: DraftLineStore,
-    private val faceStore: DraftFaceStore
+    private val scene: GroupScene
 ) : Tool {
     override val id: ToolId = ToolId.SURFACE_RECTANGLE
     override val message: String = "Click to start surface rectangle."
 
-    private var anchor: Vector3? = null
-    private var normal: Vector3? = null
-    private var axisU: Vector3? = null
-    private var axisV: Vector3? = null
+    private var anchorWorld: Vector3? = null
+    private var normalWorld: Vector3? = null
+    private var axisUWorld: Vector3? = null
+    private var axisVWorld: Vector3? = null
     private val hover = Vector3()
     private var hasHover = false
 
@@ -51,35 +49,38 @@ class SurfaceRectangleTool(
         if (button != Input.Buttons.LEFT || !valid || world == null) {
             return false
         }
-        if (anchor == null) {
-            anchor = Vector3(world)
+        val group = scene.activeGroup()
+        if (anchorWorld == null) {
+            anchorWorld = Vector3(world)
             val n = normal?.cpy()?.nor() ?: Vector3(0f, 1f, 0f)
-            this.normal = n
+            this.normalWorld = n
             val basis = surfaceBasis(n)
-            axisU = basis.first
-            axisV = basis.second
+            axisUWorld = basis.first
+            axisVWorld = basis.second
             status.message = "Click to finish surface rectangle."
             return true
         }
-        val start = anchor ?: return false
-        val u = axisU ?: return false
-        val v = axisV ?: return false
-        val corners = rectangleCorners(start, world, u, v)
+        val start = anchorWorld ?: return false
+        val u = axisUWorld ?: return false
+        val v = axisVWorld ?: return false
+        val cornersWorld = rectangleCorners(start, world, u, v)
+        val cornersLocal = cornersWorld.map { group.toLocal(it) }
         for (i in 0 until 4) {
-            val a = corners[i]
-            val b = corners[(i + 1) % 4]
-            lineStore.addSegment(a, b)
+            val a = cornersLocal[i]
+            val b = cornersLocal[(i + 1) % 4]
+            group.lineStore.addSegment(a, b)
         }
-        addRectangleFace(corners, this.normal ?: Vector3(0f, 1f, 0f))
+        val preferred = (this.normalWorld ?: Vector3(0f, 1f, 0f)).let { group.vectorToLocal(it) }
+        addRectangleFace(group, cornersLocal, preferred)
         clearTransient()
         status.message = "Click to start surface rectangle."
         return true
     }
 
     override fun render(renderer: ShapeRenderer) {
-        val start = anchor
-        val u = axisU
-        val v = axisV
+        val start = anchorWorld
+        val u = axisUWorld
+        val v = axisVWorld
         if (start != null && u != null && v != null && hasHover) {
             val corners = rectangleCorners(start, hover, u, v)
             renderer.color = Color(0.35f, 0.85f, 0.65f, 1f)
@@ -102,22 +103,22 @@ class SurfaceRectangleTool(
         return listOf(p0, p1, p2, p3)
     }
 
-    private fun addRectangleFace(corners: List<Vector3>, preferredNormal: Vector3) {
+    private fun addRectangleFace(group: GroupScene.GroupNode, corners: List<Vector3>, preferredNormal: Vector3) {
         val normal = Vector3(corners[1]).sub(corners[0]).crs(Vector3(corners[2]).sub(corners[0]))
         if (normal.dot(preferredNormal) >= 0f) {
-            faceStore.addTriangle(corners[0], corners[1], corners[2])
-            faceStore.addTriangle(corners[0], corners[2], corners[3])
+            group.faceStore.addTriangle(corners[0], corners[1], corners[2])
+            group.faceStore.addTriangle(corners[0], corners[2], corners[3])
         } else {
-            faceStore.addTriangle(corners[0], corners[2], corners[1])
-            faceStore.addTriangle(corners[0], corners[3], corners[2])
+            group.faceStore.addTriangle(corners[0], corners[2], corners[1])
+            group.faceStore.addTriangle(corners[0], corners[3], corners[2])
         }
     }
 
     private fun clearTransient() {
-        anchor = null
-        normal = null
-        axisU = null
-        axisV = null
+        anchorWorld = null
+        normalWorld = null
+        axisUWorld = null
+        axisVWorld = null
         hasHover = false
     }
 

@@ -13,6 +13,9 @@ class ToolInputProcessor(
     private val cleanupAction: () -> Unit,
     private val clearSelectionAction: () -> Unit,
     private val deleteSelectionAction: () -> Unit,
+    private val groupSelectionAction: () -> Unit,
+    private val ungroupSelectionAction: () -> Unit,
+    private val exitGroupEditAction: () -> Boolean,
     private val lastSnapProvider: () -> SnapResult?
 ) : InputAdapter() {
     override fun keyDown(keycode: Int): Boolean {
@@ -26,6 +29,7 @@ class ToolInputProcessor(
                 if (controller.activeToolId() == ToolId.SELECT) {
                     guideManager.clear()
                 }
+                exitGroupEditAction()
                 clearSelectionAction()
                 controller.cancelActiveTool()
                 return true
@@ -51,6 +55,18 @@ class ToolInputProcessor(
                 return true
             }
             Input.Keys.G -> {
+                val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
+                    Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+                val shift = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) ||
+                    Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT)
+                if (ctrl && shift) {
+                    ungroupSelectionAction()
+                    return true
+                }
+                if (ctrl) {
+                    groupSelectionAction()
+                    return true
+                }
                 val snap = lastSnapProvider()
                 val point = snap?.world
                 if (snap != null && snap.valid && point != null) {

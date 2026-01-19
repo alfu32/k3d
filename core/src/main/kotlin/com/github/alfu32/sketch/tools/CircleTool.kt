@@ -5,20 +5,19 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Vector3
-import com.github.alfu32.sketch.model.DraftLineStore
+import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
 import kotlin.math.sqrt
 
 class CircleTool(
-    private val lineStore: DraftLineStore,
-    private val faceStore: com.github.alfu32.sketch.model.DraftFaceStore
+    private val scene: GroupScene
 ) : Tool {
     override val id: ToolId = ToolId.CIRCLE
     override val message: String = "Click to set center."
 
-    private var center: Vector3? = null
+    private var centerWorld: Vector3? = null
     private var basis: PlaneBasis? = null
     private val hover = Vector3()
     private var hasHover = false
@@ -50,16 +49,16 @@ class CircleTool(
         if (button != Input.Buttons.LEFT || !valid || world == null) {
             return false
         }
-        if (center == null) {
-            center = Vector3(world)
+        if (centerWorld == null) {
+            centerWorld = Vector3(world)
             basis = planeBasisFromNormal(normal ?: Vector3(0f, 1f, 0f))
             status.message = "Click to set radius."
         } else {
-            val c = center ?: return false
+            val c = centerWorld ?: return false
             val currentBasis = basis ?: planeBasisFromNormal(Vector3(0f, 1f, 0f))
             val radius = radiusOnPlane(c, world, currentBasis)
             commitCircle(c, currentBasis, radius)
-            center = null
+            centerWorld = null
             basis = null
             status.message = "Click to set center."
         }
@@ -67,7 +66,7 @@ class CircleTool(
     }
 
     override fun render(renderer: ShapeRenderer) {
-        val c = center
+        val c = centerWorld
         val currentBasis = basis
         if (c != null && currentBasis != null && hasHover) {
             val radius = radiusOnPlane(c, hover, currentBasis)
@@ -83,13 +82,15 @@ class CircleTool(
     }
 
     private fun commitCircle(center: Vector3, basis: PlaneBasis, radius: Float) {
+        val group = scene.activeGroup()
         val segments = 24
         val points = circlePoints(center, basis, radius, segments)
+        val centerLocal = group.toLocal(center)
         for (i in 0 until segments) {
-            val a = points[i]
-            val b = points[(i + 1) % segments]
-            lineStore.addSegment(a, b)
-            faceStore.addTriangle(center, b, a)
+            val a = group.toLocal(points[i])
+            val b = group.toLocal(points[(i + 1) % segments])
+            group.lineStore.addSegment(a, b)
+            group.faceStore.addTriangle(centerLocal, b, a)
         }
     }
 
@@ -122,7 +123,7 @@ class CircleTool(
     }
 
     private fun clearTransient() {
-        center = null
+        centerWorld = null
         basis = null
         hasHover = false
     }
