@@ -17,7 +17,7 @@ class Snapper(
     private val snapPixels: Float = 12f
 ) {
     private val tmp = Vector3()
-    private val epsilon = 1e-2f
+    private val epsilon = 1e-1f
 
     fun compute(screenX: Int, screenY: Int): SnapResult {
         val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())

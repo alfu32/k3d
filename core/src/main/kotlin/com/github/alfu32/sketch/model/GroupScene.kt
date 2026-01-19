@@ -122,6 +122,72 @@ class GroupScene(
             return if (hasAny) bounds else null
         }
 
+        fun localBounds(): BoundingBox? {
+            val bounds = BoundingBox()
+            var hasAny = false
+            lineStore.getSegments().forEach { seg ->
+                if (!hasAny) {
+                    bounds.set(seg.start, seg.start)
+                    hasAny = true
+                }
+                bounds.ext(seg.start)
+                bounds.ext(seg.end)
+            }
+            faceStore.getTriangles().forEach { tri ->
+                if (!hasAny) {
+                    bounds.set(tri.a, tri.a)
+                    hasAny = true
+                }
+                bounds.ext(tri.a)
+                bounds.ext(tri.b)
+                bounds.ext(tri.c)
+            }
+            children.forEach { child ->
+                val childBounds = child.worldBounds()
+                if (childBounds != null) {
+                    val corners = arrayOf(
+                        Vector3(childBounds.min.x, childBounds.min.y, childBounds.min.z),
+                        Vector3(childBounds.min.x, childBounds.min.y, childBounds.max.z),
+                        Vector3(childBounds.min.x, childBounds.max.y, childBounds.min.z),
+                        Vector3(childBounds.min.x, childBounds.max.y, childBounds.max.z),
+                        Vector3(childBounds.max.x, childBounds.min.y, childBounds.min.z),
+                        Vector3(childBounds.max.x, childBounds.min.y, childBounds.max.z),
+                        Vector3(childBounds.max.x, childBounds.max.y, childBounds.min.z),
+                        Vector3(childBounds.max.x, childBounds.max.y, childBounds.max.z)
+                    )
+                    corners.forEach { corner ->
+                        val local = toLocal(corner)
+                        if (!hasAny) {
+                            bounds.set(local, local)
+                            hasAny = true
+                        }
+                        bounds.ext(local)
+                    }
+                }
+            }
+            return if (hasAny) bounds else null
+        }
+
+        fun orientedBoundsCorners(): Array<Vector3>? {
+            val bounds = localBounds() ?: return null
+            val min = bounds.min
+            val max = bounds.max
+            val corners = arrayOf(
+                Vector3(min.x, min.y, min.z),
+                Vector3(max.x, min.y, min.z),
+                Vector3(max.x, min.y, max.z),
+                Vector3(min.x, min.y, max.z),
+                Vector3(min.x, max.y, min.z),
+                Vector3(max.x, max.y, min.z),
+                Vector3(max.x, max.y, max.z),
+                Vector3(min.x, max.y, max.z)
+            )
+            corners.indices.forEach { idx ->
+                corners[idx] = toWorld(corners[idx])
+            }
+            return corners
+        }
+
         private fun setInstanceFromMatrix(matrix: Matrix4) {
             val v = matrix.`val`
             instanceAxisU.set(v[Matrix4.M00], v[Matrix4.M10], v[Matrix4.M20])
@@ -266,8 +332,7 @@ class GroupScene(
         if (!hasBounds) {
             return null
         }
-        val origin = Vector3()
-        bounds.getCenter(origin)
+        val origin = Vector3(bounds.min)
         val group = GroupNode(
             id = java.util.UUID.randomUUID().toString(),
             name = "Group",

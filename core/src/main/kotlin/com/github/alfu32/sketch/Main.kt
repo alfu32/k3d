@@ -678,38 +678,35 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
         shapeRenderer.color = Color(0.25f, 0.55f, 0.95f, 1f)
         groups.forEach { group ->
-            val bounds = group.worldBounds() ?: return@forEach
-            drawWireBox(
-                bounds.min.x,
-                bounds.min.y,
-                bounds.min.z,
-                bounds.max.x,
-                bounds.max.y,
-                bounds.max.z
-            )
+            val corners = group.orientedBoundsCorners() ?: return@forEach
+            drawWireBox(corners)
         }
     }
 
-    private fun drawWireBox(
-        minX: Float,
-        minY: Float,
-        minZ: Float,
-        maxX: Float,
-        maxY: Float,
-        maxZ: Float
-    ) {
-        shapeRenderer.line(minX, minY, minZ, maxX, minY, minZ)
-        shapeRenderer.line(maxX, minY, minZ, maxX, minY, maxZ)
-        shapeRenderer.line(maxX, minY, maxZ, minX, minY, maxZ)
-        shapeRenderer.line(minX, minY, maxZ, minX, minY, minZ)
-        shapeRenderer.line(minX, maxY, minZ, maxX, maxY, minZ)
-        shapeRenderer.line(maxX, maxY, minZ, maxX, maxY, maxZ)
-        shapeRenderer.line(maxX, maxY, maxZ, minX, maxY, maxZ)
-        shapeRenderer.line(minX, maxY, maxZ, minX, maxY, minZ)
-        shapeRenderer.line(minX, minY, minZ, minX, maxY, minZ)
-        shapeRenderer.line(maxX, minY, minZ, maxX, maxY, minZ)
-        shapeRenderer.line(maxX, minY, maxZ, maxX, maxY, maxZ)
-        shapeRenderer.line(minX, minY, maxZ, minX, maxY, maxZ)
+    private fun drawWireBox(corners: Array<Vector3>) {
+        if (corners.size < 8) {
+            return
+        }
+        val c0 = corners[0]
+        val c1 = corners[1]
+        val c2 = corners[2]
+        val c3 = corners[3]
+        val c4 = corners[4]
+        val c5 = corners[5]
+        val c6 = corners[6]
+        val c7 = corners[7]
+        shapeRenderer.line(c0, c1)
+        shapeRenderer.line(c1, c2)
+        shapeRenderer.line(c2, c3)
+        shapeRenderer.line(c3, c0)
+        shapeRenderer.line(c4, c5)
+        shapeRenderer.line(c5, c6)
+        shapeRenderer.line(c6, c7)
+        shapeRenderer.line(c7, c4)
+        shapeRenderer.line(c0, c4)
+        shapeRenderer.line(c1, c5)
+        shapeRenderer.line(c2, c6)
+        shapeRenderer.line(c3, c7)
     }
 
     private class ShiftCameraController(camera: PerspectiveCamera) : CameraInputController(camera) {

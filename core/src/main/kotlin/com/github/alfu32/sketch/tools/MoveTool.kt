@@ -152,22 +152,38 @@ class MoveTool(
         }
         renderer.color = Color(0.25f, 0.85f, 0.55f, 1f)
         scene.selectedGroups().forEach { group ->
-            val bounds = group.worldBounds() ?: return@forEach
-            val min = Vector3(bounds.min).add(deltaWorld)
-            val max = Vector3(bounds.max).add(deltaWorld)
-            renderer.line(min.x, min.y, min.z, max.x, min.y, min.z)
-            renderer.line(max.x, min.y, min.z, max.x, min.y, max.z)
-            renderer.line(max.x, min.y, max.z, min.x, min.y, max.z)
-            renderer.line(min.x, min.y, max.z, min.x, min.y, min.z)
-            renderer.line(min.x, max.y, min.z, max.x, max.y, min.z)
-            renderer.line(max.x, max.y, min.z, max.x, max.y, max.z)
-            renderer.line(max.x, max.y, max.z, min.x, max.y, max.z)
-            renderer.line(min.x, max.y, max.z, min.x, max.y, min.z)
-            renderer.line(min.x, min.y, min.z, min.x, max.y, min.z)
-            renderer.line(max.x, min.y, min.z, max.x, max.y, min.z)
-            renderer.line(max.x, min.y, max.z, max.x, max.y, max.z)
-            renderer.line(min.x, min.y, max.z, min.x, max.y, max.z)
+            val corners = group.orientedBoundsCorners() ?: return@forEach
+            corners.indices.forEach { idx ->
+                corners[idx].add(deltaWorld)
+            }
+            drawWireBox(renderer, corners)
         }
+    }
+
+    private fun drawWireBox(renderer: ShapeRenderer, corners: Array<Vector3>) {
+        if (corners.size < 8) {
+            return
+        }
+        val c0 = corners[0]
+        val c1 = corners[1]
+        val c2 = corners[2]
+        val c3 = corners[3]
+        val c4 = corners[4]
+        val c5 = corners[5]
+        val c6 = corners[6]
+        val c7 = corners[7]
+        renderer.line(c0, c1)
+        renderer.line(c1, c2)
+        renderer.line(c2, c3)
+        renderer.line(c3, c0)
+        renderer.line(c4, c5)
+        renderer.line(c5, c6)
+        renderer.line(c6, c7)
+        renderer.line(c7, c4)
+        renderer.line(c0, c4)
+        renderer.line(c1, c5)
+        renderer.line(c2, c6)
+        renderer.line(c3, c7)
     }
 
     private fun alignSelectedGroupsIfNeeded() {
@@ -178,13 +194,23 @@ class MoveTool(
             }
             val axes = group.worldAxes()
             val current = axes.w.cpy().nor()
-            if (current.dot(normal) >= 0.999f) {
+            val dot = current.dot(normal).coerceIn(-1f, 1f)
+            if (dot >= 0.999f) {
                 return@forEach
             }
             val axis = Vector3(current).crs(normal)
-            val angle = kotlin.math.acos(current.dot(normal).coerceIn(-1f, 1f))
+            val angle = kotlin.math.acos(dot)
             if (axis.len2() <= 1e-6f) {
-                return@forEach
+                if (dot <= -0.999f) {
+                    val fallback = if (kotlin.math.abs(current.x) < 0.9f) {
+                        Vector3(1f, 0f, 0f)
+                    } else {
+                        Vector3(0f, 1f, 0f)
+                    }
+                    axis.set(current).crs(fallback)
+                } else {
+                    return@forEach
+                }
             }
             val rotation = Quaternion().setFromAxisRad(axis.nor(), angle)
             val newU = axes.u.cpy().mul(rotation)
