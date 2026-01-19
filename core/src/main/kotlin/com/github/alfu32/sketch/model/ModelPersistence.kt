@@ -16,19 +16,28 @@ object ModelPersistence {
         lighting: com.github.alfu32.sketch.ui.LightingSettings,
         shadow: com.github.alfu32.sketch.ui.ShadowSettings
     ) {
-        val snapshot = ModelSnapshot().apply {
-            version = VERSION
-            rootGroup = GroupDto.fromGroup(scene.root)
-            cameraState = CameraDto(camera)
-            lightingState = LightingDto(lighting)
-            shadowState = ShadowDto(shadow)
-        }
+        val snapshot = snapshot(scene, camera, lighting, shadow)
         val json = Json().apply {
             setOutputType(JsonWriter.OutputType.json)
         }
         val text = json.prettyPrint(snapshot)
         file.parentFile?.mkdirs()
         file.writeText(text)
+    }
+
+    fun snapshot(
+        scene: GroupScene,
+        camera: com.badlogic.gdx.graphics.PerspectiveCamera,
+        lighting: com.github.alfu32.sketch.ui.LightingSettings,
+        shadow: com.github.alfu32.sketch.ui.ShadowSettings
+    ): ModelSnapshot {
+        return ModelSnapshot().apply {
+            version = VERSION
+            rootGroup = GroupDto.fromGroup(scene.root)
+            cameraState = CameraDto(camera)
+            lightingState = LightingDto(lighting)
+            shadowState = ShadowDto(shadow)
+        }
     }
 
     data class LoadResult(val ok: Boolean, val needsResave: Boolean)
@@ -50,6 +59,24 @@ object ModelPersistence {
             return LoadResult(false, false)
         } ?: return LoadResult(false, false)
 
+        applySnapshot(snapshot, scene, camera, lighting, shadow)
+        val needsResave = snapshot.cameraState == null ||
+            snapshot.lightingState == null ||
+            snapshot.shadowState == null ||
+            snapshot.rootGroup == null ||
+            snapshot.cameraState?.hasNulls() == true ||
+            snapshot.lightingState?.hasNulls() == true ||
+            snapshot.shadowState?.hasNulls() == true
+        return LoadResult(true, needsResave)
+    }
+
+    fun applySnapshot(
+        snapshot: ModelSnapshot,
+        scene: GroupScene,
+        camera: com.badlogic.gdx.graphics.PerspectiveCamera,
+        lighting: com.github.alfu32.sketch.ui.LightingSettings,
+        shadow: com.github.alfu32.sketch.ui.ShadowSettings
+    ) {
         resetScene(scene)
         if (snapshot.rootGroup != null) {
             val loaded = snapshot.rootGroup!!.toGroup(scene.defaultFaceColor)
@@ -91,14 +118,6 @@ object ModelPersistence {
         snapshot.cameraState?.applyTo(camera)
         snapshot.lightingState?.applyTo(lighting)
         snapshot.shadowState?.applyTo(shadow)
-        val needsResave = snapshot.cameraState == null ||
-            snapshot.lightingState == null ||
-            snapshot.shadowState == null ||
-            snapshot.rootGroup == null ||
-            snapshot.cameraState?.hasNulls() == true ||
-            snapshot.lightingState?.hasNulls() == true ||
-            snapshot.shadowState?.hasNulls() == true
-        return LoadResult(true, needsResave)
     }
 
     class ModelSnapshot {

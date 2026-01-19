@@ -35,6 +35,7 @@ import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.model.ModelPersistence
 import com.github.alfu32.sketch.model.ModelCleanup
 import com.github.alfu32.sketch.render.SketchShaderProvider
+import com.github.alfu32.sketch.plugin.PluginHost
 import com.github.alfu32.sketch.tools.CircleTool
 import com.github.alfu32.sketch.tools.LineTool
 import com.github.alfu32.sketch.tools.MoveTool
@@ -105,6 +106,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private var shadowDither = false
     private var shadowUseCsm = true
     private lateinit var shadowSettings: ShadowSettings
+    private lateinit var pluginHost: PluginHost
 
     override fun create() {
         if (!VisUI.isLoaded()) {
@@ -176,6 +178,16 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             dither = shadowDither,
             useCsm = shadowUseCsm
         )
+        pluginHost = PluginHost(
+            scene,
+            statusModel,
+            camera,
+            lightingSettings,
+            shadowSettings,
+            { toolController.activeToolId() },
+            { statusModel.copyMode },
+            { lastSnap }
+        )
         uiOverlay = SketchUiOverlay(
             toolController,
             statusModel,
@@ -189,7 +201,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             lightingSettings,
             ::applyLightingSettings,
             shadowSettings,
-            ::applyShadowSettings
+            ::applyShadowSettings,
+            { pluginHost.pluginEntries() },
+            { url -> pluginHost.addPlugin(url) },
+            { url -> pluginHost.removePlugin(url) },
+            { url, enabled -> pluginHost.setEnabled(url, enabled) },
+            { url -> pluginHost.download(url) },
+            { pluginHost.reloadEnabledAndInit() }
         )
         toolPointer = ToolPointerProcessor(toolController, snapper)
         Gdx.input.inputProcessor = InputMultiplexer(
@@ -208,6 +226,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         applyShadowSettings(shadowSettings)
         uiOverlay.refreshLightingControls()
         scene.setChangeListener { saveModel() }
+        pluginHost.loadCatalog()
+        pluginHost.reloadEnabledAndInit()
         setupMeshes()
         setupRenderables()
     }
@@ -215,6 +235,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     override fun render() {
         cameraController.update()
         updateCursorStatus()
+        pluginHost.dispatchUpdate(Gdx.graphics.deltaTime)
 
         updateFaceMesh()
         updateSelectedFaceMesh()
@@ -259,6 +280,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         drawSelectionHighlights()
         drawDraftLines()
         toolController.render(shapeRenderer)
+        drawPluginLines()
         shapeRenderer.end()
 
         val windowRect = (toolController.activeTool() as? SelectTool)
@@ -314,6 +336,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::lightingSettings.isInitialized && ::shadowSettings.isInitialized
         ) {
             saveModel()
+        }
+        if (::pluginHost.isInitialized) {
+            pluginHost.dispatchClose()
         }
         shapeRenderer.dispose()
         faceMesh.dispose()
@@ -499,6 +524,22 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
     }
 
+    private fun drawPluginLines() {
+        if (!::pluginHost.isInitialized) {
+            return
+        }
+        val lines = pluginHost.collectDrawLines()
+        if (lines.isEmpty()) {
+            return
+        }
+        lines.forEach { line ->
+            Gdx.gl.glLineWidth(line.width)
+            shapeRenderer.color = line.color
+            shapeRenderer.line(line.start, line.end)
+        }
+        Gdx.gl.glLineWidth(2f)
+    }
+
     private fun drawSelectionHighlights() {
         val selectedEdges = activeLineStore().getSelected()
         if (selectedEdges.isNotEmpty()) {
@@ -551,6 +592,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun saveModel() {
         ModelPersistence.save(modelFile, scene, camera, lightingSettings, shadowSettings)
+        if (::pluginHost.isInitialized) {
+            pluginHost.dispatchSave()
+        }
     }
 
     private fun loadModel() {

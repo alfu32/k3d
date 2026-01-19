@@ -19,9 +19,11 @@ import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisCheckBox
 import com.kotcrab.vis.ui.widget.VisSlider
 import com.kotcrab.vis.ui.widget.VisTable
+import com.kotcrab.vis.ui.widget.VisTextButton
 import com.kotcrab.vis.ui.widget.VisTextField
 import com.kotcrab.vis.ui.widget.color.ColorPicker
 import com.kotcrab.vis.ui.widget.color.ColorPickerListener
+import com.github.alfu32.sketch.plugin.PluginEntryInfo
 import java.util.Locale
 
 class SketchUiOverlay(
@@ -37,7 +39,13 @@ class SketchUiOverlay(
     private val lightingSettings: LightingSettings,
     private val lightingChanged: (LightingSettings) -> Unit,
     private val shadowSettings: ShadowSettings,
-    private val shadowChanged: (ShadowSettings) -> Unit
+    private val shadowChanged: (ShadowSettings) -> Unit,
+    private val pluginInfoProvider: () -> List<PluginEntryInfo>,
+    private val pluginAdd: (String) -> Unit,
+    private val pluginRemove: (String) -> Unit,
+    private val pluginToggle: (String, Boolean) -> Unit,
+    private val pluginDownload: (String?) -> Unit,
+    private val pluginReload: () -> Unit
 ) {
     val stage: Stage = Stage(ScreenViewport())
     private val toolButtons = mutableMapOf<ToolId, VisImageTextButton>()
@@ -70,6 +78,10 @@ class SketchUiOverlay(
     private var colorPicker: ColorPicker? = null
     private var lightingPanel: VisTable? = null
     private val lightingRefreshers = mutableListOf<() -> Unit>()
+    private val pluginPanel = VisTable()
+    private val pluginListTable = VisTable()
+    private val pluginUrlField = VisTextField()
+    private var lastPluginSnapshot: List<PluginEntryInfo> = emptyList()
 
     init {
         iconDrawables.putAll(loadIconDrawables())
@@ -81,10 +93,12 @@ class SketchUiOverlay(
         val selectionPanel = buildSelectionPanel()
         val groupPanel = buildGroupPanel()
         val lightingPanel = buildLightingPanel()
+        val pluginsPanel = buildPluginPanel()
         val rightColumn = Table()
         rightColumn.add(selectionPanel).top().right().row()
         rightColumn.add(groupPanel).top().right().padTop(6f).row()
         rightColumn.add(lightingPanel).top().right().padTop(6f).row()
+        rightColumn.add(pluginsPanel).top().right().padTop(6f).row()
         val mainRow = Table()
         mainRow.add(toolbar).top().left().pad(8f)
         mainRow.add().expand().fill()
@@ -115,6 +129,7 @@ class SketchUiOverlay(
         selectionFacesLabel.setText("Faces: ${selection.faceCount}")
         selectionGroupsLabel.setText("Groups: ${selection.groupCount}")
         updateGroupPanel()
+        updatePluginPanel()
         toolButtons[status.activeTool]?.isChecked = true
         updatePaintColorButton()
         updateButtonLabels()
@@ -248,6 +263,19 @@ class SketchUiOverlay(
             }
         })
         toolbar.add(lightingButton).left().padRight(6f).row()
+
+        val pluginFallback = createActionIconDrawable(Color(0.6f, 0.6f, 0.6f, 1f))
+        val pluginButton = VisImageTextButton("Plugins", iconFor("plugins", pluginFallback))
+        applyWhiteButtonStyle(pluginButton)
+        applyIconStyle(pluginButton, iconFor("plugins", pluginButton.image.drawable))
+        buttonLabels[pluginButton] = "Plugins"
+        pluginButton.addListener(hoverListener(pluginButton))
+        pluginButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                pluginPanel.isVisible = !pluginPanel.isVisible
+            }
+        })
+        toolbar.add(pluginButton).left().padRight(6f).row()
 
         return toolbar
     }
@@ -417,6 +445,50 @@ class SketchUiOverlay(
         return panel
     }
 
+    private fun buildPluginPanel(): VisTable {
+        pluginPanel.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        pluginPanel.defaults().pad(6f).left().growX()
+        pluginPanel.add(VisLabel("Plugins")).row()
+
+        val addRow = VisTable()
+        addRow.defaults().left().padRight(4f)
+        addRow.add(pluginUrlField).growX().minWidth(160f)
+        val addButton = VisTextButton("Add")
+        addButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                val url = pluginUrlField.text
+                pluginUrlField.text = ""
+                pluginAdd(url)
+            }
+        })
+        addRow.add(addButton)
+        pluginPanel.add(addRow).growX().row()
+
+        val actionRow = VisTable()
+        actionRow.defaults().left().padRight(4f)
+        val downloadButton = VisTextButton("Download")
+        downloadButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                pluginDownload(null)
+            }
+        })
+        val reloadButton = VisTextButton("Reload")
+        reloadButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                pluginReload()
+            }
+        })
+        actionRow.add(downloadButton)
+        actionRow.add(reloadButton)
+        pluginPanel.add(actionRow).left().row()
+
+        pluginListTable.defaults().left().pad(2f)
+        pluginPanel.add(pluginListTable).growX().row()
+
+        pluginPanel.isVisible = false
+        return pluginPanel
+    }
+
     private fun buildLightingSlider(
         label: String,
         initial: Float,
@@ -541,6 +613,51 @@ class SketchUiOverlay(
         row.add(useCsm)
         row.add(dither)
         return row
+    }
+
+    private fun updatePluginPanel() {
+        val entries = pluginInfoProvider()
+        if (entries == lastPluginSnapshot) {
+            return
+        }
+        lastPluginSnapshot = entries
+        pluginListTable.clearChildren()
+        entries.forEach { entry ->
+            val row = VisTable()
+            row.defaults().left().padRight(4f)
+            val enabled = VisCheckBox("", entry.enabled)
+            enabled.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                    pluginToggle(entry.url, enabled.isChecked)
+                }
+            })
+            val label = VisLabel(formatPluginLabel(entry))
+            val download = VisTextButton("Get")
+            download.addListener(object : ClickListener() {
+                override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                    pluginDownload(entry.url)
+                }
+            })
+            val remove = VisTextButton("Remove")
+            remove.addListener(object : ClickListener() {
+                override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                    pluginRemove(entry.url)
+                }
+            })
+            row.add(enabled)
+            row.add(label).expandX().left()
+            row.add(download)
+            row.add(remove)
+            pluginListTable.add(row).growX().row()
+        }
+    }
+
+    private fun formatPluginLabel(entry: PluginEntryInfo): String {
+        val title = entry.name ?: entry.url
+        val version = entry.version?.let { " v$it" } ?: ""
+        val installed = if (entry.installed) "" else " (missing)"
+        val error = entry.lastError?.let { " ! $it" } ?: ""
+        return "$title$version$installed$error"
     }
 
     private fun formatValue(value: Float): String {
