@@ -47,6 +47,16 @@ class SketchUiOverlay(
     private val pluginDownload: (String?) -> Unit,
     private val pluginReload: () -> Unit
 ) {
+    private open class CollapsibleTable : VisTable() {
+        override fun getPrefWidth(): Float {
+            return if (isVisible) super.getPrefWidth() else 0f
+        }
+
+        override fun getPrefHeight(): Float {
+            return if (isVisible) super.getPrefHeight() else 0f
+        }
+    }
+
     val stage: Stage = Stage(ScreenViewport())
     private val toolButtons = mutableMapOf<ToolId, VisImageTextButton>()
     private val buttonLabels = mutableMapOf<VisImageTextButton, String>()
@@ -78,7 +88,7 @@ class SketchUiOverlay(
     private var colorPicker: ColorPicker? = null
     private var lightingPanel: VisTable? = null
     private val lightingRefreshers = mutableListOf<() -> Unit>()
-    private val pluginPanel = VisTable()
+    private val pluginPanel = CollapsibleTable()
     private val pluginListTable = VisTable()
     private val pluginUrlField = VisTextField()
     private var lastPluginSnapshot: List<PluginEntryInfo> = emptyList()
@@ -92,17 +102,17 @@ class SketchUiOverlay(
         val toolbar = buildToolbar()
         val selectionPanel = buildSelectionPanel()
         val groupPanel = buildGroupPanel()
-        val lightingPanel = buildLightingPanel()
         val pluginsPanel = buildPluginPanel()
+        val lightingPanel = buildLightingPanel()
         val rightColumn = Table()
         rightColumn.add(selectionPanel).top().right().row()
-        rightColumn.add(groupPanel).top().right().padTop(6f).row()
-        rightColumn.add(lightingPanel).top().right().padTop(6f).row()
-        rightColumn.add(pluginsPanel).top().right().padTop(6f).row()
+        rightColumn.add(groupPanel).top().right().padTop(2f).row()
+        rightColumn.add(pluginsPanel).top().right().padTop(2f).row()
+        rightColumn.add(lightingPanel).top().right().padTop(2f).row()
         val mainRow = Table()
-        mainRow.add(toolbar).top().left().pad(8f)
+        mainRow.add(toolbar).top().left().pad(6f)
         mainRow.add().expand().fill()
-        mainRow.add(rightColumn).top().right().pad(8f)
+        mainRow.add(rightColumn).top().right().pad(6f)
 
         root.add(mainRow).expand().fill().row()
         root.add(buildStatusBar()).expandX().fillX().bottom().pad(0f)
@@ -160,7 +170,7 @@ class SketchUiOverlay(
 
     private fun buildToolbar(): VisTable {
         val toolbar = VisTable()
-        toolbar.defaults().pad(4f).padRight(6f).left()
+        toolbar.defaults().pad(2f).padRight(6f).left()
         toolbar.add(VisLabel("Tools")).row()
 
         val group = ButtonGroup<VisImageTextButton>()
@@ -265,9 +275,10 @@ class SketchUiOverlay(
         toolbar.add(lightingButton).left().padRight(6f).row()
 
         val pluginFallback = createActionIconDrawable(Color(0.6f, 0.6f, 0.6f, 1f))
-        val pluginButton = VisImageTextButton("Plugins", iconFor("plugins", pluginFallback))
+        val pluginIcon = iconFor("plugins", pluginFallback)
+        val pluginButton = VisImageTextButton("Plugins", pluginIcon)
         applyWhiteButtonStyle(pluginButton)
-        applyIconStyle(pluginButton, iconFor("plugins", pluginButton.image.drawable))
+        applyIconStyle(pluginButton, pluginIcon)
         buttonLabels[pluginButton] = "Plugins"
         pluginButton.addListener(hoverListener(pluginButton))
         pluginButton.addListener(object : ClickListener() {
@@ -283,7 +294,7 @@ class SketchUiOverlay(
     private fun buildStatusBar(): VisTable {
         val bar = VisTable()
         bar.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
-        bar.defaults().pad(4f)
+        bar.defaults().pad(2f)
         bar.add(toolLabel).left()
         bar.add(messageLabel).expandX().left()
         bar.add(copyLabel).left()
@@ -295,7 +306,7 @@ class SketchUiOverlay(
     private fun buildSelectionPanel(): VisTable {
         val panel = VisTable()
         panel.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
-        panel.defaults().pad(8f).left()
+        panel.defaults().pad(4f).left()
         panel.add(VisLabel("Selection")).row()
         panel.add(selectionEdgesLabel).row()
         panel.add(selectionFacesLabel).row()
@@ -305,7 +316,7 @@ class SketchUiOverlay(
 
     private fun buildGroupPanel(): VisTable {
         groupPanel.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
-        groupPanel.defaults().pad(6f).left().growX()
+        groupPanel.defaults().pad(4f).left().growX()
         groupPanel.add(VisLabel("Group")).left().row()
         groupPanel.add(groupStatusLabel).left().row()
         groupPanel.add(VisLabel("Name")).left().row()
@@ -366,9 +377,9 @@ class SketchUiOverlay(
     }
 
     private fun buildLightingPanel(): VisTable {
-        val panel = VisTable()
+        val panel = CollapsibleTable()
         panel.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
-        panel.defaults().pad(6f).left().growX()
+        panel.defaults().pad(4f).left().growX()
         panel.add(VisLabel("Lighting")).row()
         panel.add(
             buildLightingSlider("Shadow value", lightingSettings.shadowLightValue) { value ->
@@ -447,7 +458,7 @@ class SketchUiOverlay(
 
     private fun buildPluginPanel(): VisTable {
         pluginPanel.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
-        pluginPanel.defaults().pad(6f).left().growX()
+        pluginPanel.defaults().pad(4f).left().growX()
         pluginPanel.add(VisLabel("Plugins")).row()
 
         val addRow = VisTable()

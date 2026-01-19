@@ -8,9 +8,9 @@ import com.github.alfu32.sketch.model.ModelPersistence
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.ToolId
 import java.io.File
+import groovy.lang.GroovyClassLoader
+import groovy.lang.GroovyShell
 import java.net.URL
-import java.net.URLClassLoader
-import java.util.ServiceLoader
 import kotlin.math.absoluteValue
 
 class PluginHost(
@@ -21,12 +21,12 @@ class PluginHost(
     private val shadow: com.github.alfu32.sketch.ui.ShadowSettings,
     private val getActiveTool: () -> ToolId,
     private val getCopyMode: () -> Boolean,
-    private val getCursorSnap: () -> com.github.alfu32.sketch.input.SnapResult?
+    private val getCursorSnap: () -> com.github.alfu32.sketch.input.SnapResult?,
+    private val pluginsDir: File
 ) : PluginRegistry {
     override val plugins: MutableSet<Plugin> = mutableSetOf()
     private val pluginStates = mutableMapOf<String, PluginState>()
     private val pluginIdToEntry = mutableMapOf<String, String>()
-    private val pluginsDir = File("plugins")
     private val catalogFile = File(pluginsDir, "plugins.json")
     private var catalog = PluginCatalog()
 
@@ -35,7 +35,7 @@ class PluginHost(
         pluginsDir.mkdirs()
         val known = catalog.plugins.map { entryFile(it).name }.toSet()
         var added = false
-        pluginsDir.listFiles { file -> file.isFile && file.extension.equals("jar", ignoreCase = true) }
+        pluginsDir.listFiles { file -> file.isFile && file.extension.equals("groovy", ignoreCase = true) }
             ?.forEach { file ->
                 if (!known.contains(file.name)) {
                     catalog.plugins.add(
@@ -254,29 +254,28 @@ class PluginHost(
 
     private fun fileNameFromUrl(url: String): String {
         val sanitized = url.substringAfterLast('/').ifBlank {
-            "plugin-${url.hashCode().absoluteValue}.jar"
+            "plugin-${url.hashCode().absoluteValue}.groovy"
         }
-        return if (sanitized.endsWith(".jar")) sanitized else "$sanitized.jar"
+        return if (sanitized.endsWith(".groovy")) sanitized else "$sanitized.groovy"
     }
 
     private fun loadEntry(entry: PluginEntry) {
-        val jar = entryFile(entry)
-        if (!jar.exists()) {
-            pluginStates[entry.url] = PluginState(null, null, "Missing jar ${jar.name}")
+        val script = entryFile(entry)
+        if (!script.exists()) {
+            pluginStates[entry.url] = PluginState(null, null, "Missing script ${script.name}")
             return
         }
         try {
-            val loader = URLClassLoader(arrayOf(jar.toURI().toURL()), javaClass.classLoader)
-            val loaded = ServiceLoader.load(Plugin::class.java, loader).iterator().asSequence().toList()
-            if (loaded.isEmpty()) {
-                pluginStates[entry.url] = PluginState(loader, null, "No Plugin services found")
+            val loader = GroovyClassLoader(javaClass.classLoader)
+            val scriptText = script.readText()
+            val plugin = instantiatePlugin(scriptText, script.name, loader)
+            if (plugin == null) {
+                pluginStates[entry.url] = PluginState(loader, null, "No Plugin instance returned")
                 return
             }
-            loaded.forEach { plugin ->
-                plugins.add(plugin)
-                pluginStates[entry.url] = PluginState(loader, plugin, null)
-                pluginIdToEntry[plugin.id] = entry.url
-            }
+            plugins.add(plugin)
+            pluginStates[entry.url] = PluginState(loader, plugin, null)
+            pluginIdToEntry[plugin.id] = entry.url
         } catch (ex: Exception) {
             pluginStates[entry.url] = PluginState(null, null, ex.message ?: "Load failed")
         }
@@ -319,8 +318,25 @@ class PluginHost(
     }
 
     private data class PluginState(
-        val loader: URLClassLoader?,
+        val loader: GroovyClassLoader?,
         val plugin: Plugin?,
         var lastError: String?
     )
+
+    private fun instantiatePlugin(
+        scriptText: String,
+        scriptName: String,
+        loader: GroovyClassLoader
+    ): Plugin? {
+        val shell = GroovyShell(loader)
+        val result = shell.evaluate(scriptText, scriptName)
+        if (result is Plugin) {
+            return result
+        }
+        val scriptClass = loader.parseClass(scriptText, scriptName)
+        if (Plugin::class.java.isAssignableFrom(scriptClass)) {
+            return scriptClass.getDeclaredConstructor().newInstance() as Plugin
+        }
+        return null
+    }
 }

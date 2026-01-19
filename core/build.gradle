@@ -15,8 +15,31 @@ dependencies {
   api "io.github.libktx:ktx-vis:$ktxVersion"
   api "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
   api "org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutinesVersion"
+  implementation "org.apache.groovy:groovy:4.0.21"
 
   if(enableGraalNative == 'true') {
     implementation "io.github.berstanio:gdx-svmhelper-annotations:$graalHelperVersion"
   }
+}
+
+tasks.register('pluginApiJar', Jar) {
+  dependsOn classes
+  archiveBaseName.set('katechup3d-plugin-api')
+  from sourceSets.main.output
+}
+
+tasks.register('copyPluginApiJar', Copy) {
+  dependsOn 'pluginApiJar'
+  from tasks.named('pluginApiJar').flatMap { it.archiveFile }
+  into "${rootProject.rootDir}/plugins"
+}
+
+tasks.register('copySamplePlugins', Copy) {
+  from "${project.projectDir}/src/main/groovy"
+  include '**/*.groovy'
+  into "${rootProject.rootDir}/plugins"
+}
+
+tasks.register('preparePlugins') {
+  dependsOn 'copyPluginApiJar', 'copySamplePlugins'
 }

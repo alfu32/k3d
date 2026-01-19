@@ -40,11 +40,16 @@ do
     major_version="${jdk_release%%.*}"
     echo "creating dist/voxd31-editor-desktop-jvm$major_version-$tag.jar using sdk release $jdk_release"
     sdk use java "$jdk_release"
-    ./gradlew clean dist  "-PjavaCompatVersion=$major_version" -PreleaseNumber=$tag
+    ./gradlew clean dist pluginApiJar "-PjavaCompatVersion=$major_version" -PreleaseNumber=$tag
     mv lwjgl3/build/libs/*.jar dist/
     ## git add -f dist/voxd31-editor-desktop-jvm$major_version-$tag.jar
     # cp ./assets/voxd31.icon.png  dist/
 done
+
+mkdir -p dist/plugins
+cp core/build/libs/katechup3d-plugin-api*.jar dist/plugins/ 2>/dev/null || true
+cp core/src/main/groovy/*.groovy dist/plugins/ 2>/dev/null || true
+
 
 export LAUNCHER_LINUX=dist/katechup3d-editor
 # cat > $LAUNCHER_LINUX <<LAUNCHERLINUXSCRIPT

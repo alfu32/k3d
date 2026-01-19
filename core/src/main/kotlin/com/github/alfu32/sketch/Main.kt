@@ -107,6 +107,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private var shadowUseCsm = true
     private lateinit var shadowSettings: ShadowSettings
     private lateinit var pluginHost: PluginHost
+    private lateinit var installDir: java.io.File
 
     override fun create() {
         if (!VisUI.isLoaded()) {
@@ -125,6 +126,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             rotateButton = Input.Buttons.RIGHT
             translateButton = Input.Buttons.RIGHT
         }
+        installDir = resolveInstallDir()
         statusModel = StatusModel(
             activeTool = ToolId.SELECT,
             message = "Select entities.",
@@ -186,7 +188,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             shadowSettings,
             { toolController.activeToolId() },
             { statusModel.copyMode },
-            { lastSnap }
+            { lastSnap },
+            java.io.File(installDir, "plugins")
         )
         uiOverlay = SketchUiOverlay(
             toolController,
@@ -633,6 +636,19 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             fileArg = "sketch3d.skate.json"
         }
         return java.io.File(fileArg).absoluteFile
+    }
+
+    private fun resolveInstallDir(): java.io.File {
+        return try {
+            val location = java.io.File(Main::class.java.protectionDomain.codeSource.location.toURI())
+            if (location.isFile) {
+                location.parentFile ?: java.io.File(System.getProperty("user.dir"))
+            } else {
+                location
+            }
+        } catch (_: Exception) {
+            java.io.File(System.getProperty("user.dir"))
+        }
     }
 
     private fun selectionInfo(): SketchUiOverlay.SelectionInfo {
