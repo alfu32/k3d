@@ -683,7 +683,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
     }
 
-    private fun drawWireBox(corners: Array<Vector3>) {
+    private fun drawWireBox(corners: kotlin.Array<Vector3>) {
         if (corners.size < 8) {
             return
         }

@@ -4,7 +4,6 @@ import com.badlogic.gdx.Input
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Vector3
-import com.badlogic.gdx.math.Quaternion
 import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
@@ -193,29 +192,24 @@ class MoveTool(
                 return@forEach
             }
             val axes = group.worldAxes()
-            val current = axes.w.cpy().nor()
-            val dot = current.dot(normal).coerceIn(-1f, 1f)
-            if (dot >= 0.999f) {
+            val lenU = axes.u.len()
+            val lenV = axes.v.len()
+            val lenW = axes.w.len()
+            if (lenW <= 1e-6f) {
                 return@forEach
             }
-            val axis = Vector3(current).crs(normal)
-            val angle = kotlin.math.acos(dot)
-            if (axis.len2() <= 1e-6f) {
-                if (dot <= -0.999f) {
-                    val fallback = if (kotlin.math.abs(current.x) < 0.9f) {
-                        Vector3(1f, 0f, 0f)
-                    } else {
-                        Vector3(0f, 1f, 0f)
-                    }
-                    axis.set(current).crs(fallback)
-                } else {
-                    return@forEach
-                }
+            val newW = normal.cpy().nor().scl(lenW)
+            var newU = axes.u.cpy()
+            newU.mulAdd(newW, -newU.dot(newW) / (lenW * lenW))
+            if (newU.len2() <= 1e-6f) {
+                newU = axes.v.cpy()
+                newU.mulAdd(newW, -newU.dot(newW) / (lenW * lenW))
             }
-            val rotation = Quaternion().setFromAxisRad(axis.nor(), angle)
-            val newU = axes.u.cpy().mul(rotation)
-            val newV = axes.v.cpy().mul(rotation)
-            val newW = axes.w.cpy().mul(rotation)
+            if (newU.len2() <= 1e-6f) {
+                return@forEach
+            }
+            newU.nor().scl(lenU)
+            val newV = Vector3(newW).crs(newU).nor().scl(lenV)
             val origin = group.worldOrigin()
             group.setInstanceFromWorld(origin, newU, newV, newW)
         }
