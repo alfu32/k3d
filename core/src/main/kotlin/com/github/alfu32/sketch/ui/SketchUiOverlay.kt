@@ -21,6 +21,8 @@ import com.kotcrab.vis.ui.widget.VisSlider
 import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextButton
 import com.kotcrab.vis.ui.widget.VisTextField
+import com.kotcrab.vis.ui.widget.VisTextArea
+import com.kotcrab.vis.ui.widget.VisScrollPane
 import com.kotcrab.vis.ui.widget.color.ColorPicker
 import com.kotcrab.vis.ui.widget.color.ColorPickerListener
 import com.github.alfu32.sketch.plugin.PluginEntryInfo
@@ -47,13 +49,31 @@ class SketchUiOverlay(
     private val pluginDownload: (String?) -> Unit,
     private val pluginReload: () -> Unit
 ) {
-    private open class CollapsibleTable : VisTable() {
+    private open class CollapsibleWindow(
+        title: String,
+        private val fixedHeight: Float? = null
+    ) : com.kotcrab.vis.ui.widget.VisWindow(title, true) {
+        init {
+            isMovable = true
+            isResizable = false
+            setKeepWithinParent(true)
+            addCloseButton()
+        }
+
+        override fun close() {
+            isVisible = false
+        }
+
         override fun getPrefWidth(): Float {
             return if (isVisible) super.getPrefWidth() else 0f
         }
 
         override fun getPrefHeight(): Float {
-            return if (isVisible) super.getPrefHeight() else 0f
+            if (!isVisible) {
+                return 0f
+            }
+            val pref = super.getPrefHeight()
+            return fixedHeight ?: pref
         }
     }
 
@@ -74,7 +94,7 @@ class SketchUiOverlay(
     private val selectionEdgesLabel = VisLabel()
     private val selectionFacesLabel = VisLabel()
     private val selectionGroupsLabel = VisLabel()
-    private val groupPanel = CollapsibleTable()
+    private val groupPanel = CollapsibleWindow("Group")
     private val groupStatusLabel = VisLabel()
     private val groupNameField = VisTextField()
     private val groupGlueCheck = VisCheckBox("Glue to surface")
@@ -86,11 +106,13 @@ class SketchUiOverlay(
     private var paintColorButton: VisImageTextButton? = null
     private var lastPaintColor = Color(-1f, -1f, -1f, -1f)
     private var colorPicker: ColorPicker? = null
-    private var lightingPanel: VisTable? = null
+    private var lightingPanel: CollapsibleWindow? = null
     private val lightingRefreshers = mutableListOf<() -> Unit>()
-    private val pluginPanel = CollapsibleTable()
+    private lateinit var selectionPanel: CollapsibleWindow
+    private val pluginPanel = CollapsibleWindow("Plugins", 260f)
     private val pluginListTable = VisTable()
     private val pluginUrlField = VisTextField()
+    private val pluginLogArea = VisTextArea()
     private var lastPluginSnapshot: List<PluginEntryInfo> = emptyList()
 
     init {
@@ -100,22 +122,22 @@ class SketchUiOverlay(
         stage.addActor(root)
 
         val toolbar = buildToolbar()
-        val selectionPanel = buildSelectionPanel()
+        selectionPanel = buildSelectionPanel()
         val groupPanel = buildGroupPanel()
         val pluginsPanel = buildPluginPanel()
         val lightingPanel = buildLightingPanel()
-        val rightColumn = Table()
-        rightColumn.add(selectionPanel).top().right().row()
-        rightColumn.add(groupPanel).top().right().padTop(2f).row()
-        rightColumn.add(pluginsPanel).top().right().padTop(2f).row()
-        rightColumn.add(lightingPanel).top().right().padTop(2f).row()
         val mainRow = Table()
         mainRow.add(toolbar).top().left().pad(6f)
         mainRow.add().expand().fill()
-        mainRow.add(rightColumn).top().right().pad(6f)
 
         root.add(mainRow).expand().fill().row()
         root.add(buildStatusBar()).expandX().fillX().bottom().pad(0f)
+
+        stage.addActor(selectionPanel)
+        stage.addActor(groupPanel)
+        stage.addActor(pluginsPanel)
+        stage.addActor(lightingPanel)
+        positionPanels()
 
         updateFromStatus()
     }
@@ -160,6 +182,7 @@ class SketchUiOverlay(
 
     fun resize(width: Int, height: Int) {
         stage.viewport.update(width, height, true)
+        positionPanels()
     }
 
     fun dispose() {
@@ -304,10 +327,9 @@ class SketchUiOverlay(
     }
 
     private fun buildSelectionPanel(): VisTable {
-        val panel = VisTable()
+        val panel = CollapsibleWindow("Selection")
         panel.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         panel.defaults().pad(4f).left()
-        panel.add(VisLabel("Selection")).row()
         panel.add(selectionEdgesLabel).row()
         panel.add(selectionFacesLabel).row()
         panel.add(selectionGroupsLabel).row()
@@ -317,7 +339,6 @@ class SketchUiOverlay(
     private fun buildGroupPanel(): VisTable {
         groupPanel.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         groupPanel.defaults().pad(4f).left().growX()
-        groupPanel.add(VisLabel("Group")).left().row()
         groupPanel.add(groupStatusLabel).left().row()
         groupPanel.add(VisLabel("Name")).left().row()
         groupPanel.add(groupNameField).growX().row()
@@ -377,10 +398,9 @@ class SketchUiOverlay(
     }
 
     private fun buildLightingPanel(): VisTable {
-        val panel = CollapsibleTable()
+        val panel = CollapsibleWindow("Lighting")
         panel.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         panel.defaults().pad(4f).left().growX()
-        panel.add(VisLabel("Lighting")).row()
         panel.add(
             buildLightingSlider("Shadow value", lightingSettings.shadowLightValue) { value ->
                 lightingSettings.shadowLightValue = value
@@ -459,7 +479,6 @@ class SketchUiOverlay(
     private fun buildPluginPanel(): VisTable {
         pluginPanel.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         pluginPanel.defaults().pad(4f).left().growX()
-        pluginPanel.add(VisLabel("Plugins")).row()
 
         val addRow = VisTable()
         addRow.defaults().left().padRight(4f)
@@ -494,10 +513,51 @@ class SketchUiOverlay(
         pluginPanel.add(actionRow).left().row()
 
         pluginListTable.defaults().left().pad(2f)
-        pluginPanel.add(pluginListTable).growX().row()
+        val listScroll = VisScrollPane(pluginListTable).apply {
+            setFadeScrollBars(false)
+        }
+        pluginPanel.add(listScroll).growX().height(120f).row()
+
+        pluginLogArea.isDisabled = true
+        pluginLogArea.text = ""
+        val logScroll = VisScrollPane(pluginLogArea).apply {
+            setFadeScrollBars(false)
+        }
+        pluginPanel.add(logScroll).growX().height(80f).row()
 
         pluginPanel.isVisible = false
         return pluginPanel
+    }
+
+    private fun positionPanels() {
+        val panels = mutableListOf<com.kotcrab.vis.ui.widget.VisWindow>()
+        panels.add(selectionPanel)
+        panels.add(groupPanel)
+        panels.add(pluginPanel)
+        lightingPanel?.let { panels.add(it) }
+        panels.forEach { it.pack() }
+        positionPanelStack(panels, 8f, 8f, 6f)
+    }
+
+    private fun positionPanelStack(
+        panels: List<com.kotcrab.vis.ui.widget.VisWindow>,
+        rightPadding: Float,
+        topPadding: Float,
+        gap: Float
+    ) {
+        val width = stage.viewport.worldWidth
+        val height = stage.viewport.worldHeight
+        var y = height - topPadding
+        panels.forEach { panel ->
+            if (!panel.isVisible) {
+                return@forEach
+            }
+            panel.pack()
+            val panelWidth = panel.width
+            val panelHeight = panel.height
+            panel.setPosition(width - rightPadding - panelWidth, y - panelHeight)
+            y -= panelHeight + gap
+        }
     }
 
     private fun buildLightingSlider(
@@ -633,6 +693,7 @@ class SketchUiOverlay(
         }
         lastPluginSnapshot = entries
         pluginListTable.clearChildren()
+        val logLines = mutableListOf<String>()
         entries.forEach { entry ->
             val row = VisTable()
             row.defaults().left().padRight(4f)
@@ -660,7 +721,12 @@ class SketchUiOverlay(
             row.add(download)
             row.add(remove)
             pluginListTable.add(row).growX().row()
+            entry.lastError?.let { message ->
+                val title = entry.name ?: entry.url
+                logLines.add("$title: $message")
+            }
         }
+        pluginLogArea.text = logLines.joinToString("\n")
     }
 
     private fun formatPluginLabel(entry: PluginEntryInfo): String {

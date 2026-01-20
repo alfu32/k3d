@@ -10,6 +10,8 @@ import com.github.alfu32.sketch.ui.ToolId
 import java.io.File
 import groovy.lang.GroovyClassLoader
 import groovy.lang.GroovyShell
+import org.codehaus.groovy.control.CompilerConfiguration
+import org.codehaus.groovy.control.customizers.ImportCustomizer
 import java.net.URL
 import kotlin.math.absoluteValue
 
@@ -266,9 +268,15 @@ class PluginHost(
             return
         }
         try {
-            val loader = GroovyClassLoader(javaClass.classLoader)
+            val config = CompilerConfiguration()
+            val imports = ImportCustomizer().apply {
+                addStarImports("com.github.alfu32.sketch.plugin")
+            }
+            config.addCompilationCustomizers(imports)
+            val loader = GroovyClassLoader(javaClass.classLoader, config)
+            addPluginApiJar(loader)
             val scriptText = script.readText()
-            val plugin = instantiatePlugin(scriptText, script.name, loader)
+            val plugin = instantiatePlugin(scriptText, script.name, loader, config)
             if (plugin == null) {
                 pluginStates[entry.url] = PluginState(loader, null, "No Plugin instance returned")
                 return
@@ -326,9 +334,10 @@ class PluginHost(
     private fun instantiatePlugin(
         scriptText: String,
         scriptName: String,
-        loader: GroovyClassLoader
+        loader: GroovyClassLoader,
+        config: CompilerConfiguration
     ): Plugin? {
-        val shell = GroovyShell(loader)
+        val shell = GroovyShell(loader, groovy.lang.Binding(), config)
         val result = shell.evaluate(scriptText, scriptName)
         if (result is Plugin) {
             return result
@@ -338,5 +347,12 @@ class PluginHost(
             return scriptClass.getDeclaredConstructor().newInstance() as Plugin
         }
         return null
+    }
+
+    private fun addPluginApiJar(loader: GroovyClassLoader) {
+        val apiJar = pluginsDir.listFiles { file ->
+            file.isFile && file.name.startsWith("katechup3d-plugin-api") && file.extension.equals("jar", true)
+        }?.firstOrNull() ?: return
+        loader.addURL(apiJar.toURI().toURL())
     }
 }
