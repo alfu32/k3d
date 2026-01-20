@@ -56,7 +56,7 @@ class SketchUiOverlay(
         init {
             isMovable = true
             isResizable = false
-            setKeepWithinParent(true)
+            setKeepWithinParent(false)
             addCloseButton()
         }
 
@@ -94,7 +94,7 @@ class SketchUiOverlay(
     private val selectionEdgesLabel = VisLabel()
     private val selectionFacesLabel = VisLabel()
     private val selectionGroupsLabel = VisLabel()
-    private val groupPanel = CollapsibleWindow("Group")
+    private lateinit var groupPanel: CollapsibleWindow
     private val groupStatusLabel = VisLabel()
     private val groupNameField = VisTextField()
     private val groupGlueCheck = VisCheckBox("Glue to surface")
@@ -114,18 +114,20 @@ class SketchUiOverlay(
     private val pluginUrlField = VisTextField()
     private val pluginLogArea = VisTextArea()
     private var lastPluginSnapshot: List<PluginEntryInfo> = emptyList()
+    private var needsPanelLayout = true
 
     init {
         iconDrawables.putAll(loadIconDrawables())
         val root = Table()
         root.setFillParent(true)
         stage.addActor(root)
+        stage.viewport.update(Gdx.graphics.width, Gdx.graphics.height, true)
 
         val toolbar = buildToolbar()
         selectionPanel = buildSelectionPanel()
-        val groupPanel = buildGroupPanel()
+        groupPanel = buildGroupPanel()
         val pluginsPanel = buildPluginPanel()
-        val lightingPanel = buildLightingPanel()
+        lightingPanel = buildLightingPanel()
         val mainRow = Table()
         mainRow.add(toolbar).top().left().pad(6f)
         mainRow.add().expand().fill()
@@ -136,8 +138,9 @@ class SketchUiOverlay(
         stage.addActor(selectionPanel)
         stage.addActor(groupPanel)
         stage.addActor(pluginsPanel)
-        stage.addActor(lightingPanel)
+        lightingPanel?.let { stage.addActor(it) }
         positionPanels()
+        needsPanelLayout = true
 
         updateFromStatus()
     }
@@ -173,6 +176,10 @@ class SketchUiOverlay(
 
     fun act(delta: Float) {
         updateFromStatus()
+        if (needsPanelLayout) {
+            positionPanels()
+            needsPanelLayout = false
+        }
         stage.act(delta)
     }
 
@@ -182,7 +189,7 @@ class SketchUiOverlay(
 
     fun resize(width: Int, height: Int) {
         stage.viewport.update(width, height, true)
-        positionPanels()
+        needsPanelLayout = true
     }
 
     fun dispose() {
@@ -292,6 +299,8 @@ class SketchUiOverlay(
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 lightingPanel?.let { panel ->
                     panel.isVisible = !panel.isVisible
+                    needsPanelLayout = true
+                    panel.toFront()
                 }
             }
         })
@@ -307,6 +316,8 @@ class SketchUiOverlay(
         pluginButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 pluginPanel.isVisible = !pluginPanel.isVisible
+                needsPanelLayout = true
+                pluginPanel.toFront()
             }
         })
         toolbar.add(pluginButton).left().padRight(6f).row()
@@ -326,24 +337,29 @@ class SketchUiOverlay(
         return bar
     }
 
-    private fun buildSelectionPanel(): VisTable {
+    private fun buildSelectionPanel(): CollapsibleWindow {
         val panel = CollapsibleWindow("Selection")
-        panel.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
-        panel.defaults().pad(4f).left()
-        panel.add(selectionEdgesLabel).row()
-        panel.add(selectionFacesLabel).row()
-        panel.add(selectionGroupsLabel).row()
+        val content = VisTable()
+        content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        content.defaults().pad(4f).left()
+        content.add(selectionEdgesLabel).row()
+        content.add(selectionFacesLabel).row()
+        content.add(selectionGroupsLabel).row()
+        panel.add(content).grow()
         return panel
     }
 
-    private fun buildGroupPanel(): VisTable {
-        groupPanel.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
-        groupPanel.defaults().pad(4f).left().growX()
-        groupPanel.add(groupStatusLabel).left().row()
-        groupPanel.add(VisLabel("Name")).left().row()
-        groupPanel.add(groupNameField).growX().row()
-        groupPanel.add(groupGlueCheck).left().row()
-        groupPanel.isVisible = false
+    private fun buildGroupPanel(): CollapsibleWindow {
+        val panel = CollapsibleWindow("Group")
+        val content = VisTable()
+        content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        content.defaults().pad(4f).left().growX()
+        content.add(groupStatusLabel).left().row()
+        content.add(VisLabel("Name")).left().row()
+        content.add(groupNameField).growX().row()
+        content.add(groupGlueCheck).left().row()
+        panel.add(content).growX()
+        panel.isVisible = false
 
         groupNameField.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
@@ -361,18 +377,23 @@ class SketchUiOverlay(
                 groupGlueChanged(groupGlueCheck.isChecked)
             }
         })
-        return groupPanel
+        return panel
     }
 
     private fun updateGroupPanel() {
         val info = groupInfoProvider()
         if (info == null) {
+            val wasVisible = groupPanel.isVisible
             groupPanel.isVisible = false
+            if (wasVisible) {
+                needsPanelLayout = true
+            }
             lastGroupName = ""
             lastGroupGlue = false
             lastGroupEditing = false
             return
         }
+        val wasVisible = groupPanel.isVisible
         groupPanel.isVisible = true
         val statusText = if (info.editing) {
             "Editing group: ${info.name}"
@@ -380,6 +401,9 @@ class SketchUiOverlay(
             "Selected group: ${info.name}"
         }
         groupStatusLabel.setText(statusText)
+        if (!wasVisible) {
+            needsPanelLayout = true
+        }
         val selectionChanged = info.id != lastGroupId
         if (selectionChanged || !groupNameField.hasKeyboardFocus() || info.name != lastGroupName) {
             updatingGroupFields = true
@@ -397,88 +421,91 @@ class SketchUiOverlay(
         lastGroupId = info.id
     }
 
-    private fun buildLightingPanel(): VisTable {
+    private fun buildLightingPanel(): CollapsibleWindow {
         val panel = CollapsibleWindow("Lighting")
-        panel.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
-        panel.defaults().pad(4f).left().growX()
-        panel.add(
+        val content = VisTable()
+        content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        content.defaults().pad(4f).left().growX()
+        content.add(
             buildLightingSlider("Shadow value", lightingSettings.shadowLightValue) { value ->
                 lightingSettings.shadowLightValue = value
                 lightingChanged(lightingSettings)
             }
         ).growX().row()
-        panel.add(
+        content.add(
             buildLightingSlider("Shadow alpha", lightingSettings.shadowLightAlpha) { value ->
                 lightingSettings.shadowLightAlpha = value
                 lightingChanged(lightingSettings)
             }
         ).growX().row()
-        panel.add(
+        content.add(
             buildLightingSlider("Directional value", lightingSettings.directionalLightValue) { value ->
                 lightingSettings.directionalLightValue = value
                 lightingChanged(lightingSettings)
             }
         ).growX().row()
-        panel.add(
+        content.add(
             buildLightingSlider("Directional alpha", lightingSettings.directionalLightAlpha) { value ->
                 lightingSettings.directionalLightAlpha = value
                 lightingChanged(lightingSettings)
             }
         ).growX().row()
-        panel.add(
+        content.add(
             buildLightingSlider("Ambient value", lightingSettings.ambientLightValue) { value ->
                 lightingSettings.ambientLightValue = value
                 lightingChanged(lightingSettings)
             }
         ).growX().row()
-        panel.add(
+        content.add(
             buildLightingSlider("Ambient alpha", lightingSettings.ambientLightAlpha) { value ->
                 lightingSettings.ambientLightAlpha = value
                 lightingChanged(lightingSettings)
             }
         ).growX().row()
-        panel.add(
+        content.add(
             buildLightingSlider("Specular value", lightingSettings.specularLightValue) { value ->
                 lightingSettings.specularLightValue = value
                 lightingChanged(lightingSettings)
             }
         ).growX().row()
-        panel.add(
+        content.add(
             buildLightingSlider("Specular alpha", lightingSettings.specularLightAlpha) { value ->
                 lightingSettings.specularLightAlpha = value
                 lightingChanged(lightingSettings)
             }
         ).growX().row()
-        panel.add(VisLabel("Shadow Settings")).padTop(6f).row()
-        panel.add(
+        content.add(VisLabel("Shadow Settings")).padTop(6f).row()
+        content.add(
             buildShadowSlider("Shadow bias", shadowSettings.shadowBias, 0f, 4096f) { value ->
                 shadowSettings.shadowBias = value
                 shadowChanged(shadowSettings)
             }
         ).growX().row()
-        panel.add(
+        content.add(
             buildShadowSlider("Normal bias", shadowSettings.shadowNormalBias, 0f, 8192f) { value ->
                 shadowSettings.shadowNormalBias = value
                 shadowChanged(shadowSettings)
             }
         ).growX().row()
-        panel.add(
+        content.add(
             buildPcfSlider("PCF", shadowSettings.pcfMode) { mode ->
                 shadowSettings.pcfMode = mode
                 shadowChanged(shadowSettings)
             }
         ).growX().row()
-        panel.add(
+        content.add(
             buildShadowToggles()
         ).growX().row()
+        panel.add(content).growX()
         panel.isVisible = false
         lightingPanel = panel
         return panel
     }
 
-    private fun buildPluginPanel(): VisTable {
-        pluginPanel.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
-        pluginPanel.defaults().pad(4f).left().growX()
+    private fun buildPluginPanel(): CollapsibleWindow {
+        val content = VisTable()
+        content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        content.defaults().pad(4f).left().growX()
 
         val addRow = VisTable()
         addRow.defaults().left().padRight(4f)
@@ -492,7 +519,7 @@ class SketchUiOverlay(
             }
         })
         addRow.add(addButton)
-        pluginPanel.add(addRow).growX().row()
+        content.add(addRow).growX().row()
 
         val actionRow = VisTable()
         actionRow.defaults().left().padRight(4f)
@@ -510,21 +537,22 @@ class SketchUiOverlay(
         })
         actionRow.add(downloadButton)
         actionRow.add(reloadButton)
-        pluginPanel.add(actionRow).left().row()
+        content.add(actionRow).left().row()
 
         pluginListTable.defaults().left().pad(2f)
         val listScroll = VisScrollPane(pluginListTable).apply {
             setFadeScrollBars(false)
         }
-        pluginPanel.add(listScroll).growX().height(120f).row()
+        content.add(listScroll).growX().height(120f).row()
 
         pluginLogArea.isDisabled = true
         pluginLogArea.text = ""
         val logScroll = VisScrollPane(pluginLogArea).apply {
             setFadeScrollBars(false)
         }
-        pluginPanel.add(logScroll).growX().height(80f).row()
+        content.add(logScroll).growX().height(80f).row()
 
+        pluginPanel.add(content).growX()
         pluginPanel.isVisible = false
         return pluginPanel
     }
@@ -535,7 +563,11 @@ class SketchUiOverlay(
         panels.add(groupPanel)
         panels.add(pluginPanel)
         lightingPanel?.let { panels.add(it) }
-        panels.forEach { it.pack() }
+        panels.forEach {
+            it.invalidateHierarchy()
+            it.pack()
+            it.toFront()
+        }
         positionPanelStack(panels, 8f, 8f, 6f)
     }
 
@@ -545,8 +577,8 @@ class SketchUiOverlay(
         topPadding: Float,
         gap: Float
     ) {
-        val width = stage.viewport.worldWidth
-        val height = stage.viewport.worldHeight
+        val width = if (stage.viewport.screenWidth > 0) stage.viewport.screenWidth.toFloat() else Gdx.graphics.width.toFloat()
+        val height = if (stage.viewport.screenHeight > 0) stage.viewport.screenHeight.toFloat() else Gdx.graphics.height.toFloat()
         var y = height - topPadding
         panels.forEach { panel ->
             if (!panel.isVisible) {

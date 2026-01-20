@@ -8362,26 +8362,26 @@
 },
 "cameraState": {
 	"position": {
-		"x": -19.884983,
-		"y": 25.857025,
-		"z": 35.113506
+		"x": 22.844511,
+		"y": 39.486183,
+		"z": 11.008604
 	},
 	"direction": {
-		"x": 0.45947042,
-		"y": -0.5356167,
-		"z": -0.7086498
+		"x": -0.46480224,
+		"y": -0.839583,
+		"z": -0.28150028
 	},
 	"up": {
-		"x": 0.29141688,
-		"y": 0.8445357,
-		"z": -0.4494596
+		"x": -0.71817195,
+		"y": 0.5433487,
+		"z": -0.43494776
 	},
 	"near": 0.1,
 	"far": 500,
 	"fieldOfView": 67
 },
 "lightingState": {
-	"shadowLightValue": 0.59,
+	"shadowLightValue": 0.95,
 	"shadowLightAlpha": 0.5,
 	"directionalLightValue": 0.73,
 	"directionalLightAlpha": 1,
