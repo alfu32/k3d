@@ -1,6 +1,7 @@
 ## Gradle:
 .gradle/
 .gradle-user/
+.gradle-codex/
 gradle-app.setting
 /build/
 /android/build/

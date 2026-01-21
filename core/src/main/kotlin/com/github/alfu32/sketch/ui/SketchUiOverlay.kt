@@ -10,6 +10,7 @@ import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.ui.ImageTextButton
 import com.badlogic.gdx.scenes.scene2d.ui.ButtonGroup
 import com.badlogic.gdx.scenes.scene2d.ui.Table
+import com.badlogic.gdx.scenes.scene2d.ui.HorizontalGroup
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
@@ -43,14 +44,17 @@ class SketchUiOverlay(
 ) {
     private open class CollapsibleWindow(
         title: String,
-        private val fixedHeight: Float? = null
+        private val fixedHeight: Float? = null,
+        showCloseButton: Boolean = true
     ) : com.kotcrab.vis.ui.widget.VisWindow(title, true) {
         init {
             isMovable = true
             isResizable = true
             isModal = false
             setKeepWithinParent(false)
-            addCloseButton()
+            if (showCloseButton) {
+                addCloseButton()
+            }
         }
 
         override fun close() {
@@ -73,6 +77,9 @@ class SketchUiOverlay(
     val stage: Stage = Stage(ScreenViewport())
     private val toolButtons = mutableMapOf<ToolId, VisImageTextButton>()
     private val buttonLabels = mutableMapOf<VisImageTextButton, String>()
+    private val pluginToolButtons = mutableMapOf<String, VisImageTextButton>()
+    private val pluginToolbars = mutableMapOf<String, CollapsibleWindow>()
+    private var pluginTooltip: CollapsibleWindow? = null
     private val hoveredButtons = mutableSetOf<VisImageTextButton>()
     private val iconTextures = mutableListOf<Texture>()
     private val iconDrawables = mutableMapOf<String, TextureRegionDrawable>()
@@ -87,6 +94,7 @@ class SketchUiOverlay(
     private val selectionEdgesLabel = VisLabel()
     private val selectionFacesLabel = VisLabel()
     private val selectionGroupsLabel = VisLabel()
+    private var lastPluginTools: List<String> = emptyList()
     private lateinit var groupPanel: CollapsibleWindow
     private val groupStatusLabel = VisLabel()
     private val groupNameField = VisTextField()
@@ -106,6 +114,7 @@ class SketchUiOverlay(
     private var pluginManagerPanel: PluginManagerPanel? = null
     private var commandPaletteUI: CommandPaletteUI? = null
     private var pluginHost: PluginHost? = null
+    private var pluginPanelsPositioned = false
 
     init {
         iconDrawables.putAll(loadIconDrawables())
@@ -153,7 +162,9 @@ class SketchUiOverlay(
         selectionFacesLabel.setText("Faces: ${selection.faceCount}")
         selectionGroupsLabel.setText("Groups: ${selection.groupCount}")
         updateGroupPanel()
+        refreshPluginToolbar()
         toolButtons[status.activeTool]?.isChecked = true
+        updatePluginToolSelection()
         updatePaintColorButton()
         updateButtonLabels()
     }
@@ -178,6 +189,7 @@ class SketchUiOverlay(
     fun resize(width: Int, height: Int) {
         stage.viewport.update(width, height, true)
         needsPanelLayout = true
+        pluginPanelsPositioned = false
     }
 
     // Plugin management methods
@@ -186,6 +198,7 @@ class SketchUiOverlay(
         pluginManagerPanel = PluginManagerPanel(host)
         commandPaletteUI = CommandPaletteUI(host.getCommandPalette(), stage)
         stage.addActor(pluginManagerPanel)
+        pluginPanelsPositioned = false
     }
 
     fun togglePluginManager() {
@@ -217,7 +230,7 @@ class SketchUiOverlay(
         group.setMinCheckCount(1)
         group.setUncheckLast(false)
 
-        ToolId.values().forEach { toolId ->
+        ToolId.values().filter { it != ToolId.PLUGIN }.forEach { toolId ->
             val icon = createIconDrawable(toolId)
             val button = VisImageTextButton(toolId.displayName, icon)
             applyWhiteButtonStyle(button)
@@ -317,10 +330,10 @@ class SketchUiOverlay(
 
         val pluginFallback = createActionIconDrawable(Color(0.6f, 0.6f, 0.6f, 1f))
         val pluginIcon = iconFor("plugins", pluginFallback)
-        val pluginButton = VisImageTextButton("Plugins", pluginIcon)
+        val pluginButton = VisImageTextButton("Plugin Manager", pluginIcon)
         applyWhiteButtonStyle(pluginButton)
         applyIconStyle(pluginButton, pluginIcon)
-        buttonLabels[pluginButton] = "Plugins"
+        buttonLabels[pluginButton] = "Plugin Manager"
         pluginButton.addListener(hoverListener(pluginButton))
         pluginButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
@@ -510,7 +523,7 @@ class SketchUiOverlay(
     }
 
     private fun positionPanels() {
-        val panels = mutableListOf<com.kotcrab.vis.ui.widget.VisWindow>()
+        val panels = mutableListOf<CollapsibleWindow>()
         panels.add(selectionPanel)
         panels.add(groupPanel)
         lightingPanel?.let { panels.add(it) }
@@ -520,10 +533,36 @@ class SketchUiOverlay(
             it.toFront()
         }
         positionPanelStack(panels, 8f, 8f, 6f)
+        if (!pluginPanelsPositioned) {
+            positionPluginPanels()
+            pluginPanelsPositioned = true
+        }
+    }
+
+    private fun positionPluginPanels() {
+        val width = if (stage.viewport.screenWidth > 0) stage.viewport.screenWidth.toFloat() else Gdx.graphics.width.toFloat()
+        val height = if (stage.viewport.screenHeight > 0) stage.viewport.screenHeight.toFloat() else Gdx.graphics.height.toFloat()
+        pluginManagerPanel?.let { panel ->
+            panel.pack()
+            panel.setPosition(width - panel.width - 12f, 12f)
+            panel.isVisible = true
+        }
+        commandPaletteUI?.let { palette ->
+            val paletteWidth = palette.windowWidth().coerceAtLeast(520f)
+            val paletteHeight = palette.windowHeight().coerceAtLeast(360f)
+            val x = width - paletteWidth - 24f
+            val y = (height - paletteHeight) * 0.5f
+            palette.showDefaultAt(x, y)
+        }
+        pluginToolbars.values.forEachIndexed { idx, window ->
+            window.pack()
+            val y = height - 12f - window.height - (idx * (window.height + 8f))
+            window.setPosition(12f, y)
+        }
     }
 
     private fun positionPanelStack(
-        panels: List<com.kotcrab.vis.ui.widget.VisWindow>,
+        panels: List<CollapsibleWindow>,
         rightPadding: Float,
         topPadding: Float,
         gap: Float
@@ -671,6 +710,79 @@ class SketchUiOverlay(
 
     private fun formatValue(value: Float): String {
         return String.format(Locale.US, "%.2f", value)
+    }
+
+    private fun refreshPluginToolbar() {
+        val host = pluginHost ?: return
+        val entries = host.pluginToolEntries()
+        val ids = entries.map { it.id }
+        if (ids == lastPluginTools) {
+            return
+        }
+        lastPluginTools = ids
+        pluginToolButtons.values.forEach { it.remove() }
+        pluginToolButtons.clear()
+        pluginToolbars.values.forEach { it.remove() }
+        pluginToolbars.clear()
+        val grouped = entries.groupBy { it.pluginId }
+        grouped.forEach { (pluginId, tools) ->
+            val title = tools.firstOrNull()?.pluginName ?: pluginId
+            val window = CollapsibleWindow(title, showCloseButton = false)
+            val group = HorizontalGroup().apply {
+                space(6f)
+                pad(6f)
+            }
+            tools.forEach { entry ->
+                val fallback = createActionIconDrawable(Color(0.65f, 0.75f, 0.95f, 1f))
+                val icon = iconFor(entry.icon, fallback)
+                val button = VisImageTextButton(entry.name, icon)
+                applyWhiteButtonStyle(button)
+                applyIconStyle(button, icon)
+                buttonLabels[button] = entry.name
+                button.addListener(hoverListener(button))
+                button.addListener(object : ClickListener() {
+                    override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                        host.activatePluginTool(entry.id)
+                    }
+                })
+                group.addActor(button)
+                pluginToolButtons[entry.id] = button
+            }
+            window.add(group).grow()
+            stage.addActor(window)
+            pluginToolbars[pluginId] = window
+        }
+        updatePluginToolSelection()
+        pluginPanelsPositioned = false
+    }
+
+    private fun updatePluginToolSelection() {
+        val host = pluginHost ?: return
+        val activeId = host.activePluginToolId()
+        pluginToolButtons.forEach { (id, button) ->
+            button.isChecked = id == activeId
+        }
+    }
+
+    private fun showPluginTooltip(button: VisImageTextButton, text: String) {
+        val tooltip = pluginTooltip ?: CollapsibleWindow("", showCloseButton = false).also {
+            it.isModal = false
+            it.isMovable = false
+            it.isResizable = false
+            it.setKeepWithinParent(false)
+            pluginTooltip = it
+            stage.addActor(it)
+        }
+        tooltip.clearChildren()
+        tooltip.add(VisLabel(text)).pad(6f)
+        tooltip.pack()
+        val pos = button.localToStageCoordinates(com.badlogic.gdx.math.Vector2(0f, 0f))
+        tooltip.setPosition(pos.x, pos.y - tooltip.height - 6f)
+        tooltip.isVisible = true
+    }
+
+    private fun hidePluginTooltip() {
+        pluginTooltip?.isVisible = false
     }
 
     private fun createIconDrawable(toolId: ToolId): TextureRegionDrawable {

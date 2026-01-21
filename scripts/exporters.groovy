@@ -11,6 +11,8 @@ import com.github.alfu32.sketch.plugin.PluginContext
 import com.github.alfu32.sketch.plugin.PluginResult
 import com.github.alfu32.sketch.plugin.capabilities.KeyBinding
 import com.github.alfu32.sketch.plugin.capabilities.PluginCommand
+import com.github.alfu32.sketch.plugin.capabilities.PluginTool
+import com.github.alfu32.sketch.plugin.capabilities.ToolCategory
 import com.kotcrab.vis.ui.widget.file.FileChooser
 import com.kotcrab.vis.ui.widget.file.FileChooserAdapter
 import com.kotcrab.vis.ui.widget.file.FileTypeFilter
@@ -30,6 +32,14 @@ class ExportersPlugin implements Plugin {
         return [
             makeCommand("export.obj", "Export> OBJ", "Export model as OBJ", "obj"),
             makeCommand("export.stl", "Export> STL(ASCII)", "Export model as STL (ASCII)", "stl")
+        ]
+    }
+
+    @Override
+    List<PluginTool> registerTools() {
+        return [
+            new ExporterTool(this, "export.obj.tool", "Export OBJ", "Export model as OBJ", "obj"),
+            new ExporterTool(this, "export.stl.tool", "Export STL", "Export model as STL (ASCII)", "stl")
         ]
     }
 
@@ -80,6 +90,60 @@ class ExportersPlugin implements Plugin {
 
         stage.addActor(chooser)
         return statusResult("Choose a file to export ${ext.toUpperCase(Locale.US)}.")
+    }
+
+    private static class ExporterTool implements PluginTool {
+        private final ExportersPlugin plugin
+        String id
+        String name
+        String description
+        String icon = "export"
+        String cursor = "default"
+        ToolCategory category = ToolCategory.UTILITY
+        private final String ext
+
+        ExporterTool(ExportersPlugin plugin, String id, String name, String description, String ext) {
+            this.plugin = plugin
+            this.id = id
+            this.name = name
+            this.description = description
+            this.ext = ext
+        }
+
+        @Override
+        void onActivate(PluginContext context) {
+            def result = plugin.showSaveDialog(context, name, ext)
+            if (result != null) {
+                context.applyResult(result)
+            }
+        }
+
+        @Override
+        void onDeactivate(PluginContext context) {}
+
+        @Override
+        void onMouseMove(PluginContext context, int screenX, int screenY) {}
+
+        @Override
+        void onMouseDown(PluginContext context, int button, int screenX, int screenY) {}
+
+        @Override
+        void onMouseUp(PluginContext context, int button, int screenX, int screenY) {}
+
+        @Override
+        boolean onKeyDown(PluginContext context, int keycode) { false }
+
+        @Override
+        boolean onKeyUp(PluginContext context, int keycode) { false }
+
+        @Override
+        void onDraw2D(PluginContext context, com.badlogic.gdx.graphics.g2d.SpriteBatch batch) {}
+
+        @Override
+        void onDraw3D(PluginContext context, com.badlogic.gdx.graphics.glutils.ShapeRenderer shapeRenderer) {}
+
+        @Override
+        void onUpdate(PluginContext context, float delta) {}
     }
 
     private void exportModel(PluginContext context, String ext, File file) {

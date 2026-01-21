@@ -311,6 +311,23 @@ class PluginHost(
         return activePluginToolId?.let { pluginTools[it] }
     }
 
+    fun activePluginToolId(): String? = activePluginToolId
+
+    fun pluginToolEntries(): List<PluginToolInfo> {
+        return pluginTools.map { (id, tool) ->
+            val pluginId = id.substringBefore('.')
+            val pluginName = plugins.firstOrNull { it.id == pluginId }?.name ?: pluginId
+            PluginToolInfo(
+                id = id,
+                pluginId = pluginId,
+                pluginName = pluginName,
+                name = tool.name,
+                description = tool.description,
+                icon = tool.icon
+            )
+        }.sortedBy { it.name }
+    }
+
     fun activatePluginTool(toolId: String) {
         if (pluginTools.containsKey(toolId)) {
             activePluginToolId = toolId
@@ -430,6 +447,7 @@ class PluginHost(
         val script = entryFile(entry)
         if (!script.exists()) {
             pluginStates[entry.url] = PluginState(null, null, "Missing script ${script.name}")
+            println("Plugin load failed: ${entry.url} (missing script ${script.name})")
             return
         }
         try {
@@ -454,6 +472,7 @@ class PluginHost(
             }
         } catch (ex: Exception) {
             pluginStates[entry.url] = PluginState(null, null, ex.message ?: "Load failed")
+            println("Plugin load failed: ${entry.url} (${ex.message ?: "Load failed"})")
         }
     }
 
@@ -498,6 +517,7 @@ class PluginHost(
             val entryUrl = pluginIdToEntry[plugin.id]
             if (entryUrl != null) {
                 pluginStates[entryUrl]?.lastError = ex.message ?: "Plugin error"
+                println("Plugin error: $entryUrl (${ex.message ?: "Plugin error"})")
             }
             null
         }

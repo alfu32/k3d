@@ -127,7 +127,7 @@ class CommandPaletteUI(
             show()
         }
     }
-    
+
     fun show() {
         isVisible = true
         window.isVisible = true
@@ -148,6 +148,16 @@ class CommandPaletteUI(
         stage.scrollFocus = null
         stage.keyboardFocus = null
     }
+
+    fun showDefaultAt(x: Float, y: Float) {
+        isVisible = true
+        window.isVisible = true
+        window.setPosition(x, y)
+    }
+
+    fun windowWidth(): Float = window.width
+
+    fun windowHeight(): Float = window.height
     
     private fun updateCommandList() {
         val query = searchField.text

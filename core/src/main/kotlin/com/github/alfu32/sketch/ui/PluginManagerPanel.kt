@@ -20,12 +20,14 @@ class PluginManagerPanel(private val pluginHost: PluginHost) : VisWindow("Plugin
     private val pluginUrlField = VisTextField()
     private val pluginPathLabel = VisLabel("")
     private var lastSnapshot: List<PluginEntryInfo> = emptyList()
+    private var errorDialog: VisWindow? = null
 
     init {
         isResizable = true
         isModal = false
         setupUI()
         refresh()
+        isVisible = true
     }
 
     private fun setupUI() {
@@ -87,6 +89,7 @@ class PluginManagerPanel(private val pluginHost: PluginHost) : VisWindow("Plugin
         add(logScroll).growX().height(120f).row()
 
         pack()
+        setSize(540f, height)
         setPosition(100f, 100f)
     }
 
@@ -137,6 +140,7 @@ class PluginManagerPanel(private val pluginHost: PluginHost) : VisWindow("Plugin
         }
         pluginListTable.add().expandY().row()
         pluginLogArea.text = logLines.joinToString("\n")
+        showErrors(logLines)
     }
 
     private fun formatPluginLabel(entry: PluginEntryInfo): String {
@@ -145,5 +149,27 @@ class PluginManagerPanel(private val pluginHost: PluginHost) : VisWindow("Plugin
         val installed = if (entry.installed) "" else " (missing)"
         val error = entry.lastError?.let { " ! $it" } ?: ""
         return "$title$version$installed$error"
+    }
+
+    private fun showErrors(lines: List<String>) {
+        if (lines.isEmpty()) {
+            errorDialog?.remove()
+            errorDialog = null
+            return
+        }
+        val stageRef = stage ?: return
+        val dialog = errorDialog ?: VisWindow("Plugin Errors").also {
+            it.isModal = false
+            it.isResizable = true
+            it.addCloseButton()
+            it.setKeepWithinParent(false)
+            stageRef.addActor(it)
+            errorDialog = it
+        }
+        dialog.clearChildren()
+        dialog.defaults().pad(8f).left()
+        dialog.add(VisLabel(lines.joinToString("\n"))).growX().row()
+        dialog.pack()
+        dialog.setPosition(120f, 120f)
     }
 }
