@@ -21,11 +21,8 @@ import com.kotcrab.vis.ui.widget.VisSlider
 import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextButton
 import com.kotcrab.vis.ui.widget.VisTextField
-import com.kotcrab.vis.ui.widget.VisTextArea
-import com.kotcrab.vis.ui.widget.VisScrollPane
 import com.kotcrab.vis.ui.widget.color.ColorPicker
 import com.kotcrab.vis.ui.widget.color.ColorPickerListener
-import com.github.alfu32.sketch.plugin.PluginEntryInfo
 import com.github.alfu32.sketch.plugin.PluginHost
 import java.util.Locale
 
@@ -42,13 +39,7 @@ class SketchUiOverlay(
     private val lightingSettings: LightingSettings,
     private val lightingChanged: (LightingSettings) -> Unit,
     private val shadowSettings: ShadowSettings,
-    private val shadowChanged: (ShadowSettings) -> Unit,
-    private val pluginInfoProvider: () -> List<PluginEntryInfo>,
-    private val pluginAdd: (String) -> Unit,
-    private val pluginRemove: (String) -> Unit,
-    private val pluginToggle: (String, Boolean) -> Unit,
-    private val pluginDownload: (String?) -> Unit,
-    private val pluginReload: () -> Unit
+    private val shadowChanged: (ShadowSettings) -> Unit
 ) {
     private open class CollapsibleWindow(
         title: String,
@@ -56,7 +47,8 @@ class SketchUiOverlay(
     ) : com.kotcrab.vis.ui.widget.VisWindow(title, true) {
         init {
             isMovable = true
-            isResizable = false
+            isResizable = true
+            isModal = false
             setKeepWithinParent(false)
             addCloseButton()
         }
@@ -110,11 +102,6 @@ class SketchUiOverlay(
     private var lightingPanel: CollapsibleWindow? = null
     private val lightingRefreshers = mutableListOf<() -> Unit>()
     private lateinit var selectionPanel: CollapsibleWindow
-    private val pluginPanel = CollapsibleWindow("Plugins", 260f)
-    private val pluginListTable = VisTable()
-    private val pluginUrlField = VisTextField()
-    private val pluginLogArea = VisTextArea()
-    private var lastPluginSnapshot: List<PluginEntryInfo> = emptyList()
     private var needsPanelLayout = true
     private var pluginManagerPanel: PluginManagerPanel? = null
     private var commandPaletteUI: CommandPaletteUI? = null
@@ -130,7 +117,6 @@ class SketchUiOverlay(
         val toolbar = buildToolbar()
         selectionPanel = buildSelectionPanel()
         groupPanel = buildGroupPanel()
-        val pluginsPanel = buildPluginPanel()
         lightingPanel = buildLightingPanel()
         val mainRow = Table()
         mainRow.add(toolbar).top().left().pad(6f)
@@ -141,7 +127,6 @@ class SketchUiOverlay(
 
         stage.addActor(selectionPanel)
         stage.addActor(groupPanel)
-        stage.addActor(pluginsPanel)
         lightingPanel?.let { stage.addActor(it) }
         positionPanels()
         needsPanelLayout = true
@@ -168,7 +153,6 @@ class SketchUiOverlay(
         selectionFacesLabel.setText("Faces: ${selection.faceCount}")
         selectionGroupsLabel.setText("Groups: ${selection.groupCount}")
         updateGroupPanel()
-        updatePluginPanel()
         toolButtons[status.activeTool]?.isChecked = true
         updatePaintColorButton()
         updateButtonLabels()
@@ -340,9 +324,7 @@ class SketchUiOverlay(
         pluginButton.addListener(hoverListener(pluginButton))
         pluginButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                pluginPanel.isVisible = !pluginPanel.isVisible
-                needsPanelLayout = true
-                pluginPanel.toFront()
+                togglePluginManager()
             }
         })
         toolbar.add(pluginButton).left().padRight(6f).row()
@@ -527,66 +509,10 @@ class SketchUiOverlay(
         return panel
     }
 
-    private fun buildPluginPanel(): CollapsibleWindow {
-        val content = VisTable()
-        content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
-        content.defaults().pad(4f).left().growX()
-
-        val addRow = VisTable()
-        addRow.defaults().left().padRight(4f)
-        addRow.add(pluginUrlField).growX().minWidth(160f)
-        val addButton = VisTextButton("Add")
-        addButton.addListener(object : ClickListener() {
-            override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                val url = pluginUrlField.text
-                pluginUrlField.text = ""
-                pluginAdd(url)
-            }
-        })
-        addRow.add(addButton)
-        content.add(addRow).growX().row()
-
-        val actionRow = VisTable()
-        actionRow.defaults().left().padRight(4f)
-        val downloadButton = VisTextButton("Download")
-        downloadButton.addListener(object : ClickListener() {
-            override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                pluginDownload(null)
-            }
-        })
-        val reloadButton = VisTextButton("Reload")
-        reloadButton.addListener(object : ClickListener() {
-            override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                pluginReload()
-            }
-        })
-        actionRow.add(downloadButton)
-        actionRow.add(reloadButton)
-        content.add(actionRow).left().row()
-
-        pluginListTable.defaults().left().pad(2f)
-        val listScroll = VisScrollPane(pluginListTable).apply {
-            setFadeScrollBars(false)
-        }
-        content.add(listScroll).growX().height(120f).row()
-
-        pluginLogArea.isDisabled = true
-        pluginLogArea.text = ""
-        val logScroll = VisScrollPane(pluginLogArea).apply {
-            setFadeScrollBars(false)
-        }
-        content.add(logScroll).growX().height(80f).row()
-
-        pluginPanel.add(content).growX()
-        pluginPanel.isVisible = false
-        return pluginPanel
-    }
-
     private fun positionPanels() {
         val panels = mutableListOf<com.kotcrab.vis.ui.widget.VisWindow>()
         panels.add(selectionPanel)
         panels.add(groupPanel)
-        panels.add(pluginPanel)
         lightingPanel?.let { panels.add(it) }
         panels.forEach {
             it.invalidateHierarchy()
@@ -741,57 +667,6 @@ class SketchUiOverlay(
         row.add(useCsm)
         row.add(dither)
         return row
-    }
-
-    private fun updatePluginPanel() {
-        val entries = pluginInfoProvider()
-        if (entries == lastPluginSnapshot) {
-            return
-        }
-        lastPluginSnapshot = entries
-        pluginListTable.clearChildren()
-        val logLines = mutableListOf<String>()
-        entries.forEach { entry ->
-            val row = VisTable()
-            row.defaults().left().padRight(4f)
-            val enabled = VisCheckBox("", entry.enabled)
-            enabled.addListener(object : ChangeListener() {
-                override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
-                    pluginToggle(entry.url, enabled.isChecked)
-                }
-            })
-            val label = VisLabel(formatPluginLabel(entry))
-            val download = VisTextButton("Get")
-            download.addListener(object : ClickListener() {
-                override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                    pluginDownload(entry.url)
-                }
-            })
-            val remove = VisTextButton("Remove")
-            remove.addListener(object : ClickListener() {
-                override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                    pluginRemove(entry.url)
-                }
-            })
-            row.add(enabled)
-            row.add(label).expandX().left()
-            row.add(download)
-            row.add(remove)
-            pluginListTable.add(row).growX().row()
-            entry.lastError?.let { message ->
-                val title = entry.name ?: entry.url
-                logLines.add("$title: $message")
-            }
-        }
-        pluginLogArea.text = logLines.joinToString("\n")
-    }
-
-    private fun formatPluginLabel(entry: PluginEntryInfo): String {
-        val title = entry.name ?: entry.url
-        val version = entry.version?.let { " v$it" } ?: ""
-        val installed = if (entry.installed) "" else " (missing)"
-        val error = entry.lastError?.let { " ! $it" } ?: ""
-        return "$title$version$installed$error"
     }
 
     private fun formatValue(value: Float): String {

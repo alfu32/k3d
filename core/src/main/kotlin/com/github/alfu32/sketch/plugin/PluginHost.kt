@@ -39,14 +39,15 @@ class PluginHost(
     fun loadCatalog() {
         catalog = PluginCatalog.load(catalogFile)
         pluginsDir.mkdirs()
-        val known = catalog.plugins.map { entryFile(it).name }.toSet()
+        seedPluginsDirFromScripts()
+        val known = catalog.plugins.map { entryFile(it).absolutePath }.toSet()
         var added = false
         pluginsDir.listFiles { file -> file.isFile && file.extension.equals("groovy", ignoreCase = true) }
             ?.forEach { file ->
-                if (!known.contains(file.name)) {
+                if (!known.contains(file.absolutePath)) {
                     catalog.plugins.add(
                         PluginEntry(
-                            url = "file:${file.absolutePath}",
+                            url = file.toURI().toString(),
                             enabled = true,
                             fileName = file.name
                         )
@@ -57,6 +58,26 @@ class PluginHost(
         if (added) {
             saveCatalog()
         }
+    }
+
+    private fun seedPluginsDirFromScripts() {
+        val scriptsDir = pluginsDir.parentFile?.let { File(it, "scripts") } ?: return
+        if (!scriptsDir.exists()) {
+            return
+        }
+        val plugins = pluginsDir.listFiles { file ->
+            file.isFile && file.extension.equals("groovy", ignoreCase = true)
+        } ?: emptyArray()
+        if (plugins.isNotEmpty()) {
+            return
+        }
+        scriptsDir.listFiles { file -> file.isFile && file.extension.equals("groovy", ignoreCase = true) }
+            ?.forEach { file ->
+                val target = File(pluginsDir, file.name)
+                if (!target.exists()) {
+                    file.copyTo(target)
+                }
+            }
     }
 
     fun saveCatalog() {
@@ -139,12 +160,14 @@ class PluginHost(
 
     fun reloadEnabled() {
         unloadAll()
+        enabledPlugins.clear()
         catalog.plugins.filter { it.enabled }.forEach { entry ->
             loadEntry(entry)
         }
     }
 
     fun reloadEnabledAndInit() {
+        loadCatalog()
         reloadEnabled()
         dispatchLoad()
         dispatchCreate()
@@ -255,6 +278,8 @@ class PluginHost(
     // Getter for command palette
     fun getCommandPalette(): CommandPalette = commandPalette
 
+    fun pluginsDirectory(): File = pluginsDir
+
     private fun applyResult(plugin: Plugin, result: PluginResult?) {
         val safe = result ?: return
         safe.changes.forEach { change ->
@@ -335,6 +360,13 @@ class PluginHost(
     }
 
     private fun entryFile(entry: PluginEntry): File {
+        if (entry.url.startsWith("file:")) {
+            return try {
+                File(java.net.URI(entry.url))
+            } catch (_: Exception) {
+                File(entry.url.removePrefix("file:"))
+            }
+        }
         val fileName = entry.fileName ?: fileNameFromUrl(entry.url).also { entry.fileName = it }
         return File(pluginsDir, fileName)
     }
@@ -369,6 +401,9 @@ class PluginHost(
             plugins.add(plugin)
             pluginStates[entry.url] = PluginState(loader, plugin, null)
             pluginIdToEntry[plugin.id] = entry.url
+            if (entry.enabled) {
+                enabledPlugins.add(plugin.id)
+            }
         } catch (ex: Exception) {
             pluginStates[entry.url] = PluginState(null, null, ex.message ?: "Load failed")
         }
@@ -376,8 +411,11 @@ class PluginHost(
 
     private fun unloadEntry(entry: PluginEntry) {
         val state = pluginStates.remove(entry.url) ?: return
-        state.plugin?.let { plugins.remove(it) }
-        state.plugin?.let { pluginIdToEntry.remove(it.id) }
+        state.plugin?.let { plugin ->
+            plugins.remove(plugin)
+            pluginIdToEntry.remove(plugin.id)
+            enabledPlugins.remove(plugin.id)
+        }
         try {
             state.loader?.close()
         } catch (_: Exception) {
@@ -387,8 +425,11 @@ class PluginHost(
 
     private fun unloadAll() {
         pluginStates.values.forEach { state ->
-            state.plugin?.let { plugins.remove(it) }
-            state.plugin?.let { pluginIdToEntry.remove(it.id) }
+            state.plugin?.let { plugin ->
+                plugins.remove(plugin)
+                pluginIdToEntry.remove(plugin.id)
+                enabledPlugins.remove(plugin.id)
+            }
             try {
                 state.loader?.close()
             } catch (_: Exception) {

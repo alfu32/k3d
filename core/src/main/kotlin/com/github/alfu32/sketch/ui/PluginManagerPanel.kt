@@ -1,120 +1,147 @@
 package com.github.alfu32.sketch.ui
 
-import com.github.alfu32.sketch.plugin.PluginHost
-import com.github.alfu32.sketch.plugin.PluginInfo
-import com.kotcrab.vis.ui.widget.VisLabel
-import com.kotcrab.vis.ui.widget.VisList
-import com.kotcrab.vis.ui.widget.VisTable
-import com.kotcrab.vis.ui.widget.VisTextButton
-import com.kotcrab.vis.ui.widget.VisWindow
 import com.badlogic.gdx.scenes.scene2d.InputEvent
+import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
+import com.github.alfu32.sketch.plugin.PluginEntryInfo
+import com.github.alfu32.sketch.plugin.PluginHost
+import com.kotcrab.vis.ui.widget.VisCheckBox
+import com.kotcrab.vis.ui.widget.VisLabel
+import com.kotcrab.vis.ui.widget.VisScrollPane
+import com.kotcrab.vis.ui.widget.VisTable
+import com.kotcrab.vis.ui.widget.VisTextArea
+import com.kotcrab.vis.ui.widget.VisTextButton
+import com.kotcrab.vis.ui.widget.VisTextField
+import com.kotcrab.vis.ui.widget.VisWindow
 
-/**
- * Panel for managing plugins - shows installed plugins and allows enabling/disabling
- */
 class PluginManagerPanel(private val pluginHost: PluginHost) : VisWindow("Plugin Manager") {
-    
-    private val pluginList = VisList<String>()
-    private val pluginDetails = VisTable()
-    private var selectedPlugin: PluginInfo? = null
-    
+    private val pluginListTable = VisTable()
+    private val pluginLogArea = VisTextArea()
+    private val pluginUrlField = VisTextField()
+    private val pluginPathLabel = VisLabel("")
+    private var lastSnapshot: List<PluginEntryInfo> = emptyList()
+
     init {
+        isResizable = true
+        isModal = false
         setupUI()
         refresh()
     }
-    
-    private fun setupUI() {
-        defaults().pad(10f)
-        
-        // Left side - Plugin list
-        val listContainer = VisTable()
-        listContainer.add(VisLabel("Installed Plugins")).row()
-        listContainer.add(pluginList).growX().height(300f).row()
 
-        // Right side - Plugin details
-        pluginDetails.add(VisLabel("Plugin Details")).colspan(2).row()
-        pluginDetails.add(VisLabel("ID: ")).left()
-        pluginDetails.add(VisLabel("")).growX().row()
-        pluginDetails.add(VisLabel("Name: ")).left()
-        pluginDetails.add(VisLabel("")).growX().row()
-        pluginDetails.add(VisLabel("Version: ")).left()
-        pluginDetails.add(VisLabel("")).growX().row()
-        pluginDetails.add(VisLabel("Author: ")).left()
-        pluginDetails.add(VisLabel("")).growX().row()
-        pluginDetails.add(VisLabel("Description: ")).left().top()
-        val descriptionValue = VisLabel("").apply { setWrap(true) }
-        pluginDetails.add(descriptionValue).growX().row()
-        pluginDetails.add(VisLabel("Status: ")).left()
-        pluginDetails.add(VisLabel("")).growX().row()
-        pluginDetails.add(VisLabel("Type: ")).left()
-        pluginDetails.add(VisLabel("")).growX().row()
-        
-        // Setup plugin list
-        pluginList.addListener(object : ClickListener() {
+    private fun setupUI() {
+        defaults().pad(8f).left()
+
+        val header = VisTable()
+        header.defaults().padRight(6f)
+        header.add(VisLabel("Dir:"))
+        header.add(pluginPathLabel).growX().left()
+        add(header).growX().row()
+
+        val addRow = VisTable()
+        addRow.defaults().padRight(6f)
+        addRow.add(pluginUrlField).growX().minWidth(260f)
+        val addButton = VisTextButton("Add")
+        addButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                selectedPlugin = pluginHost.pluginEntries().find { 
-                    "${it.name} v${it.version}" == pluginList.selected
-                }
-                refreshPluginDetails()
-            }
-        })
-        
-        // Layout
-        add(listContainer).width(250f)
-        add(pluginDetails).grow().padLeft(10f)
-        
-        // Buttons at bottom
-        val buttons = VisTable()
-        val refreshBtn = VisTextButton("Refresh")
-        refreshBtn.addListener(object : ClickListener() {
-            override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                pluginHost.reloadEnabledAndInit()
+                val url = pluginUrlField.text
+                pluginUrlField.text = ""
+                pluginHost.addPlugin(url)
                 refresh()
             }
         })
-        
-        buttons.add(refreshBtn)
-        row()
-        add(buttons).colspan(2).padTop(10f)
-        
+        addRow.add(addButton)
+        add(addRow).growX().row()
+
+        val actionRow = VisTable()
+        actionRow.defaults().padRight(6f)
+        val downloadButton = VisTextButton("Download")
+        downloadButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                pluginHost.download(null)
+                refresh()
+            }
+        })
+        val reloadButton = VisTextButton("Reload")
+        reloadButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                pluginHost.reloadEnabledAndInit()
+                refresh(force = true)
+            }
+        })
+        actionRow.add(downloadButton)
+        actionRow.add(reloadButton)
+        add(actionRow).left().row()
+
+        pluginListTable.defaults().left().pad(4f)
+        val listScroll = VisScrollPane(pluginListTable).apply {
+            setFadeScrollBars(false)
+            setScrollingDisabled(true, false)
+        }
+        add(listScroll).growX().height(260f).row()
+
+        pluginLogArea.isDisabled = true
+        val logScroll = VisScrollPane(pluginLogArea).apply {
+            setFadeScrollBars(false)
+        }
+        add(logScroll).growX().height(120f).row()
+
         pack()
         setPosition(100f, 100f)
     }
-    
-    fun refresh() {
-        pluginList.setItems()
-        val plugins = pluginHost.pluginEntries().sortedBy { it.name }
-        val items = plugins.map { plugin ->
-            val status = if (plugin.isEnabled) "OK " else "OFF "
-            val type = if (plugin.isScript) "[G] " else "[J] "
-            "$status$type${plugin.name} v${plugin.version}"
+
+    fun refresh(force: Boolean = false) {
+        val entries = pluginHost.pluginEntriesLegacy()
+        if (!force && entries == lastSnapshot) {
+            return
         }
-        if (items.isNotEmpty()) {
-            pluginList.setItems(*items.toTypedArray())
+        lastSnapshot = entries
+        pluginPathLabel.setText(pluginHost.pluginsDirectory().absolutePath)
+        pluginListTable.clearChildren()
+        val logLines = mutableListOf<String>()
+
+        entries.forEach { entry ->
+            val row = VisTable()
+            row.defaults().left().padRight(6f)
+            val enabled = VisCheckBox("", entry.enabled)
+            enabled.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                    pluginHost.setEnabled(entry.url, enabled.isChecked)
+                    refresh(force = true)
+                }
+            })
+            val label = VisLabel(formatPluginLabel(entry))
+            val download = VisTextButton("Get")
+            download.addListener(object : ClickListener() {
+                override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                    pluginHost.download(entry.url)
+                    refresh(force = true)
+                }
+            })
+            val remove = VisTextButton("Remove")
+            remove.addListener(object : ClickListener() {
+                override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                    pluginHost.removePlugin(entry.url)
+                    refresh(force = true)
+                }
+            })
+            row.add(enabled)
+            row.add(label).expandX().left()
+            row.add(download)
+            row.add(remove)
+            pluginListTable.add(row).growX().row()
+            entry.lastError?.let { message ->
+                val title = entry.name ?: entry.url
+                logLines.add("$title: $message")
+            }
         }
+        pluginLogArea.text = logLines.joinToString("\n")
     }
-    
-    private fun refreshPluginDetails() {
-        selectedPlugin?.let { plugin ->
-            pluginDetails.clearChildren()
-            
-            pluginDetails.add(VisLabel("Plugin Details")).colspan(2).row()
-            pluginDetails.add(VisLabel("ID: ")).left()
-            pluginDetails.add(VisLabel(plugin.id)).growX().row()
-            pluginDetails.add(VisLabel("Name: ")).left()
-            pluginDetails.add(VisLabel(plugin.name)).growX().row()
-            pluginDetails.add(VisLabel("Version: ")).left()
-            pluginDetails.add(VisLabel(plugin.version)).growX().row()
-            pluginDetails.add(VisLabel("Author: ")).left()
-            pluginDetails.add(VisLabel(plugin.author)).growX().row()
-            pluginDetails.add(VisLabel("Description: ")).left().top()
-            val descriptionValue = VisLabel(plugin.description).apply { setWrap(true) }
-            pluginDetails.add(descriptionValue).growX().row()
-            pluginDetails.add(VisLabel("Status: ")).left()
-            pluginDetails.add(VisLabel(if (plugin.isEnabled) "Enabled" else "Disabled")).growX().row()
-            pluginDetails.add(VisLabel("Type: ")).left()
-            pluginDetails.add(VisLabel(if (plugin.isScript) "Groovy Script" else "Java Plugin")).growX().row()
-        }
+
+    private fun formatPluginLabel(entry: PluginEntryInfo): String {
+        val title = entry.name ?: entry.url
+        val version = entry.version?.let { " v$it" } ?: ""
+        val installed = if (entry.installed) "" else " (missing)"
+        val error = entry.lastError?.let { " ! $it" } ?: ""
+        return "$title$version$installed$error"
     }
 }

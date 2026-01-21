@@ -4,6 +4,7 @@ import com.github.alfu32.sketch.plugin.CommandPalette
 import com.github.alfu32.sketch.plugin.PaletteCommand
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
+import com.badlogic.gdx.InputProcessor
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.InputListener
 import com.badlogic.gdx.scenes.scene2d.Stage
@@ -21,11 +22,34 @@ class CommandPaletteUI(
     private val commandPalette: CommandPalette,
     private val stage: Stage
 ) {
-    private val window = VisWindow("Command Palette")
+    private open class CollapsibleWindow(title: String) : VisWindow(title, true) {
+        init {
+            isMovable = true
+            isResizable = true
+            isModal = false
+            setKeepWithinParent(false)
+            addCloseButton()
+        }
+
+        override fun close() {
+            isVisible = false
+        }
+
+        override fun getPrefWidth(): Float {
+            return if (isVisible) super.getPrefWidth() else 0f
+        }
+
+        override fun getPrefHeight(): Float {
+            return if (!isVisible) 0f else super.getPrefHeight()
+        }
+    }
+
+    private val window = CollapsibleWindow("Command Palette")
     private val searchField = VisTextField()
     private val commandList = VisList<String>()
     private val statusLabel = VisLabel("")
     private var isVisible = false
+    private var previousInputProcessor: InputProcessor? = null
     
     init {
         setupUI()
@@ -34,8 +58,7 @@ class CommandPaletteUI(
     
     private fun setupUI() {
         window.defaults().pad(5f)
-        window.addCloseButton()
-        window.isModal = true
+        window.isModal = false
         window.isResizable = false
         window.setSize(600f, 400f)
         
@@ -97,6 +120,7 @@ class CommandPaletteUI(
         window.isVisible = true
         searchField.text = ""
         stage.keyboardFocus = searchField
+        previousInputProcessor = Gdx.input.inputProcessor
         Gdx.input.inputProcessor = stage
         updateCommandList()
         
@@ -110,6 +134,8 @@ class CommandPaletteUI(
     fun hide() {
         isVisible = false
         window.isVisible = false
+        previousInputProcessor?.let { Gdx.input.inputProcessor = it }
+        previousInputProcessor = null
     }
     
     private fun updateCommandList() {
