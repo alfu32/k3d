@@ -31,6 +31,10 @@ class PluginHost(
     private val pluginIdToEntry = mutableMapOf<String, String>()
     private val catalogFile = File(pluginsDir, "plugins.json")
     private var catalog = PluginCatalog()
+    
+    // New properties for enhanced plugin system
+    private val commandPalette = CommandPalette()
+    private val enabledPlugins = mutableSetOf<String>()
 
     fun loadCatalog() {
         catalog = PluginCatalog.load(catalogFile)
@@ -59,7 +63,23 @@ class PluginHost(
         catalog.save(catalogFile)
     }
 
-    fun pluginEntries(): List<PluginEntryInfo> {
+    // New method to get plugin info for the enhanced system
+    fun pluginEntries(): List<PluginInfo> {
+        return plugins.map { plugin ->
+            PluginInfo(
+                id = plugin.id,
+                name = plugin.name,
+                version = plugin.version,
+                author = plugin.author,
+                description = plugin.description,
+                isEnabled = plugin.id in enabledPlugins,
+                isScript = pluginIdToEntry[plugin.id]?.startsWith("file:") == true
+            )
+        }
+    }
+    
+    // Old method kept for backward compatibility
+    fun pluginEntriesLegacy(): List<PluginEntryInfo> {
         return catalog.plugins.map { entry ->
             val state = pluginStates[entry.url]
             PluginEntryInfo(
@@ -128,6 +148,37 @@ class PluginHost(
         reloadEnabled()
         dispatchLoad()
         dispatchCreate()
+        setupPluginCapabilities()  // Setup new capabilities after loading
+    }
+    
+    // New method to setup plugin capabilities
+    private fun setupPluginCapabilities() {
+        plugins.forEach { plugin ->
+            if (plugin.id in enabledPlugins) {
+                registerPluginCapabilities(plugin)
+            }
+        }
+    }
+    
+    private fun registerPluginCapabilities(plugin: Plugin) {
+        // Register commands
+        plugin.registerCommands().forEach { command ->
+            commandPalette.registerCommand(
+                PaletteCommand(
+                    id = "${plugin.id}.${command.id}",
+                    name = command.name,
+                    description = command.description,
+                    icon = command.icon,
+                    category = command.category,
+                    tags = command.getSearchTags(),
+                    priority = if (command.isVisibleInPalette) 1 else 0,
+                    execute = { command.execute(buildContext()) }
+                )
+            )
+        }
+        
+        // Register other capabilities would go here
+        // (Tools, EntityTypes, etc.)
     }
 
     fun dispatchLoad() {
@@ -152,6 +203,37 @@ class PluginHost(
         plugins.forEach { plugin ->
             applyResult(plugin, safeCall(plugin) { it.onSave(buildContext()) })
         }
+        // Also call new save method
+        plugins.forEach { plugin ->
+            if (plugin.id in enabledPlugins) {
+                safeCall(plugin) { it.onSceneSave(buildContext()) }
+            }
+        }
+    }
+    
+    // New dispatch methods for enhanced plugin system
+    fun dispatchSceneLoad() {
+        plugins.forEach { plugin ->
+            if (plugin.id in enabledPlugins) {
+                safeCall(plugin) { it.onSceneLoad(buildContext()) }
+            }
+        }
+    }
+    
+    fun dispatchSelectionChanged() {
+        plugins.forEach { plugin ->
+            if (plugin.id in enabledPlugins) {
+                safeCall(plugin) { it.onSelectionChanged(buildContext()) }
+            }
+        }
+    }
+    
+    fun dispatchToolChanged(newTool: ToolId) {
+        plugins.forEach { plugin ->
+            if (plugin.id in enabledPlugins) {
+                safeCall(plugin) { it.onToolChanged(buildContext(), newTool) }
+            }
+        }
     }
 
     fun dispatchClose() {
@@ -169,6 +251,9 @@ class PluginHost(
         }
         return lines
     }
+    
+    // Getter for command palette
+    fun getCommandPalette(): CommandPalette = commandPalette
 
     private fun applyResult(plugin: Plugin, result: PluginResult?) {
         val safe = result ?: return

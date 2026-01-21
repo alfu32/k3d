@@ -5,8 +5,15 @@ import com.badlogic.gdx.math.Vector3
 import com.github.alfu32.sketch.model.ModelPersistence
 
 data class PluginResult(
-    val changes: List<PluginChange> = emptyList()
-)
+    val changes: List<PluginChange> = emptyList(),
+    val success: Boolean = true,
+    val message: String? = null
+) {
+    companion object {
+        fun success(): PluginResult = PluginResult()
+        fun failure(message: String): PluginResult = PluginResult(success = false, message = message)
+    }
+}
 
 sealed class PluginChange {
     data class ReplaceModel(val snapshot: ModelPersistence.ModelSnapshot) : PluginChange()

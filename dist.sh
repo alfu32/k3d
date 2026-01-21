@@ -48,7 +48,7 @@ done
 
 mkdir -p dist/plugins
 cp core/build/libs/katechup3d-plugin-api*.jar dist/plugins/ 2>/dev/null || true
-cp core/src/main/groovy/*.groovy dist/plugins/ 2>/dev/null || true
+cp scripts/*.groovy dist/plugins/ 2>/dev/null || true
 
 
 export LAUNCHER_LINUX=dist/katechup3d-editor

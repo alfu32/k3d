@@ -1,41 +1,42 @@
-class HelloPlugin2 implements com.github.alfu32.sketch.plugin.Plugin {
+class HelloPlugin implements com.github.alfu32.sketch.plugin.Plugin {
     String id = "hello"
     String name = "Hello"
-    String version = "0.1"
+    String version = "0.2"
+    String author = "Example"
+    String description = "Minimal plugin updated for the new Plugin interface."
 
     @Override
     PluginResult onLoad(PluginContext context) {
-        println("lifecyle plugin Hello :: onLoad")
-        return null
+        println("lifecycle plugin Hello :: onLoad")
+        return PluginResult.success()
     }
 
     @Override
     PluginResult onCreate(PluginContext context) {
-        println("lifecyle plugin Hello :: onCreate")
-        return null
+        println("lifecycle plugin Hello :: onCreate")
+        return PluginResult.success()
     }
 
     @Override
     PluginResult onUpdate(PluginContext context, Float deltaSeconds) {
-        return null
+        return PluginResult.success()
     }
 
     @Override
     PluginDraw onDraw(PluginContext context) {
-        println("lifecyle plugin Hello :: onDraw")
-        return null
+        return new PluginDraw()
     }
 
     @Override
     PluginResult onSave(PluginContext context) {
-        println("lifecyle plugin Hello :: onSave")
-        return null
+        println("lifecycle plugin Hello :: onSave")
+        return PluginResult.success()
     }
 
     @Override
     PluginResult onClose(PluginContext context) {
-        println("lifecyle plugin Hello :: onClose")
-        return null
+        println("lifecycle plugin Hello :: onClose")
+        return PluginResult.success()
     }
 }
-return new examplePlugins()
+return new HelloPlugin()

@@ -26,6 +26,7 @@ import com.kotcrab.vis.ui.widget.VisScrollPane
 import com.kotcrab.vis.ui.widget.color.ColorPicker
 import com.kotcrab.vis.ui.widget.color.ColorPickerListener
 import com.github.alfu32.sketch.plugin.PluginEntryInfo
+import com.github.alfu32.sketch.plugin.PluginHost
 import java.util.Locale
 
 class SketchUiOverlay(
@@ -115,6 +116,9 @@ class SketchUiOverlay(
     private val pluginLogArea = VisTextArea()
     private var lastPluginSnapshot: List<PluginEntryInfo> = emptyList()
     private var needsPanelLayout = true
+    private var pluginManagerPanel: PluginManagerPanel? = null
+    private var commandPaletteUI: CommandPaletteUI? = null
+    private var pluginHost: PluginHost? = null
 
     init {
         iconDrawables.putAll(loadIconDrawables())
@@ -190,6 +194,27 @@ class SketchUiOverlay(
     fun resize(width: Int, height: Int) {
         stage.viewport.update(width, height, true)
         needsPanelLayout = true
+    }
+
+    // Plugin management methods
+    fun setPluginHost(host: PluginHost) {
+        pluginHost = host
+        pluginManagerPanel = PluginManagerPanel(host)
+        commandPaletteUI = CommandPaletteUI(host.getCommandPalette(), stage)
+        stage.addActor(pluginManagerPanel)
+    }
+
+    fun togglePluginManager() {
+        pluginManagerPanel?.let {
+            it.isVisible = !it.isVisible
+            if (it.isVisible) {
+                it.refresh()
+            }
+        }
+    }
+
+    fun showCommandPalette() {
+        commandPaletteUI?.show()
     }
 
     fun dispose() {

@@ -205,13 +205,26 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::applyLightingSettings,
             shadowSettings,
             ::applyShadowSettings,
-            { pluginHost.pluginEntries() },
+            { pluginHost.pluginEntries().map { 
+                com.github.alfu32.sketch.plugin.PluginEntryInfo(
+                    url = "",
+                    enabled = it.isEnabled,
+                    installed = true,
+                    name = it.name,
+                    version = it.version,
+                    lastError = null
+                )
+            } },
             { url -> pluginHost.addPlugin(url) },
             { url -> pluginHost.removePlugin(url) },
             { url, enabled -> pluginHost.setEnabled(url, enabled) },
             { url -> pluginHost.download(url) },
             { pluginHost.reloadEnabledAndInit() }
         )
+        
+        // Set up plugin host for UI
+        uiOverlay.setPluginHost(pluginHost)
+        
         toolPointer = ToolPointerProcessor(toolController, snapper)
         Gdx.input.inputProcessor = InputMultiplexer(
             uiOverlay.stage,
