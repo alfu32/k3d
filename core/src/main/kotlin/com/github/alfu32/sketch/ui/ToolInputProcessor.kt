@@ -19,6 +19,9 @@ class ToolInputProcessor(
     private val lastSnapProvider: () -> SnapResult?
 ) : InputAdapter() {
     override fun keyDown(keycode: Int): Boolean {
+        if (controller.handleKeyDown(keycode)) {
+            return true
+        }
         when (keycode) {
             Input.Keys.CONTROL_LEFT, Input.Keys.CONTROL_RIGHT -> {
                 if (controller.toggleCopyMode()) {
@@ -84,6 +87,10 @@ class ToolInputProcessor(
             }
         }
         return false
+    }
+
+    override fun keyUp(keycode: Int): Boolean {
+        return controller.handleKeyUp(keycode)
     }
 
     override fun keyTyped(character: Char): Boolean {

@@ -7,7 +7,7 @@ class ToolController(
     private val status: StatusModel,
     tools: List<Tool>
 ) {
-    private val toolMap = tools.associateBy { it.id }
+    private val toolMap = tools.associateBy { it.id }.toMutableMap()
     private var activeTool: Tool = toolMap[ToolId.SELECT]
         ?: error("Select tool is required")
 
@@ -40,6 +40,10 @@ class ToolController(
 
     fun activeTool(): Tool {
         return activeTool
+    }
+
+    fun registerTool(tool: Tool) {
+        toolMap[tool.id] = tool
     }
 
     fun cancelActiveTool() {
@@ -80,6 +84,21 @@ class ToolController(
 
     fun render(renderer: ShapeRenderer) {
         activeTool.render(renderer)
+    }
+
+    fun update(delta: Float) {
+        val pluginTool = (activeTool as? PluginToolAdapter) ?: return
+        pluginTool.update(delta, status)
+    }
+
+    fun handleKeyDown(keycode: Int): Boolean {
+        val pluginTool = (activeTool as? PluginToolAdapter) ?: return false
+        return pluginTool.handleKeyDown(keycode, status)
+    }
+
+    fun handleKeyUp(keycode: Int): Boolean {
+        val pluginTool = (activeTool as? PluginToolAdapter) ?: return false
+        return pluginTool.handleKeyUp(keycode, status)
     }
 
     fun toggleCopyMode(): Boolean {

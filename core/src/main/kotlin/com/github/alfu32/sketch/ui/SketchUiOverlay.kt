@@ -687,6 +687,7 @@ class SketchUiOverlay(
             ToolId.SCALE -> "scale"
             ToolId.PAINT -> "paint"
             ToolId.ERASER -> "eraser"
+            ToolId.PLUGIN -> "plugins"
         }
         iconDrawables[iconName]?.let { return it }
         val color = when (toolId) {
@@ -702,6 +703,7 @@ class SketchUiOverlay(
             ToolId.SCALE -> Color(0.95f, 0.55f, 0.75f, 1f)
             ToolId.PAINT -> Color(0.95f, 0.95f, 0.45f, 1f)
             ToolId.ERASER -> Color(0.65f, 0.65f, 0.65f, 1f)
+            ToolId.PLUGIN -> Color(0.75f, 0.85f, 0.95f, 1f)
         }
 
         val size = 16

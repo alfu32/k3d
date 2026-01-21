@@ -24,6 +24,7 @@ class PluginHost(
     private val getActiveTool: () -> ToolId,
     private val getCopyMode: () -> Boolean,
     private val getCursorSnap: () -> com.github.alfu32.sketch.input.SnapResult?,
+    private val setActiveTool: (ToolId) -> Unit,
     private val pluginsDir: File
 ) : PluginRegistry {
     override val plugins: MutableSet<Plugin> = mutableSetOf()
@@ -35,6 +36,8 @@ class PluginHost(
     // New properties for enhanced plugin system
     private val commandPalette = CommandPalette()
     private val enabledPlugins = mutableSetOf<String>()
+    private val pluginTools = mutableMapOf<String, com.github.alfu32.sketch.plugin.capabilities.PluginTool>()
+    private var activePluginToolId: String? = null
 
     fun loadCatalog() {
         catalog = PluginCatalog.load(catalogFile)
@@ -161,6 +164,8 @@ class PluginHost(
     fun reloadEnabled() {
         unloadAll()
         enabledPlugins.clear()
+        pluginTools.clear()
+        activePluginToolId = null
         catalog.plugins.filter { it.enabled }.forEach { entry ->
             loadEntry(entry)
         }
@@ -196,6 +201,30 @@ class PluginHost(
                     tags = command.getSearchTags(),
                     priority = if (command.isVisibleInPalette) 1 else 0,
                     execute = { command.execute(buildContext()) }
+                )
+            )
+        }
+
+        // Register tools
+        plugin.registerTools().forEach { tool ->
+            val toolKey = "${plugin.id}.${tool.id}"
+            pluginTools[toolKey] = tool
+            if (activePluginToolId == null) {
+                activePluginToolId = toolKey
+            }
+            commandPalette.registerCommand(
+                PaletteCommand(
+                    id = "tool.$toolKey",
+                    name = "Tool> ${tool.name}",
+                    description = tool.description,
+                    icon = tool.icon,
+                    category = "Tools",
+                    tags = listOf(tool.name.lowercase(), tool.category.name.lowercase()),
+                    priority = 1,
+                    execute = {
+                        activatePluginTool(toolKey)
+                        PluginResult.success()
+                    }
                 )
             )
         }
@@ -278,10 +307,28 @@ class PluginHost(
     // Getter for command palette
     fun getCommandPalette(): CommandPalette = commandPalette
 
+    fun activePluginTool(): com.github.alfu32.sketch.plugin.capabilities.PluginTool? {
+        return activePluginToolId?.let { pluginTools[it] }
+    }
+
+    fun activatePluginTool(toolId: String) {
+        if (pluginTools.containsKey(toolId)) {
+            activePluginToolId = toolId
+            setActiveTool(ToolId.PLUGIN)
+        }
+    }
+
+    fun pluginContext(): PluginContext = buildContext()
+
     fun pluginsDirectory(): File = pluginsDir
 
     private fun applyResult(plugin: Plugin, result: PluginResult?) {
         val safe = result ?: return
+        applyResult(safe)
+    }
+
+    fun applyResult(result: PluginResult) {
+        val safe = result
         safe.changes.forEach { change ->
             when (change) {
                 is PluginChange.ReplaceModel -> {
@@ -310,7 +357,8 @@ class PluginHost(
             cursor = cursor,
             screenSize = Vector2(Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat()),
             activeTool = getActiveTool(),
-            copyMode = getCopyMode()
+            copyMode = getCopyMode(),
+            applyResult = { result -> applyResult(result) }
         )
     }
 
@@ -415,6 +463,8 @@ class PluginHost(
             plugins.remove(plugin)
             pluginIdToEntry.remove(plugin.id)
             enabledPlugins.remove(plugin.id)
+            val prefix = "${plugin.id}."
+            pluginTools.keys.filter { it.startsWith(prefix) }.forEach { pluginTools.remove(it) }
         }
         try {
             state.loader?.close()
@@ -436,6 +486,8 @@ class PluginHost(
                 // ignore
             }
         }
+        pluginTools.clear()
+        activePluginToolId = null
         pluginStates.clear()
     }
 

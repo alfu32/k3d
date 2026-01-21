@@ -72,12 +72,13 @@ class PluginManagerPanel(private val pluginHost: PluginHost) : VisWindow("Plugin
         actionRow.add(reloadButton)
         add(actionRow).left().row()
 
-        pluginListTable.defaults().left().pad(4f)
+        pluginListTable.defaults().left().pad(4f).growX().fillX()
+        pluginListTable.top().left()
         val listScroll = VisScrollPane(pluginListTable).apply {
             setFadeScrollBars(false)
             setScrollingDisabled(true, false)
         }
-        add(listScroll).growX().height(260f).row()
+        add(listScroll).grow().minHeight(180f).row()
 
         pluginLogArea.isDisabled = true
         val logScroll = VisScrollPane(pluginLogArea).apply {
@@ -134,6 +135,7 @@ class PluginManagerPanel(private val pluginHost: PluginHost) : VisWindow("Plugin
                 logLines.add("$title: $message")
             }
         }
+        pluginListTable.add().expandY().row()
         pluginLogArea.text = logLines.joinToString("\n")
     }
 

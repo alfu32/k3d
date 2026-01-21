@@ -28,6 +28,8 @@ import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.utils.Array
 import com.badlogic.gdx.utils.Pool
 import com.github.alfu32.sketch.input.GuideManager
+import com.github.alfu32.sketch.input.CameraEventRouter
+import com.github.alfu32.sketch.input.CameraScrollForwarder
 import com.github.alfu32.sketch.input.SnapResult
 import com.github.alfu32.sketch.input.Snapper
 import com.github.alfu32.sketch.input.ToolPointerProcessor
@@ -55,6 +57,7 @@ import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.ToolController
 import com.github.alfu32.sketch.ui.ToolId
 import com.github.alfu32.sketch.ui.ToolInputProcessor
+import com.github.alfu32.sketch.ui.PluginToolAdapter
 import com.kotcrab.vis.ui.VisUI
 
 /** [com.badlogic.gdx.ApplicationListener] implementation shared by all platforms. */
@@ -189,8 +192,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             { toolController.activeToolId() },
             { statusModel.copyMode },
             { lastSnap },
+            { toolId -> toolController.setTool(toolId) },
             java.io.File(installDir, "plugins")
         )
+        toolController.registerTool(PluginToolAdapter(pluginHost))
         uiOverlay = SketchUiOverlay(
             toolController,
             statusModel,
@@ -211,11 +216,14 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         uiOverlay.setPluginHost(pluginHost)
         
         toolPointer = ToolPointerProcessor(toolController, snapper)
+        val cameraScrollForwarder = CameraScrollForwarder(cameraController)
+        val cameraEventRouter = CameraEventRouter(cameraController)
         Gdx.input.inputProcessor = InputMultiplexer(
+            cameraScrollForwarder,
             uiOverlay.stage,
             toolPointer,
             toolInput,
-            cameraController
+            cameraEventRouter
         )
 
         modelFile = resolveModelFile(startupArgs)
@@ -237,6 +245,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         cameraController.update()
         updateCursorStatus()
         pluginHost.dispatchUpdate(Gdx.graphics.deltaTime)
+        toolController.update(Gdx.graphics.deltaTime)
 
         updateFaceMesh()
         updateSelectedFaceMesh()

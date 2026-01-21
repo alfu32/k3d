@@ -12,5 +12,6 @@ enum class ToolId(val displayName: String) {
     ROTATE("Rotate"),
     SCALE("Scale"),
     PAINT("Paint"),
-    ERASER("Eraser")
+    ERASER("Eraser"),
+    PLUGIN("Plugin")
 }

@@ -4,7 +4,6 @@ import com.github.alfu32.sketch.plugin.CommandPalette
 import com.github.alfu32.sketch.plugin.PaletteCommand
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
-import com.badlogic.gdx.InputProcessor
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.InputListener
 import com.badlogic.gdx.scenes.scene2d.Stage
@@ -12,6 +11,7 @@ import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.kotcrab.vis.ui.widget.Separator
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisList
+import com.kotcrab.vis.ui.widget.VisScrollPane
 import com.kotcrab.vis.ui.widget.VisTextField
 import com.kotcrab.vis.ui.widget.VisWindow
 
@@ -49,7 +49,6 @@ class CommandPaletteUI(
     private val commandList = VisList<String>()
     private val statusLabel = VisLabel("")
     private var isVisible = false
-    private var previousInputProcessor: InputProcessor? = null
     
     init {
         setupUI()
@@ -69,12 +68,22 @@ class CommandPaletteUI(
                 updateCommandList()
                 return true
             }
+
+            override fun keyDown(event: InputEvent?, keycode: Int): Boolean {
+                if (keycode == Input.Keys.ENTER) {
+                    executeSelectedCommand()
+                    return true
+                }
+                return false
+            }
         })
 
         // Command list
         commandList.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                executeSelectedCommand()
+                if (tapCount >= 2) {
+                    executeSelectedCommand()
+                }
             }
         })
         
@@ -84,7 +93,11 @@ class CommandPaletteUI(
         // Layout
         window.add(searchField).growX().row()
         window.add(Separator()).growX().padTop(5f).padBottom(5f).row()
-        window.add(commandList).grow().row()
+        val listScroll = VisScrollPane(commandList).apply {
+            setFadeScrollBars(false)
+            setScrollingDisabled(true, false)
+        }
+        window.add(listScroll).grow().row()
         window.add(statusLabel).growX().padTop(5f)
         
         // Hide initially
@@ -120,8 +133,6 @@ class CommandPaletteUI(
         window.isVisible = true
         searchField.text = ""
         stage.keyboardFocus = searchField
-        previousInputProcessor = Gdx.input.inputProcessor
-        Gdx.input.inputProcessor = stage
         updateCommandList()
         
         // Position in center
@@ -134,8 +145,8 @@ class CommandPaletteUI(
     fun hide() {
         isVisible = false
         window.isVisible = false
-        previousInputProcessor?.let { Gdx.input.inputProcessor = it }
-        previousInputProcessor = null
+        stage.scrollFocus = null
+        stage.keyboardFocus = null
     }
     
     private fun updateCommandList() {
