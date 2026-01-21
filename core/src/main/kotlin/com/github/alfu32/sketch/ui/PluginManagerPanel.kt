@@ -41,7 +41,7 @@ class PluginManagerPanel(private val pluginHost: PluginHost) : VisWindow("Plugin
 
         val addRow = VisTable()
         addRow.defaults().padRight(6f)
-        addRow.add(pluginUrlField).growX().minWidth(260f)
+        addRow.add(pluginUrlField).growX().minWidth(320f)
         val addButton = VisTextButton("Add")
         addButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {

@@ -4,16 +4,20 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.github.alfu32.sketch.plugin.PluginContext
-import com.github.alfu32.sketch.plugin.PluginResult
 import com.github.alfu32.sketch.ui.ToolId
+import com.badlogic.gdx.scenes.scene2d.utils.Drawable
 
 interface PluginTool {
     val id: String
     val name: String
     val description: String
     val icon: String
+    val iconDrawable: Drawable?
+        get() = null
     val cursor: String
     val category: ToolCategory
+    val visibleInPalette: Boolean
+        get() = true
 
     fun onActivate(context: PluginContext)
     fun onDeactivate(context: PluginContext)

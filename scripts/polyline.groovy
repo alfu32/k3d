@@ -9,6 +9,7 @@ import com.github.alfu32.sketch.plugin.PluginContext
 import com.github.alfu32.sketch.plugin.PluginResult
 import com.github.alfu32.sketch.plugin.capabilities.PluginTool
 import com.github.alfu32.sketch.plugin.capabilities.ToolCategory
+import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
 
 class PolylinePlugin implements Plugin {
     String id = "polyline"
@@ -30,6 +31,7 @@ class PolylineTool implements PluginTool {
     String icon = "tool"
     String cursor = "crosshair"
     ToolCategory category = ToolCategory.DRAWING
+    TextureRegionDrawable iconDrawable = PluginContext.iconFromBase64("data:image/png,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAjhJREFUWIXtlF9IU1Ecxz/3LrfFbLXN/kAtc0K0ZVbiSpAIVyK0BUEIkUawlyKIiJ6iHoIeegmyhx6CiCgiIoggLXoZiNhalBBE+KdEa0uiplJha7ndHrbBXU2c527zZV843HN/nO/5fs7hx4GyyspPcnqUVNVAFzDy8gBK/36SwBBwGVhb7PCjwAygAMqTNpRHral5evwEOgoRJOWodQK3AclW4x6rbe4cXOnYOaWQ5Ov7kPXD8zvOybGB9WmQDuBeIQFWA8OAubb5yGtn68mhXKZ3z65uGg3ebQC+AxuBL6IA/zbWMcBsWbclPFc4gKvt1KDFXh8GzMAJ0fBcAD6AavfBkfmMG9ztw2qPqJaof3p9bE8ocMmxI6qu18VeWQDeGhunMrUqR+NkwAs6ifrd3eIAWTeQUFJAhmVV8fmMhkpbXO0RVZbZ05P6+tzZi9Qnz7Vei0r+uhUM4PePb/qAFwLeRQBIJmel4K3jLQB6mZgWAKEGkkJdTk/lR5unh1FglxYAoRs4bXzserAH2h1cAz5rARC6gYsD0LACAhPcV9fjfrYC6G/ypqgAwajhT++nX3qgQsSvGcBktU/HZ6ZNwF7gRqa+kJNnJNQDa1wt4+npWWC5yB6aAGqaDo2brPZowIsjcpj+kgPIsi68ed+Zc6uWyhM2Izmf6Xy1gB5QIpIkhxRdxYvu89siAHVwXUt4HgD/hxZaWQCZd/2KJD2cVRKhpxeawsUInVMxP30xP30lDS1rsfUXfEKden9NU0sAAAAASUVORK5CYII=")
 
     private final List<Vector3> points = []
     private String arcMode = "line"

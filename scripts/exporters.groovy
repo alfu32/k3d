@@ -38,8 +38,8 @@ class ExportersPlugin implements Plugin {
     @Override
     List<PluginTool> registerTools() {
         return [
-            new ExporterTool(this, "export.obj.tool", "Export OBJ", "Export model as OBJ", "obj"),
-            new ExporterTool(this, "export.stl.tool", "Export STL", "Export model as STL (ASCII)", "stl")
+            new ExporterTool(this, "export.obj.tool", "Export OBJ", "Export model as OBJ", "obj","data:image/png,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAidJREFUWIXtlzFoU1EUhr9zYxJDW9oMXUpLo4jg4mBGxaJDRSclFARBkogRJ+dARcRKJ+3epPHhKEpddBAsLg4qUdBVUNRBKxhDhzTR3OsQX/sSnyR5aWKE/st7nHvvOf/5Ofeee2Eb/xhSSZAwwkwLc61gjjtbTUBttcN2scPx75phGwp5Ql8p0BUowTTatEE2xrtNoBm6rkBdti5q/F8KlJM8bLQJfCwJ6fASpwW+VOEeQCXJeQOnnHMffap9p8c3/GQ6VsDARNBwfWyQvUa4K8IzYH+r6z3VQDDHCQCTYvhHlXkMkewhxs48gUKZqAgvdlosa00cWLXX2TWwnmDZVqcjBWSRot9HWoT3oyGG5qIQDuIDAhhOKuGdgjQQ+JuPpgqknpKLReD2W46f3VOfCYAvA8MBuBaFyUG4egAu56FYIVhjyayClDJc0C7++38XLB4kaYSZ6XEsIA6gTa0GYLMO3nzj2PNVdl95CcUKAOuAxjCn4YaGilu2HR1EdnBjiHwtsTabh0KZKlBFuK81l3AUoRs8E3AGBxgNMWQdhgE/a0cfMIXhdSt+PBEoxBkp/2ReYNK2hXyU9oV5NTHAZ2gtuGcCYYvvwMVGu9tJ2Qz9vws6het9AEbsFtkVAo5GlAndqh+L7QKBI4AWxYee3gfKSWLAOUArYcGfJd+zGvgj+BKPoc13Ab9PwmYQNrtdA7RS3PRnWbENvdwFtuwrzaduo4f4BfDHr6TngeXaAAAAAElFTkSuQmCC"),
+            new ExporterTool(this, "export.stl.tool", "Export STL", "Export model as STL (ASCII)", "stl","data:image/png,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAXVJREFUWIXtlrFKA0EQhr+ZSIIGQQu1ESsfQAXBJ1BIYWWbJoW+gSBY2qSwtUxvLynsLQR7KxFBBG0iWmgSs2ORBO/CJRe9u+REfzi4m5mdnfn3372Ff4wZAlAvUQ0LzFUoJFGAJpH0O5jwfiTV5SCki4EkoIL12py1tQd/gQFftwFspIuBsPMgV6HQL+bmhaVshsbyKWvdmGF2VVQGMp2HtxaT1zVWRbh8bjAdMa8f9RLVoM69dlXKKpgKH2dbtC62eQDmvfEdv08HSWggY4bW6iyocKtwAGT7BYfuAhXs/P7r3evz2Xv0bYYCUwiHCrtq7Lmg/GEFJI1QBpwhm4vtdXbmV7XXrkoZY7/rE8EB7xhHDo4dNIK6TeIgaokgszkenbECPA0Kjr0Ag6v1OZozWV7DJoc4NeC4E2PHjI3O5EMhNgYcnPxkXPp3QVQE/QF9fuh/1I4CI70PBCFdGoh7GQbl694Vxs5AJFiRvBXJj7uO341PF5VyrbKPtSgAAAAASUVORK5CYII=")
         ]
     }
 
@@ -98,16 +98,20 @@ class ExportersPlugin implements Plugin {
         String name
         String description
         String icon = "export"
+        com.badlogic.gdx.scenes.scene2d.utils.Drawable iconDrawable = null
         String cursor = "default"
         ToolCategory category = ToolCategory.UTILITY
+        boolean visibleInPalette = false
         private final String ext
 
-        ExporterTool(ExportersPlugin plugin, String id, String name, String description, String ext) {
+        ExporterTool(ExportersPlugin plugin, String id, String name, String description, String ext, String iconBase64) {
             this.plugin = plugin
             this.id = id
             this.name = name
             this.description = description
             this.ext = ext
+            String payload = iconBase64?.contains(",") ? iconBase64 : "data:image/png;base64,${iconBase64}"
+            this.iconDrawable = PluginContext.iconFromBase64(payload)
         }
 
         @Override

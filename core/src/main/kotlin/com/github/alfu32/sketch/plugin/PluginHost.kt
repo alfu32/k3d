@@ -25,7 +25,8 @@ class PluginHost(
     private val getCopyMode: () -> Boolean,
     private val getCursorSnap: () -> com.github.alfu32.sketch.input.SnapResult?,
     private val setActiveTool: (ToolId) -> Unit,
-    private val pluginsDir: File
+    private val pluginsDir: File,
+    private val getCurrentFile: () -> File? = { null }
 ) : PluginRegistry {
     override val plugins: MutableSet<Plugin> = mutableSetOf()
     private val pluginStates = mutableMapOf<String, PluginState>()
@@ -38,6 +39,7 @@ class PluginHost(
     private val enabledPlugins = mutableSetOf<String>()
     private val pluginTools = mutableMapOf<String, com.github.alfu32.sketch.plugin.capabilities.PluginTool>()
     private var activePluginToolId: String? = null
+    private val helperScripts = setOf("encode_base64.groovy")
 
     fun loadCatalog() {
         catalog = PluginCatalog.load(catalogFile)
@@ -45,7 +47,11 @@ class PluginHost(
         seedPluginsDirFromScripts()
         val known = catalog.plugins.map { entryFile(it).absolutePath }.toSet()
         var added = false
-        pluginsDir.listFiles { file -> file.isFile && file.extension.equals("groovy", ignoreCase = true) }
+        pluginsDir.listFiles { file ->
+            file.isFile &&
+                file.extension.equals("groovy", ignoreCase = true) &&
+                !isHelperScript(file)
+        }
             ?.forEach { file ->
                 if (!known.contains(file.absolutePath)) {
                     catalog.plugins.add(
@@ -74,7 +80,11 @@ class PluginHost(
         if (plugins.isNotEmpty()) {
             return
         }
-        scriptsDir.listFiles { file -> file.isFile && file.extension.equals("groovy", ignoreCase = true) }
+        scriptsDir.listFiles { file ->
+            file.isFile &&
+                file.extension.equals("groovy", ignoreCase = true) &&
+                !isHelperScript(file)
+        }
             ?.forEach { file ->
                 val target = File(pluginsDir, file.name)
                 if (!target.exists()) {
@@ -212,21 +222,23 @@ class PluginHost(
             if (activePluginToolId == null) {
                 activePluginToolId = toolKey
             }
-            commandPalette.registerCommand(
-                PaletteCommand(
-                    id = "tool.$toolKey",
-                    name = "Tool> ${tool.name}",
-                    description = tool.description,
-                    icon = tool.icon,
-                    category = "Tools",
-                    tags = listOf(tool.name.lowercase(), tool.category.name.lowercase()),
-                    priority = 1,
-                    execute = {
-                        activatePluginTool(toolKey)
-                        PluginResult.success()
-                    }
+            if (tool.visibleInPalette) {
+                commandPalette.registerCommand(
+                    PaletteCommand(
+                        id = "tool.$toolKey",
+                        name = "Tool> ${tool.name}",
+                        description = tool.description,
+                        icon = tool.icon,
+                        category = "Tools",
+                        tags = listOf(tool.name.lowercase(), tool.category.name.lowercase()),
+                        priority = 1,
+                        execute = {
+                            activatePluginTool(toolKey)
+                            PluginResult.success()
+                        }
+                    )
                 )
-            )
+            }
         }
         
         // Register other capabilities would go here
@@ -323,7 +335,8 @@ class PluginHost(
                 pluginName = pluginName,
                 name = tool.name,
                 description = tool.description,
-                icon = tool.icon
+                icon = tool.icon,
+                iconDrawable = tool.iconDrawable
             )
         }.sortedBy { it.name }
     }
@@ -375,6 +388,10 @@ class PluginHost(
             screenSize = Vector2(Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat()),
             activeTool = getActiveTool(),
             copyMode = getCopyMode(),
+            installDir = pluginsDir.parentFile ?: pluginsDir,
+            pluginsDir = pluginsDir,
+            currentDir = File(System.getProperty("user.dir")),
+            currentFile = getCurrentFile(),
             applyResult = { result -> applyResult(result) }
         )
     }
@@ -445,6 +462,9 @@ class PluginHost(
 
     private fun loadEntry(entry: PluginEntry) {
         val script = entryFile(entry)
+        if (isHelperScript(script)) {
+            return
+        }
         if (!script.exists()) {
             pluginStates[entry.url] = PluginState(null, null, "Missing script ${script.name}")
             println("Plugin load failed: ${entry.url} (missing script ${script.name})")
@@ -552,5 +572,9 @@ class PluginHost(
             file.isFile && file.name.startsWith("katechup3d-plugin-api") && file.extension.equals("jar", true)
         }?.firstOrNull() ?: return
         loader.addURL(apiJar.toURI().toURL())
+    }
+
+    private fun isHelperScript(file: File): Boolean {
+        return file.name in helperScripts
     }
 }

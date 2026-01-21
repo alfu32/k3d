@@ -193,7 +193,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             { statusModel.copyMode },
             { lastSnap },
             { toolId -> toolController.setTool(toolId) },
-            java.io.File(installDir, "plugins")
+            java.io.File(installDir, "plugins"),
+            { modelFile }
         )
         toolController.registerTool(PluginToolAdapter(pluginHost))
         uiOverlay = SketchUiOverlay(

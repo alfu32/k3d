@@ -734,7 +734,7 @@ class SketchUiOverlay(
             }
             tools.forEach { entry ->
                 val fallback = createActionIconDrawable(Color(0.65f, 0.75f, 0.95f, 1f))
-                val icon = iconFor(entry.icon, fallback)
+                val icon = entry.iconDrawable ?: iconFor(entry.icon, fallback)
                 val button = VisImageTextButton(entry.name, icon)
                 applyWhiteButtonStyle(button)
                 applyIconStyle(button, icon)
@@ -917,7 +917,7 @@ class SketchUiOverlay(
         return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a
     }
 
-    private fun applyIconStyle(button: VisImageTextButton, icon: TextureRegionDrawable) {
+    private fun applyIconStyle(button: VisImageTextButton, icon: com.badlogic.gdx.scenes.scene2d.utils.Drawable) {
         val style = button.style
         style.imageUp = icon
         style.imageDown = icon
