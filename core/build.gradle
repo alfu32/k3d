@@ -31,13 +31,13 @@ tasks.register('pluginApiJar', Jar) {
 tasks.register('copyPluginApiJar', Copy) {
   dependsOn 'pluginApiJar'
   from tasks.named('pluginApiJar').flatMap { it.archiveFile }
-  into "${rootProject.rootDir}/plugins"
+  into "${rootProject.rootDir}/dist/plugins"
 }
 
 tasks.register('copySamplePlugins', Copy) {
-  from "${project.projectDir}/src/main/groovy"
+  from "${rootProject.rootDir}/scripts"
   include '**/*.groovy'
-  into "${rootProject.rootDir}/plugins"
+  into "${rootProject.rootDir}/dist/plugins"
 }
 
 tasks.register('preparePlugins') {

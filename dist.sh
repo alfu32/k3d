@@ -31,8 +31,8 @@ if [[ "$2" == "" ]];then
 else
   versions="$2"
 fi
+rm -rf ./dist
 mkdir -p dist
-rm -rf ./dist/*.jar
 # Iterate over the list of versions
 for jdk_release in $versions
 do
