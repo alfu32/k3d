@@ -1,0 +1,126 @@
+{
+"rootGroup": {
+	"id": "root",
+	"name": "Root",
+	"origin": {},
+	"axisU": {
+		"x": 1
+	},
+	"axisV": {
+		"y": 1
+	},
+	"axisW": {
+		"z": 1
+	},
+	"definitionOrigin": {},
+	"definitionAxisU": {
+		"x": 1
+	},
+	"definitionAxisV": {
+		"y": 1
+	},
+	"definitionAxisW": {
+		"z": 1
+	},
+	"instanceOrigin": {},
+	"instanceAxisU": {
+		"x": 1
+	},
+	"instanceAxisV": {
+		"y": 1
+	},
+	"instanceAxisW": {
+		"z": 1
+	},
+	"segments": [
+		{
+			"start": {
+				"x": -3,
+				"z": 4
+			},
+			"end": {
+				"x": 2,
+				"z": -1
+			}
+		},
+		{
+			"start": {
+				"x": 2,
+				"z": -1
+			},
+			"end": {
+				"x": 3,
+				"z": 4
+			}
+		},
+		{
+			"start": {
+				"x": 3,
+				"z": 4
+			},
+			"end": {
+				"x": -3,
+				"z": 4
+			}
+		}
+	],
+	"faces": [
+		{
+			"a": {
+				"x": 3,
+				"z": 4
+			},
+			"b": {
+				"x": -3,
+				"z": 4
+			},
+			"c": {
+				"x": 2,
+				"z": -1
+			},
+			"color": {
+				"r": 0.8,
+				"g": 0.8,
+				"b": 0.8
+			}
+		}
+	]
+},
+"cameraState": {
+	"position": {
+		"x": 4.5682116,
+		"y": 8.923816,
+		"z": 2.7380674
+	},
+	"direction": {
+		"x": -0.4395766,
+		"y": -0.85869485,
+		"z": -0.26347056
+	},
+	"up": {
+		"x": -0.73652846,
+		"y": 0.5124884,
+		"z": -0.44145557
+	},
+	"near": 0.1,
+	"far": 500,
+	"fieldOfView": 67
+},
+"lightingState": {
+	"shadowLightValue": 0.59,
+	"shadowLightAlpha": 0.5,
+	"directionalLightValue": 0.73,
+	"directionalLightAlpha": 1,
+	"ambientLightValue": 0.59,
+	"ambientLightAlpha": 1,
+	"specularLightValue": 0.2,
+	"specularLightAlpha": 0.95
+},
+"shadowState": {
+	"shadowBias": 365,
+	"shadowNormalBias": 5620,
+	"pcfMode": 1,
+	"dither": false,
+	"useCsm": true
+}
+}

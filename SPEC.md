@@ -42,7 +42,15 @@ Primary target: desktop (LWJGL3) first.
   - Zoom-to-fit selection.
   - Optional: “Walk” mode (later).
 
-### 3.2 Drawing and creation
+### 3.2 Grid System (Implemented)
+- **Visual grid** with configurable spacing (1.0 unit default)
+- **Grid lines** rendered in 3D space for reference
+- **Grid-based snapping** for precise modeling
+- **Grid guides** (G key) for temporary reference planes
+- **Axis guides** (T key) for temporary reference axes
+- **Guide snapping** respects guide orientation and alignment
+
+### 3.3 Drawing and creation
 - **Line tool**:
   - Click-drag or click-click to create edges.
   - Polyline mode (continuous).
@@ -52,8 +60,25 @@ Primary target: desktop (LWJGL3) first.
 - **Extrude (Push/Pull)**:
   - Select face, extrude linearly along face normal by a distance.
   - Creates side faces and a top face, producing a manifold solid when possible.
+- **Surface-aligned Rectangle Tool** (Implemented):
+  - Draws rectangles aligned to picked face planes
+  - Uses face normal and plane basis for orientation
+  - Maintains surface alignment during creation
+- **Quad Tool** (Implemented):
+  - Creates quadrilateral faces from four points
+  - Supports planar quad creation
+- **Circle Tool** (Implemented):
+  - Creates 24-gon mesh circles
+  - Supports circular face creation
+- **Scale Tool** (Implemented):
+  - Scales selection along reference axis
+  - Preserves perpendicular components (no skew)
+- **Paint Tool** (Implemented):
+  - Applies color to selected faces
+  - Color picker with visual feedback
+  - Current color display in UI
 
-### 3.3 Cutting / splitting
+### 3.4 Cutting / splitting
 - Drawing a line that crosses:
   - a **face**: splits the face into new faces along the cut.
   - an **edge**: splits the edge at intersection into two edges.
@@ -71,6 +96,13 @@ Primary target: desktop (LWJGL3) first.
 - Transform operations on selection:
   - Move, Rotate, Scale.
   - Delete.
+- **Triple-click selection** (Implemented):
+  - Selects connected edges and faces in current context
+  - Expands selection to related geometry
+- **Selection highlighting** (Implemented):
+  - Visual feedback with blue overlays
+  - Wider edge rendering for selected elements
+  - Face highlight overlays
 
 ### 3.5 Snapping (inference)
 - Cursor snaps to:
@@ -87,6 +119,19 @@ Primary target: desktop (LWJGL3) first.
 - Shadows:
   - Shadow mapping with a single directional light is acceptable.
   - Adjustable shadow quality (resolution, cascades optional later).
+- **Custom Shader Pipeline** (Implemented):
+  - GLSL-based custom shaders for model rendering
+  - Configurable shadow shader with bias, normal bias, PCF controls
+  - Dither toggle and shadow enable/disable
+- **Lighting System** (Implemented):
+  - Directional, ambient, and specular lighting controls
+  - Real-time lighting adjustment via UI sliders
+  - Lighting presets and persistence
+- **Visual Feedback** (Implemented):
+  - Hover highlighting for interactive elements
+  - Selection overlays with configurable colors
+  - Transform previews for move/rotate operations
+  - Guide visualization with color-coded axes
 
 ---
 
@@ -288,6 +333,35 @@ Recommended structure:
 - Bottom measurement box / status bar
 - Outliner panel (groups/components hierarchy)
 
+### 9.2 Implemented UI Features
+- **Vertical Toolbar** (Implemented):
+  - Icon-based tool selection with hover labels
+  - Active tool highlighting
+  - Tool-specific cursor feedback
+- **Status Bar** (Implemented):
+  - Cursor coordinates (screen and world)
+  - Active tool display
+  - Snap type indication
+  - Status messages and feedback
+- **Selection Info Panel** (Implemented):
+  - Edge, face, and group selection counts
+  - Real-time selection statistics
+  - Visual selection feedback
+- **Lighting Control Panel** (Implemented):
+  - Directional, ambient, specular lighting sliders
+  - Real-time lighting adjustment
+  - Shadow quality controls (bias, normal bias, PCF)
+  - Shadow enable/disable toggle
+- **Group Properties Panel** (Implemented):
+  - Group name editing
+  - Glue to surface toggle
+  - Group edit mode indication
+  - Group hierarchy navigation
+- **Color Picker** (Implemented):
+  - Visual color selection
+  - Current color display
+  - Paint tool integration
+
 ### 9.2 Command system
 - Menu:
   - New/Open/Save/Save As
@@ -319,6 +393,33 @@ Recommended structure:
   - BVH or uniform grid for picking/intersections
 - Mesh rebuild:
   - incremental updates when possible; otherwise rebuild per container.
+
+## 11.1 Implemented Persistence Features
+- **JSON Serialization** (Implemented):
+  - Complete model serialization to JSON format
+  - Camera position and settings persistence
+  - Lighting and shadow settings persistence
+  - Group hierarchy and properties persistence
+- **Autosave System** (Implemented):
+  - Automatic save on every model change
+  - Backup file creation (.bak extension)
+  - Safe file handling with error recovery
+- **CLI Integration** (Implemented):
+  - Command-line file specification (--file parameter)
+  - Model file creation and loading
+  - Version and help commands
+
+## 11.2 Implemented Plugin System
+- **Plugin Architecture** (Implemented):
+  - Runtime plugin loading and management
+  - Plugin lifecycle hooks (load, create, update, draw, save, close)
+  - Plugin registry and catalog system
+  - Plugin enable/disable controls
+- **Plugin Integration** (Implemented):
+  - Plugin drawing integration with main render loop
+  - Plugin access to scene, camera, and tools
+  - Plugin persistence and state management
+  - Plugin UI integration
 
 ---
 

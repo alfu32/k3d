@@ -1,4 +1,4 @@
-## Group Entity
+## Group Entity (Implemented)
 
 the group is a grouping of lines, faces and other groups.
 To create a group the user can press ctrl-g, to ungroup ( explode a group) the user presses ctrl-shif-g.
@@ -8,6 +8,43 @@ When in edit mode the user can only operate on entities inside the opened group,
 a group should have a special boolean property that will regulate whether the group will be glued to a surface or not when moved or copied. when this property is on the group will be automatically
 aligned on the support surface ( so its external normal(0z axis) will be parallel with the support surface's normal. this parameter will also be available in the group parameters panel.
 snapping should happen on points from a close group too.
+
+### Implemented Group Features
+
+**Group Creation and Management:**
+- ✅ Group creation from current selection (Ctrl-G)
+- ✅ Group ungrouping/explode (Ctrl-Shift-G)
+- ✅ Group editing mode (enter/exit)
+- ✅ Group hierarchy with parent-child relationships
+- ✅ Group selection and manipulation
+
+**Group Properties:**
+- ✅ Group name editing via properties panel
+- ✅ Glue to surface toggle (boolean property)
+- ✅ Group transformation (origin + axes)
+- ✅ Group instance vs definition separation
+- ❌ Group definition anchoring needs refinement
+
+**Group Visualization:**
+- ✅ Group bounds highlighting with wireframe boxes
+- ✅ Active group axes display
+- ✅ Group selection visualization
+- ✅ Nested group hierarchy display
+- ❌ Bounding box rotation display issues
+
+**Group Behavior:**
+- ✅ Isolated editing context (outside geometry unaffected)
+- ✅ Group transformation preservation
+- ✅ Group persistence with hierarchy
+- ❌ Group copying needs improvement
+- ❌ Component system not implemented
+
+**Group UI/UX:**
+- ✅ Group properties panel implementation
+- ✅ Group name and glue property controls
+- ❌ Panel doesn't always update on selection changes
+- ❌ Limited visual feedback for edit mode
+- ❌ Property propagation issues reported
 
 1. we need to separate the __group instance__ anchor, group rotation vectors and group size from the __group definition__ anchor, rotation and size of the group defintion.
 when move, rotate or scale a group its definition shouldn't change, only its local instance matrix.

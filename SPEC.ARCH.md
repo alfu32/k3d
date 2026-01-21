@@ -110,6 +110,50 @@ So:
 
 At this stage you already have the “SketchUp feel” starting.
 
+### Step A.1 — Implemented Architecture (Current State)
+
+The current implementation follows a modified version of the proposed architecture:
+
+**Model Layer:**
+- `GroupScene` hierarchy with root and nested groups
+- `DraftLineStore` for edge management
+- `DraftFaceStore` for face management (triangles only)
+- Basic adjacency tracking through group relationships
+- Group transformation matrices (definition + instance)
+
+**Derived Geometry Layer:**
+- Dynamic mesh generation from topology
+- Face triangulation with normals and colors
+- Edge rendering as line segments
+- Automatic mesh rebuilding on changes
+- Selected face highlighting with separate mesh
+
+**Rendering Layer:**
+- libGDX `ModelBatch` for face rendering
+- Custom `ShapeRenderer` for edges and guides
+- GLSL shaders for lighting and shadows
+- Directional shadow mapping with configurable quality
+- Custom shader provider for material handling
+
+**Interaction Layer:**
+- Tool state machine with active tool management
+- Ray casting with ground plane fallback
+- Snap system with multiple snap types (endpoint, midpoint, line, face, grid)
+- Guide manager for temporary reference geometry
+- Camera input controller with orbit/pan/zoom
+
+**Command Layer (Partial):**
+- Direct model mutation with save triggers
+- No formal undo/redo system yet
+- Change listeners for persistence
+- Model cleanup operations
+
+**Plugin Layer (Implemented):**
+- Plugin host with lifecycle management
+- Plugin registry and catalog system
+- Runtime plugin loading and unloading
+- Plugin drawing integration
+
 ### Step B — Picking + snapping + inference
 
 * BVH over edges and faces:
