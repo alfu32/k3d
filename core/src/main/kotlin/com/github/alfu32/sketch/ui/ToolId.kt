@@ -13,5 +13,6 @@ enum class ToolId(val displayName: String) {
     SCALE("Scale"),
     PAINT("Paint"),
     ERASER("Eraser"),
+    OBJECT_PLACE("Object"),
     PLUGIN("Plugin")
 }

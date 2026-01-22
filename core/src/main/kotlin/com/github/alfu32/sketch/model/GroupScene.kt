@@ -10,23 +10,50 @@ class GroupScene(
 ) {
     data class Axes(val u: Vector3, val v: Vector3, val w: Vector3)
 
-    class GroupNode(
+    class ObjectPrototype(
         val id: String,
         var name: String,
         var definitionOrigin: Vector3,
         var definitionAxisU: Vector3,
         var definitionAxisV: Vector3,
         var definitionAxisW: Vector3,
-        var instanceOrigin: Vector3,
-        var instanceAxisU: Vector3,
-        var instanceAxisV: Vector3,
-        var instanceAxisW: Vector3,
         var gluedToSurface: Boolean,
         val lineStore: DraftLineStore,
         val faceStore: DraftFaceStore
+    )
+
+    class GroupNode(
+        val id: String,
+        val prototype: ObjectPrototype,
+        var instanceOrigin: Vector3,
+        var instanceAxisU: Vector3,
+        var instanceAxisV: Vector3,
+        var instanceAxisW: Vector3
     ) {
         val children: MutableList<GroupNode> = mutableListOf()
         var parent: GroupNode? = null
+        val lineStore: DraftLineStore
+            get() = prototype.lineStore
+        val faceStore: DraftFaceStore
+            get() = prototype.faceStore
+        var name: String
+            get() = prototype.name
+            set(value) { prototype.name = value }
+        var gluedToSurface: Boolean
+            get() = prototype.gluedToSurface
+            set(value) { prototype.gluedToSurface = value }
+        var definitionOrigin: Vector3
+            get() = prototype.definitionOrigin
+            set(value) { prototype.definitionOrigin = value }
+        var definitionAxisU: Vector3
+            get() = prototype.definitionAxisU
+            set(value) { prototype.definitionAxisU = value }
+        var definitionAxisV: Vector3
+            get() = prototype.definitionAxisV
+            set(value) { prototype.definitionAxisV = value }
+        var definitionAxisW: Vector3
+            get() = prototype.definitionAxisW
+            set(value) { prototype.definitionAxisW = value }
 
         fun worldAxes(): Axes {
             val matrix = worldMatrix()
@@ -197,24 +224,35 @@ class GroupScene(
         }
     }
 
-    val root: GroupNode = GroupNode(
+    private val prototypes = linkedMapOf<String, ObjectPrototype>()
+    private val prototypeInstances = mutableMapOf<String, MutableSet<GroupNode>>()
+    private val rootPrototype = ObjectPrototype(
         id = "root",
         name = "Root",
         definitionOrigin = Vector3(),
         definitionAxisU = Vector3(1f, 0f, 0f),
         definitionAxisV = Vector3(0f, 1f, 0f),
         definitionAxisW = Vector3(0f, 0f, 1f),
-        instanceOrigin = Vector3(),
-        instanceAxisU = Vector3(1f, 0f, 0f),
-        instanceAxisV = Vector3(0f, 1f, 0f),
-        instanceAxisW = Vector3(0f, 0f, 1f),
         gluedToSurface = false,
         lineStore = DraftLineStore(),
         faceStore = DraftFaceStore(defaultFaceColor)
     )
+    val root: GroupNode = GroupNode(
+        id = "root",
+        prototype = rootPrototype,
+        instanceOrigin = Vector3(),
+        instanceAxisU = Vector3(1f, 0f, 0f),
+        instanceAxisV = Vector3(0f, 1f, 0f),
+        instanceAxisW = Vector3(0f, 0f, 1f)
+    )
     private val selectedGroups = mutableSetOf<GroupNode>()
     private var activeGroup: GroupNode = root
     private var changeListener: (() -> Unit)? = null
+
+    init {
+        registerPrototype(rootPrototype)
+        registerInstance(root)
+    }
 
     fun activeGroup(): GroupNode = activeGroup
 
@@ -288,6 +326,42 @@ class GroupScene(
         return activeGroup.children.toList()
     }
 
+    fun objectPrototypes(): List<ObjectPrototype> {
+        return prototypes.values.filter { it.id != rootPrototype.id }
+    }
+
+    fun allPrototypes(): List<ObjectPrototype> = prototypes.values.toList()
+
+    fun rootPrototypeId(): String = rootPrototype.id
+
+    fun rootPrototype(): ObjectPrototype = rootPrototype
+
+    fun registerPrototypeForLoad(prototype: ObjectPrototype) {
+        registerPrototype(prototype)
+    }
+
+    fun registerInstanceTree(group: GroupNode) {
+        registerInstance(group)
+        applyChangeListener(group)
+    }
+
+    fun objectPrototypeById(id: String): ObjectPrototype? = prototypes[id]
+
+    fun objectPrototypeInstanceCount(id: String): Int {
+        return prototypeInstances[id]?.size ?: 0
+    }
+
+    fun deletePrototype(id: String): Boolean {
+        if (id == rootPrototype.id) {
+            return false
+        }
+        if (objectPrototypeInstanceCount(id) > 0) {
+            return false
+        }
+        prototypeInstances.remove(id)
+        return prototypes.remove(id) != null
+    }
+
     fun createGroupFromSelection(): GroupNode? {
         val parent = activeGroup
         val selectedEdges = parent.lineStore.getSelected().toList()
@@ -333,23 +407,29 @@ class GroupScene(
             return null
         }
         val origin = Vector3(bounds.min)
-        val group = GroupNode(
+        val prototype = ObjectPrototype(
             id = java.util.UUID.randomUUID().toString(),
-            name = "Group",
+            name = "Object",
             definitionOrigin = Vector3(),
             definitionAxisU = Vector3(1f, 0f, 0f),
             definitionAxisV = Vector3(0f, 1f, 0f),
             definitionAxisW = Vector3(0f, 0f, 1f),
-            instanceOrigin = origin,
-            instanceAxisU = Vector3(1f, 0f, 0f),
-            instanceAxisV = Vector3(0f, 1f, 0f),
-            instanceAxisW = Vector3(0f, 0f, 1f),
             gluedToSurface = false,
             lineStore = DraftLineStore(),
             faceStore = DraftFaceStore(defaultFaceColor)
         )
+        registerPrototype(prototype)
+        val group = GroupNode(
+            id = java.util.UUID.randomUUID().toString(),
+            prototype = prototype,
+            instanceOrigin = origin,
+            instanceAxisU = Vector3(1f, 0f, 0f),
+            instanceAxisV = Vector3(0f, 1f, 0f),
+            instanceAxisW = Vector3(0f, 0f, 1f)
+        )
         group.parent = parent
         parent.children.add(group)
+        registerInstance(group)
         applyChangeListener(group)
 
         if (selectedEdges.isNotEmpty()) {
@@ -379,6 +459,9 @@ class GroupScene(
         }
         applyChangeListenerToAll()
         notifyChange()
+        if (isEditing()) {
+            syncPrototypeInstances(activeGroup)
+        }
         return group
     }
 
@@ -405,12 +488,17 @@ class GroupScene(
             group.children.forEach { child ->
                 reparentGroup(child, parent)
             }
+            group.children.clear()
             parent.children.remove(group)
+            unregisterInstance(group)
             count++
         }
         clearGroupSelection()
         applyChangeListenerToAll()
         notifyChange()
+        if (isEditing()) {
+            syncPrototypeInstances(activeGroup)
+        }
         return count
     }
 
@@ -421,10 +509,14 @@ class GroupScene(
         }
         targets.forEach { group ->
             group.parent?.children?.remove(group)
+            unregisterInstance(group)
         }
         clearGroupSelection()
         applyChangeListenerToAll()
         notifyChange()
+        if (isEditing()) {
+            syncPrototypeInstances(activeGroup)
+        }
         return targets.size
     }
 
@@ -451,6 +543,9 @@ class GroupScene(
         }
         applyChangeListenerToAll()
         notifyChange()
+        if (isEditing()) {
+            syncPrototypeInstances(activeGroup)
+        }
         return targets.size
     }
 
@@ -479,11 +574,46 @@ class GroupScene(
                 parent.children.add(clone)
             }
             clone.setInstanceFromWorld(newOriginWorld, newU, newV, newW)
+            registerInstance(clone)
             selectedGroups.add(clone)
         }
         applyChangeListenerToAll()
         notifyChange()
+        if (isEditing()) {
+            syncPrototypeInstances(activeGroup)
+        }
         return targets.size
+    }
+
+    fun createInstanceAtWorld(
+        prototype: ObjectPrototype,
+        parent: GroupNode,
+        originWorld: Vector3,
+        worldU: Vector3 = Vector3(1f, 0f, 0f),
+        worldV: Vector3 = Vector3(0f, 1f, 0f),
+        worldW: Vector3 = Vector3(0f, 0f, 1f)
+    ): GroupNode {
+        val instance = GroupNode(
+            id = java.util.UUID.randomUUID().toString(),
+            prototype = prototype,
+            instanceOrigin = Vector3(),
+            instanceAxisU = Vector3(1f, 0f, 0f),
+            instanceAxisV = Vector3(0f, 1f, 0f),
+            instanceAxisW = Vector3(0f, 0f, 1f)
+        )
+        val template = prototypeInstances[prototype.id]?.firstOrNull()
+        template?.children?.forEach { child ->
+            val childClone = cloneGroup(child)
+            childClone.parent = instance
+            instance.children.add(childClone)
+        }
+        instance.parent = parent
+        parent.children.add(instance)
+        instance.setInstanceFromWorld(originWorld, worldU, worldV, worldW)
+        registerInstance(instance)
+        applyChangeListener(instance)
+        notifyChange()
+        return instance
     }
 
     fun walkGroups(rootNode: GroupNode = root, visitor: (GroupNode) -> Unit) {
@@ -523,26 +653,12 @@ class GroupScene(
     private fun cloneGroup(group: GroupNode): GroupNode {
         val clone = GroupNode(
             id = java.util.UUID.randomUUID().toString(),
-            name = group.name,
-            definitionOrigin = Vector3(group.definitionOrigin),
-            definitionAxisU = Vector3(group.definitionAxisU),
-            definitionAxisV = Vector3(group.definitionAxisV),
-            definitionAxisW = Vector3(group.definitionAxisW),
+            prototype = group.prototype,
             instanceOrigin = Vector3(group.instanceOrigin),
             instanceAxisU = Vector3(group.instanceAxisU),
             instanceAxisV = Vector3(group.instanceAxisV),
-            instanceAxisW = Vector3(group.instanceAxisW),
-            gluedToSurface = group.gluedToSurface,
-            lineStore = DraftLineStore(),
-            faceStore = DraftFaceStore(defaultFaceColor)
+            instanceAxisW = Vector3(group.instanceAxisW)
         )
-        group.lineStore.getSegments().forEach { seg ->
-            clone.lineStore.addSegment(seg.start, seg.end)
-        }
-        group.faceStore.getTriangles().forEach { tri ->
-            val color = group.faceStore.colorFor(tri)
-            clone.faceStore.addTriangle(tri.a, tri.b, tri.c, color)
-        }
         group.children.forEach { child ->
             val childClone = cloneGroup(child)
             childClone.parent = clone
@@ -550,6 +666,24 @@ class GroupScene(
         }
         applyChangeListener(clone)
         return clone
+    }
+
+    private fun syncPrototypeInstances(source: GroupNode) {
+        val instances = prototypeInstances[source.prototype.id] ?: return
+        instances.filter { it !== source }.forEach { instance ->
+            unregisterChildren(instance)
+            instance.children.clear()
+            source.children.forEach { child ->
+                val childClone = cloneGroup(child)
+                childClone.parent = instance
+                instance.children.add(childClone)
+                registerInstance(childClone)
+            }
+        }
+    }
+
+    private fun unregisterChildren(group: GroupNode) {
+        group.children.forEach { child -> unregisterInstance(child) }
     }
 
     private fun boundsInParent(bounds: BoundingBox, parent: GroupNode): BoundingBox? {
@@ -684,5 +818,31 @@ class GroupScene(
             val w = Vector3(v[Matrix4.M02], v[Matrix4.M12], v[Matrix4.M22])
             return Axes(u, vAxis, w)
         }
+    }
+
+    fun resetScene() {
+        root.children.clear()
+        root.lineStore.clearAll()
+        root.faceStore.clearAll()
+        clearGroupSelection()
+        activeGroup = root
+        prototypeInstances.clear()
+        prototypes.keys.filter { it != rootPrototype.id }.forEach { prototypes.remove(it) }
+        registerPrototype(rootPrototype)
+        registerInstance(root)
+    }
+
+    private fun registerPrototype(prototype: ObjectPrototype) {
+        prototypes[prototype.id] = prototype
+    }
+
+    private fun registerInstance(group: GroupNode) {
+        prototypeInstances.getOrPut(group.prototype.id) { mutableSetOf() }.add(group)
+        group.children.forEach { child -> registerInstance(child) }
+    }
+
+    private fun unregisterInstance(group: GroupNode) {
+        prototypeInstances[group.prototype.id]?.remove(group)
+        group.children.forEach { child -> unregisterInstance(child) }
     }
 }

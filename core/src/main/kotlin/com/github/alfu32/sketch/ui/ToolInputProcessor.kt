@@ -14,6 +14,7 @@ class ToolInputProcessor(
     private val clearSelectionAction: () -> Unit,
     private val deleteSelectionAction: () -> Unit,
     private val groupSelectionAction: () -> Unit,
+    private val objectPrototypeSelectionAction: () -> Unit,
     private val ungroupSelectionAction: () -> Unit,
     private val exitGroupEditAction: () -> Boolean,
     private val lastSnapProvider: () -> SnapResult?
@@ -82,6 +83,14 @@ class ToolInputProcessor(
                     Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
                 if (ctrl) {
                     cleanupAction()
+                    return true
+                }
+            }
+            Input.Keys.O -> {
+                val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
+                    Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+                if (ctrl) {
+                    objectPrototypeSelectionAction()
                     return true
                 }
             }

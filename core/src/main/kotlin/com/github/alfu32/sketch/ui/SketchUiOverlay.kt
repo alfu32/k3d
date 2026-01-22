@@ -37,6 +37,9 @@ class SketchUiOverlay(
     private val groupInfoProvider: () -> GroupInfo?,
     private val groupNameChanged: (String) -> Unit,
     private val groupGlueChanged: (Boolean) -> Unit,
+    private val objectPrototypeProvider: () -> List<ObjectPrototypeInfo>,
+    private val objectPrototypePlace: (String) -> Unit,
+    private val objectPrototypeDelete: (String) -> Unit,
     private val lightingSettings: LightingSettings,
     private val lightingChanged: (LightingSettings) -> Unit,
     private val shadowSettings: ShadowSettings,
@@ -108,6 +111,10 @@ class SketchUiOverlay(
     private var lastPaintColor = Color(-1f, -1f, -1f, -1f)
     private var colorPicker: ColorPicker? = null
     private var lightingPanel: CollapsibleWindow? = null
+    private lateinit var objectsPanel: CollapsibleWindow
+    private val objectsList = com.kotcrab.vis.ui.widget.VisList<String>()
+    private var objectPrototypeItems: List<ObjectPrototypeInfo> = emptyList()
+    private lateinit var objectsDeleteButton: VisTextButton
     private val lightingRefreshers = mutableListOf<() -> Unit>()
     private lateinit var selectionPanel: CollapsibleWindow
     private var needsPanelLayout = true
@@ -126,6 +133,7 @@ class SketchUiOverlay(
         val toolbar = buildToolbar()
         selectionPanel = buildSelectionPanel()
         groupPanel = buildGroupPanel()
+        objectsPanel = buildObjectsPanel()
         lightingPanel = buildLightingPanel()
         val mainRow = Table()
         mainRow.add(toolbar).top().left().pad(6f)
@@ -136,6 +144,7 @@ class SketchUiOverlay(
 
         stage.addActor(selectionPanel)
         stage.addActor(groupPanel)
+        stage.addActor(objectsPanel)
         lightingPanel?.let { stage.addActor(it) }
         positionPanels()
         needsPanelLayout = true
@@ -160,8 +169,9 @@ class SketchUiOverlay(
         )
         selectionEdgesLabel.setText("Edges: ${selection.edgeCount}")
         selectionFacesLabel.setText("Faces: ${selection.faceCount}")
-        selectionGroupsLabel.setText("Groups: ${selection.groupCount}")
+        selectionGroupsLabel.setText("Objects: ${selection.groupCount}")
         updateGroupPanel()
+        updateObjectsPanel()
         refreshPluginToolbar()
         toolButtons[status.activeTool]?.isChecked = true
         updatePluginToolSelection()
@@ -230,7 +240,7 @@ class SketchUiOverlay(
         group.setMinCheckCount(1)
         group.setUncheckLast(false)
 
-        ToolId.values().filter { it != ToolId.PLUGIN }.forEach { toolId ->
+        ToolId.values().filter { it != ToolId.PLUGIN && it != ToolId.OBJECT_PLACE }.forEach { toolId ->
             val icon = createIconDrawable(toolId)
             val button = VisImageTextButton(toolId.displayName, icon)
             applyWhiteButtonStyle(button)
@@ -370,7 +380,7 @@ class SketchUiOverlay(
     }
 
     private fun buildGroupPanel(): CollapsibleWindow {
-        val panel = CollapsibleWindow("Group")
+        val panel = CollapsibleWindow("Object")
         val content = VisTable()
         content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         content.defaults().pad(4f).left().growX()
@@ -400,6 +410,37 @@ class SketchUiOverlay(
         return panel
     }
 
+    private fun buildObjectsPanel(): CollapsibleWindow {
+        val panel = CollapsibleWindow("Objects", fixedHeight = 240f)
+        val content = VisTable()
+        content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        content.defaults().pad(4f).left().growX()
+        objectsList.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                if (tapCount >= 2) {
+                    val selected = selectedObjectPrototype() ?: return
+                    objectPrototypePlace(selected.id)
+                }
+            }
+        })
+        val scroll = com.kotcrab.vis.ui.widget.VisScrollPane(objectsList).apply {
+            setFadeScrollBars(false)
+            setScrollingDisabled(true, false)
+        }
+        content.add(scroll).growX().height(160f).row()
+        objectsDeleteButton = VisTextButton("Delete Prototype")
+        objectsDeleteButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                val selected = selectedObjectPrototype() ?: return
+                objectPrototypeDelete(selected.id)
+            }
+        })
+        content.add(objectsDeleteButton).left().padTop(4f).row()
+        panel.add(content).growX()
+        panel.isVisible = false
+        return panel
+    }
+
     private fun updateGroupPanel() {
         val info = groupInfoProvider()
         if (info == null) {
@@ -416,9 +457,9 @@ class SketchUiOverlay(
         val wasVisible = groupPanel.isVisible
         groupPanel.isVisible = true
         val statusText = if (info.editing) {
-            "Editing group: ${info.name}"
+            "Editing object: ${info.name}"
         } else {
-            "Selected group: ${info.name}"
+            "Selected object: ${info.name}"
         }
         groupStatusLabel.setText(statusText)
         if (!wasVisible) {
@@ -440,6 +481,37 @@ class SketchUiOverlay(
         lastGroupEditing = info.editing
         lastGroupId = info.id
     }
+
+    private fun updateObjectsPanel() {
+        val prototypes = objectPrototypeProvider()
+        if (prototypes.isEmpty()) {
+            objectsDeleteButton.isDisabled = true
+        }
+        if (prototypes != objectPrototypeItems) {
+            objectPrototypeItems = prototypes
+            val items = prototypes.map { prototype ->
+                "${prototype.name} (${prototype.instanceCount})"
+            }
+            objectsList.setItems(*items.toTypedArray())
+            objectsList.selectedIndex = -1
+        }
+        val selected = selectedObjectPrototype()
+        objectsDeleteButton.isDisabled = selected == null || selected.instanceCount > 0
+    }
+
+    private fun selectedObjectPrototype(): ObjectPrototypeInfo? {
+        val index = objectsList.selectedIndex
+        if (index < 0 || index >= objectPrototypeItems.size) {
+            return null
+        }
+        return objectPrototypeItems[index]
+    }
+
+    fun toggleObjectsPanel() {
+        objectsPanel.isVisible = !objectsPanel.isVisible
+        needsPanelLayout = true
+    }
+
 
     private fun buildLightingPanel(): CollapsibleWindow {
         val panel = CollapsibleWindow("Lighting")
@@ -526,6 +598,7 @@ class SketchUiOverlay(
         val panels = mutableListOf<CollapsibleWindow>()
         panels.add(selectionPanel)
         panels.add(groupPanel)
+        panels.add(objectsPanel)
         lightingPanel?.let { panels.add(it) }
         panels.forEach {
             it.invalidateHierarchy()
@@ -799,6 +872,7 @@ class SketchUiOverlay(
             ToolId.SCALE -> "scale"
             ToolId.PAINT -> "paint"
             ToolId.ERASER -> "eraser"
+            ToolId.OBJECT_PLACE -> "select"
             ToolId.PLUGIN -> "plugins"
         }
         iconDrawables[iconName]?.let { return it }
@@ -815,6 +889,7 @@ class SketchUiOverlay(
             ToolId.SCALE -> Color(0.95f, 0.55f, 0.75f, 1f)
             ToolId.PAINT -> Color(0.95f, 0.95f, 0.45f, 1f)
             ToolId.ERASER -> Color(0.65f, 0.65f, 0.65f, 1f)
+            ToolId.OBJECT_PLACE -> Color(0.85f, 0.85f, 0.85f, 1f)
             ToolId.PLUGIN -> Color(0.75f, 0.85f, 0.95f, 1f)
         }
 
@@ -1023,4 +1098,6 @@ class SketchUiOverlay(
     data class SelectionInfo(val edgeCount: Int, val faceCount: Int, val groupCount: Int)
 
     data class GroupInfo(val id: String, val name: String, val glued: Boolean, val editing: Boolean)
+
+    data class ObjectPrototypeInfo(val id: String, val name: String, val instanceCount: Int)
 }

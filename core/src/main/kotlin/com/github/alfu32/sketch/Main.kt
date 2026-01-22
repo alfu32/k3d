@@ -41,6 +41,7 @@ import com.github.alfu32.sketch.plugin.PluginHost
 import com.github.alfu32.sketch.tools.CircleTool
 import com.github.alfu32.sketch.tools.LineTool
 import com.github.alfu32.sketch.tools.MoveTool
+import com.github.alfu32.sketch.tools.ObjectPlaceTool
 import com.github.alfu32.sketch.tools.PaintTool
 import com.github.alfu32.sketch.tools.PushPullTool
 import com.github.alfu32.sketch.tools.QuadTool
@@ -111,6 +112,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var shadowSettings: ShadowSettings
     private lateinit var pluginHost: PluginHost
     private lateinit var installDir: java.io.File
+    private lateinit var objectPlaceTool: ObjectPlaceTool
 
     override fun create() {
         if (!VisUI.isLoaded()) {
@@ -139,6 +141,17 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         modelCleanup = ModelCleanup(scene)
         guideManager = GuideManager()
         snapper = Snapper(camera, scene, guideManager, gridSpacing)
+        objectPlaceTool = ObjectPlaceTool(
+            scene,
+            { instance ->
+                scene.clearGroupSelection()
+                scene.addGroupSelection(instance)
+                toolController.setTool(ToolId.SELECT)
+            },
+            {
+                toolController.setTool(ToolId.SELECT)
+            }
+        )
         toolController = ToolController(
             statusModel,
             listOf(
@@ -153,7 +166,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 RotateTool(scene),
                 ScaleTool(scene),
                 PaintTool(scene, camera) { statusModel.paintColor.cpy() },
-                SimpleTool(ToolId.ERASER, "Click to erase edges.")
+                SimpleTool(ToolId.ERASER, "Click to erase edges."),
+                objectPlaceTool
             )
         )
         toolInput = ToolInputProcessor(
@@ -163,6 +177,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::clearSelection,
             ::deleteSelection,
             ::groupSelection,
+            ::objectPrototypeSelection,
             ::ungroupSelection,
             ::exitGroupEditMode
         ) { lastSnap }
@@ -207,6 +222,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::groupInfo,
             ::updateGroupName,
             ::updateGroupGlue,
+            ::objectPrototypeInfo,
+            ::startObjectPlacement,
+            ::deleteObjectPrototype,
             lightingSettings,
             ::applyLightingSettings,
             shadowSettings,
@@ -215,6 +233,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         
         // Set up plugin host for UI
         uiOverlay.setPluginHost(pluginHost)
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.objects",
+                name = "View> Objects",
+                description = "Toggle object prototypes panel",
+                icon = "view",
+                category = "View",
+                tags = listOf("objects", "panel", "prototypes"),
+                priority = 1,
+                execute = {
+                    uiOverlay.toggleObjectsPanel()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
         
         toolPointer = ToolPointerProcessor(toolController, snapper)
         val cameraScrollForwarder = CameraScrollForwarder(cameraController)
@@ -669,22 +702,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun groupInfo(): SketchUiOverlay.GroupInfo? {
         val editing = scene.isEditing()
-        val target = if (editing) {
+        val targetInstance = if (editing) {
             scene.activeGroup()
         } else {
             val selected = scene.selectedGroups()
             if (selected.size == 1) selected.first() else null
         }
-        return target?.let {
-            SketchUiOverlay.GroupInfo(it.id, it.name, it.gluedToSurface, editing)
-        }
+        val prototype = targetInstance?.prototype ?: return null
+        return SketchUiOverlay.GroupInfo(prototype.id, prototype.name, prototype.gluedToSurface, editing)
     }
 
     private fun updateGroupName(name: String) {
         val target = groupPanelTarget() ?: return
         if (name.isNotBlank() && name != target.name) {
             target.name = name
-            statusModel.message = "Group renamed."
+            statusModel.message = "Object renamed."
             saveModel()
         }
     }
@@ -693,25 +725,55 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val target = groupPanelTarget() ?: return
         if (target.gluedToSurface != glued) {
             target.gluedToSurface = glued
-            statusModel.message = if (glued) "Group glue enabled." else "Group glue disabled."
+            statusModel.message = if (glued) "Object glue enabled." else "Object glue disabled."
             saveModel()
         }
     }
 
-    private fun groupPanelTarget(): GroupScene.GroupNode? {
+    private fun groupPanelTarget(): GroupScene.ObjectPrototype? {
         return if (scene.isEditing()) {
-            scene.activeGroup()
+            scene.activeGroup().prototype
         } else {
             val selected = scene.selectedGroups()
-            if (selected.size == 1) selected.first() else null
+            if (selected.size == 1) selected.first().prototype else null
         }
     }
 
     private fun groupSelection() {
+        objectPrototypeSelection()
+    }
+
+    private fun objectPrototypeSelection() {
         val created = scene.createGroupFromSelection()
         if (created != null) {
-            statusModel.message = "Grouped."
+            statusModel.message = "Object created."
             saveModel()
+        }
+    }
+
+    private fun objectPrototypeInfo(): List<SketchUiOverlay.ObjectPrototypeInfo> {
+        return scene.objectPrototypes().map { prototype ->
+            SketchUiOverlay.ObjectPrototypeInfo(
+                id = prototype.id,
+                name = prototype.name,
+                instanceCount = scene.objectPrototypeInstanceCount(prototype.id)
+            )
+        }
+    }
+
+    private fun startObjectPlacement(prototypeId: String) {
+        val prototype = scene.objectPrototypeById(prototypeId) ?: return
+        objectPlaceTool.setPrototype(prototype)
+        toolController.setTool(ToolId.OBJECT_PLACE)
+        statusModel.message = "Place object: ${prototype.name}"
+    }
+
+    private fun deleteObjectPrototype(prototypeId: String) {
+        if (scene.deletePrototype(prototypeId)) {
+            statusModel.message = "Object prototype deleted."
+            saveModel()
+        } else {
+            statusModel.message = "Cannot delete: object has instances."
         }
     }
 
@@ -728,7 +790,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             return false
         }
         scene.exitGroup()
-        statusModel.message = "Exited group edit."
+        statusModel.message = "Exited object edit."
         return true
     }
 

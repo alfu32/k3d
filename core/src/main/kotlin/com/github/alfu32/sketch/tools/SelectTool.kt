@@ -115,7 +115,7 @@ class SelectTool(
             val targetGroup = groupHit!!.group
             if (scene.enterGroup(targetGroup)) {
                 scene.clearAllSelections()
-                status.message = "Editing group: ${targetGroup.name}"
+                status.message = "Editing object: ${targetGroup.name}"
                 return true
             }
         }

@@ -4,9 +4,11 @@ class ModelCleanup(
     private val scene: GroupScene
 ) {
     fun run() {
-        scene.root.lineStore.cleanup()
-        scene.walkGroups(scene.root) { group ->
-            group.lineStore.cleanup()
+        val cleaned = mutableSetOf<String>()
+        scene.allPrototypes().forEach { prototype ->
+            if (cleaned.add(prototype.id)) {
+                prototype.lineStore.cleanup()
+            }
         }
     }
 }

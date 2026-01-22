@@ -7,7 +7,7 @@ import com.badlogic.gdx.utils.JsonWriter
 import java.io.File
 
 object ModelPersistence {
-    private const val VERSION = 4
+    private const val VERSION = 5
 
     fun save(
         file: File,
@@ -33,7 +33,8 @@ object ModelPersistence {
     ): ModelSnapshot {
         return ModelSnapshot().apply {
             version = VERSION
-            rootGroup = GroupDto.fromGroup(scene.root)
+            prototypes = scene.allPrototypes().map { ObjectPrototypeDto.fromPrototype(it) }.toMutableList()
+            rootInstance = GroupInstanceDto.fromInstance(scene.root)
             cameraState = CameraDto(camera)
             lightingState = LightingDto(lighting)
             shadowState = ShadowDto(shadow)
@@ -63,7 +64,8 @@ object ModelPersistence {
         val needsResave = snapshot.cameraState == null ||
             snapshot.lightingState == null ||
             snapshot.shadowState == null ||
-            snapshot.rootGroup == null ||
+            (snapshot.rootInstance == null && snapshot.rootGroup == null) ||
+            (snapshot.rootInstance != null && snapshot.prototypes.isEmpty()) ||
             snapshot.cameraState?.hasNulls() == true ||
             snapshot.lightingState?.hasNulls() == true ||
             snapshot.shadowState?.hasNulls() == true
@@ -78,18 +80,43 @@ object ModelPersistence {
         shadow: com.github.alfu32.sketch.ui.ShadowSettings
     ) {
         resetScene(scene)
-        if (snapshot.rootGroup != null) {
+        if (snapshot.rootInstance != null && snapshot.prototypes.isNotEmpty()) {
+            val prototypeMap = mutableMapOf<String, GroupScene.ObjectPrototype>()
+            val rootPrototype = scene.rootPrototype()
+            snapshot.prototypes.forEach { dto ->
+                if (dto.id == rootPrototype.id) {
+                    dto.applyTo(rootPrototype, scene.defaultFaceColor)
+                    prototypeMap[rootPrototype.id] = rootPrototype
+                } else {
+                    val prototype = dto.toPrototype(scene.defaultFaceColor)
+                    scene.registerPrototypeForLoad(prototype)
+                    prototypeMap[prototype.id] = prototype
+                }
+            }
+            val loadedRoot = snapshot.rootInstance!!.toInstance(prototypeMap, scene.defaultFaceColor)
+            scene.root.instanceOrigin.set(loadedRoot.instanceOrigin)
+            scene.root.instanceAxisU.set(loadedRoot.instanceAxisU)
+            scene.root.instanceAxisV.set(loadedRoot.instanceAxisV)
+            scene.root.instanceAxisW.set(loadedRoot.instanceAxisW)
+            scene.root.children.clear()
+            loadedRoot.children.forEach { child ->
+                child.parent = scene.root
+                scene.root.children.add(child)
+                scene.registerInstanceTree(child)
+            }
+        } else if (snapshot.rootGroup != null) {
             val loaded = snapshot.rootGroup!!.toGroup(scene.defaultFaceColor)
-            scene.root.name = loaded.name
-            scene.root.definitionOrigin.set(loaded.definitionOrigin)
-            scene.root.definitionAxisU.set(loaded.definitionAxisU)
-            scene.root.definitionAxisV.set(loaded.definitionAxisV)
-            scene.root.definitionAxisW.set(loaded.definitionAxisW)
+            loaded.children.forEach { child -> registerLegacyPrototypes(scene, child) }
             scene.root.instanceOrigin.set(loaded.instanceOrigin)
             scene.root.instanceAxisU.set(loaded.instanceAxisU)
             scene.root.instanceAxisV.set(loaded.instanceAxisV)
             scene.root.instanceAxisW.set(loaded.instanceAxisW)
-            scene.root.gluedToSurface = loaded.gluedToSurface
+            scene.root.prototype.name = loaded.prototype.name
+            scene.root.prototype.definitionOrigin.set(loaded.prototype.definitionOrigin)
+            scene.root.prototype.definitionAxisU.set(loaded.prototype.definitionAxisU)
+            scene.root.prototype.definitionAxisV.set(loaded.prototype.definitionAxisV)
+            scene.root.prototype.definitionAxisW.set(loaded.prototype.definitionAxisW)
+            scene.root.prototype.gluedToSurface = loaded.prototype.gluedToSurface
             scene.root.lineStore.clearAll()
             scene.root.faceStore.clearAll()
             loaded.lineStore.getSegments().forEach { seg ->
@@ -98,9 +125,11 @@ object ModelPersistence {
             loaded.faceStore.getTriangles().forEach { tri ->
                 scene.root.faceStore.addTriangle(tri.a, tri.b, tri.c, loaded.faceStore.colorFor(tri))
             }
+            scene.root.children.clear()
             loaded.children.forEach { child ->
                 child.parent = scene.root
                 scene.root.children.add(child)
+                scene.registerInstanceTree(child)
             }
         } else {
             snapshot.segments.forEach { segment ->
@@ -125,9 +154,141 @@ object ModelPersistence {
         var segments: MutableList<SegmentDto> = mutableListOf()
         var faces: MutableList<FaceDto> = mutableListOf()
         var rootGroup: GroupDto? = null
+        var prototypes: MutableList<ObjectPrototypeDto> = mutableListOf()
+        var rootInstance: GroupInstanceDto? = null
         var cameraState: CameraDto? = null
         var lightingState: LightingDto? = null
         var shadowState: ShadowDto? = null
+    }
+
+    class ObjectPrototypeDto() {
+        var id: String = ""
+        var name: String = ""
+        var definitionOrigin: Vec3Dto = Vec3Dto()
+        var definitionAxisU: Vec3Dto = Vec3Dto()
+        var definitionAxisV: Vec3Dto = Vec3Dto()
+        var definitionAxisW: Vec3Dto = Vec3Dto()
+        var gluedToSurface: Boolean = false
+        var segments: MutableList<SegmentDto> = mutableListOf()
+        var faces: MutableList<FaceDto> = mutableListOf()
+
+        fun toPrototype(defaultColor: Color): GroupScene.ObjectPrototype {
+            val prototype = GroupScene.ObjectPrototype(
+                id = id.ifBlank { java.util.UUID.randomUUID().toString() },
+                name = name.ifBlank { "Object" },
+                definitionOrigin = definitionOrigin.toVector3(),
+                definitionAxisU = definitionAxisU.toVector3(),
+                definitionAxisV = definitionAxisV.toVector3(),
+                definitionAxisW = definitionAxisW.toVector3(),
+                gluedToSurface = gluedToSurface,
+                lineStore = DraftLineStore(),
+                faceStore = DraftFaceStore(defaultColor)
+            )
+            applyGeometry(prototype)
+            return prototype
+        }
+
+        fun applyTo(prototype: GroupScene.ObjectPrototype, defaultColor: Color) {
+            prototype.name = name.ifBlank { prototype.name }
+            prototype.definitionOrigin.set(definitionOrigin.toVector3())
+            prototype.definitionAxisU.set(definitionAxisU.toVector3())
+            prototype.definitionAxisV.set(definitionAxisV.toVector3())
+            prototype.definitionAxisW.set(definitionAxisW.toVector3())
+            prototype.gluedToSurface = gluedToSurface
+            prototype.lineStore.clearAll()
+            prototype.faceStore.clearAll()
+            applyGeometry(prototype, defaultColor)
+        }
+
+        private fun applyGeometry(prototype: GroupScene.ObjectPrototype, defaultColor: Color? = null) {
+            segments.forEach { segment ->
+                prototype.lineStore.addSegment(segment.start.toVector3(), segment.end.toVector3())
+            }
+            faces.forEach { face ->
+                prototype.faceStore.addTriangle(
+                    face.a.toVector3(),
+                    face.b.toVector3(),
+                    face.c.toVector3(),
+                    face.color.toColor()
+                )
+            }
+        }
+
+        companion object {
+            fun fromPrototype(prototype: GroupScene.ObjectPrototype): ObjectPrototypeDto {
+                val dto = ObjectPrototypeDto()
+                dto.id = prototype.id
+                dto.name = prototype.name
+                dto.definitionOrigin = Vec3Dto(prototype.definitionOrigin)
+                dto.definitionAxisU = Vec3Dto(prototype.definitionAxisU)
+                dto.definitionAxisV = Vec3Dto(prototype.definitionAxisV)
+                dto.definitionAxisW = Vec3Dto(prototype.definitionAxisW)
+                dto.gluedToSurface = prototype.gluedToSurface
+                dto.segments = prototype.lineStore.getSegments().map { seg ->
+                    SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end))
+                }.toMutableList()
+                dto.faces = prototype.faceStore.getTriangles().map { tri ->
+                    val color = prototype.faceStore.colorFor(tri)
+                    FaceDto(Vec3Dto(tri.a), Vec3Dto(tri.b), Vec3Dto(tri.c), ColorDto(color))
+                }.toMutableList()
+                return dto
+            }
+        }
+    }
+
+    class GroupInstanceDto() {
+        var id: String = ""
+        var prototypeId: String = ""
+        var instanceOrigin: Vec3Dto = Vec3Dto()
+        var instanceAxisU: Vec3Dto = Vec3Dto()
+        var instanceAxisV: Vec3Dto = Vec3Dto()
+        var instanceAxisW: Vec3Dto = Vec3Dto()
+        var children: MutableList<GroupInstanceDto> = mutableListOf()
+
+        fun toInstance(
+            prototypes: Map<String, GroupScene.ObjectPrototype>,
+            defaultColor: Color
+        ): GroupScene.GroupNode {
+            val prototype = prototypes[prototypeId] ?: GroupScene.ObjectPrototype(
+                id = prototypeId.ifBlank { java.util.UUID.randomUUID().toString() },
+                name = "Object",
+                definitionOrigin = Vector3(),
+                definitionAxisU = Vector3(1f, 0f, 0f),
+                definitionAxisV = Vector3(0f, 1f, 0f),
+                definitionAxisW = Vector3(0f, 0f, 1f),
+                gluedToSurface = false,
+                lineStore = DraftLineStore(),
+                faceStore = DraftFaceStore(defaultColor)
+            )
+            val group = GroupScene.GroupNode(
+                id = id.ifBlank { java.util.UUID.randomUUID().toString() },
+                prototype = prototype,
+                instanceOrigin = instanceOrigin.toVector3(),
+                instanceAxisU = instanceAxisU.toVector3(),
+                instanceAxisV = instanceAxisV.toVector3(),
+                instanceAxisW = instanceAxisW.toVector3()
+            )
+            children.forEach { child ->
+                val childGroup = child.toInstance(prototypes, defaultColor)
+                childGroup.parent = group
+                group.children.add(childGroup)
+            }
+            return group
+        }
+
+        companion object {
+            fun fromInstance(group: GroupScene.GroupNode): GroupInstanceDto {
+                val dto = GroupInstanceDto()
+                dto.id = group.id
+                dto.prototypeId = group.prototype.id
+                dto.instanceOrigin = Vec3Dto(group.instanceOrigin)
+                dto.instanceAxisU = Vec3Dto(group.instanceAxisU)
+                dto.instanceAxisV = Vec3Dto(group.instanceAxisV)
+                dto.instanceAxisW = Vec3Dto(group.instanceAxisW)
+                dto.children = group.children.map { child -> fromInstance(child) }.toMutableList()
+                return dto
+            }
+        }
     }
 
     class SegmentDto() {
@@ -183,20 +344,24 @@ object ModelPersistence {
             val instAxisU = instanceAxisU?.toVector3() ?: axisU.toVector3()
             val instAxisV = instanceAxisV?.toVector3() ?: axisV.toVector3()
             val instAxisW = instanceAxisW?.toVector3() ?: axisW.toVector3()
-            val group = GroupScene.GroupNode(
-                id = id.ifBlank { java.util.UUID.randomUUID().toString() },
-                name = name.ifBlank { "Group" },
+            val prototype = GroupScene.ObjectPrototype(
+                id = java.util.UUID.randomUUID().toString(),
+                name = name.ifBlank { "Object" },
                 definitionOrigin = defOrigin,
                 definitionAxisU = defAxisU,
                 definitionAxisV = defAxisV,
                 definitionAxisW = defAxisW,
-                instanceOrigin = instOrigin,
-                instanceAxisU = instAxisU,
-                instanceAxisV = instAxisV,
-                instanceAxisW = instAxisW,
                 gluedToSurface = gluedToSurface,
                 lineStore = DraftLineStore(),
                 faceStore = DraftFaceStore(defaultColor)
+            )
+            val group = GroupScene.GroupNode(
+                id = id.ifBlank { java.util.UUID.randomUUID().toString() },
+                prototype = prototype,
+                instanceOrigin = instOrigin,
+                instanceAxisU = instAxisU,
+                instanceAxisV = instAxisV,
+                instanceAxisW = instAxisW
             )
             segments.forEach { segment ->
                 group.lineStore.addSegment(segment.start.toVector3(), segment.end.toVector3())
@@ -221,20 +386,20 @@ object ModelPersistence {
             fun fromGroup(group: GroupScene.GroupNode): GroupDto {
                 val dto = GroupDto()
                 dto.id = group.id
-                dto.name = group.name
+                dto.name = group.prototype.name
                 dto.origin = Vec3Dto(group.instanceOrigin)
                 dto.axisU = Vec3Dto(group.instanceAxisU)
                 dto.axisV = Vec3Dto(group.instanceAxisV)
                 dto.axisW = Vec3Dto(group.instanceAxisW)
-                dto.definitionOrigin = Vec3Dto(group.definitionOrigin)
-                dto.definitionAxisU = Vec3Dto(group.definitionAxisU)
-                dto.definitionAxisV = Vec3Dto(group.definitionAxisV)
-                dto.definitionAxisW = Vec3Dto(group.definitionAxisW)
+                dto.definitionOrigin = Vec3Dto(group.prototype.definitionOrigin)
+                dto.definitionAxisU = Vec3Dto(group.prototype.definitionAxisU)
+                dto.definitionAxisV = Vec3Dto(group.prototype.definitionAxisV)
+                dto.definitionAxisW = Vec3Dto(group.prototype.definitionAxisW)
                 dto.instanceOrigin = Vec3Dto(group.instanceOrigin)
                 dto.instanceAxisU = Vec3Dto(group.instanceAxisU)
                 dto.instanceAxisV = Vec3Dto(group.instanceAxisV)
                 dto.instanceAxisW = Vec3Dto(group.instanceAxisW)
-                dto.gluedToSurface = group.gluedToSurface
+                dto.gluedToSurface = group.prototype.gluedToSurface
                 dto.segments = group.lineStore.getSegments().map { seg ->
                     SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end))
                 }.toMutableList()
@@ -385,10 +550,11 @@ object ModelPersistence {
     }
 
     private fun resetScene(scene: GroupScene) {
-        scene.root.children.clear()
-        scene.root.lineStore.clearAll()
-        scene.root.faceStore.clearAll()
-        scene.clearGroupSelection()
-        scene.resetActiveGroup()
+        scene.resetScene()
+    }
+
+    private fun registerLegacyPrototypes(scene: GroupScene, group: GroupScene.GroupNode) {
+        scene.registerPrototypeForLoad(group.prototype)
+        group.children.forEach { child -> registerLegacyPrototypes(scene, child) }
     }
 }
