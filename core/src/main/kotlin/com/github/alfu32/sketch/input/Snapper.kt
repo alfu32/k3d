@@ -14,10 +14,11 @@ class Snapper(
     private val scene: GroupScene,
     private val guideManager: GuideManager,
     private val gridSpacing: Float = 1f,
-    private val snapPixels: Float = 12f
+    snapPixels: Float = 12f
 ) {
     private val tmp = Vector3()
     private val epsilon = 1e-1f
+    var snapPixels: Float = snapPixels
 
     fun compute(screenX: Int, screenY: Int): SnapResult {
         val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())

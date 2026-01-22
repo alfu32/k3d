@@ -40,6 +40,10 @@ class SketchUiOverlay(
     private val objectPrototypeProvider: () -> List<ObjectPrototypeInfo>,
     private val objectPrototypePlace: (String) -> Unit,
     private val objectPrototypeDelete: (String) -> Unit,
+    private val modelUnitProvider: () -> com.github.alfu32.sketch.model.ModelUnit,
+    private val modelUnitChanged: (String, Float) -> Unit,
+    private val snapEpsilonProvider: () -> Float,
+    private val snapEpsilonChanged: (Float) -> Unit,
     private val lightingSettings: LightingSettings,
     private val lightingChanged: (LightingSettings) -> Unit,
     private val shadowSettings: ShadowSettings,
@@ -139,6 +143,16 @@ class SketchUiOverlay(
     private val objectsList = com.kotcrab.vis.ui.widget.VisList<String>()
     private var objectPrototypeItems: List<ObjectPrototypeInfo> = emptyList()
     private lateinit var objectsDeleteButton: VisTextButton
+    private lateinit var modelSettingsPanel: CollapsibleWindow
+    private val unitNameField = VisTextField()
+    private val unitSizeField = VisTextField()
+    private val snapEpsilonMin = 2f
+    private val snapEpsilonMax = 48f
+    private val snapEpsilonSlider = VisSlider(snapEpsilonMin, snapEpsilonMax, 1f, false)
+    private var updatingModelSettingsFields = false
+    private var lastUnitName = ""
+    private var lastUnitSize = -1f
+    private var lastSnapEpsilon = -1f
     private val lightingRefreshers = mutableListOf<() -> Unit>()
     private lateinit var selectionPanel: CollapsibleWindow
     private var needsPanelLayout = true
@@ -158,6 +172,7 @@ class SketchUiOverlay(
         selectionPanel = buildSelectionPanel()
         groupPanel = buildGroupPanel()
         objectsPanel = buildObjectsPanel()
+        modelSettingsPanel = buildModelSettingsPanel()
         lightingPanel = buildLightingPanel()
         val mainRow = Table()
         mainRow.add(toolbar).top().left().pad(6f)
@@ -169,6 +184,7 @@ class SketchUiOverlay(
         stage.addActor(selectionPanel)
         stage.addActor(groupPanel)
         stage.addActor(objectsPanel)
+        stage.addActor(modelSettingsPanel)
         lightingPanel?.let { stage.addActor(it) }
         positionPanels()
         needsPanelLayout = true
@@ -196,6 +212,7 @@ class SketchUiOverlay(
         selectionGroupsLabel.setText("Objects: ${selection.groupCount}")
         updateGroupPanel()
         updateObjectsPanel()
+        updateModelSettingsPanel()
         refreshPluginToolbar()
         toolButtons[status.activeTool]?.isChecked = true
         updatePluginToolSelection()
@@ -259,6 +276,11 @@ class SketchUiOverlay(
             it.isVisible = true
             needsPanelLayout = true
         }
+    }
+
+    fun showModelSettingsPanel() {
+        modelSettingsPanel.isVisible = true
+        needsPanelLayout = true
     }
 
     fun showPluginManager() {
@@ -489,6 +511,55 @@ class SketchUiOverlay(
         return panel
     }
 
+    private fun buildModelSettingsPanel(): CollapsibleWindow {
+        val panel = CollapsibleWindow("Model Settings")
+        val content = VisTable()
+        content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        content.defaults().pad(4f).left().growX()
+        content.add(VisLabel("Unit name")).left().row()
+        content.add(unitNameField).growX().row()
+        content.add(VisLabel("Unit size")).left().padTop(4f).row()
+        content.add(unitSizeField).growX().row()
+        content.add(VisLabel("Snap radius")).left().padTop(6f).row()
+        content.add(snapEpsilonSlider).growX().row()
+        panel.add(content).growX()
+        panel.isVisible = false
+
+        unitNameField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                if (updatingModelSettingsFields) {
+                    return
+                }
+                val name = unitNameField.text.trim()
+                val size = unitSizeField.text.toFloatOrNull() ?: return
+                if (name.isNotBlank()) {
+                    modelUnitChanged(name, size)
+                }
+            }
+        })
+        unitSizeField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                if (updatingModelSettingsFields) {
+                    return
+                }
+                val name = unitNameField.text.trim()
+                val size = unitSizeField.text.toFloatOrNull() ?: return
+                if (name.isNotBlank()) {
+                    modelUnitChanged(name, size)
+                }
+            }
+        })
+        snapEpsilonSlider.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                if (updatingModelSettingsFields) {
+                    return
+                }
+                snapEpsilonChanged(snapEpsilonSlider.value)
+            }
+        })
+        return panel
+    }
+
     private fun updateGroupPanel() {
         val info = groupInfoProvider()
         val wasVisible = groupPanel.isVisible
@@ -550,6 +621,28 @@ class SketchUiOverlay(
         }
         val selected = selectedObjectPrototype()
         objectsDeleteButton.isDisabled = selected == null || selected.instanceCount > 0
+    }
+
+    private fun updateModelSettingsPanel() {
+        val unit = modelUnitProvider()
+        val snapEpsilon = snapEpsilonProvider()
+        val unitName = unit.name
+        val unitSize = unit.size
+        if (unitName != lastUnitName || unitSize != lastUnitSize || snapEpsilon != lastSnapEpsilon) {
+            updatingModelSettingsFields = true
+            if (unitName != lastUnitName || !unitNameField.hasKeyboardFocus()) {
+                unitNameField.text = unitName
+            }
+            val sizeText = String.format(Locale.US, "%.4f", unitSize)
+            if (sizeText != unitSizeField.text || !unitSizeField.hasKeyboardFocus()) {
+                unitSizeField.text = sizeText
+            }
+            snapEpsilonSlider.value = snapEpsilon.coerceIn(snapEpsilonMin, snapEpsilonMax)
+            updatingModelSettingsFields = false
+            lastUnitName = unitName
+            lastUnitSize = unitSize
+            lastSnapEpsilon = snapEpsilon
+        }
     }
 
     private fun selectedObjectPrototype(): ObjectPrototypeInfo? {
@@ -652,6 +745,7 @@ class SketchUiOverlay(
         panels.add(selectionPanel)
         panels.add(groupPanel)
         panels.add(objectsPanel)
+        panels.add(modelSettingsPanel)
         lightingPanel?.let { panels.add(it) }
         panels.forEach {
             it.invalidateHierarchy()

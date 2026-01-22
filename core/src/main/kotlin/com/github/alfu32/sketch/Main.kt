@@ -36,6 +36,7 @@ import com.github.alfu32.sketch.input.ToolPointerProcessor
 import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.model.ModelPersistence
 import com.github.alfu32.sketch.model.ModelCleanup
+import com.github.alfu32.sketch.model.ModelUnit
 import com.github.alfu32.sketch.render.SketchShaderProvider
 import com.github.alfu32.sketch.plugin.PluginHost
 import com.github.alfu32.sketch.tools.CircleTool
@@ -94,6 +95,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var snapper: Snapper
     private var lastSnap: SnapResult? = null
     private val gridSpacing = 1f
+    private var snapEpsilon = 12f
+    private var modelUnit = ModelUnit(1f, "unit")
     private lateinit var modelFile: java.io.File
     private var shadowLightValue = 0.59f
     private var shadowLightAlpha = 0.5f
@@ -140,7 +143,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         scene = GroupScene(Color(0.8f, 0.8f, 0.8f, 1f))
         modelCleanup = ModelCleanup(scene)
         guideManager = GuideManager()
-        snapper = Snapper(camera, scene, guideManager, gridSpacing)
+        snapper = Snapper(camera, scene, guideManager, gridSpacing, snapEpsilon)
         objectPlaceTool = ObjectPlaceTool(
             scene,
             { instance ->
@@ -208,6 +211,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             { statusModel.copyMode },
             { lastSnap },
             { toolId -> toolController.setTool(toolId) },
+            { modelUnit },
+            { snapEpsilon },
             java.io.File(installDir, "plugins"),
             { modelFile }
         )
@@ -225,6 +230,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::objectPrototypeInfo,
             ::startObjectPlacement,
             ::deleteObjectPrototype,
+            ::modelUnitInfo,
+            ::updateModelUnit,
+            { snapEpsilon },
+            ::setSnapEpsilon,
             lightingSettings,
             ::applyLightingSettings,
             shadowSettings,
@@ -289,6 +298,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 priority = 1,
                 execute = {
                     uiOverlay.showLightingPanel()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.model_settings",
+                name = "View> Model Settings",
+                description = "Show model settings panel",
+                icon = "view",
+                category = "View",
+                tags = listOf("model", "settings", "panel"),
+                priority = 1,
+                execute = {
+                    uiOverlay.showModelSettingsPanel()
                     com.github.alfu32.sketch.plugin.PluginResult.success()
                 }
             )
@@ -785,7 +809,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun saveModel() {
-        ModelPersistence.save(modelFile, scene, camera, lightingSettings, shadowSettings)
+        ModelPersistence.save(modelFile, scene, camera, lightingSettings, shadowSettings, modelUnit, snapEpsilon)
         if (::pluginHost.isInitialized) {
             pluginHost.dispatchSave()
         }
@@ -800,11 +824,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 scene,
                 camera,
                 lightingSettings,
-                shadowSettings
+                shadowSettings,
+                modelUnit,
+                { value -> applySnapEpsilon(value, false) }
             )
             scene.applyChangeListenerToAll()
             if (result.ok && result.needsResave) {
-                ModelPersistence.save(modelFile, scene, camera, lightingSettings, shadowSettings)
+                ModelPersistence.save(modelFile, scene, camera, lightingSettings, shadowSettings, modelUnit, snapEpsilon)
             }
             statusModel.message = "Loaded ${modelFile.name}"
         } else {
@@ -943,6 +969,35 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         } else {
             statusModel.message = "Cannot delete: object has instances."
         }
+    }
+
+    private fun modelUnitInfo(): ModelUnit {
+        return modelUnit
+    }
+
+    private fun updateModelUnit(name: String, size: Float) {
+        if (modelUnit.name == name && modelUnit.size == size) {
+            return
+        }
+        modelUnit.name = name
+        modelUnit.size = size
+        statusModel.message = "Model unit updated."
+        saveModel()
+    }
+
+    private fun applySnapEpsilon(value: Float, save: Boolean) {
+        if (snapEpsilon == value) {
+            return
+        }
+        snapEpsilon = value
+        snapper.snapPixels = value
+        if (save) {
+            saveModel()
+        }
+    }
+
+    private fun setSnapEpsilon(value: Float) {
+        applySnapEpsilon(value, true)
     }
 
     private fun ungroupSelection() {

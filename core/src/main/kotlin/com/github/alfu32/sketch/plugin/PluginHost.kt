@@ -25,6 +25,8 @@ class PluginHost(
     private val getCopyMode: () -> Boolean,
     private val getCursorSnap: () -> com.github.alfu32.sketch.input.SnapResult?,
     private val setActiveTool: (ToolId) -> Unit,
+    private val getModelUnit: () -> com.github.alfu32.sketch.model.ModelUnit,
+    private val getSnapEpsilon: () -> Float,
     private val pluginsDir: File,
     private val getCurrentFile: () -> File? = { null }
 ) : PluginRegistry {
@@ -373,7 +375,7 @@ class PluginHost(
     }
 
     private fun buildContext(): PluginContext {
-        val modelSnapshot = ModelPersistence.snapshot(scene, camera, lighting, shadow)
+        val modelSnapshot = ModelPersistence.snapshot(scene, camera, lighting, shadow, getModelUnit(), getSnapEpsilon())
         val selection = buildSelectionSnapshot()
         val snap = getCursorSnap()
         val cursor = CursorSnapshot(

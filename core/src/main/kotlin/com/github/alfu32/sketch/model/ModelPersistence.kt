@@ -7,16 +7,18 @@ import com.badlogic.gdx.utils.JsonWriter
 import java.io.File
 
 object ModelPersistence {
-    private const val VERSION = 5
+    private const val VERSION = 6
 
     fun save(
         file: File,
         scene: GroupScene,
         camera: com.badlogic.gdx.graphics.PerspectiveCamera,
         lighting: com.github.alfu32.sketch.ui.LightingSettings,
-        shadow: com.github.alfu32.sketch.ui.ShadowSettings
+        shadow: com.github.alfu32.sketch.ui.ShadowSettings,
+        modelUnit: ModelUnit,
+        snapEpsilon: Float
     ) {
-        val snapshot = snapshot(scene, camera, lighting, shadow)
+        val snapshot = snapshot(scene, camera, lighting, shadow, modelUnit, snapEpsilon)
         val json = Json().apply {
             setOutputType(JsonWriter.OutputType.json)
         }
@@ -29,7 +31,9 @@ object ModelPersistence {
         scene: GroupScene,
         camera: com.badlogic.gdx.graphics.PerspectiveCamera,
         lighting: com.github.alfu32.sketch.ui.LightingSettings,
-        shadow: com.github.alfu32.sketch.ui.ShadowSettings
+        shadow: com.github.alfu32.sketch.ui.ShadowSettings,
+        modelUnit: ModelUnit,
+        snapEpsilon: Float
     ): ModelSnapshot {
         return ModelSnapshot().apply {
             version = VERSION
@@ -38,6 +42,8 @@ object ModelPersistence {
             cameraState = CameraDto(camera)
             lightingState = LightingDto(lighting)
             shadowState = ShadowDto(shadow)
+            this.modelUnit = ModelUnitDto(modelUnit)
+            this.snapEpsilon = snapEpsilon
         }
     }
 
@@ -48,7 +54,9 @@ object ModelPersistence {
         scene: GroupScene,
         camera: com.badlogic.gdx.graphics.PerspectiveCamera,
         lighting: com.github.alfu32.sketch.ui.LightingSettings,
-        shadow: com.github.alfu32.sketch.ui.ShadowSettings
+        shadow: com.github.alfu32.sketch.ui.ShadowSettings,
+        modelUnit: ModelUnit,
+        snapEpsilonSetter: (Float) -> Unit
     ): LoadResult {
         if (!file.exists() || file.length() == 0L) {
             return LoadResult(false, false)
@@ -60,7 +68,7 @@ object ModelPersistence {
             return LoadResult(false, false)
         } ?: return LoadResult(false, false)
 
-        applySnapshot(snapshot, scene, camera, lighting, shadow)
+        applySnapshot(snapshot, scene, camera, lighting, shadow, modelUnit, snapEpsilonSetter)
         val needsResave = snapshot.cameraState == null ||
             snapshot.lightingState == null ||
             snapshot.shadowState == null ||
@@ -68,7 +76,9 @@ object ModelPersistence {
             (snapshot.rootInstance != null && snapshot.prototypes.isEmpty()) ||
             snapshot.cameraState?.hasNulls() == true ||
             snapshot.lightingState?.hasNulls() == true ||
-            snapshot.shadowState?.hasNulls() == true
+            snapshot.shadowState?.hasNulls() == true ||
+            snapshot.modelUnit == null ||
+            snapshot.snapEpsilon == null
         return LoadResult(true, needsResave)
     }
 
@@ -77,7 +87,9 @@ object ModelPersistence {
         scene: GroupScene,
         camera: com.badlogic.gdx.graphics.PerspectiveCamera,
         lighting: com.github.alfu32.sketch.ui.LightingSettings,
-        shadow: com.github.alfu32.sketch.ui.ShadowSettings
+        shadow: com.github.alfu32.sketch.ui.ShadowSettings,
+        modelUnit: ModelUnit? = null,
+        snapEpsilonSetter: ((Float) -> Unit)? = null
     ) {
         resetScene(scene)
         if (snapshot.rootInstance != null && snapshot.prototypes.isNotEmpty()) {
@@ -147,6 +159,15 @@ object ModelPersistence {
         snapshot.cameraState?.applyTo(camera)
         snapshot.lightingState?.applyTo(lighting)
         snapshot.shadowState?.applyTo(shadow)
+        snapshot.modelUnit?.let { dto ->
+            modelUnit?.let { unit ->
+                unit.name = dto.name
+                unit.size = dto.size
+            }
+        }
+        snapshot.snapEpsilon?.let { value ->
+            snapEpsilonSetter?.invoke(value)
+        }
     }
 
     class ModelSnapshot {
@@ -159,6 +180,18 @@ object ModelPersistence {
         var cameraState: CameraDto? = null
         var lightingState: LightingDto? = null
         var shadowState: ShadowDto? = null
+        var modelUnit: ModelUnitDto? = null
+        var snapEpsilon: Float? = null
+    }
+
+    class ModelUnitDto() {
+        var size: Float = 1f
+        var name: String = "unit"
+
+        constructor(unit: ModelUnit) : this() {
+            size = unit.size
+            name = unit.name
+        }
     }
 
     class ObjectPrototypeDto() {
