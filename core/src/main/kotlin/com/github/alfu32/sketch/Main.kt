@@ -116,6 +116,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var pluginHost: PluginHost
     private lateinit var installDir: java.io.File
     private lateinit var objectPlaceTool: ObjectPlaceTool
+    private val cameraTarget = Vector3(0f, 0f, 0f)
 
     override fun create() {
         if (!VisUI.isLoaded()) {
@@ -451,6 +452,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     override fun render() {
         cameraController.update()
+        camera.lookAt(cameraTarget)
+        camera.update()
         updateCursorStatus()
         pluginHost.dispatchUpdate(Gdx.graphics.deltaTime)
         toolController.update(Gdx.graphics.deltaTime)
@@ -493,6 +496,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         drawAxes(2.5f)
         drawActiveGroupAxes(1.8f)
+        drawCameraTarget(1f)
         drawGuides()
         drawCursor()
         drawSelectionHighlights()
@@ -605,6 +609,23 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         shapeRenderer.line(origin, vEnd)
         shapeRenderer.color = Color(0.35f, 0.45f, 0.95f, 1f)
         shapeRenderer.line(origin, wEnd)
+    }
+
+    private fun drawCameraTarget(size: Float) {
+        val half = size * 0.5f
+        shapeRenderer.color = Color(1f, 0.55f, 0.1f, 1f)
+        shapeRenderer.line(
+            cameraTarget.x - half, cameraTarget.y, cameraTarget.z,
+            cameraTarget.x + half, cameraTarget.y, cameraTarget.z
+        )
+        shapeRenderer.line(
+            cameraTarget.x, cameraTarget.y - half, cameraTarget.z,
+            cameraTarget.x, cameraTarget.y + half, cameraTarget.z
+        )
+        shapeRenderer.line(
+            cameraTarget.x, cameraTarget.y, cameraTarget.z - half,
+            cameraTarget.x, cameraTarget.y, cameraTarget.z + half
+        )
     }
 
     private fun drawCursor() {
