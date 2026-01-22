@@ -308,6 +308,66 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 }
             )
         )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "edit.group",
+                name = "Edit> Group",
+                description = "Create object prototype from selection",
+                icon = "edit",
+                category = "Edit",
+                tags = listOf("group", "object"),
+                priority = 1,
+                execute = {
+                    objectPrototypeSelection()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "edit.ungroup",
+                name = "Edit> Ungroup",
+                description = "Ungroup selected objects",
+                icon = "edit",
+                category = "Edit",
+                tags = listOf("ungroup", "object"),
+                priority = 1,
+                execute = {
+                    ungroupSelection()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.axis_guide",
+                name = "View> Add Axis Guide",
+                description = "Add axis helper at cursor snap",
+                icon = "view",
+                category = "View",
+                tags = listOf("axis", "guide"),
+                priority = 1,
+                execute = {
+                    addAxisGuide()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.grid_guide",
+                name = "View> Add Grid Guide",
+                description = "Add grid helper at cursor snap",
+                icon = "view",
+                category = "View",
+                tags = listOf("grid", "guide"),
+                priority = 1,
+                execute = {
+                    addGridGuide()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
         listOf(
             ToolId.SELECT,
             ToolId.LINE,
@@ -838,6 +898,24 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         if (created != null) {
             statusModel.message = "Object created."
             saveModel()
+        }
+    }
+
+    private fun addAxisGuide() {
+        val snap = lastSnap
+        val point = snap?.world
+        if (snap != null && snap.valid && point != null) {
+            guideManager.addAxisGuide(point, snap.normal)
+            statusModel.message = "Axis guide added."
+        }
+    }
+
+    private fun addGridGuide() {
+        val snap = lastSnap
+        val point = snap?.world
+        if (snap != null && snap.valid && point != null) {
+            guideManager.addGridGuide(point, snap.normal)
+            statusModel.message = "Grid guide added."
         }
     }
 
