@@ -4,17 +4,15 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
 import com.badlogic.gdx.graphics.PerspectiveCamera
 import com.badlogic.gdx.graphics.g3d.utils.CameraInputController
-import com.badlogic.gdx.math.Intersector
-import com.badlogic.gdx.math.Plane
 import com.badlogic.gdx.math.Vector3
 
 class ShiftCameraController(camera: PerspectiveCamera) : CameraInputController(camera) {
     private var translating = false
-    private val panPlane = Plane()
     private val panAnchor = Vector3()
     private val tmp = Vector3()
     private val zoomDir = Vector3()
     private var zoomSpeed = 1f
+    private var panDepth = 0f
 
     init {
         forwardKey = -1
@@ -36,27 +34,22 @@ class ShiftCameraController(camera: PerspectiveCamera) : CameraInputController(c
         }
         translating = shift && button == Input.Buttons.RIGHT
         if (translating) {
-            val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
-            val normal = Vector3(camera.direction).nor()
-            panPlane.set(normal, target)
-            if (Intersector.intersectRayPlane(ray, panPlane, tmp)) {
-                panAnchor.set(tmp)
-            } else {
-                translating = false
-            }
+            val depth = camera.project(Vector3(target)).z
+            panDepth = depth
+            panAnchor.set(screenX.toFloat(), screenY.toFloat(), panDepth)
+            camera.unproject(panAnchor)
         }
         return super.touchDown(screenX, screenY, pointer, button)
     }
 
     override fun touchDragged(screenX: Int, screenY: Int, pointer: Int): Boolean {
         if (translating) {
-            val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
-            if (Intersector.intersectRayPlane(ray, panPlane, tmp)) {
-                tmp.sub(panAnchor)
-                camera.position.sub(tmp)
-                target.sub(tmp)
-                camera.update()
-            }
+            tmp.set(screenX.toFloat(), screenY.toFloat(), panDepth)
+            camera.unproject(tmp)
+            tmp.sub(panAnchor)
+            camera.position.sub(tmp)
+            target.sub(tmp)
+            camera.update()
             return true
         }
         return super.touchDragged(screenX, screenY, pointer)
