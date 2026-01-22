@@ -135,6 +135,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             rotateButton = Input.Buttons.RIGHT
             translateButton = Input.Buttons.RIGHT
         }
+        cameraController.target.set(cameraTarget)
         installDir = resolveInstallDir()
         statusModel = StatusModel(
             activeTool = ToolId.SELECT,
@@ -452,8 +453,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     override fun render() {
         cameraController.update()
-        camera.lookAt(cameraTarget)
-        camera.update()
+        cameraTarget.set(cameraController.target)
         updateCursorStatus()
         pluginHost.dispatchUpdate(Gdx.graphics.deltaTime)
         toolController.update(Gdx.graphics.deltaTime)
