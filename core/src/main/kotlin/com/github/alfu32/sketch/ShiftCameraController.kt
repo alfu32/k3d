@@ -13,6 +13,8 @@ class ShiftCameraController(camera: PerspectiveCamera) : CameraInputController(c
     private val panPlane = Plane()
     private val panAnchor = Vector3()
     private val tmp = Vector3()
+    private val zoomDir = Vector3()
+    private var zoomSpeed = 1f
 
     override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
         val shift = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) ||
@@ -57,5 +59,22 @@ class ShiftCameraController(camera: PerspectiveCamera) : CameraInputController(c
             translating = false
         }
         return super.touchUp(screenX, screenY, pointer, button)
+    }
+
+    override fun zoom(amount: Float): Boolean {
+        zoomDir.set(target).sub(camera.position)
+        val distance = zoomDir.len()
+        if (distance <= 1e-4f) {
+            return false
+        }
+        zoomDir.scl(1f / distance)
+        var step = amount * zoomSpeed
+        val minDistance = 0.1f
+        if (distance - step < minDistance) {
+            step = distance - minDistance
+        }
+        camera.position.mulAdd(zoomDir, step)
+        camera.update()
+        return true
     }
 }
