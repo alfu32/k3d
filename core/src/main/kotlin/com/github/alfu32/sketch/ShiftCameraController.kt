@@ -16,17 +16,25 @@ class ShiftCameraController(camera: PerspectiveCamera) : CameraInputController(c
     private val zoomDir = Vector3()
     private var zoomSpeed = 1f
 
+    init {
+        forwardKey = -1
+        backwardKey = -1
+        rotateRightKey = -1
+        rotateLeftKey = -1
+        forwardButton = -1
+    }
+
     override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
         val shift = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) ||
             Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT)
         if (shift) {
-            translateButton = Input.Buttons.RIGHT
+            translateButton = -1
             rotateButton = -1
         } else {
             rotateButton = Input.Buttons.RIGHT
             translateButton = -1
         }
-        translating = shift && button == translateButton
+        translating = shift && button == Input.Buttons.RIGHT
         if (translating) {
             val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
             val normal = Vector3(camera.direction).nor()
@@ -55,7 +63,7 @@ class ShiftCameraController(camera: PerspectiveCamera) : CameraInputController(c
     }
 
     override fun touchUp(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
-        if (button == translateButton) {
+        if (button == Input.Buttons.RIGHT) {
             translating = false
         }
         return super.touchUp(screenX, screenY, pointer, button)

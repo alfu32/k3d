@@ -454,6 +454,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     override fun render() {
         cameraController.update()
         cameraTarget.set(cameraController.target)
+        camera.lookAt(cameraTarget)
+        camera.update()
         updateCursorStatus()
         pluginHost.dispatchUpdate(Gdx.graphics.deltaTime)
         toolController.update(Gdx.graphics.deltaTime)
