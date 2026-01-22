@@ -23,12 +23,21 @@ class CommandPaletteUI(
     private val stage: Stage
 ) {
     private open class CollapsibleWindow(title: String) : VisWindow(title, true) {
+        private var collapsed = false
+
         init {
             isMovable = true
             isResizable = true
             isModal = false
             setKeepWithinParent(false)
             addCloseButton()
+            getTitleTable().addListener(object : ClickListener() {
+                override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                    if (tapCount >= 2) {
+                        toggleCollapsed()
+                    }
+                }
+            })
         }
 
         override fun close() {
@@ -40,7 +49,22 @@ class CommandPaletteUI(
         }
 
         override fun getPrefHeight(): Float {
-            return if (!isVisible) 0f else super.getPrefHeight()
+            if (!isVisible) {
+                return 0f
+            }
+            return if (collapsed) getTitleTable().prefHeight else super.getPrefHeight()
+        }
+
+        private fun toggleCollapsed() {
+            collapsed = !collapsed
+            val title = getTitleTable()
+            children.forEach { child ->
+                if (child !== title) {
+                    child.isVisible = !collapsed
+                }
+            }
+            invalidateHierarchy()
+            pack()
         }
     }
 

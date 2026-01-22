@@ -50,6 +50,8 @@ class SketchUiOverlay(
         private val fixedHeight: Float? = null,
         showCloseButton: Boolean = true
     ) : com.kotcrab.vis.ui.widget.VisWindow(title, true) {
+        private var collapsed = false
+
         init {
             isMovable = true
             isResizable = true
@@ -58,6 +60,13 @@ class SketchUiOverlay(
             if (showCloseButton) {
                 addCloseButton()
             }
+            getTitleTable().addListener(object : ClickListener() {
+                override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                    if (tapCount >= 2) {
+                        toggleCollapsed()
+                    }
+                }
+            })
         }
 
         override fun close() {
@@ -72,8 +81,23 @@ class SketchUiOverlay(
             if (!isVisible) {
                 return 0f
             }
+            if (collapsed) {
+                return getTitleTable().prefHeight
+            }
             val pref = super.getPrefHeight()
             return fixedHeight ?: pref
+        }
+
+        private fun toggleCollapsed() {
+            collapsed = !collapsed
+            val title = getTitleTable()
+            children.forEach { child ->
+                if (child !== title) {
+                    child.isVisible = !collapsed
+                }
+            }
+            invalidateHierarchy()
+            pack()
         }
     }
 
@@ -490,7 +514,7 @@ class SketchUiOverlay(
         if (prototypes != objectPrototypeItems) {
             objectPrototypeItems = prototypes
             val items = prototypes.map { prototype ->
-                "${prototype.name} (${prototype.instanceCount})"
+                "${prototype.name} (${prototype.instanceCount}) [${prototype.id.take(8)}]"
             }
             objectsList.setItems(*items.toTypedArray())
             objectsList.selectedIndex = -1
