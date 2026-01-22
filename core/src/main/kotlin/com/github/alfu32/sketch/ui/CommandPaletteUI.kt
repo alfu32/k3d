@@ -82,7 +82,7 @@ class CommandPaletteUI(
     private fun setupUI() {
         window.defaults().pad(5f)
         window.isModal = false
-        window.isResizable = false
+        window.isResizable = true
         window.setSize(600f, 400f)
         
         // Search field

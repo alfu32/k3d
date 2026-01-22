@@ -244,6 +244,30 @@ class SketchUiOverlay(
         }
     }
 
+    fun showSelectionPanel() {
+        selectionPanel.isVisible = true
+        needsPanelLayout = true
+    }
+
+    fun showGroupPanel() {
+        groupPanel.isVisible = true
+        needsPanelLayout = true
+    }
+
+    fun showLightingPanel() {
+        lightingPanel?.let {
+            it.isVisible = true
+            needsPanelLayout = true
+        }
+    }
+
+    fun showPluginManager() {
+        pluginManagerPanel?.let {
+            it.isVisible = true
+            it.refresh()
+        }
+    }
+
     fun showCommandPalette() {
         commandPaletteUI?.show()
     }
@@ -467,28 +491,33 @@ class SketchUiOverlay(
 
     private fun updateGroupPanel() {
         val info = groupInfoProvider()
+        val wasVisible = groupPanel.isVisible
+        groupPanel.isVisible = true
+        if (!wasVisible) {
+            needsPanelLayout = true
+        }
         if (info == null) {
-            val wasVisible = groupPanel.isVisible
-            groupPanel.isVisible = false
-            if (wasVisible) {
-                needsPanelLayout = true
-            }
+            groupStatusLabel.setText("No object selected")
+            updatingGroupFields = true
+            groupNameField.text = ""
+            groupGlueCheck.isChecked = false
+            updatingGroupFields = false
+            groupNameField.isDisabled = true
+            groupGlueCheck.isDisabled = true
             lastGroupName = ""
             lastGroupGlue = false
             lastGroupEditing = false
+            lastGroupId = ""
             return
         }
-        val wasVisible = groupPanel.isVisible
-        groupPanel.isVisible = true
+        groupNameField.isDisabled = false
+        groupGlueCheck.isDisabled = false
         val statusText = if (info.editing) {
             "Editing object: ${info.name}"
         } else {
             "Selected object: ${info.name}"
         }
         groupStatusLabel.setText(statusText)
-        if (!wasVisible) {
-            needsPanelLayout = true
-        }
         val selectionChanged = info.id != lastGroupId
         if (selectionChanged || !groupNameField.hasKeyboardFocus() || info.name != lastGroupName) {
             updatingGroupFields = true

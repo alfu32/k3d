@@ -248,6 +248,96 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 }
             )
         )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.selection",
+                name = "View> Selection",
+                description = "Show selection panel",
+                icon = "view",
+                category = "View",
+                tags = listOf("selection", "panel"),
+                priority = 1,
+                execute = {
+                    uiOverlay.showSelectionPanel()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.object_info",
+                name = "View> Object Info",
+                description = "Show object info panel",
+                icon = "view",
+                category = "View",
+                tags = listOf("object", "info", "panel"),
+                priority = 1,
+                execute = {
+                    uiOverlay.showGroupPanel()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.lighting",
+                name = "View> Lighting",
+                description = "Show lighting panel",
+                icon = "view",
+                category = "View",
+                tags = listOf("lighting", "panel"),
+                priority = 1,
+                execute = {
+                    uiOverlay.showLightingPanel()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.plugin_manager",
+                name = "View> Plugin Manager",
+                description = "Show plugin manager panel",
+                icon = "view",
+                category = "View",
+                tags = listOf("plugins", "panel"),
+                priority = 1,
+                execute = {
+                    uiOverlay.showPluginManager()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        listOf(
+            ToolId.SELECT,
+            ToolId.LINE,
+            ToolId.RECTANGLE,
+            ToolId.SURFACE_RECTANGLE,
+            ToolId.QUAD,
+            ToolId.CIRCLE,
+            ToolId.PUSH_PULL,
+            ToolId.MOVE,
+            ToolId.ROTATE,
+            ToolId.SCALE,
+            ToolId.PAINT,
+            ToolId.ERASER
+        ).forEach { toolId ->
+            pluginHost.getCommandPalette().registerCommand(
+                com.github.alfu32.sketch.plugin.PaletteCommand(
+                    id = "tool.builtin.${toolId.name.lowercase()}",
+                    name = "Tool> ${toolId.displayName}",
+                    description = "Activate ${toolId.displayName} tool",
+                    icon = "tool",
+                    category = "Tools",
+                    tags = listOf(toolId.displayName.lowercase()),
+                    priority = 1,
+                    execute = {
+                        toolController.setTool(toolId)
+                        com.github.alfu32.sketch.plugin.PluginResult.success()
+                    }
+                )
+            )
+        }
         
         toolPointer = ToolPointerProcessor(toolController, snapper)
         val cameraScrollForwarder = CameraScrollForwarder(cameraController)

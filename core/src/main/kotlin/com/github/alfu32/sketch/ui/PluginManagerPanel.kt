@@ -21,10 +21,18 @@ class PluginManagerPanel(private val pluginHost: PluginHost) : VisWindow("Plugin
     private val pluginPathLabel = VisLabel("")
     private var lastSnapshot: List<PluginEntryInfo> = emptyList()
     private var errorDialog: VisWindow? = null
+    private var collapsed = false
 
     init {
         isResizable = true
         isModal = false
+        getTitleTable().addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                if (tapCount >= 2) {
+                    toggleCollapsed()
+                }
+            }
+        })
         setupUI()
         refresh()
         isVisible = true
@@ -89,8 +97,27 @@ class PluginManagerPanel(private val pluginHost: PluginHost) : VisWindow("Plugin
         add(logScroll).growX().height(120f).row()
 
         pack()
-        setSize(540f, height)
+        setSize(640f, height)
         setPosition(100f, 100f)
+    }
+
+    override fun getPrefHeight(): Float {
+        if (!isVisible) {
+            return 0f
+        }
+        return if (collapsed) getTitleTable().prefHeight else super.getPrefHeight()
+    }
+
+    private fun toggleCollapsed() {
+        collapsed = !collapsed
+        val title = getTitleTable()
+        children.forEach { child ->
+            if (child !== title) {
+                child.isVisible = !collapsed
+            }
+        }
+        invalidateHierarchy()
+        pack()
     }
 
     fun refresh(force: Boolean = false) {
