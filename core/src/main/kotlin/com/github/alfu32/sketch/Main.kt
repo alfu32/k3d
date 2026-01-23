@@ -452,6 +452,28 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         setupRenderables()
     }
 
+    private fun pickPanPoint(screenX: Int, screenY: Int): Vector3? {
+        val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
+        val group = scene.activeGroup()
+        val localRay = com.badlogic.gdx.math.collision.Ray(
+            group.toLocal(ray.origin),
+            group.vectorToLocal(ray.direction).nor()
+        )
+        val faceHit = group.faceStore.pickTriangle(localRay)
+        if (faceHit != null) {
+            return group.toWorld(faceHit.point)
+        }
+        val dirY = ray.direction.y
+        if (kotlin.math.abs(dirY) < 1e-6f) {
+            return null
+        }
+        val t = -ray.origin.y / dirY
+        if (t <= 0f) {
+            return null
+        }
+        return Vector3(ray.origin).mulAdd(ray.direction, t)
+    }
+
     override fun render() {
         cameraController.update()
         cameraTarget.set(cameraController.target)
