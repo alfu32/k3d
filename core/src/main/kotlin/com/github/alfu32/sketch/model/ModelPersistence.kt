@@ -13,12 +13,13 @@ object ModelPersistence {
         file: File,
         scene: GroupScene,
         camera: com.badlogic.gdx.graphics.PerspectiveCamera,
+        cameraTarget: Vector3,
         lighting: com.github.alfu32.sketch.ui.LightingSettings,
         shadow: com.github.alfu32.sketch.ui.ShadowSettings,
         modelUnit: ModelUnit,
         snapEpsilon: Float
     ) {
-        val snapshot = snapshot(scene, camera, lighting, shadow, modelUnit, snapEpsilon)
+        val snapshot = snapshot(scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilon)
         val json = Json().apply {
             setOutputType(JsonWriter.OutputType.json)
         }
@@ -30,6 +31,7 @@ object ModelPersistence {
     fun snapshot(
         scene: GroupScene,
         camera: com.badlogic.gdx.graphics.PerspectiveCamera,
+        cameraTarget: Vector3,
         lighting: com.github.alfu32.sketch.ui.LightingSettings,
         shadow: com.github.alfu32.sketch.ui.ShadowSettings,
         modelUnit: ModelUnit,
@@ -39,7 +41,7 @@ object ModelPersistence {
             version = VERSION
             prototypes = scene.allPrototypes().map { ObjectPrototypeDto.fromPrototype(it) }.toMutableList()
             rootInstance = GroupInstanceDto.fromInstance(scene.root)
-            cameraState = CameraDto(camera)
+            cameraState = CameraDto(camera, cameraTarget)
             lightingState = LightingDto(lighting)
             shadowState = ShadowDto(shadow)
             this.modelUnit = ModelUnitDto(modelUnit)
@@ -53,6 +55,7 @@ object ModelPersistence {
         file: File,
         scene: GroupScene,
         camera: com.badlogic.gdx.graphics.PerspectiveCamera,
+        cameraTarget: Vector3,
         lighting: com.github.alfu32.sketch.ui.LightingSettings,
         shadow: com.github.alfu32.sketch.ui.ShadowSettings,
         modelUnit: ModelUnit,
@@ -68,7 +71,7 @@ object ModelPersistence {
             return LoadResult(false, false)
         } ?: return LoadResult(false, false)
 
-        applySnapshot(snapshot, scene, camera, lighting, shadow, modelUnit, snapEpsilonSetter)
+        applySnapshot(snapshot, scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilonSetter)
         val needsResave = snapshot.cameraState == null ||
             snapshot.lightingState == null ||
             snapshot.shadowState == null ||
@@ -86,6 +89,7 @@ object ModelPersistence {
         snapshot: ModelSnapshot,
         scene: GroupScene,
         camera: com.badlogic.gdx.graphics.PerspectiveCamera,
+        cameraTarget: Vector3? = null,
         lighting: com.github.alfu32.sketch.ui.LightingSettings,
         shadow: com.github.alfu32.sketch.ui.ShadowSettings,
         modelUnit: ModelUnit? = null,
@@ -156,7 +160,15 @@ object ModelPersistence {
                 )
             }
         }
-        snapshot.cameraState?.applyTo(camera)
+        if (snapshot.cameraState != null) {
+            snapshot.cameraState?.applyTo(camera, cameraTarget)
+        } else {
+            camera.position.set(10f, 10f, 10f)
+            camera.up.set(0f, 1f, 0f)
+            camera.direction.set(0f, 0f, 0f).sub(camera.position).nor()
+            cameraTarget?.set(0f, 0f, 0f)
+            camera.update()
+        }
         snapshot.lightingState?.applyTo(lighting)
         snapshot.shadowState?.applyTo(shadow)
         snapshot.modelUnit?.let { dto ->
@@ -484,23 +496,33 @@ object ModelPersistence {
         var position: Vec3Dto? = null
         var direction: Vec3Dto? = null
         var up: Vec3Dto? = null
+        var target: Vec3Dto? = null
         var near: Float? = null
         var far: Float? = null
         var fieldOfView: Float? = null
 
-        constructor(camera: com.badlogic.gdx.graphics.PerspectiveCamera) : this() {
+        constructor(camera: com.badlogic.gdx.graphics.PerspectiveCamera, cameraTarget: Vector3) : this() {
             position = Vec3Dto(camera.position)
             direction = Vec3Dto(camera.direction)
             up = Vec3Dto(camera.up)
+            target = Vec3Dto(cameraTarget)
             near = camera.near
             far = camera.far
             fieldOfView = camera.fieldOfView
         }
 
-        fun applyTo(camera: com.badlogic.gdx.graphics.PerspectiveCamera) {
-            position?.let { camera.position.set(it.toVector3()) }
-            direction?.let { camera.direction.set(it.toVector3()) }
-            up?.let { camera.up.set(it.toVector3()) }
+        fun applyTo(camera: com.badlogic.gdx.graphics.PerspectiveCamera, cameraTarget: Vector3? = null) {
+            val resolvedPosition = position?.toVector3() ?: Vector3(10f, 10f, 10f)
+            val resolvedTarget = target?.toVector3() ?: Vector3(0f, 0f, 0f)
+            camera.position.set(resolvedPosition)
+            camera.up.set(0f, 1f, 0f)
+            camera.direction.set(resolvedTarget).sub(resolvedPosition)
+            if (camera.direction.len2() <= 1e-6f) {
+                camera.direction.set(0f, -1f, 0f)
+            } else {
+                camera.direction.nor()
+            }
+            cameraTarget?.set(resolvedTarget)
             near?.let { camera.near = it }
             far?.let { camera.far = it }
             fieldOfView?.let { camera.fieldOfView = it }
@@ -508,7 +530,7 @@ object ModelPersistence {
         }
 
         fun hasNulls(): Boolean {
-            return position == null || direction == null || up == null ||
+            return position == null || direction == null || up == null || target == null ||
                 near == null || far == null || fieldOfView == null
         }
     }

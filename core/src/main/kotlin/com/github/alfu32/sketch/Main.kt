@@ -131,7 +131,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             update()
         }
 
-        cameraController = ShiftCameraController(camera).apply {
+        cameraController = ShiftCameraController(camera, this::pickPanPoint).apply {
             rotateButton = Input.Buttons.RIGHT
             translateButton = Input.Buttons.RIGHT
         }
@@ -207,6 +207,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             scene,
             statusModel,
             camera,
+            { cameraTarget },
             lightingSettings,
             shadowSettings,
             { toolController.activeToolId() },
@@ -454,6 +455,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     override fun render() {
         cameraController.update()
         cameraTarget.set(cameraController.target)
+        camera.up.set(0f, 1f, 0f)
         camera.lookAt(cameraTarget)
         camera.update()
         updateCursorStatus()
@@ -832,7 +834,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun saveModel() {
-        ModelPersistence.save(modelFile, scene, camera, lightingSettings, shadowSettings, modelUnit, snapEpsilon)
+        ModelPersistence.save(modelFile, scene, camera, cameraTarget, lightingSettings, shadowSettings, modelUnit, snapEpsilon)
         if (::pluginHost.isInitialized) {
             pluginHost.dispatchSave()
         }
@@ -846,6 +848,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 modelFile,
                 scene,
                 camera,
+                cameraTarget,
                 lightingSettings,
                 shadowSettings,
                 modelUnit,
@@ -853,8 +856,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             )
             scene.applyChangeListenerToAll()
             if (result.ok && result.needsResave) {
-                ModelPersistence.save(modelFile, scene, camera, lightingSettings, shadowSettings, modelUnit, snapEpsilon)
+                ModelPersistence.save(modelFile, scene, camera, cameraTarget, lightingSettings, shadowSettings, modelUnit, snapEpsilon)
             }
+            cameraController.target.set(cameraTarget)
             statusModel.message = "Loaded ${modelFile.name}"
         } else {
             saveModel()

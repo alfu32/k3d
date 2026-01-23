@@ -19,6 +19,7 @@ class PluginHost(
     private val scene: GroupScene,
     private val statusModel: StatusModel,
     private val camera: com.badlogic.gdx.graphics.PerspectiveCamera,
+    private val getCameraTarget: () -> Vector3,
     private val lighting: com.github.alfu32.sketch.ui.LightingSettings,
     private val shadow: com.github.alfu32.sketch.ui.ShadowSettings,
     private val getActiveTool: () -> ToolId,
@@ -364,7 +365,7 @@ class PluginHost(
         safe.changes.forEach { change ->
             when (change) {
                 is PluginChange.ReplaceModel -> {
-                    ModelPersistence.applySnapshot(change.snapshot, scene, camera, lighting, shadow)
+                    ModelPersistence.applySnapshot(change.snapshot, scene, camera, getCameraTarget(), lighting, shadow)
                     scene.applyChangeListenerToAll()
                 }
                 is PluginChange.StatusMessage -> {
@@ -375,7 +376,15 @@ class PluginHost(
     }
 
     private fun buildContext(): PluginContext {
-        val modelSnapshot = ModelPersistence.snapshot(scene, camera, lighting, shadow, getModelUnit(), getSnapEpsilon())
+        val modelSnapshot = ModelPersistence.snapshot(
+            scene,
+            camera,
+            getCameraTarget(),
+            lighting,
+            shadow,
+            getModelUnit(),
+            getSnapEpsilon()
+        )
         val selection = buildSelectionSnapshot()
         val snap = getCursorSnap()
         val cursor = CursorSnapshot(

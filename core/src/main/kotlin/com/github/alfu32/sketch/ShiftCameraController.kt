@@ -4,11 +4,12 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
 import com.badlogic.gdx.graphics.PerspectiveCamera
 import com.badlogic.gdx.graphics.g3d.utils.CameraInputController
-import com.badlogic.gdx.math.Intersector
-import com.badlogic.gdx.math.Plane
 import com.badlogic.gdx.math.Vector3
 
-class ShiftCameraController(camera: PerspectiveCamera) : CameraInputController(camera) {
+class ShiftCameraController(
+    camera: PerspectiveCamera,
+    private val pickWorldPoint: (screenX: Int, screenY: Int) -> Vector3?
+) : CameraInputController(camera) {
     private var translating = false
     private val panStartPos = Vector3()
     private val panStartTarget = Vector3()
@@ -40,12 +41,12 @@ class ShiftCameraController(camera: PerspectiveCamera) : CameraInputController(c
         if (translating) {
             panStartPos.set(camera.position)
             panStartTarget.set(target)
-            val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
-            val screenPlane = Plane(Vector3(camera.direction).nor(), panStartTarget)
-            if (!Intersector.intersectRayPlane(ray, screenPlane, panStartGrab)) {
+            val picked = pickWorldPoint(screenX, screenY)
+            if (picked == null) {
                 translating = false
                 return super.touchDown(screenX, screenY, pointer, button)
             }
+            panStartGrab.set(picked)
         }
         return super.touchDown(screenX, screenY, pointer, button)
     }
