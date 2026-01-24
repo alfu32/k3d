@@ -93,7 +93,7 @@ private fun printHelp() {
         """
         K3D Editor
         Commands:
-          edit --file <path> [--size WIDTHxHEIGHT]   Open or create a model file (default: sketch3d.skate.json)
+          edit --file <path> [--size WIDTHxHEIGHT]   Open or create a model file (default: sketch3d.k3d)
           groovy <script>      Run a Groovy script file
           version             Show version information
           update              Download and replace the editor jar
@@ -149,7 +149,7 @@ private fun runUpdate() {
         return
     }
     val tempFile = File(installDir, "${jarFile.name}.download")
-    val url = URL("https://github.com/alfu32/katechup3d/releases/latest/download/k3d-editor.jar")
+    val url = URL("https://github.com/alfu32/k3d/releases/latest/download/k3d-editor.jar")
     try {
         url.openStream().use { input ->
             tempFile.outputStream().use { output ->

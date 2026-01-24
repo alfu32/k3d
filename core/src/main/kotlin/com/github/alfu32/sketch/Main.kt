@@ -1310,7 +1310,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             i++
         }
         if (fileArg.isNullOrBlank()) {
-            fileArg = "sketch3d.skate.json"
+            fileArg = "sketch3d.k3d"
         }
         return java.io.File(fileArg).absoluteFile
     }
