@@ -719,14 +719,28 @@ class GroupScene(
         }
     }
 
-    fun collectWorldTexts(consumer: (Vector3, String, Float, Boolean) -> Unit) {
+    fun collectWorldTexts(consumer: (Vector3, String, Float, Vector3, Vector3, Boolean) -> Unit) {
         walkGroups(root) { group ->
             group.textStore.getTexts().forEach { text ->
-                consumer(group.toWorld(text.position), text.text, text.size, group.textStore.isSelected(text))
+                consumer(
+                    group.toWorld(text.position),
+                    text.text,
+                    text.size,
+                    group.vectorToWorld(text.normal),
+                    group.vectorToWorld(text.axisU),
+                    group.textStore.isSelected(text)
+                )
             }
         }
         root.textStore.getTexts().forEach { text ->
-            consumer(Vector3(text.position), text.text, text.size, root.textStore.isSelected(text))
+            consumer(
+                Vector3(text.position),
+                text.text,
+                text.size,
+                Vector3(text.normal),
+                Vector3(text.axisU),
+                root.textStore.isSelected(text)
+            )
         }
     }
 

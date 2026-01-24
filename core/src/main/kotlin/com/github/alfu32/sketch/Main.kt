@@ -26,6 +26,7 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.GlyphLayout
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
+import com.badlogic.gdx.math.Quaternion
 import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.utils.Array
@@ -179,7 +180,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 QuadTool(scene),
                 CircleTool(scene),
                 LinearDimensionTool(scene),
-                TextTool(scene),
+                TextTool(scene, camera),
                 PushPullTool(scene, camera),
                 MoveTool(scene),
                 RotateTool(scene),
@@ -1020,10 +1021,14 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             val (lineStart, lineEnd) = DimensionMath.computeOffsetLine(start, end, offset)
             drawDimensionText(lineStart, lineEnd, start, end, offset, selected)
         }
+        spriteBatch.end()
+
+        spriteBatch.projectionMatrix = camera.combined
         textTransform.idt()
         spriteBatch.transformMatrix = textTransform
-        scene.collectWorldTexts { position, text, size, selected ->
-            drawWorldText(text, position, size, selected)
+        spriteBatch.begin()
+        scene.collectWorldTexts { position, text, size, normal, axisU, selected ->
+            drawWorldText(text, position, size, normal, axisU, selected)
         }
         spriteBatch.end()
     }
@@ -1053,10 +1058,16 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         drawRotatedTextScaled(label, screenPos.x, screenPos.y, angleDeg, scale, color)
     }
 
-    private fun drawWorldText(text: String, position: Vector3, size: Float, selected: Boolean) {
-        val screenPos = camera.project(Vector3(position))
+    private fun drawWorldText(
+        text: String,
+        position: Vector3,
+        size: Float,
+        normal: Vector3,
+        axisU: Vector3,
+        selected: Boolean
+    ) {
         val color = if (selected) selectedLineColor else Color(0.1f, 0.1f, 0.1f, 1f)
-        drawTextScaled(text, screenPos.x, screenPos.y, size, color)
+        drawTextInPlane(text, position, size, normal, axisU, color)
     }
 
     private fun drawRotatedText(text: String, x: Float, y: Float, angleDeg: Float, color: Color) {
@@ -1093,24 +1104,57 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         textFont.data.setScale(previousScaleX, previousScaleY)
     }
 
-    private fun drawTextScaled(text: String, x: Float, y: Float, scale: Float, color: Color) {
-        val previousScaleX = textFont.data.scaleX
-        val previousScaleY = textFont.data.scaleY
+    private fun drawTextInPlane(
+        text: String,
+        position: Vector3,
+        size: Float,
+        normal: Vector3,
+        axisU: Vector3,
+        color: Color
+    ) {
+        val n = Vector3(normal).nor()
+        var u = Vector3(axisU).mulAdd(n, -axisU.dot(n))
+        if (u.len2() < 1e-6f) {
+            u = Vector3(1f, 0f, 0f).mulAdd(n, -n.x)
+        }
+        u.nor()
+        val v = Vector3(n).crs(u).nor()
+        val worldPerPixel = worldPerPixelAt(position)
+        val baseHeightWorld = textFont.lineHeight * worldPerPixel
+        val scale = if (baseHeightWorld > 1e-6f) size / baseHeightWorld else 1f
+        val prevScaleX = textFont.data.scaleX
+        val prevScaleY = textFont.data.scaleY
         textFont.data.setScale(scale)
+        textLayout.setText(textFont, text)
+        val originX = textLayout.width / 2f
+        val originY = textLayout.height / 2f
+        val rotation = Quaternion().setFromAxes(
+            u.x, u.y, u.z,
+            v.x, v.y, v.z,
+            n.x, n.y, n.z
+        )
+        textTransformBackup.set(spriteBatch.transformMatrix)
+        textTransform.idt()
+        textTransform.set(position, rotation, Vector3(1f, 1f, 1f))
+        spriteBatch.transformMatrix = textTransform
         textFont.color = color
-        textFont.draw(spriteBatch, text, x, y)
-        textFont.data.setScale(previousScaleX, previousScaleY)
+        textFont.draw(spriteBatch, text, -originX, originY)
+        spriteBatch.transformMatrix = textTransformBackup
+        textFont.data.setScale(prevScaleX, prevScaleY)
     }
 
     private fun textWorldSize(worldPoint: Vector3, pixelSize: Float): Float {
+        return worldPerPixelAt(worldPoint) * pixelSize
+    }
+
+    private fun worldPerPixelAt(worldPoint: Vector3): Float {
         val toPoint = Vector3(worldPoint).sub(camera.position)
         val depth = toPoint.dot(camera.direction)
         if (depth <= 0f) {
             return 0.01f
         }
         val viewportHeight = 2f * depth * kotlin.math.tan(Math.toRadians(camera.fieldOfView.toDouble() / 2.0)).toFloat()
-        val worldPerPixel = viewportHeight / Gdx.graphics.height
-        return worldPerPixel * pixelSize
+        return viewportHeight / Gdx.graphics.height
     }
 
     private fun formatMeasurement(value: Float, unitName: String): String {

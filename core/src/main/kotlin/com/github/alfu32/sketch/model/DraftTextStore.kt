@@ -7,7 +7,9 @@ class DraftTextStore {
         val id: String,
         val position: Vector3,
         var text: String,
-        var size: Float
+        var size: Float,
+        val normal: Vector3,
+        val axisU: Vector3
     )
 
     private val texts = mutableListOf<TextEntity>()
@@ -20,12 +22,20 @@ class DraftTextStore {
 
     fun getTexts(): List<TextEntity> = texts
 
-    fun addText(position: Vector3, text: String, size: Float = 1f): TextEntity {
+    fun addText(
+        position: Vector3,
+        text: String,
+        size: Float = 1f,
+        normal: Vector3 = Vector3(0f, 1f, 0f),
+        axisU: Vector3 = Vector3(1f, 0f, 0f)
+    ): TextEntity {
         val entity = TextEntity(
             id = java.util.UUID.randomUUID().toString(),
             position = Vector3(position),
             text = text,
-            size = size
+            size = size,
+            normal = Vector3(normal).nor(),
+            axisU = Vector3(axisU).nor()
         )
         texts.add(entity)
         notifyChange()
@@ -143,7 +153,13 @@ class DraftTextStore {
         selectedIds.clear()
         var count = 0
         original.forEach { text ->
-            val copy = addText(transform(Vector3(text.position)), text.text, text.size)
+            val copy = addText(
+                transform(Vector3(text.position)),
+                text.text,
+                text.size,
+                text.normal,
+                text.axisU
+            )
             selectedIds.add(copy.id)
             count++
         }
