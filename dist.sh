@@ -59,14 +59,14 @@ export LAUNCHER_LINUX=dist/k3d-editor
 # RUN_PATH="$(pwd)"
 #
 # if [[ -n "\$1" ]]; then
-#   java -jar "\$INSTALL_PATH/K3D-editor.jar" --file "\$1"
+#   java -jar "\$INSTALL_PATH/k3d-editor.jar" --file "\$1"
 # else
-#   java -jar "\$INSTALL_PATH/K3D-editor.jar"
+#   java -jar "\$INSTALL_PATH/k3d-editor.jar"
 # fi
 # LAUNCHERLINUXSCRIPT
 # chmod +x $LAUNCHER_LINUX
 
-mv dist/K3D-*.jar dist/K3D-editor.jar
+mv dist/k3d-*.jar dist/k3d-editor.jar
 
 cp scripts/k3d-editor $LAUNCHER_LINUX
 chmod +x $LAUNCHER_LINUX
@@ -96,7 +96,7 @@ set "SCRIPT_PATH=%SCRIPT_PATH:~0,-1%"
 echo Java Version: %JAVA_VERSION%
 echo Script Path: %SCRIPT_PATH%
 
-echo "java -jar %SCRIPT_PATH%\\K3D-editor.jar edit --file \"%%1\"" > K3D.cmd
+echo "java -jar %SCRIPT_PATH%\\k3d-editor.jar edit --file \"%%1\"" > k3d.cmd
 
 echo Windows Registry Editor Version 5.00^
      ^
