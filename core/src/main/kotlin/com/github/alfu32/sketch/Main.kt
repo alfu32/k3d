@@ -1129,11 +1129,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val screenU = camera.project(Vector3(position).add(u))
         val screenV = camera.project(Vector3(position).add(v))
         val ux = screenU.x - screenOrigin.x
-        val uy = screenU.y - screenOrigin.y
-        val vx = screenV.x - screenOrigin.x
         val vy = screenV.y - screenOrigin.y
-        val det = ux * vy - uy * vx
-        if (det < 0f) {
+        if (ux < 0f || vy < 0f) {
             u.scl(-1f)
             v.scl(-1f)
         }
