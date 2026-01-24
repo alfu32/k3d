@@ -1025,14 +1025,23 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
         spriteBatch.end()
 
-        spriteBatch.projectionMatrix = camera.combined
+        spriteBatch.projectionMatrix = uiOverlay.stage.camera.combined
         textTransform.idt()
         spriteBatch.transformMatrix = textTransform
         spriteBatch.begin()
         scene.collectWorldTexts { position, text, size, normal, axisU, selected, screenText ->
             if (screenText) {
                 drawWorldTextScreen(text, position, size, selected)
-            } else {
+            }
+        }
+        spriteBatch.end()
+
+        spriteBatch.projectionMatrix = camera.combined
+        textTransform.idt()
+        spriteBatch.transformMatrix = textTransform
+        spriteBatch.begin()
+        scene.collectWorldTexts { position, text, size, normal, axisU, selected, screenText ->
+            if (!screenText) {
                 drawWorldTextModel(text, position, size, normal, axisU, selected)
             }
         }
@@ -1079,7 +1088,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private fun drawWorldTextScreen(text: String, position: Vector3, size: Float, selected: Boolean) {
         val screenPos = camera.project(Vector3(position))
         val color = if (selected) selectedLineColor else Color(0.1f, 0.1f, 0.1f, 1f)
-        drawTextScaled(text, screenPos.x, screenPos.y, size, color)
+        drawTextScaled(text, screenPos.x, screenPos.y, size * 10f, color)
     }
 
     private fun drawTextScaled(text: String, x: Float, y: Float, scale: Float, color: Color) {
