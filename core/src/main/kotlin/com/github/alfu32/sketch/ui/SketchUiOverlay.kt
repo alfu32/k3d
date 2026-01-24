@@ -35,6 +35,7 @@ class SketchUiOverlay(
     private val flipFacesAction: () -> Unit,
     private val selectionInfoProvider: () -> SelectionInfo,
     private val selectionTextChanged: (String, String) -> Unit,
+    private val selectionTextSizeChanged: (String, Float) -> Unit,
     private val groupInfoProvider: () -> GroupInfo?,
     private val groupNameChanged: (String) -> Unit,
     private val groupGlueChanged: (Boolean) -> Unit,
@@ -130,6 +131,8 @@ class SketchUiOverlay(
     private val selectionTextsLabel = VisLabel()
     private val selectionTextLabel = VisLabel("Text")
     private val selectionTextField = VisTextField()
+    private val selectionTextSizeLabel = VisLabel("Text size")
+    private val selectionTextSizeField = VisTextField()
     private var updatingSelectionFields = false
     private var selectionTextId: String? = null
     private var lastPluginTools: List<String> = emptyList()
@@ -353,9 +356,12 @@ class SketchUiOverlay(
         val hasTextSelection = selection.selectedTextId != null
         selectionTextLabel.isVisible = hasTextSelection
         selectionTextField.isVisible = hasTextSelection
+        selectionTextSizeLabel.isVisible = hasTextSelection
+        selectionTextSizeField.isVisible = hasTextSelection
         updatingSelectionFields = true
         selectionTextId = selection.selectedTextId
         selectionTextField.text = selection.selectedTextValue ?: ""
+        selectionTextSizeField.text = selection.selectedTextSize?.let { String.format(Locale.US, "%.2f", it) } ?: ""
         updatingSelectionFields = false
         updateGroupPanel()
         updateObjectsPanel()
@@ -596,6 +602,8 @@ class SketchUiOverlay(
         content.add(selectionTextsLabel).row()
         content.add(selectionTextLabel).left().padTop(4f).row()
         content.add(selectionTextField).growX().row()
+        content.add(selectionTextSizeLabel).left().padTop(4f).row()
+        content.add(selectionTextSizeField).growX().row()
         panel.add(content).grow()
 
         selectionTextField.addListener(object : ChangeListener() {
@@ -605,6 +613,18 @@ class SketchUiOverlay(
                 }
                 val targetId = selectionTextId ?: return
                 selectionTextChanged(targetId, selectionTextField.text)
+            }
+        })
+        selectionTextSizeField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                if (updatingSelectionFields) {
+                    return
+                }
+                val targetId = selectionTextId ?: return
+                val size = selectionTextSizeField.text.toFloatOrNull() ?: return
+                if (size > 0f) {
+                    selectionTextSizeChanged(targetId, size)
+                }
             }
         })
         return panel
@@ -1414,7 +1434,8 @@ class SketchUiOverlay(
         val dimensionCount: Int,
         val textCount: Int,
         val selectedTextId: String? = null,
-        val selectedTextValue: String? = null
+        val selectedTextValue: String? = null,
+        val selectedTextSize: Float? = null
     )
 
     data class GroupInfo(val id: String, val name: String, val glued: Boolean, val editing: Boolean)

@@ -6,7 +6,8 @@ class DraftTextStore {
     data class TextEntity(
         val id: String,
         val position: Vector3,
-        var text: String
+        var text: String,
+        var size: Float
     )
 
     private val texts = mutableListOf<TextEntity>()
@@ -19,11 +20,12 @@ class DraftTextStore {
 
     fun getTexts(): List<TextEntity> = texts
 
-    fun addText(position: Vector3, text: String): TextEntity {
+    fun addText(position: Vector3, text: String, size: Float = 1f): TextEntity {
         val entity = TextEntity(
             id = java.util.UUID.randomUUID().toString(),
             position = Vector3(position),
-            text = text
+            text = text,
+            size = size
         )
         texts.add(entity)
         notifyChange()
@@ -102,6 +104,16 @@ class DraftTextStore {
             return false
         }
         entity.text = text
+        notifyChange()
+        return true
+    }
+
+    fun updateSize(id: String, size: Float): Boolean {
+        val entity = texts.firstOrNull { it.id == id } ?: return false
+        if (entity.size == size) {
+            return false
+        }
+        entity.size = size
         notifyChange()
         return true
     }

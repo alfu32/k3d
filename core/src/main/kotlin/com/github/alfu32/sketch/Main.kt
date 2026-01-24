@@ -74,6 +74,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var shapeRenderer: ShapeRenderer
     private lateinit var spriteBatch: SpriteBatch
     private lateinit var textFont: BitmapFont
+    private var ownsTextFont = false
     private val textLayout = GlyphLayout()
     private val textTransform = Matrix4()
     private val textTransformBackup = Matrix4()
@@ -244,6 +245,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::flipSelectedFaces,
             ::selectionInfo,
             ::updateSelectedText,
+            ::updateSelectedTextSize,
             ::groupInfo,
             ::updateGroupName,
             ::updateGroupGlue,
@@ -470,8 +472,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
         shapeRenderer = ShapeRenderer()
         spriteBatch = SpriteBatch()
-        textFont = BitmapFont()
-        textFont.data.setScale(0.9f)
+        textFont = loadTextFont()
         setupLighting()
         loadModel()
         applyLightingSettings(lightingSettings)
@@ -628,10 +629,28 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         shadowLight.dispose()
         uiOverlay.dispose()
         spriteBatch.dispose()
-        textFont.dispose()
+        if (ownsTextFont) {
+            textFont.dispose()
+        }
         if (VisUI.isLoaded()) {
             VisUI.dispose()
         }
+    }
+
+    private fun loadTextFont(): BitmapFont {
+        if (VisUI.isLoaded()) {
+            val skin = VisUI.getSkin()
+            if (skin.has("mono", BitmapFont::class.java)) {
+                ownsTextFont = false
+                return skin.get("mono", BitmapFont::class.java)
+            }
+            if (skin.has("default-font", BitmapFont::class.java)) {
+                ownsTextFont = false
+                return skin.get("default-font", BitmapFont::class.java)
+            }
+        }
+        ownsTextFont = true
+        return BitmapFont()
     }
 
     private fun drawGrid(halfSize: Int, step: Float) {
@@ -958,11 +977,31 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val defaultColor = Color(0.2f, 0.2f, 0.2f, 1f)
         scene.collectWorldDimensions { start, end, offset, selected ->
             val (lineStart, lineEnd) = DimensionMath.computeOffsetLine(start, end, offset)
+            val dir = Vector3(lineEnd).sub(lineStart).nor()
+            val offsetDir = DimensionMath.computeOffsetDirection(start, end, offset)
+            val baseScale = 1.2f
+            val extension = textWorldSize(lineStart, textFont.lineHeight * baseScale)
+            val extensionEndA = Vector3(lineStart).mulAdd(offsetDir, extension)
+            val extensionEndB = Vector3(lineEnd).mulAdd(offsetDir, extension)
+            val dimensionExtend = extension * 0.7f
+            val dimStart = Vector3(lineStart).mulAdd(dir, -dimensionExtend)
+            val dimEnd = Vector3(lineEnd).mulAdd(dir, dimensionExtend)
             shapeRenderer.color = if (selected) selectedLineColor else defaultColor
             Gdx.gl.glLineWidth(if (selected) selectedLineWidth else 2f)
-            shapeRenderer.line(lineStart, lineEnd)
-            shapeRenderer.line(start, lineStart)
-            shapeRenderer.line(end, lineEnd)
+            shapeRenderer.line(dimStart, dimEnd)
+            shapeRenderer.line(start, extensionEndA)
+            shapeRenderer.line(end, extensionEndB)
+            val slashDir = Vector3(dir).add(offsetDir).nor()
+            val slashLen = extension * 0.6f
+            shapeRenderer.color = Color(0f, 0f, 0f, 1f)
+            shapeRenderer.line(
+                Vector3(lineStart).mulAdd(slashDir, -slashLen * 0.5f),
+                Vector3(lineStart).mulAdd(slashDir, slashLen * 0.5f)
+            )
+            shapeRenderer.line(
+                Vector3(lineEnd).mulAdd(slashDir, -slashLen * 0.5f),
+                Vector3(lineEnd).mulAdd(slashDir, slashLen * 0.5f)
+            )
         }
         Gdx.gl.glLineWidth(2f)
     }
@@ -976,8 +1015,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             val (lineStart, lineEnd) = DimensionMath.computeOffsetLine(start, end, offset)
             drawDimensionText(lineStart, lineEnd, start, end, offset, selected)
         }
-        scene.collectWorldTexts { position, text, selected ->
-            drawWorldText(text, position, selected)
+        scene.collectWorldTexts { position, text, size, selected ->
+            drawWorldText(text, position, size, selected)
         }
         spriteBatch.end()
     }
@@ -995,7 +1034,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val label = formatMeasurement(value, modelUnit.name)
         val mid = Vector3(lineStart).add(lineEnd).scl(0.5f)
         val offsetDir = DimensionMath.computeOffsetDirection(start, end, offset)
-        val offsetAmount = kotlin.math.max(0.1f, lineStart.dst(lineEnd) * 0.05f)
+        val scale = 1.2f
+        val offsetAmount = textWorldSize(lineStart, textFont.lineHeight * scale * 0.35f)
         val textPos = Vector3(mid).mulAdd(offsetDir, offsetAmount)
         val screenPos = camera.project(textPos)
         val screenA = camera.project(Vector3(lineStart))
@@ -1003,14 +1043,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val angleRad = kotlin.math.atan2(screenB.y - screenA.y, screenB.x - screenA.x)
         val angleDeg = Math.toDegrees(angleRad.toDouble()).toFloat()
         val color = if (selected) selectedLineColor else Color(0.1f, 0.1f, 0.1f, 1f)
-        drawRotatedText(label, screenPos.x, screenPos.y, angleDeg, color)
+        drawRotatedTextScaled(label, screenPos.x, screenPos.y, angleDeg, scale, color)
     }
 
-    private fun drawWorldText(text: String, position: Vector3, selected: Boolean) {
+    private fun drawWorldText(text: String, position: Vector3, size: Float, selected: Boolean) {
         val screenPos = camera.project(Vector3(position))
         val color = if (selected) selectedLineColor else Color(0.1f, 0.1f, 0.1f, 1f)
-        textFont.color = color
-        textFont.draw(spriteBatch, text, screenPos.x, screenPos.y)
+        drawTextScaled(text, screenPos.x, screenPos.y, size, color)
     }
 
     private fun drawRotatedText(text: String, x: Float, y: Float, angleDeg: Float, color: Color) {
@@ -1026,6 +1065,45 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         textFont.color = color
         textFont.draw(spriteBatch, text, 0f, 0f)
         spriteBatch.transformMatrix = textTransformBackup
+    }
+
+    private fun drawRotatedTextScaled(text: String, x: Float, y: Float, angleDeg: Float, scale: Float, color: Color) {
+        val previousScaleX = textFont.data.scaleX
+        val previousScaleY = textFont.data.scaleY
+        textFont.data.setScale(scale)
+        textLayout.setText(textFont, text)
+        val originX = textLayout.width / 2f
+        val originY = textLayout.height / 2f
+        textTransformBackup.set(spriteBatch.transformMatrix)
+        textTransform.idt()
+        textTransform.translate(x, y, 0f)
+        textTransform.rotate(Vector3.Z, angleDeg)
+        textTransform.translate(-originX, -originY, 0f)
+        spriteBatch.transformMatrix = textTransform
+        textFont.color = color
+        textFont.draw(spriteBatch, text, 0f, 0f)
+        spriteBatch.transformMatrix = textTransformBackup
+        textFont.data.setScale(previousScaleX, previousScaleY)
+    }
+
+    private fun drawTextScaled(text: String, x: Float, y: Float, scale: Float, color: Color) {
+        val previousScaleX = textFont.data.scaleX
+        val previousScaleY = textFont.data.scaleY
+        textFont.data.setScale(scale)
+        textFont.color = color
+        textFont.draw(spriteBatch, text, x, y)
+        textFont.data.setScale(previousScaleX, previousScaleY)
+    }
+
+    private fun textWorldSize(worldPoint: Vector3, pixelSize: Float): Float {
+        val toPoint = Vector3(worldPoint).sub(camera.position)
+        val depth = toPoint.dot(camera.direction)
+        if (depth <= 0f) {
+            return 0.01f
+        }
+        val viewportHeight = 2f * depth * kotlin.math.tan(Math.toRadians(camera.fieldOfView.toDouble() / 2.0)).toFloat()
+        val worldPerPixel = viewportHeight / Gdx.graphics.height
+        return worldPerPixel * pixelSize
     }
 
     private fun formatMeasurement(value: Float, unitName: String): String {
@@ -1166,7 +1244,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             dimensionCount = group.dimensionStore.getSelected().size,
             textCount = selectedTexts.size,
             selectedTextId = selectedText?.id,
-            selectedTextValue = selectedText?.text
+            selectedTextValue = selectedText?.text,
+            selectedTextSize = selectedText?.size
         )
     }
 
@@ -1174,6 +1253,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val group = scene.activeGroup()
         if (group.textStore.updateText(textId, value)) {
             statusModel.message = "Text updated."
+        }
+    }
+
+    private fun updateSelectedTextSize(textId: String, size: Float) {
+        val group = scene.activeGroup()
+        if (group.textStore.updateSize(textId, size)) {
+            statusModel.message = "Text size updated."
         }
     }
 

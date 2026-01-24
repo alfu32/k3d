@@ -271,7 +271,7 @@ object ModelPersistence {
                 )
             }
             texts.forEach { text ->
-                prototype.textStore.addText(text.position.toVector3(), text.text)
+                prototype.textStore.addText(text.position.toVector3(), text.text, text.size)
             }
         }
 
@@ -296,7 +296,7 @@ object ModelPersistence {
                     DimensionDto(Vec3Dto(dim.start), Vec3Dto(dim.end), Vec3Dto(dim.offset))
                 }.toMutableList()
                 dto.texts = prototype.textStore.getTexts().map { text ->
-                    TextDto(Vec3Dto(text.position), text.text)
+                    TextDto(Vec3Dto(text.position), text.text, text.size)
                 }.toMutableList()
                 return dto
             }
@@ -318,10 +318,12 @@ object ModelPersistence {
     class TextDto() {
         var position: Vec3Dto = Vec3Dto()
         var text: String = ""
+        var size: Float = 1f
 
-        constructor(position: Vec3Dto, text: String) : this() {
+        constructor(position: Vec3Dto, text: String, size: Float = 1f) : this() {
             this.position = position
             this.text = text
+            this.size = size
         }
     }
 

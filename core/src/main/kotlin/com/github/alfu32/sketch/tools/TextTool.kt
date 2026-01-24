@@ -22,7 +22,7 @@ class TextTool(
             return false
         }
         val group = scene.activeGroup()
-        group.textStore.addText(group.toLocal(world), "text")
+        group.textStore.addText(group.toLocal(world), "text", 1f)
         status.message = "Text placed."
         return true
     }
