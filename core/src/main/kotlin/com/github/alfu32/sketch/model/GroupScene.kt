@@ -623,19 +623,25 @@ class GroupScene(
         }
     }
 
-    fun collectWorldTriangles(consumer: (Vector3, Vector3, Vector3, Color) -> Unit) {
+    fun collectWorldTriangles(consumer: (Vector3, Vector3, Vector3, Color, Boolean) -> Unit) {
         walkGroups(root) { group ->
             group.faceStore.getTriangles().forEach { tri ->
                 val a = group.toWorld(tri.a)
                 val b = group.toWorld(tri.b)
                 val c = group.toWorld(tri.c)
                 val color = group.faceStore.colorFor(tri)
-                consumer(a, b, c, color)
+                consumer(a, b, c, color, group.faceStore.isSelected(tri))
             }
         }
         root.faceStore.getTriangles().forEach { tri ->
             val color = root.faceStore.colorFor(tri)
-            consumer(Vector3(tri.a), Vector3(tri.b), Vector3(tri.c), color)
+            consumer(
+                Vector3(tri.a),
+                Vector3(tri.b),
+                Vector3(tri.c),
+                color,
+                root.faceStore.isSelected(tri)
+            )
         }
     }
 

@@ -68,7 +68,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var cameraController: CameraInputController
     private lateinit var shapeRenderer: ShapeRenderer
     private lateinit var faceMesh: Mesh
-    private lateinit var selectedFaceMesh: Mesh
     private lateinit var groundMesh: Mesh
     private lateinit var modelBatch: ModelBatch
     private lateinit var shadowBatch: ModelBatch
@@ -77,13 +76,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var mainLight: DirectionalLight
     private lateinit var faceFrontMaterial: Material
     private lateinit var faceBackMaterial: Material
-    private lateinit var selectedFaceMaterial: Material
     private lateinit var groundMaterial: Material
     private lateinit var faceFrontRenderable: MeshRenderableProvider
     private lateinit var faceBackRenderable: MeshRenderableProvider
-    private lateinit var selectedFaceRenderable: MeshRenderableProvider
     private lateinit var groundRenderable: MeshRenderableProvider
-    private var selectedFaceVertexCount = 0
+    private val selectedFaceColor = Color(0f, 0f, 1f, 0.4f)
+    private val selectedLineColor = Color(0f, 0f, 1f, 1f)
+    private val selectedLineWidth = 4f
     private lateinit var toolController: ToolController
     private lateinit var toolInput: ToolInputProcessor
     private lateinit var uiOverlay: SketchUiOverlay
@@ -485,7 +484,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         toolController.update(Gdx.graphics.deltaTime)
 
         updateFaceMesh()
-        updateSelectedFaceMesh()
         shadowLight.update(camera)
         renderShadowPass()
 
@@ -509,15 +507,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
         Gdx.gl.glDepthMask(true)
-
-        if (selectedFaceVertexCount > 0) {
-            Gdx.gl.glEnable(GL20.GL_BLEND)
-            Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
-            modelBatch.begin(camera)
-            modelBatch.render(selectedFaceRenderable, environment)
-            modelBatch.end()
-            Gdx.gl.glDisable(GL20.GL_BLEND)
-        }
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         drawAxes(2.5f)
@@ -590,7 +579,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
         shapeRenderer.dispose()
         faceMesh.dispose()
-        selectedFaceMesh.dispose()
         groundMesh.dispose()
         modelBatch.dispose()
         shadowBatch.dispose()
@@ -783,10 +771,33 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun drawDraftLines() {
-        shapeRenderer.color = Color(0.2f, 0.2f, 0.2f, 1f)
-        scene.collectWorldLines { start, end ->
-            shapeRenderer.line(start.x, start.y, start.z, end.x, end.y, end.z)
+        val defaultColor = Color(0.2f, 0.2f, 0.2f, 1f)
+        scene.walkGroups(scene.root) { group ->
+            val selected = group.lineStore.getSelected()
+            group.lineStore.getSegments().forEach { segment ->
+                val isSelected = selected.contains(segment)
+                shapeRenderer.color = if (isSelected) selectedLineColor else defaultColor
+                Gdx.gl.glLineWidth(if (isSelected) selectedLineWidth else 2f)
+                val start = group.toWorld(segment.start)
+                val end = group.toWorld(segment.end)
+                if (isSelected) {
+                    drawDashedLine(start, end, 0.4f, 0.25f)
+                } else {
+                    shapeRenderer.line(start, end)
+                }
+            }
         }
+        scene.root.lineStore.getSegments().forEach { segment ->
+            val isSelected = scene.root.lineStore.isSelected(segment)
+            shapeRenderer.color = if (isSelected) selectedLineColor else defaultColor
+            Gdx.gl.glLineWidth(if (isSelected) selectedLineWidth else 2f)
+            if (isSelected) {
+                drawDashedLine(segment.start, segment.end, 0.4f, 0.25f)
+            } else {
+                shapeRenderer.line(segment.start, segment.end)
+            }
+        }
+        Gdx.gl.glLineWidth(2f)
     }
 
     private fun drawPluginLines() {
@@ -806,17 +817,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun drawSelectionHighlights() {
-        val selectedEdges = activeLineStore().getSelected()
-        if (selectedEdges.isNotEmpty()) {
-            shapeRenderer.color = Color(0.25f, 0.55f, 0.95f, 1f)
-            Gdx.gl.glLineWidth(6f)
-            selectedEdges.forEach { segment ->
-                val a = activeGroup().toWorld(segment.start)
-                val b = activeGroup().toWorld(segment.end)
-                shapeRenderer.line(a.x, a.y, a.z, b.x, b.y, b.z)
-            }
-            Gdx.gl.glLineWidth(4f)
-        }
         drawGroupSelectionHighlights()
     }
 
@@ -1097,7 +1097,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         if (groups.isEmpty()) {
             return
         }
-        shapeRenderer.color = Color(0.25f, 0.55f, 0.95f, 1f)
+        shapeRenderer.color = selectedLineColor
         groups.forEach { group ->
             val corners = group.orientedBoundsCorners() ?: return@forEach
             drawWireBox(corners)
@@ -1128,6 +1128,24 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         shapeRenderer.line(c1, c5)
         shapeRenderer.line(c2, c6)
         shapeRenderer.line(c3, c7)
+    }
+
+    private fun drawDashedLine(start: Vector3, end: Vector3, dashLength: Float, gapLength: Float) {
+        val total = start.dst(end)
+        if (total <= 1e-6f) {
+            return
+        }
+        val dir = Vector3(end).sub(start).nor()
+        var dist = 0f
+        val a = Vector3()
+        val b = Vector3()
+        while (dist < total) {
+            val dashEnd = kotlin.math.min(dist + dashLength, total)
+            a.set(start).mulAdd(dir, dist)
+            b.set(start).mulAdd(dir, dashEnd)
+            shapeRenderer.line(a, b)
+            dist = dashEnd + gapLength
+        }
     }
 
 
@@ -1206,11 +1224,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal"),
             VertexAttribute(VertexAttributes.Usage.ColorUnpacked, 4, "a_color")
         )
-        selectedFaceMesh = Mesh(false, 1, 0,
-            VertexAttribute(VertexAttributes.Usage.Position, 3, "a_position"),
-            VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal"),
-            VertexAttribute(VertexAttributes.Usage.ColorUnpacked, 4, "a_color")
-        )
         groundMesh = buildGroundMesh(120f)
     }
 
@@ -1225,11 +1238,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, 1f),
             IntAttribute(IntAttribute.CullFace, GL20.GL_FRONT)
         )
-        selectedFaceMaterial = Material(
-            ColorAttribute.createDiffuse(Color.WHITE),
-            BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, 0.6f),
-            IntAttribute(IntAttribute.CullFace, 0)
-        )
         groundMaterial = Material(
             ColorAttribute.createDiffuse(Color(0.9f, 0.9f, 0.9f, 1f)),
             BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, 0.5f),
@@ -1237,14 +1245,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         )
         faceFrontRenderable = MeshRenderableProvider(faceMesh, faceFrontMaterial, GL20.GL_TRIANGLES)
         faceBackRenderable = MeshRenderableProvider(faceMesh, faceBackMaterial, GL20.GL_TRIANGLES)
-        selectedFaceRenderable = MeshRenderableProvider(selectedFaceMesh, selectedFaceMaterial, GL20.GL_TRIANGLES)
         groundRenderable = MeshRenderableProvider(groundMesh, groundMaterial, GL20.GL_TRIANGLES)
     }
 
     private fun updateFaceMesh() {
         val triangles = mutableListOf<TriangleWorld>()
-        scene.collectWorldTriangles { a, b, c, color ->
-            triangles.add(TriangleWorld(a, b, c, color))
+        scene.collectWorldTriangles { a, b, c, color, selected ->
+            triangles.add(TriangleWorld(a, b, c, color, selected))
         }
         val vertexCount = triangles.size * 3
         if (vertexCount == 0) {
@@ -1256,7 +1263,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             val a = tri.a
             val b = tri.b
             val c = tri.c
-            val color = tri.color
+            val color = if (tri.selected) selectedFaceColor else tri.color
             val normal = Vector3(b).sub(a).crs(Vector3(c).sub(a)).nor()
             idx = writeVertex(vertices, idx, a, normal, color)
             idx = writeVertex(vertices, idx, b, normal, color)
@@ -1275,40 +1282,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         faceMesh.setVertices(vertices)
     }
 
-    private data class TriangleWorld(val a: Vector3, val b: Vector3, val c: Vector3, val color: Color)
-
-    private fun updateSelectedFaceMesh() {
-        val selected = activeFaceStore().getSelected()
-        val vertexCount = selected.size * 3
-        if (vertexCount == 0) {
-            selectedFaceVertexCount = 0
-            return
-        }
-        val vertices = FloatArray(vertexCount * 10)
-        var idx = 0
-        val highlight = Color(0.35f, 0.7f, 0.95f, 0.6f)
-        val group = activeGroup()
-        selected.forEach { tri ->
-            val a = group.toWorld(tri.a)
-            val b = group.toWorld(tri.b)
-            val c = group.toWorld(tri.c)
-            val normal = Vector3(b).sub(a).crs(Vector3(c).sub(a)).nor()
-            idx = writeVertex(vertices, idx, a, normal, highlight)
-            idx = writeVertex(vertices, idx, b, normal, highlight)
-            idx = writeVertex(vertices, idx, c, normal, highlight)
-        }
-        if (selectedFaceMesh.maxVertices < vertexCount) {
-            selectedFaceMesh.dispose()
-            selectedFaceMesh = Mesh(false, vertexCount, 0,
-                VertexAttribute(VertexAttributes.Usage.Position, 3, "a_position"),
-                VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal"),
-                VertexAttribute(VertexAttributes.Usage.ColorUnpacked, 4, "a_color")
-            )
-            selectedFaceRenderable = MeshRenderableProvider(selectedFaceMesh, selectedFaceMaterial, GL20.GL_TRIANGLES)
-        }
-        selectedFaceMesh.setVertices(vertices)
-        selectedFaceVertexCount = vertexCount
-    }
+    private data class TriangleWorld(
+        val a: Vector3,
+        val b: Vector3,
+        val c: Vector3,
+        val color: Color,
+        val selected: Boolean
+    )
 
     private fun writeVertex(
         buffer: FloatArray,
