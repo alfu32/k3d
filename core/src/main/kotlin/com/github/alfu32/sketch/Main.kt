@@ -986,14 +986,19 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             val dimensionExtend = extension * 0.7f
             val dimStart = Vector3(lineStart).mulAdd(dir, -dimensionExtend)
             val dimEnd = Vector3(lineEnd).mulAdd(dir, dimensionExtend)
+            val dimensionLineWidth = if (selected) selectedLineWidth + 2f else 4f
+            val extensionLineWidth = if (selected) 3f else 1.5f
+            val arrowLineWidth = if (selected) selectedLineWidth * 2f else 16f
             shapeRenderer.color = if (selected) selectedLineColor else defaultColor
-            Gdx.gl.glLineWidth(if (selected) selectedLineWidth else 2f)
+            Gdx.gl.glLineWidth(dimensionLineWidth)
             shapeRenderer.line(dimStart, dimEnd)
+            Gdx.gl.glLineWidth(extensionLineWidth)
             shapeRenderer.line(start, extensionEndA)
             shapeRenderer.line(end, extensionEndB)
             val slashDir = Vector3(dir).add(offsetDir).nor()
             val slashLen = extension * 0.6f
             shapeRenderer.color = Color(0f, 0f, 0f, 1f)
+            Gdx.gl.glLineWidth(arrowLineWidth)
             shapeRenderer.line(
                 Vector3(lineStart).mulAdd(slashDir, -slashLen * 0.5f),
                 Vector3(lineStart).mulAdd(slashDir, slashLen * 0.5f)
