@@ -23,6 +23,9 @@ import com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight
 import com.badlogic.gdx.graphics.g3d.utils.CameraInputController
 import com.badlogic.gdx.graphics.g3d.utils.DepthShaderProvider
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
+import com.badlogic.gdx.graphics.g2d.BitmapFont
+import com.badlogic.gdx.graphics.g2d.GlyphLayout
+import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.utils.Array
@@ -40,6 +43,7 @@ import com.github.alfu32.sketch.model.ModelUnit
 import com.github.alfu32.sketch.render.SketchShaderProvider
 import com.github.alfu32.sketch.plugin.PluginHost
 import com.github.alfu32.sketch.tools.CircleTool
+import com.github.alfu32.sketch.tools.LinearDimensionTool
 import com.github.alfu32.sketch.tools.LineTool
 import com.github.alfu32.sketch.tools.MoveTool
 import com.github.alfu32.sketch.tools.ObjectPlaceTool
@@ -51,6 +55,7 @@ import com.github.alfu32.sketch.tools.RotateTool
 import com.github.alfu32.sketch.tools.SurfaceRectangleTool
 import com.github.alfu32.sketch.tools.SelectTool
 import com.github.alfu32.sketch.tools.ScaleTool
+import com.github.alfu32.sketch.tools.TextTool
 import com.github.alfu32.sketch.ui.SimpleTool
 import com.github.alfu32.sketch.ui.SketchUiOverlay
 import com.github.alfu32.sketch.ui.LightingSettings
@@ -67,6 +72,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var camera: PerspectiveCamera
     private lateinit var cameraController: CameraInputController
     private lateinit var shapeRenderer: ShapeRenderer
+    private lateinit var spriteBatch: SpriteBatch
+    private lateinit var textFont: BitmapFont
+    private val textLayout = GlyphLayout()
+    private val textTransform = Matrix4()
+    private val textTransformBackup = Matrix4()
     private lateinit var faceMesh: Mesh
     private lateinit var groundMesh: Mesh
     private lateinit var modelBatch: ModelBatch
@@ -167,6 +177,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 SurfaceRectangleTool(scene),
                 QuadTool(scene),
                 CircleTool(scene),
+                LinearDimensionTool(scene),
+                TextTool(scene),
                 PushPullTool(scene, camera),
                 MoveTool(scene),
                 RotateTool(scene),
@@ -231,6 +243,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::deleteSelection,
             ::flipSelectedFaces,
             ::selectionInfo,
+            ::updateSelectedText,
             ::groupInfo,
             ::updateGroupName,
             ::updateGroupGlue,
@@ -406,6 +419,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ToolId.SURFACE_RECTANGLE,
             ToolId.QUAD,
             ToolId.CIRCLE,
+            ToolId.LINEAR_DIMENSION,
+            ToolId.TEXT,
             ToolId.PUSH_PULL,
             ToolId.MOVE,
             ToolId.ROTATE,
@@ -454,6 +469,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         modelFile = resolveModelFile(startupArgs)
 
         shapeRenderer = ShapeRenderer()
+        spriteBatch = SpriteBatch()
+        textFont = BitmapFont()
+        textFont.data.setScale(0.9f)
         setupLighting()
         loadModel()
         applyLightingSettings(lightingSettings)
@@ -534,9 +552,16 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         drawCursor()
         drawSelectionHighlights()
         drawDraftLines()
+        drawDimensions()
         toolController.render(shapeRenderer)
         drawPluginLines()
         shapeRenderer.end()
+
+        Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
+        Gdx.gl.glEnable(GL20.GL_BLEND)
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
+        drawAnnotations2D()
+        Gdx.gl.glDisable(GL20.GL_BLEND)
 
         val windowRect = (toolController.activeTool() as? SelectTool)
             ?.windowRect(Gdx.graphics.width, Gdx.graphics.height)
@@ -602,6 +627,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         shadowBatch.dispose()
         shadowLight.dispose()
         uiOverlay.dispose()
+        spriteBatch.dispose()
+        textFont.dispose()
         if (VisUI.isLoaded()) {
             VisUI.dispose()
         }
@@ -927,6 +954,87 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         Gdx.gl.glLineWidth(2f)
     }
 
+    private fun drawDimensions() {
+        val defaultColor = Color(0.2f, 0.2f, 0.2f, 1f)
+        scene.collectWorldDimensions { start, end, offset, selected ->
+            val (lineStart, lineEnd) = DimensionMath.computeOffsetLine(start, end, offset)
+            shapeRenderer.color = if (selected) selectedLineColor else defaultColor
+            Gdx.gl.glLineWidth(if (selected) selectedLineWidth else 2f)
+            shapeRenderer.line(lineStart, lineEnd)
+            shapeRenderer.line(start, lineStart)
+            shapeRenderer.line(end, lineEnd)
+        }
+        Gdx.gl.glLineWidth(2f)
+    }
+
+    private fun drawAnnotations2D() {
+        spriteBatch.projectionMatrix = uiOverlay.stage.camera.combined
+        textTransform.idt()
+        spriteBatch.transformMatrix = textTransform
+        spriteBatch.begin()
+        scene.collectWorldDimensions { start, end, offset, selected ->
+            val (lineStart, lineEnd) = DimensionMath.computeOffsetLine(start, end, offset)
+            drawDimensionText(lineStart, lineEnd, start, end, offset, selected)
+        }
+        scene.collectWorldTexts { position, text, selected ->
+            drawWorldText(text, position, selected)
+        }
+        spriteBatch.end()
+    }
+
+    private fun drawDimensionText(
+        lineStart: Vector3,
+        lineEnd: Vector3,
+        start: Vector3,
+        end: Vector3,
+        offset: Vector3,
+        selected: Boolean
+    ) {
+        val length = start.dst(end)
+        val value = length * modelUnit.size
+        val label = formatMeasurement(value, modelUnit.name)
+        val mid = Vector3(lineStart).add(lineEnd).scl(0.5f)
+        val offsetDir = DimensionMath.computeOffsetDirection(start, end, offset)
+        val offsetAmount = kotlin.math.max(0.1f, lineStart.dst(lineEnd) * 0.05f)
+        val textPos = Vector3(mid).mulAdd(offsetDir, offsetAmount)
+        val screenPos = camera.project(textPos)
+        val screenA = camera.project(Vector3(lineStart))
+        val screenB = camera.project(Vector3(lineEnd))
+        val angleRad = kotlin.math.atan2(screenB.y - screenA.y, screenB.x - screenA.x)
+        val angleDeg = Math.toDegrees(angleRad.toDouble()).toFloat()
+        val color = if (selected) selectedLineColor else Color(0.1f, 0.1f, 0.1f, 1f)
+        drawRotatedText(label, screenPos.x, screenPos.y, angleDeg, color)
+    }
+
+    private fun drawWorldText(text: String, position: Vector3, selected: Boolean) {
+        val screenPos = camera.project(Vector3(position))
+        val color = if (selected) selectedLineColor else Color(0.1f, 0.1f, 0.1f, 1f)
+        textFont.color = color
+        textFont.draw(spriteBatch, text, screenPos.x, screenPos.y)
+    }
+
+    private fun drawRotatedText(text: String, x: Float, y: Float, angleDeg: Float, color: Color) {
+        textLayout.setText(textFont, text)
+        val originX = textLayout.width / 2f
+        val originY = textLayout.height / 2f
+        textTransformBackup.set(spriteBatch.transformMatrix)
+        textTransform.idt()
+        textTransform.translate(x, y, 0f)
+        textTransform.rotate(Vector3.Z, angleDeg)
+        textTransform.translate(-originX, -originY, 0f)
+        spriteBatch.transformMatrix = textTransform
+        textFont.color = color
+        textFont.draw(spriteBatch, text, 0f, 0f)
+        spriteBatch.transformMatrix = textTransformBackup
+    }
+
+    private fun formatMeasurement(value: Float, unitName: String): String {
+        val formatted = String.format(java.util.Locale.US, "%.3f", value)
+            .trimEnd('0')
+            .trimEnd('.')
+        return if (unitName.isBlank()) formatted else "$formatted $unitName"
+    }
+
     private fun drawPluginLines() {
         if (!::pluginHost.isInitialized) {
             return
@@ -966,9 +1074,12 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private fun deleteSelection() {
         val edges = activeLineStore().deleteSelected()
         val faces = activeFaceStore().deleteSelected()
+        val dimensions = activeDimensionStore().deleteSelected()
+        val texts = activeTextStore().deleteSelected()
         val groups = scene.deleteSelectedGroups()
-        if (edges + faces + groups > 0) {
-            statusModel.message = "Deleted | edges $edges faces $faces groups $groups"
+        if (edges + faces + dimensions + texts + groups > 0) {
+            statusModel.message =
+                "Deleted | edges $edges faces $faces dimensions $dimensions texts $texts groups $groups"
             if (groups > 0 && edges + faces == 0) {
                 saveModel()
             }
@@ -1045,11 +1156,25 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun selectionInfo(): SketchUiOverlay.SelectionInfo {
+        val group = scene.activeGroup()
+        val selectedTexts = group.textStore.getSelected()
+        val selectedText = if (selectedTexts.size == 1) selectedTexts.first() else null
         return SketchUiOverlay.SelectionInfo(
             edgeCount = activeLineStore().getSelected().size,
             faceCount = activeFaceStore().getSelected().size,
-            groupCount = scene.selectedGroups().size
+            groupCount = scene.selectedGroups().size,
+            dimensionCount = group.dimensionStore.getSelected().size,
+            textCount = selectedTexts.size,
+            selectedTextId = selectedText?.id,
+            selectedTextValue = selectedText?.text
         )
+    }
+
+    private fun updateSelectedText(textId: String, value: String) {
+        val group = scene.activeGroup()
+        if (group.textStore.updateText(textId, value)) {
+            statusModel.message = "Text updated."
+        }
     }
 
     private fun groupInfo(): SketchUiOverlay.GroupInfo? {
@@ -1201,6 +1326,14 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun activeFaceStore(): com.github.alfu32.sketch.model.DraftFaceStore {
         return activeGroup().faceStore
+    }
+
+    private fun activeDimensionStore(): com.github.alfu32.sketch.model.DraftDimensionStore {
+        return activeGroup().dimensionStore
+    }
+
+    private fun activeTextStore(): com.github.alfu32.sketch.model.DraftTextStore {
+        return activeGroup().textStore
     }
 
     private fun totalEdgeCount(): Int {

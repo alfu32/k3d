@@ -7,7 +7,7 @@ import com.badlogic.gdx.utils.JsonWriter
 import java.io.File
 
 object ModelPersistence {
-    private const val VERSION = 6
+    private const val VERSION = 7
 
     fun save(
         file: File,
@@ -216,6 +216,8 @@ object ModelPersistence {
         var gluedToSurface: Boolean = false
         var segments: MutableList<SegmentDto> = mutableListOf()
         var faces: MutableList<FaceDto> = mutableListOf()
+        var dimensions: MutableList<DimensionDto> = mutableListOf()
+        var texts: MutableList<TextDto> = mutableListOf()
 
         fun toPrototype(defaultColor: Color): GroupScene.ObjectPrototype {
             val prototype = GroupScene.ObjectPrototype(
@@ -227,7 +229,9 @@ object ModelPersistence {
                 definitionAxisW = definitionAxisW.toVector3(),
                 gluedToSurface = gluedToSurface,
                 lineStore = DraftLineStore(),
-                faceStore = DraftFaceStore(defaultColor)
+                faceStore = DraftFaceStore(defaultColor),
+                dimensionStore = DraftDimensionStore(),
+                textStore = DraftTextStore()
             )
             applyGeometry(prototype)
             return prototype
@@ -242,6 +246,8 @@ object ModelPersistence {
             prototype.gluedToSurface = gluedToSurface
             prototype.lineStore.clearAll()
             prototype.faceStore.clearAll()
+            prototype.dimensionStore.clearAll()
+            prototype.textStore.clearAll()
             applyGeometry(prototype, defaultColor)
         }
 
@@ -256,6 +262,16 @@ object ModelPersistence {
                     face.c.toVector3(),
                     face.color.toColor()
                 )
+            }
+            dimensions.forEach { dimension ->
+                prototype.dimensionStore.addDimension(
+                    dimension.start.toVector3(),
+                    dimension.end.toVector3(),
+                    dimension.offset.toVector3()
+                )
+            }
+            texts.forEach { text ->
+                prototype.textStore.addText(text.position.toVector3(), text.text)
             }
         }
 
@@ -276,8 +292,36 @@ object ModelPersistence {
                     val color = prototype.faceStore.colorFor(tri)
                     FaceDto(Vec3Dto(tri.a), Vec3Dto(tri.b), Vec3Dto(tri.c), ColorDto(color))
                 }.toMutableList()
+                dto.dimensions = prototype.dimensionStore.getDimensions().map { dim ->
+                    DimensionDto(Vec3Dto(dim.start), Vec3Dto(dim.end), Vec3Dto(dim.offset))
+                }.toMutableList()
+                dto.texts = prototype.textStore.getTexts().map { text ->
+                    TextDto(Vec3Dto(text.position), text.text)
+                }.toMutableList()
                 return dto
             }
+        }
+    }
+
+    class DimensionDto() {
+        var start: Vec3Dto = Vec3Dto()
+        var end: Vec3Dto = Vec3Dto()
+        var offset: Vec3Dto = Vec3Dto()
+
+        constructor(start: Vec3Dto, end: Vec3Dto, offset: Vec3Dto) : this() {
+            this.start = start
+            this.end = end
+            this.offset = offset
+        }
+    }
+
+    class TextDto() {
+        var position: Vec3Dto = Vec3Dto()
+        var text: String = ""
+
+        constructor(position: Vec3Dto, text: String) : this() {
+            this.position = position
+            this.text = text
         }
     }
 
@@ -303,7 +347,9 @@ object ModelPersistence {
                 definitionAxisW = Vector3(0f, 0f, 1f),
                 gluedToSurface = false,
                 lineStore = DraftLineStore(),
-                faceStore = DraftFaceStore(defaultColor)
+                faceStore = DraftFaceStore(defaultColor),
+                dimensionStore = DraftDimensionStore(),
+                textStore = DraftTextStore()
             )
             val group = GroupScene.GroupNode(
                 id = id.ifBlank { java.util.UUID.randomUUID().toString() },
@@ -398,7 +444,9 @@ object ModelPersistence {
                 definitionAxisW = defAxisW,
                 gluedToSurface = gluedToSurface,
                 lineStore = DraftLineStore(),
-                faceStore = DraftFaceStore(defaultColor)
+                faceStore = DraftFaceStore(defaultColor),
+                dimensionStore = DraftDimensionStore(),
+                textStore = DraftTextStore()
             )
             val group = GroupScene.GroupNode(
                 id = id.ifBlank { java.util.UUID.randomUUID().toString() },

@@ -34,6 +34,7 @@ class SketchUiOverlay(
     private val deleteSelectionAction: () -> Unit,
     private val flipFacesAction: () -> Unit,
     private val selectionInfoProvider: () -> SelectionInfo,
+    private val selectionTextChanged: (String, String) -> Unit,
     private val groupInfoProvider: () -> GroupInfo?,
     private val groupNameChanged: (String) -> Unit,
     private val groupGlueChanged: (Boolean) -> Unit,
@@ -125,6 +126,12 @@ class SketchUiOverlay(
     private val selectionEdgesLabel = VisLabel()
     private val selectionFacesLabel = VisLabel()
     private val selectionGroupsLabel = VisLabel()
+    private val selectionDimensionsLabel = VisLabel()
+    private val selectionTextsLabel = VisLabel()
+    private val selectionTextLabel = VisLabel("Text")
+    private val selectionTextField = VisTextField()
+    private var updatingSelectionFields = false
+    private var selectionTextId: String? = null
     private var lastPluginTools: List<String> = emptyList()
     private lateinit var groupPanel: CollapsibleWindow
     private val groupStatusLabel = VisLabel()
@@ -341,6 +348,15 @@ class SketchUiOverlay(
         selectionEdgesLabel.setText("Edges: ${selection.edgeCount}")
         selectionFacesLabel.setText("Faces: ${selection.faceCount}")
         selectionGroupsLabel.setText("Objects: ${selection.groupCount}")
+        selectionDimensionsLabel.setText("Dimensions: ${selection.dimensionCount}")
+        selectionTextsLabel.setText("Texts: ${selection.textCount}")
+        val hasTextSelection = selection.selectedTextId != null
+        selectionTextLabel.isVisible = hasTextSelection
+        selectionTextField.isVisible = hasTextSelection
+        updatingSelectionFields = true
+        selectionTextId = selection.selectedTextId
+        selectionTextField.text = selection.selectedTextValue ?: ""
+        updatingSelectionFields = false
         updateGroupPanel()
         updateObjectsPanel()
         updateModelSettingsPanel()
@@ -576,7 +592,21 @@ class SketchUiOverlay(
         content.add(selectionEdgesLabel).row()
         content.add(selectionFacesLabel).row()
         content.add(selectionGroupsLabel).row()
+        content.add(selectionDimensionsLabel).row()
+        content.add(selectionTextsLabel).row()
+        content.add(selectionTextLabel).left().padTop(4f).row()
+        content.add(selectionTextField).growX().row()
         panel.add(content).grow()
+
+        selectionTextField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                if (updatingSelectionFields) {
+                    return
+                }
+                val targetId = selectionTextId ?: return
+                selectionTextChanged(targetId, selectionTextField.text)
+            }
+        })
         return panel
     }
 
@@ -1144,6 +1174,8 @@ class SketchUiOverlay(
             ToolId.SURFACE_RECTANGLE -> "surface_rect"
             ToolId.QUAD -> "quad"
             ToolId.CIRCLE -> "circle"
+            ToolId.LINEAR_DIMENSION -> "dimension"
+            ToolId.TEXT -> "text"
             ToolId.PUSH_PULL -> "push_pull"
             ToolId.MOVE -> "move"
             ToolId.ROTATE -> "rotate"
@@ -1161,6 +1193,8 @@ class SketchUiOverlay(
             ToolId.SURFACE_RECTANGLE -> Color(0.35f, 0.85f, 0.65f, 1f)
             ToolId.QUAD -> Color(0.55f, 0.85f, 0.95f, 1f)
             ToolId.CIRCLE -> Color(0.95f, 0.55f, 0.75f, 1f)
+            ToolId.LINEAR_DIMENSION -> Color(0.8f, 0.8f, 0.4f, 1f)
+            ToolId.TEXT -> Color(0.8f, 0.8f, 0.8f, 1f)
             ToolId.PUSH_PULL -> Color(0.45f, 0.95f, 0.55f, 1f)
             ToolId.MOVE -> Color(0.95f, 0.45f, 0.35f, 1f)
             ToolId.ROTATE -> Color(0.75f, 0.55f, 0.95f, 1f)
@@ -1373,7 +1407,15 @@ class SketchUiOverlay(
         return mapping
     }
 
-    data class SelectionInfo(val edgeCount: Int, val faceCount: Int, val groupCount: Int)
+    data class SelectionInfo(
+        val edgeCount: Int,
+        val faceCount: Int,
+        val groupCount: Int,
+        val dimensionCount: Int,
+        val textCount: Int,
+        val selectedTextId: String? = null,
+        val selectedTextValue: String? = null
+    )
 
     data class GroupInfo(val id: String, val name: String, val glued: Boolean, val editing: Boolean)
 

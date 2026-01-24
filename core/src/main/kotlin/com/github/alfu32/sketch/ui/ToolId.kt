@@ -7,6 +7,8 @@ enum class ToolId(val displayName: String) {
     SURFACE_RECTANGLE("Surface Rect"),
     QUAD("Quad"),
     CIRCLE("Circle"),
+    LINEAR_DIMENSION("Linear Dimension"),
+    TEXT("Text"),
     PUSH_PULL("Push/Pull"),
     MOVE("Move"),
     ROTATE("Rotate"),

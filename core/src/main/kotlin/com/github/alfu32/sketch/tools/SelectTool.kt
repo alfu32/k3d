@@ -8,8 +8,11 @@ import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.utils.TimeUtils
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.collision.Ray
+import com.github.alfu32.sketch.DimensionMath
+import com.github.alfu32.sketch.model.DraftDimensionStore
 import com.github.alfu32.sketch.model.DraftFaceStore
 import com.github.alfu32.sketch.model.DraftLineStore
+import com.github.alfu32.sketch.model.DraftTextStore
 import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
@@ -49,6 +52,8 @@ class SelectTool(
     override fun onCancel(status: StatusModel) {
         scene.activeGroup().lineStore.clearSelection()
         scene.activeGroup().faceStore.clearSelection()
+        scene.activeGroup().dimensionStore.clearSelection()
+        scene.activeGroup().textStore.clearSelection()
         scene.clearGroupSelection()
         selectingVolume = false
         volumeStartRaw = null
@@ -96,11 +101,15 @@ class SelectTool(
         val ray = camera.getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
         val faceHit = pickFaceWorld(ray)
         val edgeHit = pickEdgeWorld(ray, Gdx.input.x, Gdx.input.y)
+        val dimensionHit = pickDimensionWorld(ray, Gdx.input.x, Gdx.input.y)
+        val textHit = pickTextWorld(ray, Gdx.input.x, Gdx.input.y)
         val groupHit = pickGroupWorld(ray, Gdx.input.x, Gdx.input.y)
         val pickedFace = faceHit != null
         val pickedEdge = edgeHit != null
+        val pickedDimension = dimensionHit != null
+        val pickedText = textHit != null
         val pickedGroup = groupHit != null
-        if (!pickedFace && !pickedEdge && !pickedGroup) {
+        if (!pickedFace && !pickedEdge && !pickedGroup && !pickedDimension && !pickedText) {
             selectingWindow = true
             windowDragActive = false
             windowStartX = Gdx.input.x
@@ -160,7 +169,23 @@ class SelectTool(
             }
             return true
         }
-        if (pickedGroup && (!pickedFace || groupHit!!.t <= faceHit!!.t) && (!pickedEdge || groupHit!!.t <= edgeHit!!.t)) {
+        if (pickedText && isClosest(textHit!!.t, faceHit?.t, edgeHit?.t, dimensionHit?.t, groupHit?.t)) {
+            scene.activeGroup().textStore.toggleSelection(textHit.text)
+            status.message = "Text toggled."
+            return true
+        }
+        if (pickedDimension && isClosest(dimensionHit!!.t, faceHit?.t, edgeHit?.t, groupHit?.t)) {
+            scene.activeGroup().dimensionStore.toggleSelection(dimensionHit.dimension)
+            status.message = "Dimension toggled."
+            return true
+        }
+        if (
+            pickedGroup &&
+            (!pickedFace || groupHit!!.t <= faceHit!!.t) &&
+            (!pickedEdge || groupHit!!.t <= edgeHit!!.t) &&
+            (!pickedDimension || groupHit!!.t <= dimensionHit!!.t) &&
+            (!pickedText || groupHit!!.t <= textHit!!.t)
+        ) {
             scene.toggleGroupSelection(groupHit!!.group)
             status.message = "Group toggled."
             return true
@@ -211,12 +236,16 @@ class SelectTool(
                 if (mode == SelectionMode.REPLACE) {
                     scene.activeGroup().faceStore.clearSelection()
                     scene.activeGroup().lineStore.clearSelection()
+                    scene.activeGroup().dimensionStore.clearSelection()
+                    scene.activeGroup().textStore.clearSelection()
                     scene.clearGroupSelection()
                 }
                 val faces = selectFacesInWindow(rect, includeIntersect, mode)
                 val edges = selectEdgesInWindow(rect, includeIntersect, mode)
+                val dimensions = selectDimensionsInWindow(rect, includeIntersect, mode)
+                val texts = selectTextsInWindow(rect, includeIntersect, mode)
                 val groups = selectGroupsInWindow(rect, includeIntersect, mode)
-                status.message = "Window select | edges $edges faces $faces groups $groups"
+                status.message = "Window select | edges $edges faces $faces dims $dimensions texts $texts groups $groups"
                 return true
             } else if (pendingVolumeStart != null) {
                 selectingVolume = true
@@ -275,6 +304,18 @@ class SelectTool(
         val t: Float
     )
 
+    private data class DimensionHitWorld(
+        val dimension: DraftDimensionStore.LinearDimension,
+        val point: Vector3,
+        val t: Float
+    )
+
+    private data class TextHitWorld(
+        val text: DraftTextStore.TextEntity,
+        val point: Vector3,
+        val t: Float
+    )
+
     private data class GroupHitWorld(
         val group: GroupScene.GroupNode,
         val point: Vector3,
@@ -311,6 +352,41 @@ class SelectTool(
             if (screenDist <= maxPixels) {
                 if (best == null || hit.t < best!!.t) {
                     best = EdgeHitWorld(segment, hit.point, hit.t)
+                }
+            }
+        }
+        return best
+    }
+
+    private fun pickDimensionWorld(ray: Ray, screenX: Int, screenY: Int, maxPixels: Float = 12f): DimensionHitWorld? {
+        val group = scene.activeGroup()
+        var best: DimensionHitWorld? = null
+        group.dimensionStore.getDimensions().forEach { dimension ->
+            val start = group.toWorld(dimension.start)
+            val end = group.toWorld(dimension.end)
+            val offset = group.toWorld(dimension.offset)
+            val (lineStart, lineEnd) = DimensionMath.computeOffsetLine(start, end, offset)
+            val hit = closestRaySegment(ray.origin, ray.direction, lineStart, lineEnd) ?: return@forEach
+            val screenDist = screenDistance(hit.point, screenX, screenY)
+            if (screenDist <= maxPixels) {
+                if (best == null || hit.t < best!!.t) {
+                    best = DimensionHitWorld(dimension, hit.point, hit.t)
+                }
+            }
+        }
+        return best
+    }
+
+    private fun pickTextWorld(ray: Ray, screenX: Int, screenY: Int, maxPixels: Float = 12f): TextHitWorld? {
+        val group = scene.activeGroup()
+        var best: TextHitWorld? = null
+        group.textStore.getTexts().forEach { text ->
+            val world = group.toWorld(text.position)
+            val screenDist = screenDistance(world, screenX, screenY)
+            if (screenDist <= maxPixels) {
+                val t = Vector3(world).sub(ray.origin).dot(ray.direction)
+                if (best == null || t < best!!.t) {
+                    best = TextHitWorld(text, world, t)
                 }
             }
         }
@@ -478,6 +554,15 @@ class SelectTool(
         return kotlin.math.sqrt(dx * dx + dy * dy)
     }
 
+    private fun isClosest(target: Float, vararg others: Float?): Boolean {
+        others.filterNotNull().forEach { value ->
+            if (target > value) {
+                return false
+            }
+        }
+        return true
+    }
+
     private data class WindowRectTopLeft(
         val minX: Float,
         val maxX: Float,
@@ -555,9 +640,71 @@ class SelectTool(
         return count
     }
 
+    private fun selectDimensionsInWindow(rect: WindowRectTopLeft, includeIntersect: Boolean, mode: SelectionMode): Int {
+        var count = 0
+        val group = scene.activeGroup()
+        group.dimensionStore.getDimensions().forEach { dimension ->
+            val start = group.toWorld(dimension.start)
+            val end = group.toWorld(dimension.end)
+            val offset = group.toWorld(dimension.offset)
+            val (lineStart, lineEnd) = DimensionMath.computeOffsetLine(start, end, offset)
+            val a = projectWorldToScreen(lineStart)
+            val b = projectWorldToScreen(lineEnd)
+            val matches = if (!includeIntersect) {
+                pointInRect(a, rect) && pointInRect(b, rect)
+            } else {
+                segmentIntersectsRect(a, b, rect)
+            }
+            if (matches) {
+                when (mode) {
+                    SelectionMode.ADD, SelectionMode.REPLACE -> {
+                        if (group.dimensionStore.addSelection(dimension)) {
+                            count++
+                        }
+                    }
+                    SelectionMode.REMOVE -> {
+                        if (group.dimensionStore.isSelected(dimension)) {
+                            group.dimensionStore.removeSelection(dimension)
+                            count++
+                        }
+                    }
+                }
+            }
+        }
+        return count
+    }
+
+    private fun selectTextsInWindow(rect: WindowRectTopLeft, includeIntersect: Boolean, mode: SelectionMode): Int {
+        var count = 0
+        val group = scene.activeGroup()
+        group.textStore.getTexts().forEach { text ->
+            val pos = projectWorldToScreen(group.toWorld(text.position))
+            val matches = pointInRect(pos, rect)
+            if (matches) {
+                when (mode) {
+                    SelectionMode.ADD, SelectionMode.REPLACE -> {
+                        if (group.textStore.addSelection(text)) {
+                            count++
+                        }
+                    }
+                    SelectionMode.REMOVE -> {
+                        if (group.textStore.isSelected(text)) {
+                            group.textStore.removeSelection(text)
+                            count++
+                        }
+                    }
+                }
+            }
+        }
+        return count
+    }
+
     private fun projectToScreen(point: Vector3): Vector3 {
-        val world = scene.activeGroup().toWorld(point)
-        val projected = camera.project(world)
+        return projectWorldToScreen(scene.activeGroup().toWorld(point))
+    }
+
+    private fun projectWorldToScreen(world: Vector3): Vector3 {
+        val projected = camera.project(Vector3(world))
         projected.y = Gdx.graphics.height - projected.y
         return projected
     }

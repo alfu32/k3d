@@ -19,7 +19,9 @@ class GroupScene(
         var definitionAxisW: Vector3,
         var gluedToSurface: Boolean,
         val lineStore: DraftLineStore,
-        val faceStore: DraftFaceStore
+        val faceStore: DraftFaceStore,
+        val dimensionStore: DraftDimensionStore,
+        val textStore: DraftTextStore
     )
 
     class GroupNode(
@@ -36,6 +38,10 @@ class GroupScene(
             get() = prototype.lineStore
         val faceStore: DraftFaceStore
             get() = prototype.faceStore
+        val dimensionStore: DraftDimensionStore
+            get() = prototype.dimensionStore
+        val textStore: DraftTextStore
+            get() = prototype.textStore
         var name: String
             get() = prototype.name
             set(value) { prototype.name = value }
@@ -235,7 +241,9 @@ class GroupScene(
         definitionAxisW = Vector3(0f, 0f, 1f),
         gluedToSurface = false,
         lineStore = DraftLineStore(),
-        faceStore = DraftFaceStore(defaultFaceColor)
+        faceStore = DraftFaceStore(defaultFaceColor),
+        dimensionStore = DraftDimensionStore(),
+        textStore = DraftTextStore()
     )
     val root: GroupNode = GroupNode(
         id = "root",
@@ -315,9 +323,13 @@ class GroupScene(
     fun clearAllSelections() {
         root.lineStore.clearSelection()
         root.faceStore.clearSelection()
+        root.dimensionStore.clearSelection()
+        root.textStore.clearSelection()
         walkGroups(root) { group ->
             group.lineStore.clearSelection()
             group.faceStore.clearSelection()
+            group.dimensionStore.clearSelection()
+            group.textStore.clearSelection()
         }
         clearGroupSelection()
     }
@@ -416,7 +428,9 @@ class GroupScene(
             definitionAxisW = Vector3(0f, 0f, 1f),
             gluedToSurface = false,
             lineStore = DraftLineStore(),
-            faceStore = DraftFaceStore(defaultFaceColor)
+            faceStore = DraftFaceStore(defaultFaceColor),
+            dimensionStore = DraftDimensionStore(),
+            textStore = DraftTextStore()
         )
         registerPrototype(prototype)
         val group = GroupNode(
@@ -448,6 +462,24 @@ class GroupScene(
                 val b = Vector3(tri.b).sub(origin)
                 val c = Vector3(tri.c).sub(origin)
                 group.faceStore.addTriangle(a, b, c, colors[tri] ?: defaultFaceColor)
+            }
+        }
+        val selectedDimensions = parent.dimensionStore.getSelected()
+        if (selectedDimensions.isNotEmpty()) {
+            parent.dimensionStore.deleteSelected()
+            selectedDimensions.forEach { dimension ->
+                group.dimensionStore.addDimension(
+                    Vector3(dimension.start).sub(origin),
+                    Vector3(dimension.end).sub(origin),
+                    Vector3(dimension.offset).sub(origin)
+                )
+            }
+        }
+        val selectedTexts = parent.textStore.getSelected()
+        if (selectedTexts.isNotEmpty()) {
+            parent.textStore.deleteSelected()
+            selectedTexts.forEach { text ->
+                group.textStore.addText(Vector3(text.position).sub(origin), text.text)
             }
         }
         if (selectedChildren.isNotEmpty()) {
@@ -484,6 +516,16 @@ class GroupScene(
                 val b = toParentSpace(group, tri.b)
                 val c = toParentSpace(group, tri.c)
                 parent.faceStore.addTriangle(a, b, c, color)
+            }
+            group.dimensionStore.getDimensions().forEach { dimension ->
+                val a = toParentSpace(group, dimension.start)
+                val b = toParentSpace(group, dimension.end)
+                val o = toParentSpace(group, dimension.offset)
+                parent.dimensionStore.addDimension(a, b, o)
+            }
+            group.textStore.getTexts().forEach { text ->
+                val position = toParentSpace(group, text.position)
+                parent.textStore.addText(position, text.text)
             }
             group.children.forEach { child ->
                 reparentGroup(child, parent)
@@ -656,6 +698,38 @@ class GroupScene(
         }
     }
 
+    fun collectWorldDimensions(consumer: (Vector3, Vector3, Vector3, Boolean) -> Unit) {
+        walkGroups(root) { group ->
+            group.dimensionStore.getDimensions().forEach { dim ->
+                consumer(
+                    group.toWorld(dim.start),
+                    group.toWorld(dim.end),
+                    group.toWorld(dim.offset),
+                    group.dimensionStore.isSelected(dim)
+                )
+            }
+        }
+        root.dimensionStore.getDimensions().forEach { dim ->
+            consumer(
+                Vector3(dim.start),
+                Vector3(dim.end),
+                Vector3(dim.offset),
+                root.dimensionStore.isSelected(dim)
+            )
+        }
+    }
+
+    fun collectWorldTexts(consumer: (Vector3, String, Boolean) -> Unit) {
+        walkGroups(root) { group ->
+            group.textStore.getTexts().forEach { text ->
+                consumer(group.toWorld(text.position), text.text, group.textStore.isSelected(text))
+            }
+        }
+        root.textStore.getTexts().forEach { text ->
+            consumer(Vector3(text.position), text.text, root.textStore.isSelected(text))
+        }
+    }
+
     private fun cloneGroup(group: GroupNode): GroupNode {
         val clone = GroupNode(
             id = java.util.UUID.randomUUID().toString(),
@@ -761,6 +835,8 @@ class GroupScene(
         val listener = changeListener ?: return
         group.lineStore.setChangeListener(listener)
         group.faceStore.setChangeListener(listener)
+        group.dimensionStore.setChangeListener(listener)
+        group.textStore.setChangeListener(listener)
     }
 
     private fun notifyChange() {
@@ -830,6 +906,8 @@ class GroupScene(
         root.children.clear()
         root.lineStore.clearAll()
         root.faceStore.clearAll()
+        root.dimensionStore.clearAll()
+        root.textStore.clearAll()
         clearGroupSelection()
         activeGroup = root
         prototypeInstances.clear()
