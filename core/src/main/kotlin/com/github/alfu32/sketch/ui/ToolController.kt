@@ -23,6 +23,7 @@ class ToolController(
         activeTool = next
         status.activeTool = activeTool.id
         status.copyMode = false
+        status.anchorWorld = null
         status.clearInput()
         activeTool.onEnter(status)
         if (activeTool.supportsCopyMode()) {
@@ -75,7 +76,11 @@ class ToolController(
     }
 
     fun pointerDown(world: Vector3?, normal: Vector3?, valid: Boolean, button: Int): Boolean {
-        return activeTool.onPointerDown(status, world, normal, valid, button)
+        val handled = activeTool.onPointerDown(status, world, normal, valid, button)
+        if (handled && valid && world != null) {
+            status.anchorWorld = Vector3(world)
+        }
+        return handled
     }
 
     fun pointerUp(world: Vector3?, normal: Vector3?, valid: Boolean, button: Int): Boolean {

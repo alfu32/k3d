@@ -95,6 +95,10 @@ class QuadTool(
         return true
     }
 
+    override fun anchorWorld(): Vector3? {
+        return originWorld
+    }
+
     override fun render(renderer: ShapeRenderer) {
         val a = originWorld ?: return
         if (!hasHover) {

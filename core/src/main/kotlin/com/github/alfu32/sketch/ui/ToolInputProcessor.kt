@@ -17,9 +17,14 @@ class ToolInputProcessor(
     private val objectPrototypeSelectionAction: () -> Unit,
     private val ungroupSelectionAction: () -> Unit,
     private val exitGroupEditAction: () -> Boolean,
-    private val lastSnapProvider: () -> SnapResult?
+    private val lastSnapProvider: () -> SnapResult?,
+    private val showDistanceInput: () -> Unit,
+    private val uiCapturesInput: () -> Boolean
 ) : InputAdapter() {
     override fun keyDown(keycode: Int): Boolean {
+        if (uiCapturesInput()) {
+            return true
+        }
         if (controller.handleKeyDown(keycode)) {
             return true
         }
@@ -94,15 +99,29 @@ class ToolInputProcessor(
                     return true
                 }
             }
+            Input.Keys.N -> {
+                val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
+                    Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+                if (ctrl) {
+                    showDistanceInput()
+                    return true
+                }
+            }
         }
         return false
     }
 
     override fun keyUp(keycode: Int): Boolean {
+        if (uiCapturesInput()) {
+            return true
+        }
         return controller.handleKeyUp(keycode)
     }
 
     override fun keyTyped(character: Char): Boolean {
+        if (uiCapturesInput()) {
+            return true
+        }
         if (character.isDigit() || character == '.' || character == '-') {
             controller.appendInput(character)
             return true

@@ -31,6 +31,8 @@ interface Tool {
         status.inputBuffer = text
     }
 
+    fun anchorWorld(): Vector3? = null
+
     fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
         // Default no-op.
     }

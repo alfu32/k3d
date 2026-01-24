@@ -65,6 +65,10 @@ class CircleTool(
         return true
     }
 
+    override fun anchorWorld(): Vector3? {
+        return centerWorld
+    }
+
     override fun render(renderer: ShapeRenderer) {
         val c = centerWorld
         val currentBasis = basis

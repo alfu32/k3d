@@ -160,6 +160,11 @@ class SketchUiOverlay(
     private var commandPaletteUI: CommandPaletteUI? = null
     private var pluginHost: PluginHost? = null
     private var pluginPanelsPositioned = false
+    private var distancePopup: CollapsibleWindow? = null
+    private var distanceField: VisTextField? = null
+    private var distanceChangeHandler: ((String) -> Unit)? = null
+    private var distanceCommitHandler: ((String) -> Unit)? = null
+    private var distanceCancelHandler: (() -> Unit)? = null
 
     init {
         iconDrawables.putAll(loadIconDrawables())
@@ -190,6 +195,132 @@ class SketchUiOverlay(
         needsPanelLayout = true
 
         updateFromStatus()
+    }
+
+    fun showDistancePopup(
+        screenX: Int,
+        screenY: Int,
+        text: String,
+        onChange: (String) -> Unit,
+        onCommit: (String) -> Unit,
+        onCancel: () -> Unit
+    ) {
+        if (distancePopup == null) {
+            val popup = CollapsibleWindow("Distance", showCloseButton = false)
+            popup.isMovable = false
+            popup.isResizable = false
+            val field = VisTextField()
+            field.messageText = "Enter distance"
+            popup.add(field).width(160f).pad(6f)
+            popup.pack()
+            stage.addActor(popup)
+            distancePopup = popup
+            distanceField = field
+            field.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                    distanceChangeHandler?.invoke(field.text)
+                }
+            })
+            field.addListener(object : com.badlogic.gdx.scenes.scene2d.InputListener() {
+                override fun keyDown(
+                    event: com.badlogic.gdx.scenes.scene2d.InputEvent?,
+                    keycode: Int
+                ): Boolean {
+                    when (keycode) {
+                        com.badlogic.gdx.Input.Keys.ENTER -> {
+                            distanceCommitHandler?.invoke(field.text)
+                            parkDistancePopup()
+                            return true
+                        }
+                        com.badlogic.gdx.Input.Keys.ESCAPE -> {
+                            hideDistancePopup(cancel = true)
+                            return true
+                        }
+                    }
+                    return false
+                }
+            })
+        }
+        distanceChangeHandler = onChange
+        distanceCommitHandler = onCommit
+        distanceCancelHandler = onCancel
+        val popup = distancePopup ?: return
+        val field = distanceField ?: return
+        field.text = text
+        field.selectAll()
+        popup.pack()
+        val stageCoords = stage.screenToStageCoordinates(com.badlogic.gdx.math.Vector2(screenX.toFloat(), screenY.toFloat()))
+        popup.setPosition(stageCoords.x, stageCoords.y)
+        popup.isVisible = true
+        stage.keyboardFocus = field
+        stage.scrollFocus = field
+        distanceChangeHandler?.invoke(field.text)
+    }
+
+    fun hideDistancePopup(cancel: Boolean) {
+        val popup = distancePopup ?: return
+        if (!popup.isVisible) {
+            return
+        }
+        popup.isVisible = false
+        if (stage.keyboardFocus === distanceField) {
+            stage.keyboardFocus = null
+        }
+        if (stage.scrollFocus === distanceField) {
+            stage.scrollFocus = null
+        }
+        if (cancel) {
+            distanceCancelHandler?.invoke()
+        }
+        distanceChangeHandler = null
+        distanceCommitHandler = null
+        distanceCancelHandler = null
+    }
+
+    fun parkDistancePopup() {
+        val popup = distancePopup ?: return
+        val field = distanceField ?: return
+        field.text = ""
+        popup.pack()
+        val x = stage.width - popup.width - 8f
+        val y = 8f
+        popup.setPosition(x.coerceAtLeast(0f), y.coerceAtLeast(0f))
+        popup.isVisible = true
+        if (stage.keyboardFocus === field) {
+            stage.keyboardFocus = null
+        }
+        if (stage.scrollFocus === field) {
+            stage.scrollFocus = null
+        }
+    }
+
+    fun updateDistancePopupHover(screenX: Int, screenY: Int) {
+        val popup = distancePopup ?: return
+        if (!popup.isVisible) {
+            return
+        }
+        val stageCoords = stage.screenToStageCoordinates(com.badlogic.gdx.math.Vector2(screenX.toFloat(), screenY.toFloat()))
+        val hit = stage.hit(stageCoords.x, stageCoords.y, true)
+        val isOverPopup = hit != null && hit.isDescendantOf(popup)
+        if (!isOverPopup) {
+            hideDistancePopup(cancel = true)
+        }
+    }
+
+    fun isUiCapturingInput(): Boolean {
+        val keyboard = stage.keyboardFocus
+        return keyboard is com.badlogic.gdx.scenes.scene2d.ui.TextField
+    }
+
+    fun isUiHit(screenX: Int, screenY: Int): Boolean {
+        val stageCoords = stage.screenToStageCoordinates(com.badlogic.gdx.math.Vector2(screenX.toFloat(), screenY.toFloat()))
+        val hit = stage.hit(stageCoords.x, stageCoords.y, true) ?: return false
+        return hit !== stage.root
+    }
+
+    fun clearUiFocus() {
+        stage.keyboardFocus = null
+        stage.scrollFocus = null
     }
 
     fun updateFromStatus() {

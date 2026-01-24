@@ -93,6 +93,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var guideManager: GuideManager
     private lateinit var snapper: Snapper
     private var lastSnap: SnapResult? = null
+    private var distanceOverrideSnap: SnapResult? = null
+    private var distanceInputActive = false
     private val gridSpacing = 1f
     private var snapEpsilon = 12f
     private var modelUnit = ModelUnit(1f, "unit")
@@ -175,16 +177,19 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             )
         )
         toolInput = ToolInputProcessor(
-            toolController,
-            guideManager,
-            ::runCleanup,
-            ::clearSelection,
-            ::deleteSelection,
-            ::groupSelection,
-            ::objectPrototypeSelection,
-            ::ungroupSelection,
-            ::exitGroupEditMode
-        ) { lastSnap }
+            controller = toolController,
+            guideManager = guideManager,
+            cleanupAction = ::runCleanup,
+            clearSelectionAction = ::clearSelection,
+            deleteSelectionAction = ::deleteSelection,
+            groupSelectionAction = ::groupSelection,
+            objectPrototypeSelectionAction = ::objectPrototypeSelection,
+            ungroupSelectionAction = ::ungroupSelection,
+            exitGroupEditAction = ::exitGroupEditMode,
+            lastSnapProvider = { lastSnap },
+            showDistanceInput = { startDistanceInput() },
+            uiCapturesInput = { uiOverlay.isUiCapturingInput() }
+        )
         lightingSettings = LightingSettings(
             shadowLightValue = shadowLightValue,
             shadowLightAlpha = shadowLightAlpha,
@@ -425,12 +430,22 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             )
         }
 
-        toolPointer = ToolPointerProcessor(toolController, snapper)
+        toolPointer = ToolPointerProcessor(toolController, snapper) { distanceOverrideSnap }
+        val uiBlocker = object : com.badlogic.gdx.InputAdapter() {
+            override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
+                if (uiOverlay.isUiHit(screenX, screenY)) {
+                    return true
+                }
+                uiOverlay.clearUiFocus()
+                return false
+            }
+        }
         val cameraScrollForwarder = CameraScrollForwarder(cameraController)
         val cameraEventRouter = CameraEventRouter(cameraController)
         Gdx.input.inputProcessor = InputMultiplexer(
             cameraScrollForwarder,
             uiOverlay.stage,
+            uiBlocker,
             toolPointer,
             toolInput,
             cameraEventRouter
@@ -480,6 +495,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         camera.lookAt(cameraTarget)
         camera.update()
         updateCursorStatus()
+        if (distanceInputActive) {
+            uiOverlay.updateDistancePopupHover(Gdx.input.x, Gdx.input.y)
+        }
         pluginHost.dispatchUpdate(Gdx.graphics.deltaTime)
         toolController.update(Gdx.graphics.deltaTime)
 
@@ -768,6 +786,115 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             statusModel.cursorWorld = "--"
             statusModel.cursorSnapLabel = "No hit"
         }
+    }
+
+    private fun startDistanceInput() {
+        val anchor = statusModel.anchorWorld
+        val snap = lastSnap
+        if (anchor == null || snap?.world == null || !snap.valid) {
+            statusModel.message = "Distance input: no anchor."
+            return
+        }
+        distanceInputActive = true
+        uiOverlay.showDistancePopup(
+            snap.screenX,
+            snap.screenY,
+            "",
+            { text -> updateDistanceInput(text) },
+            { text -> commitDistanceInput(text) },
+            { cancelDistanceInput() }
+        )
+    }
+
+    private fun updateDistanceInput(text: String) {
+        val anchor = statusModel.anchorWorld ?: return
+        val snap = lastSnap ?: return
+        val cursor = snap.world ?: return
+        if (text.isBlank()) {
+            distanceOverrideSnap = null
+            return
+        }
+        val distance = parseDistanceExpression(text) ?: return
+        val direction = Vector3(cursor).sub(anchor)
+        if (direction.len2() <= 1e-6f) {
+            return
+        }
+        direction.nor()
+        val point = Vector3(anchor).mulAdd(direction, distance.toFloat())
+        val normal = snap.normal ?: Vector3(0f, 1f, 0f)
+        distanceOverrideSnap = SnapResult(point, normal, snap.type, snap.screenX, snap.screenY, true)
+        toolController.pointerMoved(point, normal, true)
+    }
+
+    private fun commitDistanceInput(text: String) {
+        val snap = distanceOverrideSnap ?: return cancelDistanceInput()
+        toolController.pointerDown(snap.world, snap.normal, snap.valid, Input.Buttons.LEFT)
+        distanceOverrideSnap = null
+        distanceInputActive = false
+    }
+
+    private fun cancelDistanceInput() {
+        distanceOverrideSnap = null
+        distanceInputActive = false
+    }
+
+    private fun parseDistanceExpression(text: String): Double? {
+        val input = text.replace(" ", "")
+        if (input.isBlank()) {
+            return null
+        }
+        val tokens = mutableListOf<String>()
+        var i = 0
+        while (i < input.length) {
+            val ch = input[i]
+            if (ch.isDigit() || ch == '.' || (ch == '-' && (i == 0 || "+-*/".contains(input[i - 1])))) {
+                val start = i
+                i++
+                while (i < input.length && (input[i].isDigit() || input[i] == '.')) {
+                    i++
+                }
+                tokens.add(input.substring(start, i))
+                continue
+            }
+            if (ch == '+' || ch == '-' || ch == '*' || ch == '/') {
+                tokens.add(ch.toString())
+                i++
+                continue
+            }
+            return null
+        }
+        val output = java.util.Stack<Double>()
+        val ops = java.util.Stack<String>()
+        fun precedence(op: String): Int = if (op == "*" || op == "/") 2 else 1
+        fun applyOp() {
+            if (output.size < 2 || ops.isEmpty()) return
+            val b = output.pop()
+            val a = output.pop()
+            val op = ops.pop()
+            val result = when (op) {
+                "+" -> a + b
+                "-" -> a - b
+                "*" -> a * b
+                "/" -> a / b
+                else -> return
+            }
+            output.push(result)
+        }
+        tokens.forEach { token ->
+            val number = token.toDoubleOrNull()
+            if (number != null) {
+                output.push(number)
+            } else {
+                while (ops.isNotEmpty() && precedence(ops.peek()) >= precedence(token)) {
+                    applyOp()
+                }
+                ops.push(token)
+            }
+        }
+        while (ops.isNotEmpty()) {
+            applyOp()
+        }
+        return if (output.size == 1) output.pop() else null
     }
 
     private fun drawDraftLines() {

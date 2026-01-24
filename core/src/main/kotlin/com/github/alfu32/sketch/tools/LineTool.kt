@@ -80,6 +80,10 @@ class LineTool(
         return true
     }
 
+    override fun anchorWorld(): Vector3? {
+        return anchorWorld
+    }
+
     override fun render(renderer: ShapeRenderer) {
         val start = anchorWorld
         if (start != null && hasHover) {

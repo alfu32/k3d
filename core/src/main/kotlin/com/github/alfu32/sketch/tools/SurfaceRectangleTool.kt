@@ -77,6 +77,10 @@ class SurfaceRectangleTool(
         return true
     }
 
+    override fun anchorWorld(): Vector3? {
+        return anchorWorld
+    }
+
     override fun render(renderer: ShapeRenderer) {
         val start = anchorWorld
         val u = axisUWorld
