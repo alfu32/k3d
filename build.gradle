@@ -60,7 +60,7 @@ configure(subprojects) {
 
 subprojects {
   version = "$projectVersion"
-  ext.appName = 'K3D'
+  ext.appName = 'k3d'
   repositories {
     mavenCentral()
     // You may want to remove the following line if you have errors downloading dependencies.
@@ -70,4 +70,4 @@ subprojects {
   }
 }
 
-eclipse.project.name = 'K3D' + '-parent'
+eclipse.project.name = 'k3d' + '-parent'
