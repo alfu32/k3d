@@ -177,11 +177,16 @@ class CommandPaletteUI(
         isVisible = true
         window.isVisible = true
         window.setPosition(x, y)
+        updateCommandList()
     }
 
     fun windowWidth(): Float = window.width
 
     fun windowHeight(): Float = window.height
+
+    fun refreshList() {
+        updateCommandList()
+    }
     
     private fun updateCommandList() {
         val query = searchField.text

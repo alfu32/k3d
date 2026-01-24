@@ -482,6 +482,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         scene.setChangeListener { saveModel() }
         pluginHost.loadCatalog()
         pluginHost.reloadEnabledAndInit()
+        uiOverlay.refreshPluginPanels()
         setupMeshes()
         setupRenderables()
     }

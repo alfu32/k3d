@@ -447,6 +447,11 @@ class SketchUiOverlay(
         commandPaletteUI?.show()
     }
 
+    fun refreshPluginPanels() {
+        pluginManagerPanel?.refresh(force = true)
+        commandPaletteUI?.refreshList()
+    }
+
     fun dispose() {
         stage.dispose()
         iconTextures.forEach { it.dispose() }
