@@ -1125,6 +1125,18 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             u.scl(-1f)
             v.scl(-1f)
         }
+        val screenOrigin = camera.project(Vector3(position))
+        val screenU = camera.project(Vector3(position).add(u))
+        val screenV = camera.project(Vector3(position).add(v))
+        val ux = screenU.x - screenOrigin.x
+        val uy = screenU.y - screenOrigin.y
+        val vx = screenV.x - screenOrigin.x
+        val vy = screenV.y - screenOrigin.y
+        val det = ux * vy - uy * vx
+        if (det < 0f) {
+            u.scl(-1f)
+            v.scl(-1f)
+        }
         val worldPerPixel = worldPerPixelAt(position)
         val baseHeightWorld = textFont.lineHeight * worldPerPixel
         val scale = if (baseHeightWorld > 1e-6f) size / baseHeightWorld else 1f
