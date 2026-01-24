@@ -80,9 +80,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var faceFrontRenderable: MeshRenderableProvider
     private lateinit var faceBackRenderable: MeshRenderableProvider
     private lateinit var groundRenderable: MeshRenderableProvider
-    private val selectedFaceColor = Color(0f, 0f, 1f, 0.4f)
-    private val selectedLineColor = Color(0f, 0f, 1f, 1f)
-    private val selectedLineWidth = 4f
+    private val selectedFaceColor = Color(1f, 0f, 0f, 0.3f)
+    private val selectedLineColor = Color(1f, 0f, 0f, 1f)
+    private val selectedLineWidth = 8f
     private lateinit var toolController: ToolController
     private lateinit var toolInput: ToolInputProcessor
     private lateinit var uiOverlay: SketchUiOverlay
@@ -241,7 +241,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             shadowSettings,
             ::applyShadowSettings
         )
-        
+
         // Set up plugin host for UI
         uiOverlay.setPluginHost(pluginHost)
         pluginHost.getCommandPalette().registerCommand(
@@ -424,7 +424,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 )
             )
         }
-        
+
         toolPointer = ToolPointerProcessor(toolController, snapper)
         val cameraScrollForwarder = CameraScrollForwarder(cameraController)
         val cameraEventRouter = CameraEventRouter(cameraController)
