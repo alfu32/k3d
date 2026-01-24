@@ -1120,6 +1120,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
         u.nor()
         val v = Vector3(n).crs(u).nor()
+        val worldUp = Vector3(0f, 1f, 0f)
+        if (v.dot(worldUp) < 0f) {
+            u.scl(-1f)
+            v.scl(-1f)
+        }
         val worldPerPixel = worldPerPixelAt(position)
         val baseHeightWorld = textFont.lineHeight * worldPerPixel
         val scale = if (baseHeightWorld > 1e-6f) size / baseHeightWorld else 1f

@@ -29,7 +29,7 @@ class TextTool(
         group.textStore.addText(
             group.toLocal(world),
             "text",
-            1f,
+            0.1f,
             group.vectorToLocal(normalWorld),
             group.vectorToLocal(axisUWorld)
         )

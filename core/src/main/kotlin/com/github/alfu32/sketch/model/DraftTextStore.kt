@@ -25,7 +25,7 @@ class DraftTextStore {
     fun addText(
         position: Vector3,
         text: String,
-        size: Float = 1f,
+        size: Float = 0.1f,
         normal: Vector3 = Vector3(0f, 1f, 0f),
         axisU: Vector3 = Vector3(1f, 0f, 0f)
     ): TextEntity {

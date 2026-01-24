@@ -324,14 +324,14 @@ object ModelPersistence {
     class TextDto() {
         var position: Vec3Dto = Vec3Dto()
         var text: String = ""
-        var size: Float = 1f
+        var size: Float = 0.1f
         var normal: Vec3Dto = Vec3Dto()
         var axisU: Vec3Dto = Vec3Dto()
 
         constructor(
             position: Vec3Dto,
             text: String,
-            size: Float = 1f,
+            size: Float = 0.1f,
             normal: Vec3Dto = Vec3Dto(Vector3(0f, 1f, 0f)),
             axisU: Vec3Dto = Vec3Dto(Vector3(1f, 0f, 0f))
         ) : this() {
