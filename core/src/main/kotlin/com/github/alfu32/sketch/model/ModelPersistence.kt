@@ -276,7 +276,8 @@ object ModelPersistence {
                     text.text,
                     text.size,
                     text.normal.toVector3(),
-                    text.axisU.toVector3()
+                    text.axisU.toVector3(),
+                    text.screenText
                 )
             }
         }
@@ -302,7 +303,14 @@ object ModelPersistence {
                     DimensionDto(Vec3Dto(dim.start), Vec3Dto(dim.end), Vec3Dto(dim.offset))
                 }.toMutableList()
                 dto.texts = prototype.textStore.getTexts().map { text ->
-                    TextDto(Vec3Dto(text.position), text.text, text.size, Vec3Dto(text.normal), Vec3Dto(text.axisU))
+                    TextDto(
+                        Vec3Dto(text.position),
+                        text.text,
+                        text.size,
+                        Vec3Dto(text.normal),
+                        Vec3Dto(text.axisU),
+                        text.screenText
+                    )
                 }.toMutableList()
                 return dto
             }
@@ -327,19 +335,22 @@ object ModelPersistence {
         var size: Float = 0.1f
         var normal: Vec3Dto = Vec3Dto()
         var axisU: Vec3Dto = Vec3Dto()
+        var screenText: Boolean = true
 
         constructor(
             position: Vec3Dto,
             text: String,
             size: Float = 0.1f,
             normal: Vec3Dto = Vec3Dto(Vector3(0f, 1f, 0f)),
-            axisU: Vec3Dto = Vec3Dto(Vector3(1f, 0f, 0f))
+            axisU: Vec3Dto = Vec3Dto(Vector3(1f, 0f, 0f)),
+            screenText: Boolean = true
         ) : this() {
             this.position = position
             this.text = text
             this.size = size
             this.normal = normal
             this.axisU = axisU
+            this.screenText = screenText
         }
     }
 

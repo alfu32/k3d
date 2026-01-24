@@ -31,7 +31,8 @@ class TextTool(
             "text",
             0.1f,
             group.vectorToLocal(normalWorld),
-            group.vectorToLocal(axisUWorld)
+            group.vectorToLocal(axisUWorld),
+            true
         )
         status.message = "Text placed."
         return true

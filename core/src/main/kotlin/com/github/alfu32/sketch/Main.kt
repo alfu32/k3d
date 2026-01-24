@@ -247,6 +247,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::selectionInfo,
             ::updateSelectedText,
             ::updateSelectedTextSize,
+            ::updateSelectedTextScreen,
             ::groupInfo,
             ::updateGroupName,
             ::updateGroupGlue,
@@ -1028,8 +1029,12 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         textTransform.idt()
         spriteBatch.transformMatrix = textTransform
         spriteBatch.begin()
-        scene.collectWorldTexts { position, text, size, normal, axisU, selected ->
-            drawWorldText(text, position, size, normal, axisU, selected)
+        scene.collectWorldTexts { position, text, size, normal, axisU, selected, screenText ->
+            if (screenText) {
+                drawWorldTextScreen(text, position, size, selected)
+            } else {
+                drawWorldTextModel(text, position, size, normal, axisU, selected)
+            }
         }
         spriteBatch.end()
     }
@@ -1059,7 +1064,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         drawRotatedTextScaled(label, screenPos.x, screenPos.y, angleDeg, scale, color)
     }
 
-    private fun drawWorldText(
+    private fun drawWorldTextModel(
         text: String,
         position: Vector3,
         size: Float,
@@ -1069,6 +1074,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     ) {
         val color = if (selected) selectedLineColor else Color(0.1f, 0.1f, 0.1f, 1f)
         drawTextInPlane(text, position, size, normal, axisU, color)
+    }
+
+    private fun drawWorldTextScreen(text: String, position: Vector3, size: Float, selected: Boolean) {
+        val screenPos = camera.project(Vector3(position))
+        val color = if (selected) selectedLineColor else Color(0.1f, 0.1f, 0.1f, 1f)
+        drawTextScaled(text, screenPos.x, screenPos.y, size, color)
+    }
+
+    private fun drawTextScaled(text: String, x: Float, y: Float, scale: Float, color: Color) {
+        val previousScaleX = textFont.data.scaleX
+        val previousScaleY = textFont.data.scaleY
+        textFont.data.setScale(scale)
+        textFont.color = color
+        textFont.draw(spriteBatch, text, x, y)
+        textFont.data.setScale(previousScaleX, previousScaleY)
     }
 
     private fun drawRotatedText(text: String, x: Float, y: Float, angleDeg: Float, color: Color) {
@@ -1311,7 +1331,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             textCount = selectedTexts.size,
             selectedTextId = selectedText?.id,
             selectedTextValue = selectedText?.text,
-            selectedTextSize = selectedText?.size
+            selectedTextSize = selectedText?.size,
+            selectedTextScreen = selectedText?.screenText
         )
     }
 
@@ -1326,6 +1347,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val group = scene.activeGroup()
         if (group.textStore.updateSize(textId, size)) {
             statusModel.message = "Text size updated."
+        }
+    }
+
+    private fun updateSelectedTextScreen(textId: String, screenText: Boolean) {
+        val group = scene.activeGroup()
+        if (group.textStore.updateScreenText(textId, screenText)) {
+            statusModel.message = if (screenText) "Text set to screen mode." else "Text set to model mode."
         }
     }
 
