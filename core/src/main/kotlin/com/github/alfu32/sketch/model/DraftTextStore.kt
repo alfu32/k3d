@@ -118,6 +118,41 @@ class DraftTextStore {
         return true
     }
 
+    fun transformSelected(transform: (Vector3) -> Vector3): Int {
+        if (selectedIds.isEmpty()) {
+            return 0
+        }
+        var count = 0
+        texts.forEach { text ->
+            if (selectedIds.contains(text.id)) {
+                text.position.set(transform(Vector3(text.position)))
+                count++
+            }
+        }
+        if (count > 0) {
+            notifyChange()
+        }
+        return count
+    }
+
+    fun copySelected(transform: (Vector3) -> Vector3): Int {
+        if (selectedIds.isEmpty()) {
+            return 0
+        }
+        val original = texts.filter { selectedIds.contains(it.id) }
+        selectedIds.clear()
+        var count = 0
+        original.forEach { text ->
+            val copy = addText(transform(Vector3(text.position)), text.text, text.size)
+            selectedIds.add(copy.id)
+            count++
+        }
+        if (count > 0) {
+            notifyChange()
+        }
+        return count
+    }
+
     private fun notifyChange() {
         changeListener?.invoke()
     }

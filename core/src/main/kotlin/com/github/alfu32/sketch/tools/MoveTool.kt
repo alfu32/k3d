@@ -78,21 +78,27 @@ class MoveTool(
         if (status.copyMode) {
             val movedFaces = group.faceStore.copySelected { point -> Vector3(point).add(localDelta) }
             val movedEdges = group.lineStore.copySelected { point -> Vector3(point).add(localDelta) }
+            val movedDimensions = group.dimensionStore.copySelected { point -> Vector3(point).add(localDelta) }
+            val movedTexts = group.textStore.copySelected { point -> Vector3(point).add(localDelta) }
             val movedGroups = scene.copySelectedGroups(
                 { point -> Vector3(point).add(delta) },
                 { vector -> Vector3(vector) }
             )
             alignSelectedGroupsIfNeeded()
-            status.message = "Copied | edges $movedEdges faces $movedFaces groups $movedGroups"
+            status.message =
+                "Copied | edges $movedEdges faces $movedFaces dims $movedDimensions texts $movedTexts groups $movedGroups"
         } else {
             val movedFaces = group.faceStore.transformSelected { point -> Vector3(point).add(localDelta) }
             val movedEdges = group.lineStore.transformSelected { point -> Vector3(point).add(localDelta) }
+            val movedDimensions = group.dimensionStore.transformSelected { point -> Vector3(point).add(localDelta) }
+            val movedTexts = group.textStore.transformSelected { point -> Vector3(point).add(localDelta) }
             val movedGroups = scene.transformSelectedGroups(
                 { point -> Vector3(point).add(delta) },
                 { vector -> Vector3(vector) }
             )
             alignSelectedGroupsIfNeeded()
-            status.message = "Moved | edges $movedEdges faces $movedFaces groups $movedGroups"
+            status.message =
+                "Moved | edges $movedEdges faces $movedFaces dims $movedDimensions texts $movedTexts groups $movedGroups"
         }
         clearTransient()
         return true

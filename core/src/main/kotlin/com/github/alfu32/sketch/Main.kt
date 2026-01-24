@@ -1020,6 +1020,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             val (lineStart, lineEnd) = DimensionMath.computeOffsetLine(start, end, offset)
             drawDimensionText(lineStart, lineEnd, start, end, offset, selected)
         }
+        textTransform.idt()
+        spriteBatch.transformMatrix = textTransform
         scene.collectWorldTexts { position, text, size, selected ->
             drawWorldText(text, position, size, selected)
         }

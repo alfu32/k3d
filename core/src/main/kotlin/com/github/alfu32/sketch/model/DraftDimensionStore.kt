@@ -98,6 +98,47 @@ class DraftDimensionStore {
         return removed
     }
 
+    fun transformSelected(transform: (Vector3) -> Vector3): Int {
+        if (selectedIds.isEmpty()) {
+            return 0
+        }
+        var count = 0
+        dimensions.forEach { dimension ->
+            if (selectedIds.contains(dimension.id)) {
+                dimension.start.set(transform(Vector3(dimension.start)))
+                dimension.end.set(transform(Vector3(dimension.end)))
+                dimension.offset.set(transform(Vector3(dimension.offset)))
+                count++
+            }
+        }
+        if (count > 0) {
+            notifyChange()
+        }
+        return count
+    }
+
+    fun copySelected(transform: (Vector3) -> Vector3): Int {
+        if (selectedIds.isEmpty()) {
+            return 0
+        }
+        val original = dimensions.filter { selectedIds.contains(it.id) }
+        selectedIds.clear()
+        var count = 0
+        original.forEach { dimension ->
+            val copy = addDimension(
+                transform(Vector3(dimension.start)),
+                transform(Vector3(dimension.end)),
+                transform(Vector3(dimension.offset))
+            )
+            selectedIds.add(copy.id)
+            count++
+        }
+        if (count > 0) {
+            notifyChange()
+        }
+        return count
+    }
+
     private fun notifyChange() {
         changeListener?.invoke()
     }
