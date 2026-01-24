@@ -1,6 +1,6 @@
 # Plugin Developer Guide
 
-This guide covers how to write and load plugins for Katechup3D using Groovy scripts.
+This guide covers how to write and load plugins for K3D using Groovy scripts.
 
 ## Quick Start
 
@@ -14,7 +14,7 @@ The plugins directory is resolved from the installation folder at runtime. The U
 
 - Install path: `dist/` when built locally.
 - Plugins directory: `<install>/plugins`.
-- Plugin API JAR: `<install>/plugins/katechup3d-plugin-api*.jar` (packaged via `dist.sh`).
+- Plugin API JAR: `<install>/plugins/k3d-plugin-api*.jar` (packaged via `dist.sh`).
 
 During development, you can run with `./gradlew :lwjgl3:run` and copy scripts into `dist/plugins/` to test.
 

@@ -36,7 +36,7 @@ class PluginHost(
     private val pluginIdToEntry = mutableMapOf<String, String>()
     private val catalogFile = File(pluginsDir, "plugins.json")
     private var catalog = PluginCatalog()
-    
+
     // New properties for enhanced plugin system
     private val commandPalette = CommandPalette()
     private val enabledPlugins = mutableSetOf<String>()
@@ -114,7 +114,7 @@ class PluginHost(
             )
         }
     }
-    
+
     // Old method kept for backward compatibility
     fun pluginEntriesLegacy(): List<PluginEntryInfo> {
         return catalog.plugins.map { entry ->
@@ -191,7 +191,7 @@ class PluginHost(
         dispatchCreate()
         setupPluginCapabilities()  // Setup new capabilities after loading
     }
-    
+
     // New method to setup plugin capabilities
     private fun setupPluginCapabilities() {
         plugins.forEach { plugin ->
@@ -200,7 +200,7 @@ class PluginHost(
             }
         }
     }
-    
+
     private fun registerPluginCapabilities(plugin: Plugin) {
         // Register commands
         plugin.registerCommands().forEach { command ->
@@ -243,7 +243,7 @@ class PluginHost(
                 )
             }
         }
-        
+
         // Register other capabilities would go here
         // (Tools, EntityTypes, etc.)
     }
@@ -277,7 +277,7 @@ class PluginHost(
             }
         }
     }
-    
+
     // New dispatch methods for enhanced plugin system
     fun dispatchSceneLoad() {
         plugins.forEach { plugin ->
@@ -286,7 +286,7 @@ class PluginHost(
             }
         }
     }
-    
+
     fun dispatchSelectionChanged() {
         plugins.forEach { plugin ->
             if (plugin.id in enabledPlugins) {
@@ -294,7 +294,7 @@ class PluginHost(
             }
         }
     }
-    
+
     fun dispatchToolChanged(newTool: ToolId) {
         plugins.forEach { plugin ->
             if (plugin.id in enabledPlugins) {
@@ -318,7 +318,7 @@ class PluginHost(
         }
         return lines
     }
-    
+
     // Getter for command palette
     fun getCommandPalette(): CommandPalette = commandPalette
 
@@ -580,7 +580,7 @@ class PluginHost(
 
     private fun addPluginApiJar(loader: GroovyClassLoader) {
         val apiJar = pluginsDir.listFiles { file ->
-            file.isFile && file.name.startsWith("katechup3d-plugin-api") && file.extension.equals("jar", true)
+            file.isFile && file.name.startsWith("k3d-plugin-api") && file.extension.equals("jar", true)
         }?.firstOrNull() ?: return
         loader.addURL(apiJar.toURI().toURL())
     }

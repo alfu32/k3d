@@ -4,7 +4,7 @@ package com.github.alfu32.sketch.lwjgl3
 
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration
-import com.github.alfu32.sketch.Katechup3dVersion
+import com.github.alfu32.sketch.K3DVersion
 import com.github.alfu32.sketch.Main
 import groovy.lang.GroovyShell
 import java.io.File
@@ -18,8 +18,11 @@ fun main(args: Array<String>) {
     val commandArgs = handleCommand(args) ?: return
     val (width, height) = parseSize(args)
     Lwjgl3Application(Main(commandArgs), Lwjgl3ApplicationConfiguration().apply {
-        var ver = Katechup3dVersion()
-        setTitle("Katechup3d ${ver.buildGitTag} ${ver.buildGitBranch} ${ver.buildGitCommit} ${ver.buildDate.substring(0..10)}")
+        var ver = K3DVersion()
+        setTitle("K3D ${ver.buildGitTag} ${ver.buildGitBranch} ${ver.buildGitCommit} ${ver.buildDate.substring(0..10)}")
+
+        // TODO
+        // setWindowIcon()
         //// Vsync limits the frames per second to what your hardware can display, and helps eliminate
         //// screen tearing. This setting doesn't always work on Linux, so the line after is a safeguard.
         useVsync(true)
@@ -80,15 +83,15 @@ private fun handleCommand(args: Array<String>): Array<String>? {
 }
 
 private fun printVersion() {
-    val ver = Katechup3dVersion()
+    val ver = K3DVersion()
     val version = preferVersion(ver)
-    println("Katechup3d Editor $version (${ver.buildGitCommit.take(8)}) ${ver.buildDate}")
+    println("K3D Editor $version (${ver.buildGitCommit.take(8)}) ${ver.buildDate}")
 }
 
 private fun printHelp() {
     println(
         """
-        Katechup3d Editor
+        K3D Editor
         Commands:
           edit --file <path> [--size WIDTHxHEIGHT]   Open or create a model file (default: sketch3d.skate.json)
           groovy <script>      Run a Groovy script file
@@ -146,7 +149,7 @@ private fun runUpdate() {
         return
     }
     val tempFile = File(installDir, "${jarFile.name}.download")
-    val url = URL("https://github.com/alfu32/katechup3d/releases/latest/download/katechup3d-editor.jar")
+    val url = URL("https://github.com/alfu32/katechup3d/releases/latest/download/k3d-editor.jar")
     try {
         url.openStream().use { input ->
             tempFile.outputStream().use { output ->
@@ -163,7 +166,7 @@ private fun runUpdate() {
         tempFile.delete()
         return
     }
-    val version = preferVersion(Katechup3dVersion())
+    val version = preferVersion(K3DVersion())
     val archived = File(installDir, "${jarFile.nameWithoutExtension}.${version}.jar")
     if (archived.exists()) {
         archived.delete()
@@ -194,7 +197,7 @@ private fun locateJarFile(): File? {
     }
 }
 
-private fun preferVersion(ver: Katechup3dVersion): String {
+private fun preferVersion(ver: K3DVersion): String {
     return when {
         ver.buildVersion.isNotBlank() -> ver.buildVersion
         ver.buildGitTag.isNotBlank() -> ver.buildGitTag

@@ -24,7 +24,7 @@ dependencies {
 
 tasks.register('pluginApiJar', Jar) {
   dependsOn classes
-  archiveBaseName.set('katechup3d-plugin-api')
+  archiveBaseName.set('k3d-plugin-api')
   from sourceSets.main.output
 }
 

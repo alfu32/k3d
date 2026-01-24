@@ -4,15 +4,15 @@ INSTALL_PATH="$(cd "$(dirname "$0")" && pwd)"
 RUN_PATH="$(pwd)"
 
 if [[ -z "$1" ]]; then
-  java -jar "$INSTALL_PATH/katechup3d-editor.jar" edit
+  java -jar "$INSTALL_PATH/k3d-editor.jar" edit
   exit $?
 fi
 
 case "$1" in
   edit|version|update|help)
-    java -jar "$INSTALL_PATH/katechup3d-editor.jar" "$@"
+    java -jar "$INSTALL_PATH/k3d-editor.jar" "$@"
     ;;
   *)
-    java -jar "$INSTALL_PATH/katechup3d-editor.jar" edit --file "$1"
+    java -jar "$INSTALL_PATH/k3d-editor.jar" edit --file "$1"
     ;;
 esac

@@ -12,11 +12,11 @@ GIT_COMMIT=$(git rev-parse HEAD)
 GIT_BRANCH="$(git branch | egrep "^\* ")"
 GIT_TAG=$(git describe --tags $(git rev-list --tags --max-count=1))
 
-export VERSIONFILE=core/src/main/kotlin/com/github/alfu32/sketch/Katechup3dVersion.kt
+export VERSIONFILE=core/src/main/kotlin/com/github/alfu32/sketch/K3DVersion.kt
 cat > $VERSIONFILE <<VERSIONCLASS
 package com.github.alfu32.sketch
 
-data class Katechup3dVersion(
+data class K3DVersion(
   val buildGitCommit:String = "$GIT_COMMIT",
   val buildDate:String = "$BUILD_RUNDATE",
   val buildGitBranch:String = "${GIT_BRANCH/\*\ /}",
@@ -47,11 +47,11 @@ do
 done
 
 mkdir -p dist/plugins
-cp core/build/libs/katechup3d-plugin-api*.jar dist/plugins/ 2>/dev/null || true
+cp core/build/libs/k3d-plugin-api*.jar dist/plugins/ 2>/dev/null || true
 cp scripts/*.groovy dist/plugins/ 2>/dev/null || true
 
 
-export LAUNCHER_LINUX=dist/katechup3d-editor
+export LAUNCHER_LINUX=dist/k3d-editor
 # cat > $LAUNCHER_LINUX <<LAUNCHERLINUXSCRIPT
 # #!/bin/bash
 #
@@ -59,19 +59,19 @@ export LAUNCHER_LINUX=dist/katechup3d-editor
 # RUN_PATH="$(pwd)"
 #
 # if [[ -n "\$1" ]]; then
-#   java -jar "\$INSTALL_PATH/katechup3d-editor.jar" --file "\$1"
+#   java -jar "\$INSTALL_PATH/K3D-editor.jar" --file "\$1"
 # else
-#   java -jar "\$INSTALL_PATH/katechup3d-editor.jar"
+#   java -jar "\$INSTALL_PATH/K3D-editor.jar"
 # fi
 # LAUNCHERLINUXSCRIPT
 # chmod +x $LAUNCHER_LINUX
 
-mv dist/Katechup3d-*.jar dist/katechup3d-editor.jar
+mv dist/K3D-*.jar dist/K3D-editor.jar
 
-cp scripts/katechup3d-editor $LAUNCHER_LINUX
+cp scripts/k3d-editor $LAUNCHER_LINUX
 chmod +x $LAUNCHER_LINUX
 
-export WINDOWS_INSTALLER=dist/katechup3d.install.cmd
+export WINDOWS_INSTALLER=dist/k3d.install.cmd
 cat > $WINDOWS_INSTALLER <<WININSTALLSCRIPT
 @echo off
 setlocal
@@ -96,25 +96,25 @@ set "SCRIPT_PATH=%SCRIPT_PATH:~0,-1%"
 echo Java Version: %JAVA_VERSION%
 echo Script Path: %SCRIPT_PATH%
 
-echo "java -jar %SCRIPT_PATH%\\katechup3d-editor.jar edit --file \"%%1\"" > Katechup3d.cmd
+echo "java -jar %SCRIPT_PATH%\\K3D-editor.jar edit --file \"%%1\"" > K3D.cmd
 
 echo Windows Registry Editor Version 5.00^
      ^
  ; Associate .kt3 files with a custom application^
  [HKEY_CLASSES_ROOT\\.kt3]^
- @="Katechup3dFile"^
+ @="K3DFile"^
  ^
  [HKEY_CLASSES_ROOT\\kt3File]^
  @="kt3 File"^
  ^
  ; Default icon (optional)^
- [HKEY_CLASSES_ROOT\\Katechup3dFile\\DefaultIcon]^
+ [HKEY_CLASSES_ROOT\\K3DFile\\DefaultIcon]^
  @="%SCRIPT_PATH%\\Icon.ico"^
  ^
  ; Command to execute^
- [HKEY_CLASSES_ROOT\\Katechup3dFile\\shell\\open\\command]^
- @="\\"%SCRIPT_PATH%\\Katechup3d.cmd\\" \\"%%1\\""^
- > Katechup3d.open-kt3.reg
+ [HKEY_CLASSES_ROOT\\K3DFile\\shell\\open\\command]^
+ @="\\"%SCRIPT_PATH%\\K3D.cmd\\" \\"%%1\\""^
+ > K3D.open-kt3.reg
 
 :: End of script
 endlocal

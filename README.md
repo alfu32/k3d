@@ -1,9 +1,9 @@
-# KaTeChup3d
+# K3D
 
 ![img_19.png](documentation/img_19.png)
 ![img_18.png](documentation/img_18.png)
 
-KaTeChup3d is a Kotlin + libGDX (jvm) desktop application for interactively creating and editing simple 3D geometry. It focuses on direct modeling with edges and planar faces, real-time snapping, and tool-driven workflows.
+K3D is a Kotlin + libGDX (jvm) desktop application for interactively creating and editing simple 3D geometry. It focuses on direct modeling with edges and planar faces, real-time snapping, and tool-driven workflows.
 
 ## What it does today
 
