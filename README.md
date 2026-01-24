@@ -1,7 +1,6 @@
 # K3D
 
-![img_19.png](documentation/img_19.png)
-![img_18.png](documentation/img_18.png)
+![appicon.png](assets/appicon.png)
 
 K3D is a Kotlin + libGDX (jvm) desktop application for interactively creating and editing simple 3D geometry. It focuses on direct modeling with edges and planar faces, real-time snapping, and tool-driven workflows.
 
@@ -26,24 +25,3 @@ K3D is a Kotlin + libGDX (jvm) desktop application for interactively creating an
 ## Status
 
 This is an active work-in-progress. APIs and behavior may change as modeling and topology features evolve.
-
-
-![img_15.png](documentation/img_15.png)
-
-![img_14.png](documentation/img_14.png)
-![img_13.png](documentation/img_13.png)
-![img_12.png](documentation/img_12.png)
-![img_10.png](documentation/img_10.png)
-![img_9.png](documentation/img_9.png)
-![img.png](documentation/img.png)
-![img_1.png](documentation/img_1.png)
-![img_2.png](documentation/img_2.png)
-![img_3.png](documentation/img_3.png)
-![img_4.png](documentation/img_4.png)
-![img_5.png](documentation/img_5.png)
-
-![img_6.png](documentation/img_6.png)
-![img_7.png](documentation/img_7.png)
-![img_8.png](documentation/img_8.png)
-
-![img01.png](documentation/img01.png)
