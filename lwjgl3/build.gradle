@@ -363,9 +363,7 @@ def configureBundleTask = { String name, TaskProvider jarTask, TaskProvider jdkT
       into("jre")
     }
     if (includeUnixLauncher) {
-      from(file("$launcherDir/k3d-editor")) {
-        fileMode = 0755
-      }
+      from(file("$launcherDir/k3d-editor"))
     }
     if (includeWindowsScripts) {
       from(file("$launcherDir/k3d.cmd"))
