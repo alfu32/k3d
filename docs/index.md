@@ -1,6 +1,11 @@
 # K3D
 
 ![appicon.png](assets/appicon.png)
+[LICENSE.md](LICENSE.md)
+
+[USER_MANUAL.md](USER_MANUAL.md)
+
+[PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md)
 ![img.png](documentation/img.png)
 
 K3D is a Kotlin + libGDX (jvm) desktop application for interactively creating and editing simple 3D geometry. It focuses on direct modeling with edges and planar faces, real-time snapping, and tool-driven workflows.
@@ -22,6 +27,22 @@ K3D is a Kotlin + libGDX (jvm) desktop application for interactively creating an
 - Support face splitting and more reliable boolean-like operations.
 - Improve performance through spatial indices for picking and snapping.
 - Add project persistence (save/load) and export formats.
+
+## Index
+[LICENSE.md](LICENSE.md)
+
+[USER_MANUAL.md](USER_MANUAL.md)
+
+[PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md)
+
+[specification](specification)
+
+[SPEC.ARCH.md](specification/SPEC.ARCH.md)
+[SPEC.md](specification/SPEC.md)
+[SPEC.grid.md](specification/SPEC.grid.md)
+[SPEC.group.md](specification/SPEC.group.md)
+[SPEC.lighting.md](specification/SPEC.lighting.md)
+
 
 ## Status
 
