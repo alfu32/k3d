@@ -132,6 +132,20 @@ jobs:
           $manifest = $manifest.Replace("__APP_NAME__", $exe.BaseName)
           $manifestPath = Join-Path $msixRoot "AppxManifest.xml"
           $manifest | Out-File -Encoding utf8 $manifestPath
+      - name: Debug MSIX layout
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "MSIX staging root:"
+          Get-ChildItem -Path dist\\msix -Recurse | ForEach-Object {
+            if ($_.PSIsContainer) {
+              Write-Host ("[DIR]  " + $_.FullName)
+            } else {
+              Write-Host ("[FILE] " + $_.FullName)
+            }
+          }
+          Write-Host "Executables found:"
+          Get-ChildItem -Path dist\\msix -Recurse -Filter *.exe | ForEach-Object { Write-Host $_.FullName }
       - name: Build MSIX (Windows)
         id: msix-build
         uses: BHznJNs/msix-build@v0.9
