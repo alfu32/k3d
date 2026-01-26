@@ -44,10 +44,94 @@ jobs:
           java-version: "21"
       - name: Build Windows bundle
         run: .\\gradlew.bat :lwjgl3:bundleWin -PreleaseNumber="${{ inputs.tag }}"
+      - name: Build MSI + MSIX (Windows)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = "${{ inputs.tag }}"
+          $appName = "K3D"
+          $displayName = "K3D Editor"
+          $publisher = "CN=cristian.alferaru@gmail.com"
+          $packageName = "com.github.alfu32.k3d"
+          $jarDir = "lwjgl3\build\libs"
+          $jarPath = Join-Path $jarDir "k3d-$version.jar"
+          $jpackage = Join-Path $env:JAVA_HOME "bin\jpackage.exe"
+          if (!(Test-Path $jarPath)) { throw "Jar not found: $jarPath" }
+          & $jpackage --type app-image --name $appName --app-version $version --vendor "alfu32" `
+            --input $jarDir --main-jar "k3d-$version.jar" --dest "dist\jpackage" `
+            --icon "lwjgl3\icons\logo.ico"
+          & $jpackage --type msi --name $appName --app-version $version --vendor "alfu32" `
+            --input $jarDir --main-jar "k3d-$version.jar" --dest "dist\installer" `
+            --icon "lwjgl3\icons\logo.ico" --win-per-user-install --win-menu --win-shortcut
+
+          $appImage = "dist\jpackage\$appName"
+          $msixRoot = "dist\msix\$appName"
+          if (Test-Path $msixRoot) { Remove-Item $msixRoot -Recurse -Force }
+          Copy-Item $appImage $msixRoot -Recurse
+          $assetsDir = Join-Path $msixRoot "Assets"
+          New-Item $assetsDir -ItemType Directory -Force | Out-Null
+          Copy-Item "assets\appicon.png" (Join-Path $assetsDir "Square150x150Logo.png")
+          Copy-Item "assets\appicon.png" (Join-Path $assetsDir "Square44x44Logo.png")
+          Copy-Item "assets\appicon.png" (Join-Path $assetsDir "StoreLogo.png")
+          $manifest = @"
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
+  <Identity Name="$packageName" Publisher="$publisher" Version="$version.0" />
+  <Properties>
+    <DisplayName>$displayName</DisplayName>
+    <PublisherDisplayName>$publisher</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+  <Applications>
+    <Application Id="K3D" Executable="$appName.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="$displayName" Description="$displayName"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png"
+        BackgroundColor="transparent" />
+      <Extensions>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="k3d">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.k3d</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>
+"@
+          $manifestPath = Join-Path $msixRoot "AppxManifest.xml"
+          $manifest | Out-File -Encoding utf8 $manifestPath
+
+          $makeAppx = Get-Command makeappx.exe -ErrorAction SilentlyContinue
+          if ($null -eq $makeAppx) {
+            $sdkBin = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+            if ($null -ne $sdkBin) {
+              $makeAppx = Get-Command (Join-Path $sdkBin.FullName "x64\makeappx.exe") -ErrorAction SilentlyContinue
+            }
+          }
+          if ($null -eq $makeAppx) { throw "MakeAppx.exe not found (Windows SDK required)" }
+          & $makeAppx.Source pack /d $msixRoot /p "dist\installer\k3d-$version.msix"
       - uses: actions/upload-artifact@v4
         with:
           name: k3d-windows
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/installer/*.msi
+            dist/installer/*.msix
 
   build-mac:
     runs-on: macos-14
