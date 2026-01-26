@@ -74,7 +74,7 @@ jobs:
           $packageName = "com.github.alfu32.k3d"
 
           $appImage = "dist\jpackage\$appName"
-          $msixRoot = "dist\msix\$appName"
+          $msixRoot = "dist\msix"
           if (Test-Path $msixRoot) { Remove-Item $msixRoot -Recurse -Force }
           New-Item $msixRoot -ItemType Directory -Force | Out-Null
           Copy-Item -Path (Join-Path $appImage "*") -Destination $msixRoot -Recurse -Force
@@ -136,8 +136,8 @@ jobs:
         id: msix-build
         uses: BHznJNs/msix-build@v0.9
         with:
-          app-build-path: dist/msix/K3D
-          appx-manifest-path: dist/msix/K3D/AppxManifest.xml
+          app-build-path: dist/msix
+          appx-manifest-path: dist/msix/AppxManifest.xml
           icon-path: assets/appsplash.png
           priconfig-path: scripts/priconfig.xml
       - name: Collect MSIX (Windows)
