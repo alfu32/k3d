@@ -13,6 +13,7 @@ enum class ToolId(val displayName: String) {
     MOVE("Move"),
     ROTATE("Rotate"),
     SCALE("Scale"),
+    STRETCH("Stretch"),
     PAINT("Paint"),
     ERASER("Eraser"),
     OBJECT_PLACE("Object"),

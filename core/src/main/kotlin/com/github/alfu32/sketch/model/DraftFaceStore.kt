@@ -703,4 +703,8 @@ class DraftFaceStore(
             onChange?.invoke()
         }
     }
+
+    fun notifyExternalChange() {
+        notifyChange()
+    }
 }

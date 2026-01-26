@@ -1219,6 +1219,7 @@ class SketchUiOverlay(
             ToolId.MOVE -> "move"
             ToolId.ROTATE -> "rotate"
             ToolId.SCALE -> "scale"
+            ToolId.STRETCH -> "stretch"
             ToolId.PAINT -> "paint"
             ToolId.ERASER -> "eraser"
             ToolId.OBJECT_PLACE -> "select"
@@ -1238,6 +1239,7 @@ class SketchUiOverlay(
             ToolId.MOVE -> Color(0.95f, 0.45f, 0.35f, 1f)
             ToolId.ROTATE -> Color(0.75f, 0.55f, 0.95f, 1f)
             ToolId.SCALE -> Color(0.95f, 0.55f, 0.75f, 1f)
+            ToolId.STRETCH -> Color(0.95f, 0.65f, 0.25f, 1f)
             ToolId.PAINT -> Color(0.95f, 0.95f, 0.45f, 1f)
             ToolId.ERASER -> Color(0.65f, 0.65f, 0.65f, 1f)
             ToolId.OBJECT_PLACE -> Color(0.85f, 0.85f, 0.85f, 1f)

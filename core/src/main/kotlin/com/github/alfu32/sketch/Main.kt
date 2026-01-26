@@ -56,6 +56,7 @@ import com.github.alfu32.sketch.tools.RotateTool
 import com.github.alfu32.sketch.tools.SurfaceRectangleTool
 import com.github.alfu32.sketch.tools.SelectTool
 import com.github.alfu32.sketch.tools.ScaleTool
+import com.github.alfu32.sketch.tools.StretchTool
 import com.github.alfu32.sketch.tools.TextTool
 import com.github.alfu32.sketch.ui.SimpleTool
 import com.github.alfu32.sketch.ui.SketchUiOverlay
@@ -185,6 +186,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 MoveTool(scene),
                 RotateTool(scene),
                 ScaleTool(scene),
+                StretchTool(scene),
                 PaintTool(scene, camera) { statusModel.paintColor.cpy() },
                 SimpleTool(ToolId.ERASER, "Click to erase edges."),
                 objectPlaceTool
@@ -430,6 +432,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ToolId.MOVE,
             ToolId.ROTATE,
             ToolId.SCALE,
+            ToolId.STRETCH,
             ToolId.PAINT,
             ToolId.ERASER
         ).forEach { toolId ->

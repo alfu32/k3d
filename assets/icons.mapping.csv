@@ -19,3 +19,7 @@ order|name|line|col|start_x|end_x|start_y|end_y
 18|plugins|5|2|32|63|128|159
 19|text|5|3|64|95|128|159
 20|dimension|5|4|96|127|128|159
+21|stretch|6|1|0|31|160|191
+22|skew|6|2|32|63|160|191
+23|unused3|6|3|64|95|160|191
+23|unused4|6|4|96|127|160|191

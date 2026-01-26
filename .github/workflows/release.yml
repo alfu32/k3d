@@ -51,7 +51,7 @@ jobs:
           $version = "${{ inputs.tag }}"
           $appName = "K3D"
           $displayName = "K3D Editor"
-          $publisher = "CN=cristian.alferaru@gmail.com"
+          $publisher = "CN=K3D0"
           $packageName = "com.github.alfu32.k3d"
           $jarDir = "lwjgl3\build\libs"
           $jarPath = Join-Path $jarDir "k3d-$version.jar"
@@ -70,7 +70,8 @@ jobs:
           $version = "${{ inputs.tag }}"
           $appName = "K3D"
           $displayName = "K3D Editor"
-          $publisher = "CN=cristian.alferaru@gmail.com"
+          $publisher = "CN=K3D0"
+          $publisherDisplayName = "K3D0"
           $packageName = "com.github.alfu32.k3d"
 
           $appImage = "dist\jpackage\$appName"
@@ -92,7 +93,7 @@ jobs:
             '  <Identity Name="__PACKAGE_NAME__" Publisher="__PUBLISHER__" Version="__VERSION__.0" />',
             '  <Properties>',
             '    <DisplayName>__DISPLAY_NAME__</DisplayName>',
-            '    <PublisherDisplayName>__PUBLISHER__</PublisherDisplayName>',
+            '    <PublisherDisplayName>__PUBLISHER_DISPLAY_NAME__</PublisherDisplayName>',
             '    <Logo>Assets\StoreLogo.png</Logo>',
             '  </Properties>',
             '  <Resources>',
@@ -125,6 +126,7 @@ jobs:
           ) -join "`n"
           $manifest = $manifest.Replace("__PACKAGE_NAME__", $packageName)
           $manifest = $manifest.Replace("__PUBLISHER__", $publisher)
+          $manifest = $manifest.Replace("__PUBLISHER_DISPLAY_NAME__", $publisherDisplayName)
           $manifest = $manifest.Replace("__VERSION__", $version)
           $manifest = $manifest.Replace("__DISPLAY_NAME__", $displayName)
           $exe = Get-ChildItem $msixRoot -Filter *.exe | Select-Object -First 1

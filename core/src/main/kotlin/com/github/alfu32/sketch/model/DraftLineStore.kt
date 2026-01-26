@@ -385,6 +385,10 @@ class DraftLineStore {
             onChange?.invoke()
         }
     }
+
+    fun notifyExternalChange() {
+        notifyChange()
+    }
     private fun segmentIntersectsAabb(a: Vector3, b: Vector3, min: Vector3, max: Vector3): Boolean {
         var tmin = 0f
         var tmax = 1f
