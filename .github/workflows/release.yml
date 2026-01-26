@@ -150,10 +150,42 @@ jobs:
         id: msix-build
         uses: BHznJNs/msix-build@v0.9
         with:
-          app-build-path: dist/msix
+          app-build-path: dist/msix/.
           appx-manifest-path: dist/msix/AppxManifest.xml
           icon-path: assets/appsplash.png
           priconfig-path: scripts/priconfig.xml
+        env:
+          WORKING_DIRECTORY: dist/msix
+      - name: Debug MSIX build workspace
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $workspace = $env:WORKING_DIRECTORY
+          Write-Host "WORKING_DIRECTORY=$workspace"
+          if (![string]::IsNullOrWhiteSpace($workspace) -and (Test-Path $workspace)) {
+            Write-Host "Listing WORKING_DIRECTORY contents:"
+            Get-ChildItem -Path $workspace -Recurse | ForEach-Object {
+              if ($_.PSIsContainer) {
+                Write-Host ("[DIR]  " + $_.FullName)
+              } else {
+                Write-Host ("[FILE] " + $_.FullName)
+              }
+            }
+          } else {
+            Write-Host "WORKING_DIRECTORY does not exist"
+          }
+          if (Test-Path "D:\\a\\_temp\\msix-build") {
+            Write-Host "Listing D:\\a\\_temp\\msix-build contents:"
+            Get-ChildItem -Path "D:\\a\\_temp\\msix-build" -Recurse | ForEach-Object {
+              if ($_.PSIsContainer) {
+                Write-Host ("[DIR]  " + $_.FullName)
+              } else {
+                Write-Host ("[FILE] " + $_.FullName)
+              }
+            }
+          } else {
+            Write-Host "D:\\a\\_temp\\msix-build does not exist"
+          }
       - name: Collect MSIX (Windows)
         shell: powershell
         run: |
