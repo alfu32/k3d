@@ -130,11 +130,20 @@ jobs:
           $manifestPath = Join-Path $msixRoot "AppxManifest.xml"
           $manifest | Out-File -Encoding utf8 $manifestPath
       - name: Build MSIX (Windows)
-        uses: microsoft/msix-build@v1
+        id: msix-build
+        uses: BHznJNs/msix-build@v0.9
         with:
-          sourceDirectory: dist\\msix\\K3D
-          outputPath: dist\\installer\\k3d-${{ inputs.tag }}.msix
-          manifestPath: dist\\msix\\K3D\\AppxManifest.xml
+          app-build-path: dist\\msix\\K3D
+          appx-manifest-path: dist\\msix\\K3D\\AppxManifest.xml
+          icon-path: assets\\appicon.png
+      - name: Collect MSIX (Windows)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $outputPath = "${{ steps.msix-build.outputs.msix-path }}"
+          if ([string]::IsNullOrWhiteSpace($outputPath)) { throw "MSIX output path missing" }
+          New-Item "dist\\installer" -ItemType Directory -Force | Out-Null
+          Copy-Item $outputPath "dist\\installer\\k3d-${{ inputs.tag }}.msix" -Force
       - uses: actions/upload-artifact@v4
         with:
           name: k3d-windows
