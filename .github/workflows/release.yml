@@ -44,7 +44,7 @@ jobs:
           java-version: "21"
       - name: Build Windows bundle
         run: .\\gradlew.bat :lwjgl3:bundleWin -PreleaseNumber="${{ inputs.tag }}"
-      - name: Build MSI + MSIX (Windows)
+      - name: Build MSI (Windows)
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
@@ -63,6 +63,15 @@ jobs:
           & $jpackage --type msi --name $appName --app-version $version --vendor "alfu32" `
             --input $jarDir --main-jar "k3d-$version.jar" --dest "dist\installer" `
             --icon "lwjgl3\icons\logo.ico" --win-per-user-install --win-menu --win-shortcut
+      - name: Prepare MSIX layout
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = "${{ inputs.tag }}"
+          $appName = "K3D"
+          $displayName = "K3D Editor"
+          $publisher = "CN=cristian.alferaru@gmail.com"
+          $packageName = "com.github.alfu32.k3d"
 
           $appImage = "dist\jpackage\$appName"
           $msixRoot = "dist\msix\$appName"
@@ -120,16 +129,12 @@ jobs:
           $manifest = $manifest.Replace("__APP_NAME__", $appName)
           $manifestPath = Join-Path $msixRoot "AppxManifest.xml"
           $manifest | Out-File -Encoding utf8 $manifestPath
-
-          $makeAppx = Get-Command makeappx.exe -ErrorAction SilentlyContinue
-          if ($null -eq $makeAppx) {
-            $sdkBin = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Directory | Sort-Object Name -Descending | Select-Object -First 1
-            if ($null -ne $sdkBin) {
-              $makeAppx = Get-Command (Join-Path $sdkBin.FullName "x64\makeappx.exe") -ErrorAction SilentlyContinue
-            }
-          }
-          if ($null -eq $makeAppx) { throw "MakeAppx.exe not found (Windows SDK required)" }
-          & $makeAppx.Source pack /d $msixRoot /p "dist\installer\k3d-$version.msix"
+      - name: Build MSIX (Windows)
+        uses: microsoft/msix-build@v1
+        with:
+          sourceDirectory: dist\\msix\\K3D
+          outputPath: dist\\installer\\k3d-${{ inputs.tag }}.msix
+          manifestPath: dist\\msix\\K3D\\AppxManifest.xml
       - uses: actions/upload-artifact@v4
         with:
           name: k3d-windows
