@@ -127,17 +127,19 @@ jobs:
           $manifest = $manifest.Replace("__PUBLISHER__", $publisher)
           $manifest = $manifest.Replace("__VERSION__", $version)
           $manifest = $manifest.Replace("__DISPLAY_NAME__", $displayName)
-          $manifest = $manifest.Replace("__APP_NAME__", $appName)
+          $exe = Get-ChildItem $msixRoot -Filter *.exe | Select-Object -First 1
+          if ($null -eq $exe) { throw "No executable found in $msixRoot" }
+          $manifest = $manifest.Replace("__APP_NAME__", $exe.BaseName)
           $manifestPath = Join-Path $msixRoot "AppxManifest.xml"
           $manifest | Out-File -Encoding utf8 $manifestPath
       - name: Build MSIX (Windows)
         id: msix-build
         uses: BHznJNs/msix-build@v0.9
         with:
-          app-build-path: dist\\msix\\K3D
-          appx-manifest-path: dist\\msix\\K3D\\AppxManifest.xml
-          icon-path: assets\\appsplash.png
-          priconfig-path: scripts\\priconfig.xml
+          app-build-path: dist/msix/K3D
+          appx-manifest-path: dist/msix/K3D/AppxManifest.xml
+          icon-path: assets/appsplash.png
+          priconfig-path: scripts/priconfig.xml
       - name: Collect MSIX (Windows)
         shell: powershell
         run: |
