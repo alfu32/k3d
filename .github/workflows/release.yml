@@ -135,7 +135,8 @@ jobs:
         with:
           app-build-path: dist\\msix\\K3D
           appx-manifest-path: dist\\msix\\K3D\\AppxManifest.xml
-          icon-path: assets\\appicon.png
+          icon-path: assets\\appsplash.png
+          priconfig-path: scripts\\priconfig.xml
       - name: Collect MSIX (Windows)
         shell: powershell
         run: |
