@@ -108,7 +108,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private var lastSnap: SnapResult? = null
     private var distanceOverrideSnap: SnapResult? = null
     private var distanceInputActive = false
-    private val gridSpacing = 1f
+    private var gridSpacing = 1f
     private var snapEpsilon = 12f
     private var modelUnit = ModelUnit(1f, "unit")
     private lateinit var modelFile: java.io.File
@@ -259,6 +259,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::deleteObjectPrototype,
             ::modelUnitInfo,
             ::updateModelUnit,
+            { gridSpacing },
+            ::setGridSpacing,
             { snapEpsilon },
             ::setSnapEpsilon,
             lightingSettings,
@@ -540,7 +542,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         Gdx.gl.glLineWidth(2f)
         shapeRenderer.projectionMatrix = camera.combined
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
-        drawGrid(20, 1f)
+        drawGrid(20, gridSpacing)
         shapeRenderer.end()
 
         modelBatch.begin(camera)
@@ -1271,7 +1273,17 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun saveModel() {
-        ModelPersistence.save(modelFile, scene, camera, cameraTarget, lightingSettings, shadowSettings, modelUnit, snapEpsilon)
+        ModelPersistence.save(
+            modelFile,
+            scene,
+            camera,
+            cameraTarget,
+            lightingSettings,
+            shadowSettings,
+            modelUnit,
+            snapEpsilon,
+            gridSpacing
+        )
         if (::pluginHost.isInitialized) {
             pluginHost.dispatchSave()
         }
@@ -1289,11 +1301,22 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 lightingSettings,
                 shadowSettings,
                 modelUnit,
-                { value -> applySnapEpsilon(value, false) }
+                { value -> applySnapEpsilon(value, false) },
+                { value -> applyGridSpacing(value, false) }
             )
             scene.applyChangeListenerToAll()
             if (result.ok && result.needsResave) {
-                ModelPersistence.save(modelFile, scene, camera, cameraTarget, lightingSettings, shadowSettings, modelUnit, snapEpsilon)
+                ModelPersistence.save(
+                    modelFile,
+                    scene,
+                    camera,
+                    cameraTarget,
+                    lightingSettings,
+                    shadowSettings,
+                    modelUnit,
+                    snapEpsilon,
+                    gridSpacing
+                )
             }
             cameraController.target.set(cameraTarget)
             statusModel.message = "Loaded ${modelFile.name}"
@@ -1509,6 +1532,22 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun setSnapEpsilon(value: Float) {
         applySnapEpsilon(value, true)
+    }
+
+    private fun applyGridSpacing(value: Float, save: Boolean) {
+        val next = value.coerceAtLeast(1e-4f)
+        if (gridSpacing == next) {
+            return
+        }
+        gridSpacing = next
+        snapper.gridSpacing = next
+        if (save) {
+            saveModel()
+        }
+    }
+
+    private fun setGridSpacing(value: Float) {
+        applyGridSpacing(value, true)
     }
 
     private fun ungroupSelection() {

@@ -7,7 +7,7 @@ import com.badlogic.gdx.utils.JsonWriter
 import java.io.File
 
 object ModelPersistence {
-    private const val VERSION = 7
+    private const val VERSION = 8
 
     fun save(
         file: File,
@@ -17,9 +17,10 @@ object ModelPersistence {
         lighting: com.github.alfu32.sketch.ui.LightingSettings,
         shadow: com.github.alfu32.sketch.ui.ShadowSettings,
         modelUnit: ModelUnit,
-        snapEpsilon: Float
+        snapEpsilon: Float,
+        gridSpacing: Float
     ) {
-        val snapshot = snapshot(scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilon)
+        val snapshot = snapshot(scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilon, gridSpacing)
         val json = Json().apply {
             setOutputType(JsonWriter.OutputType.json)
         }
@@ -35,7 +36,8 @@ object ModelPersistence {
         lighting: com.github.alfu32.sketch.ui.LightingSettings,
         shadow: com.github.alfu32.sketch.ui.ShadowSettings,
         modelUnit: ModelUnit,
-        snapEpsilon: Float
+        snapEpsilon: Float,
+        gridSpacing: Float
     ): ModelSnapshot {
         return ModelSnapshot().apply {
             version = VERSION
@@ -46,6 +48,7 @@ object ModelPersistence {
             shadowState = ShadowDto(shadow)
             this.modelUnit = ModelUnitDto(modelUnit)
             this.snapEpsilon = snapEpsilon
+            this.gridSpacing = gridSpacing
         }
     }
 
@@ -59,7 +62,8 @@ object ModelPersistence {
         lighting: com.github.alfu32.sketch.ui.LightingSettings,
         shadow: com.github.alfu32.sketch.ui.ShadowSettings,
         modelUnit: ModelUnit,
-        snapEpsilonSetter: (Float) -> Unit
+        snapEpsilonSetter: (Float) -> Unit,
+        gridSpacingSetter: (Float) -> Unit
     ): LoadResult {
         if (!file.exists() || file.length() == 0L) {
             return LoadResult(false, false)
@@ -71,7 +75,7 @@ object ModelPersistence {
             return LoadResult(false, false)
         } ?: return LoadResult(false, false)
 
-        applySnapshot(snapshot, scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilonSetter)
+        applySnapshot(snapshot, scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilonSetter, gridSpacingSetter)
         val needsResave = snapshot.cameraState == null ||
             snapshot.lightingState == null ||
             snapshot.shadowState == null ||
@@ -81,7 +85,8 @@ object ModelPersistence {
             snapshot.lightingState?.hasNulls() == true ||
             snapshot.shadowState?.hasNulls() == true ||
             snapshot.modelUnit == null ||
-            snapshot.snapEpsilon == null
+            snapshot.snapEpsilon == null ||
+            snapshot.gridSpacing == null
         return LoadResult(true, needsResave)
     }
 
@@ -93,7 +98,8 @@ object ModelPersistence {
         lighting: com.github.alfu32.sketch.ui.LightingSettings,
         shadow: com.github.alfu32.sketch.ui.ShadowSettings,
         modelUnit: ModelUnit? = null,
-        snapEpsilonSetter: ((Float) -> Unit)? = null
+        snapEpsilonSetter: ((Float) -> Unit)? = null,
+        gridSpacingSetter: ((Float) -> Unit)? = null
     ) {
         resetScene(scene)
         if (snapshot.rootInstance != null && snapshot.prototypes.isNotEmpty()) {
@@ -180,6 +186,9 @@ object ModelPersistence {
         snapshot.snapEpsilon?.let { value ->
             snapEpsilonSetter?.invoke(value)
         }
+        snapshot.gridSpacing?.let { value ->
+            gridSpacingSetter?.invoke(value)
+        }
     }
 
     class ModelSnapshot {
@@ -194,6 +203,7 @@ object ModelPersistence {
         var shadowState: ShadowDto? = null
         var modelUnit: ModelUnitDto? = null
         var snapEpsilon: Float? = null
+        var gridSpacing: Float? = null
     }
 
     class ModelUnitDto() {

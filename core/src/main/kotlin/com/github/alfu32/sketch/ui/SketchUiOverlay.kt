@@ -45,6 +45,8 @@ class SketchUiOverlay(
     private val objectPrototypeDelete: (String) -> Unit,
     private val modelUnitProvider: () -> com.github.alfu32.sketch.model.ModelUnit,
     private val modelUnitChanged: (String, Float) -> Unit,
+    private val gridSpacingProvider: () -> Float,
+    private val gridSpacingChanged: (Float) -> Unit,
     private val snapEpsilonProvider: () -> Float,
     private val snapEpsilonChanged: (Float) -> Unit,
     private val lightingSettings: LightingSettings,
@@ -158,12 +160,14 @@ class SketchUiOverlay(
     private lateinit var modelSettingsPanel: CollapsibleWindow
     private val unitNameField = VisTextField()
     private val unitSizeField = VisTextField()
+    private val gridSpacingField = VisTextField()
     private val snapEpsilonMin = 2f
     private val snapEpsilonMax = 48f
     private val snapEpsilonSlider = VisSlider(snapEpsilonMin, snapEpsilonMax, 1f, false)
     private var updatingModelSettingsFields = false
     private var lastUnitName = ""
     private var lastUnitSize = -1f
+    private var lastGridSpacing = -1f
     private var lastSnapEpsilon = -1f
     private val lightingRefreshers = mutableListOf<() -> Unit>()
     private lateinit var selectionPanel: CollapsibleWindow
@@ -720,6 +724,8 @@ class SketchUiOverlay(
         content.add(unitNameField).growX().row()
         content.add(VisLabel("Unit size")).left().padTop(4f).row()
         content.add(unitSizeField).growX().row()
+        content.add(VisLabel("Grid size")).left().padTop(4f).row()
+        content.add(gridSpacingField).growX().row()
         content.add(VisLabel("Snap radius")).left().padTop(6f).row()
         content.add(snapEpsilonSlider).growX().row()
         panel.add(content).growX()
@@ -746,6 +752,17 @@ class SketchUiOverlay(
                 val size = unitSizeField.text.toFloatOrNull() ?: return
                 if (name.isNotBlank()) {
                     modelUnitChanged(name, size)
+                }
+            }
+        })
+        gridSpacingField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                if (updatingModelSettingsFields) {
+                    return
+                }
+                val gridSize = gridSpacingField.text.toFloatOrNull() ?: return
+                if (gridSize > 0f) {
+                    gridSpacingChanged(gridSize)
                 }
             }
         })
@@ -826,9 +843,10 @@ class SketchUiOverlay(
     private fun updateModelSettingsPanel() {
         val unit = modelUnitProvider()
         val snapEpsilon = snapEpsilonProvider()
+        val gridSpacing = gridSpacingProvider()
         val unitName = unit.name
         val unitSize = unit.size
-        if (unitName != lastUnitName || unitSize != lastUnitSize || snapEpsilon != lastSnapEpsilon) {
+        if (unitName != lastUnitName || unitSize != lastUnitSize || gridSpacing != lastGridSpacing || snapEpsilon != lastSnapEpsilon) {
             updatingModelSettingsFields = true
             if (unitName != lastUnitName || !unitNameField.hasKeyboardFocus()) {
                 unitNameField.text = unitName
@@ -837,10 +855,15 @@ class SketchUiOverlay(
             if (sizeText != unitSizeField.text || !unitSizeField.hasKeyboardFocus()) {
                 unitSizeField.text = sizeText
             }
+            val gridText = String.format(Locale.US, "%.4f", gridSpacing)
+            if (gridText != gridSpacingField.text || !gridSpacingField.hasKeyboardFocus()) {
+                gridSpacingField.text = gridText
+            }
             snapEpsilonSlider.value = snapEpsilon.coerceIn(snapEpsilonMin, snapEpsilonMax)
             updatingModelSettingsFields = false
             lastUnitName = unitName
             lastUnitSize = unitSize
+            lastGridSpacing = gridSpacing
             lastSnapEpsilon = snapEpsilon
         }
     }
