@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources targetOsVersion="10.0.0" majorVersion="1">
-  <index root=".">
+  <index root="." startIndexAt=".">
     <default>
       <qualifier name="Language" value="en-US" />
       <qualifier name="Scale" value="100" />
