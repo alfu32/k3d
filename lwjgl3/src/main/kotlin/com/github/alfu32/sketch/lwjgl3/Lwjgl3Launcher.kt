@@ -69,7 +69,7 @@ private fun handleCommand(args: Array<String>): Array<String>? {
             null
         }
         else -> {
-            if (command.startsWith("--file") || command.startsWith("--size")) {
+            if (command.startsWith("--file") || command.startsWith("--size") || command.startsWith("--plugins")) {
                 return args
             }
             printHelp()
@@ -90,6 +90,7 @@ private fun printHelp() {
         K3D Editor
         Commands:
           edit --file <path> [--size WIDTHxHEIGHT]   Open or create a model file (default: sketch3d.k3d)
+          edit --plugins-dir <path>                 Override plugins folder
           groovy <script>      Run a Groovy script file
           version             Show version information
           update              Download and replace the editor jar

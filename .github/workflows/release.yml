@@ -68,11 +68,22 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag }}
-          draft: ${{ inputs.draft }}
-          prerelease: ${{ inputs.prerelease }}
-          files: artifacts/**/*.zip
+      - name: Create or update release assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          DRAFT: ${{ inputs.draft }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft="$DRAFT" --prerelease="$PRERELEASE"
+          else
+            gh release edit "$TAG" --draft="$DRAFT" --prerelease="$PRERELEASE"
+          fi
+          files=$(find artifacts -type f -name "*.zip")
+          if [ -z "$files" ]; then
+            echo "No zip artifacts found."
+            exit 1
+          fi
+          gh release upload "$TAG" $files --clobber

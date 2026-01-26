@@ -235,16 +235,20 @@ def createUnixLauncher = { File outFile ->
   outFile.text = """#!/bin/bash
 set -euo pipefail
 INSTALL_PATH="\$(cd "\$(dirname "\$0")" && pwd)"
+PLUGINS_DIR="\${K3D_PLUGINS_DIR:-}"
+if [[ -z "\$PLUGINS_DIR" ]]; then
+  PLUGINS_DIR="\$INSTALL_PATH/plugins"
+fi
 if [[ -z "\${1-}" ]]; then
-  java -jar "\$INSTALL_PATH/k3d-editor.jar" edit
+  java -jar "\$INSTALL_PATH/k3d-editor.jar" edit --plugins-dir "\$PLUGINS_DIR"
   exit \$?
 fi
 case "\$1" in
   edit|version|update|help)
-    java -jar "\$INSTALL_PATH/k3d-editor.jar" "\$@"
+    java -jar "\$INSTALL_PATH/k3d-editor.jar" "\$@" --plugins-dir "\$PLUGINS_DIR"
     ;;
   *)
-    java -jar "\$INSTALL_PATH/k3d-editor.jar" edit --file "\$1"
+    java -jar "\$INSTALL_PATH/k3d-editor.jar" edit --file "\$1" --plugins-dir "\$PLUGINS_DIR"
     ;;
 esac
 """
@@ -259,16 +263,20 @@ JAVA_BIN="\$INSTALL_PATH/jre/bin/java"
 if [[ ! -x "\$JAVA_BIN" && -x "\$INSTALL_PATH/jre/Contents/Home/bin/java" ]]; then
   JAVA_BIN="\$INSTALL_PATH/jre/Contents/Home/bin/java"
 fi
+PLUGINS_DIR="\${K3D_PLUGINS_DIR:-}"
+if [[ -z "\$PLUGINS_DIR" ]]; then
+  PLUGINS_DIR="\$INSTALL_PATH/plugins"
+fi
 if [[ -z "\${1-}" ]]; then
-  "\$JAVA_BIN" -jar "\$INSTALL_PATH/k3d-editor.jar" edit
+  "\$JAVA_BIN" -jar "\$INSTALL_PATH/k3d-editor.jar" edit --plugins-dir "\$PLUGINS_DIR"
   exit \$?
 fi
 case "\$1" in
   edit|version|update|help)
-    "\$JAVA_BIN" -jar "\$INSTALL_PATH/k3d-editor.jar" "\$@"
+    "\$JAVA_BIN" -jar "\$INSTALL_PATH/k3d-editor.jar" "\$@" --plugins-dir "\$PLUGINS_DIR"
     ;;
   *)
-    "\$JAVA_BIN" -jar "\$INSTALL_PATH/k3d-editor.jar" edit --file "\$1"
+    "\$JAVA_BIN" -jar "\$INSTALL_PATH/k3d-editor.jar" edit --file "\$1" --plugins-dir "\$PLUGINS_DIR"
     ;;
 esac
 """
@@ -280,18 +288,29 @@ def createWindowsLauncher = { File outFile ->
 setlocal
 set "APP_DIR=%~dp0"
 set "APP_DIR=%APP_DIR:~0,-1%"
+set "PLUGINS_DIR=%APP_DIR%\\plugins"
+if not "%K3D_PLUGINS_DIR%"=="" set "PLUGINS_DIR=%K3D_PLUGINS_DIR%"
+if "%K3D_PLUGINS_DIR%"=="" (
+  for /d %%D in ("%LOCALAPPDATA%\\Packages\\*k3d*") do (
+    if exist "%%D\\LocalState" (
+      set "PLUGINS_DIR=%%D\\LocalState\\plugins"
+      goto plugins_done
+    )
+  )
+)
+:plugins_done
 if "%~1"=="" (
-  java -jar "%APP_DIR%\\k3d-editor.jar" edit
+  java -jar "%APP_DIR%\\k3d-editor.jar" edit --plugins-dir "%PLUGINS_DIR%"
   exit /b %ERRORLEVEL%
 )
 if /I "%~1"=="edit" goto run
 if /I "%~1"=="version" goto run
 if /I "%~1"=="update" goto run
 if /I "%~1"=="help" goto run
-java -jar "%APP_DIR%\\k3d-editor.jar" edit --file "%~1"
+java -jar "%APP_DIR%\\k3d-editor.jar" edit --file "%~1" --plugins-dir "%PLUGINS_DIR%"
 exit /b %ERRORLEVEL%
 :run
-java -jar "%APP_DIR%\\k3d-editor.jar" %*
+java -jar "%APP_DIR%\\k3d-editor.jar" %* --plugins-dir "%PLUGINS_DIR%"
 exit /b %ERRORLEVEL%
 """
 }
@@ -307,18 +326,29 @@ if not exist "%JAVA_BIN%" (
   echo Bundled Java not found at %JAVA_BIN%
   exit /b 1
 )
+set "PLUGINS_DIR=%APP_DIR%\\plugins"
+if not "%K3D_PLUGINS_DIR%"=="" set "PLUGINS_DIR=%K3D_PLUGINS_DIR%"
+if "%K3D_PLUGINS_DIR%"=="" (
+  for /d %%D in ("%LOCALAPPDATA%\\Packages\\*k3d*") do (
+    if exist "%%D\\LocalState" (
+      set "PLUGINS_DIR=%%D\\LocalState\\plugins"
+      goto plugins_done
+    )
+  )
+)
+:plugins_done
 if "%~1"=="" (
-  "%JAVA_BIN%" -jar "%APP_DIR%\\k3d-editor.jar" edit
+  "%JAVA_BIN%" -jar "%APP_DIR%\\k3d-editor.jar" edit --plugins-dir "%PLUGINS_DIR%"
   exit /b %ERRORLEVEL%
 )
 if /I "%~1"=="edit" goto run
 if /I "%~1"=="version" goto run
 if /I "%~1"=="update" goto run
 if /I "%~1"=="help" goto run
-"%JAVA_BIN%" -jar "%APP_DIR%\\k3d-editor.jar" edit --file "%~1"
+"%JAVA_BIN%" -jar "%APP_DIR%\\k3d-editor.jar" edit --file "%~1" --plugins-dir "%PLUGINS_DIR%"
 exit /b %ERRORLEVEL%
 :run
-"%JAVA_BIN%" -jar "%APP_DIR%\\k3d-editor.jar" %*
+"%JAVA_BIN%" -jar "%APP_DIR%\\k3d-editor.jar" %* --plugins-dir "%PLUGINS_DIR%"
 exit /b %ERRORLEVEL%
 """
 }

@@ -221,6 +221,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             dither = shadowDither,
             useCsm = shadowUseCsm
         )
+        val pluginsDir = resolvePluginsDir(startupArgs, installDir)
         pluginHost = PluginHost(
             scene,
             statusModel,
@@ -234,7 +235,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             { toolId -> toolController.setTool(toolId) },
             { modelUnit },
             { snapEpsilon },
-            java.io.File(installDir, "plugins"),
+            pluginsDir,
             { modelFile }
         )
         toolController.registerTool(PluginToolAdapter(pluginHost))
@@ -1313,6 +1314,23 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             fileArg = "sketch3d.k3d"
         }
         return java.io.File(fileArg).absoluteFile
+    }
+
+    private fun resolvePluginsDir(args: kotlin.Array<String>, installDir: java.io.File): java.io.File {
+        var dirArg: String? = null
+        var i = 0
+        while (i < args.size) {
+            if ((args[i] == "--plugins-dir" || args[i] == "--pluginsDir") && i + 1 < args.size) {
+                dirArg = args[i + 1]
+                break
+            }
+            i++
+        }
+        return if (dirArg.isNullOrBlank()) {
+            java.io.File(installDir, "plugins").absoluteFile
+        } else {
+            java.io.File(dirArg).absoluteFile
+        }
     }
 
     private fun resolveInstallDir(): java.io.File {
