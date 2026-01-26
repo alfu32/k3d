@@ -188,16 +188,15 @@ if(enableGraalNative == 'true') {
 // -----------------------------------------------------------------------------
 // App distribution bundling (per-OS with bundled JDK + plugins + docs).
 // -----------------------------------------------------------------------------
-def bundleVersion = (project.findProperty("releaseNumber") ?: project.version).toString()
-def bundleJdkVersion = (project.findProperty("bundleJdkVersion") ?: "21.0.9+9").toString()
+def bundleVersion = (project.findProperty("releaseNumber") ?: projectVersion).toString()
+def bundleJdkVersion = (project.findProperty("bundleJdkVersion") ?: "21.0.9+10").toString()
 def bundleJdkTag = bundleJdkVersion.replace("+", "%2B")
 def bundleJdkSuffix = bundleJdkVersion.replace("+", "_")
 def temurinBase = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-${bundleJdkTag}"
 def jdkUrls = [
-    linuxX64: project.findProperty("bundleJdkLinuxUrl") ?: "${temurinBase}/OpenJDK21U-jdk_x64_linux_hotspot_${bundleJdkSuffix}.tar.gz",
-    winX64  : project.findProperty("bundleJdkWinUrl") ?: "${temurinBase}/OpenJDK21U-jdk_x64_windows_hotspot_${bundleJdkSuffix}.zip",
-    macX64  : project.findProperty("bundleJdkMacUrl") ?: "${temurinBase}/OpenJDK21U-jdk_x64_mac_hotspot_${bundleJdkSuffix}.tar.gz",
-    macArm64: project.findProperty("bundleJdkMacArmUrl") ?: "${temurinBase}/OpenJDK21U-jdk_aarch64_mac_hotspot_${bundleJdkSuffix}.tar.gz"
+    linuxX64: project.findProperty("bundleJdkLinuxUrl") ?: "${temurinBase}/OpenJDK21U-jre_x64_linux_hotspot_${bundleJdkSuffix}.tar.gz",
+    winX64  : project.findProperty("bundleJdkWinUrl") ?: "${temurinBase}/OpenJDK21U-jre_x64_windows_hotspot_${bundleJdkSuffix}.zip",
+    macArm64: project.findProperty("bundleJdkMacArmUrl") ?: "${temurinBase}/OpenJDK21U-jre_aarch64_mac_hotspot_${bundleJdkSuffix}.tar.gz"
 ]
 
 def jdkCacheDir = file("$buildDir/jdk-cache")
@@ -236,6 +235,26 @@ def createUnixLauncher = { File outFile ->
   outFile.text = """#!/bin/bash
 set -euo pipefail
 INSTALL_PATH="\$(cd "\$(dirname "\$0")" && pwd)"
+if [[ -z "\${1-}" ]]; then
+  java -jar "\$INSTALL_PATH/k3d-editor.jar" edit
+  exit \$?
+fi
+case "\$1" in
+  edit|version|update|help)
+    java -jar "\$INSTALL_PATH/k3d-editor.jar" "\$@"
+    ;;
+  *)
+    java -jar "\$INSTALL_PATH/k3d-editor.jar" edit --file "\$1"
+    ;;
+esac
+"""
+}
+
+def createUnixJreLauncher = { File outFile ->
+  outFile.parentFile.mkdirs()
+  outFile.text = """#!/bin/bash
+set -euo pipefail
+INSTALL_PATH="\$(cd "\$(dirname "\$0")" && pwd)"
 JAVA_BIN="\$INSTALL_PATH/jre/bin/java"
 if [[ ! -x "\$JAVA_BIN" && -x "\$INSTALL_PATH/jre/Contents/Home/bin/java" ]]; then
   JAVA_BIN="\$INSTALL_PATH/jre/Contents/Home/bin/java"
@@ -256,6 +275,28 @@ esac
 }
 
 def createWindowsLauncher = { File outFile ->
+  outFile.parentFile.mkdirs()
+  outFile.text = """@echo off
+setlocal
+set "APP_DIR=%~dp0"
+set "APP_DIR=%APP_DIR:~0,-1%"
+if "%~1"=="" (
+  java -jar "%APP_DIR%\\k3d-editor.jar" edit
+  exit /b %ERRORLEVEL%
+)
+if /I "%~1"=="edit" goto run
+if /I "%~1"=="version" goto run
+if /I "%~1"=="update" goto run
+if /I "%~1"=="help" goto run
+java -jar "%APP_DIR%\\k3d-editor.jar" edit --file "%~1"
+exit /b %ERRORLEVEL%
+:run
+java -jar "%APP_DIR%\\k3d-editor.jar" %*
+exit /b %ERRORLEVEL%
+"""
+}
+
+def createWindowsJreLauncher = { File outFile ->
   outFile.parentFile.mkdirs()
   outFile.text = """@echo off
 setlocal
@@ -313,11 +354,6 @@ tasks.register("fetchJdkWin") {
   doLast { downloadAndExtractJdk(jdkUrls.winX64, file("$jdkCacheDir/win-x64")) }
 }
 
-tasks.register("fetchJdkMacX64") {
-  outputs.dir file("$jdkCacheDir/mac-x64")
-  doLast { downloadAndExtractJdk(jdkUrls.macX64, file("$jdkCacheDir/mac-x64")) }
-}
-
 tasks.register("fetchJdkMacArm64") {
   outputs.dir file("$jdkCacheDir/mac-arm64")
   doLast { downloadAndExtractJdk(jdkUrls.macArm64, file("$jdkCacheDir/mac-arm64")) }
@@ -325,7 +361,20 @@ tasks.register("fetchJdkMacArm64") {
 
 tasks.register("generateUnixLauncher") {
   outputs.file file("$launcherDir/k3d-editor")
-  doLast { createUnixLauncher(file("$launcherDir/k3d-editor")) }
+  doLast {
+    def outFile = file("$launcherDir/k3d-editor")
+    createUnixLauncher(outFile)
+    outFile.setExecutable(true, false)
+  }
+}
+
+tasks.register("generateUnixJreLauncher") {
+  outputs.file file("$launcherDir/k3d-jre")
+  doLast {
+    def outFile = file("$launcherDir/k3d-jre")
+    createUnixJreLauncher(outFile)
+    outFile.setExecutable(true, false)
+  }
 }
 
 tasks.register("generateWindowsLauncher") {
@@ -333,18 +382,24 @@ tasks.register("generateWindowsLauncher") {
   doLast { createWindowsLauncher(file("$launcherDir/k3d.cmd")) }
 }
 
+tasks.register("generateWindowsJreLauncher") {
+  outputs.file file("$launcherDir/k3d-jre.cmd")
+  doLast { createWindowsJreLauncher(file("$launcherDir/k3d-jre.cmd")) }
+}
+
 tasks.register("generateWindowsInstall") {
   outputs.file file("$launcherDir/k3d.install.cmd")
   doLast { createWindowsInstall(file("$launcherDir/k3d.install.cmd")) }
 }
 
-def configureBundleTask = { String name, TaskProvider jarTask, TaskProvider jdkTask, File jdkCache, boolean includeUnixLauncher, boolean includeWindowsScripts ->
+def configureBundleTask = { String name, String osLabel, TaskProvider jdkTask, File jdkCache, boolean includeUnixLauncher, boolean includeWindowsScripts ->
   tasks.register(name, Zip) {
-    dependsOn jarTask, jdkTask, ":core:pluginApiJar", "generateUnixLauncher", "generateWindowsLauncher", "generateWindowsInstall"
+    dependsOn "jar", jdkTask, ":core:pluginApiJar", "generateUnixLauncher", "generateUnixJreLauncher",
+      "generateWindowsLauncher", "generateWindowsJreLauncher", "generateWindowsInstall"
     destinationDirectory.set(rootProject.file("dist"))
-    archiveFileName.set("${appName}-${bundleVersion}-${name.replace('bundle', '').toLowerCase()}.zip")
+    archiveFileName.set("k3d-dist-${bundleVersion}-${osLabel}.zip")
     def stagingDir = file("$buildDir/bundle/${name}")
-    from(jarTask.flatMap { it.archiveFile }) {
+    from(tasks.named("jar").flatMap { it.archiveFile }) {
       rename { "k3d-editor.jar" }
     }
     from(rootProject.file("LICENSE.md"))
@@ -364,19 +419,94 @@ def configureBundleTask = { String name, TaskProvider jarTask, TaskProvider jdkT
     }
     if (includeUnixLauncher) {
       from(file("$launcherDir/k3d-editor"))
+      from(file("$launcherDir/k3d-jre"))
     }
     if (includeWindowsScripts) {
       from(file("$launcherDir/k3d.cmd"))
+      from(file("$launcherDir/k3d-jre.cmd"))
       from(file("$launcherDir/k3d.install.cmd"))
     }
   }
 }
 
-configureBundleTask("bundleLinux", tasks.named("jarLinux"), tasks.named("fetchJdkLinux"), file("$jdkCacheDir/linux-x64"), true, false)
-configureBundleTask("bundleWin", tasks.named("jarWin"), tasks.named("fetchJdkWin"), file("$jdkCacheDir/win-x64"), false, true)
-configureBundleTask("bundleMacX64", tasks.named("jarMac"), tasks.named("fetchJdkMacX64"), file("$jdkCacheDir/mac-x64"), true, false)
-configureBundleTask("bundleMacArm64", tasks.named("jarMac"), tasks.named("fetchJdkMacArm64"), file("$jdkCacheDir/mac-arm64"), true, false)
+def configureBundleDirTask = { String name, String osLabel, TaskProvider jdkTask, File jdkCache, boolean includeUnixLauncher, boolean includeWindowsScripts ->
+  tasks.register(name, Sync) {
+    dependsOn "jar", jdkTask, ":core:pluginApiJar", "generateUnixLauncher", "generateUnixJreLauncher",
+      "generateWindowsLauncher", "generateWindowsJreLauncher", "generateWindowsInstall"
+    def targetDir = rootProject.file("dist/k3d-dist-${bundleVersion}-${osLabel}")
+    into(targetDir)
+    from(tasks.named("jar").flatMap { it.archiveFile }) {
+      rename { "k3d-editor.jar" }
+    }
+    from(rootProject.file("LICENSE.md"))
+    from(rootProject.file("README.md"))
+    from(rootProject.file("USER_MANUAL.md"))
+    from(rootProject.file("PLUGIN_DEVELOPMENT.md"))
+    from(rootProject.file("assets/appicon.png"))
+    from(rootProject.file("scripts")) {
+      include("*.groovy")
+      into("plugins")
+    }
+    from(project(":core").tasks.named("pluginApiJar").flatMap { it.archiveFile }) {
+      into("plugins")
+    }
+    from(resolveJdkRoot(jdkCache)) {
+      into("jre")
+    }
+    if (includeUnixLauncher) {
+      from(file("$launcherDir/k3d-editor"))
+      from(file("$launcherDir/k3d-jre"))
+    }
+    if (includeWindowsScripts) {
+      from(file("$launcherDir/k3d.cmd"))
+      from(file("$launcherDir/k3d-jre.cmd"))
+      from(file("$launcherDir/k3d.install.cmd"))
+    }
+    doLast {
+      if (includeUnixLauncher) {
+        def editor = new File(destinationDir, "k3d-editor")
+        def jre = new File(destinationDir, "k3d-jre")
+        if (editor.exists()) editor.setExecutable(true, false)
+        if (jre.exists()) jre.setExecutable(true, false)
+      }
+    }
+  }
+}
+
+configureBundleTask("bundleLinux", "linux", tasks.named("fetchJdkLinux"), file("$jdkCacheDir/linux-x64"), true, false)
+configureBundleTask("bundleWin", "win", tasks.named("fetchJdkWin"), file("$jdkCacheDir/win-x64"), false, true)
+configureBundleTask("bundleMacArm64", "mac", tasks.named("fetchJdkMacArm64"), file("$jdkCacheDir/mac-arm64"), true, false)
 
 tasks.register("bundleAll") {
-  dependsOn "bundleLinux", "bundleWin", "bundleMacX64", "bundleMacArm64"
+  dependsOn "bundleLinux", "bundleWin", "bundleMacArm64"
+}
+
+tasks.register("bundleLocal") {
+  def osName = System.properties['os.name'].toLowerCase(Locale.ROOT)
+  if (osName.contains("win")) {
+    dependsOn "bundleWin"
+  } else if (osName.contains("mac")) {
+    dependsOn "bundleMacArm64"
+  } else {
+    dependsOn "bundleLinux"
+  }
+}
+
+configureBundleDirTask("bundleLinuxDir", "linux", tasks.named("fetchJdkLinux"), file("$jdkCacheDir/linux-x64"), true, false)
+configureBundleDirTask("bundleWinDir", "win", tasks.named("fetchJdkWin"), file("$jdkCacheDir/win-x64"), false, true)
+configureBundleDirTask("bundleMacArm64Dir", "mac", tasks.named("fetchJdkMacArm64"), file("$jdkCacheDir/mac-arm64"), true, false)
+
+tasks.register("bundleLocalDir") {
+  def osName = System.properties['os.name'].toLowerCase(Locale.ROOT)
+  if (osName.contains("win")) {
+    dependsOn "bundleWinDir"
+  } else if (osName.contains("mac")) {
+    dependsOn "bundleMacArm64Dir"
+  } else {
+    dependsOn "bundleLinuxDir"
+  }
+}
+
+tasks.register("dev") {
+  dependsOn "bundleLocalDir"
 }

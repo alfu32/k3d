@@ -1,3 +1,29 @@
+def resolveGitTag = {
+  try {
+    def process = new ProcessBuilder("git", "describe", "--tags", "--abbrev=0")
+      .directory(rootDir)
+      .redirectErrorStream(true)
+      .start()
+    def output = process.inputStream.text.trim()
+    def code = process.waitFor()
+    if (code != 0) {
+      return null
+    }
+    return output ? output : null
+  } catch (Exception ignored) {
+    return null
+  }
+}
+
+def bundleVersion = (project.findProperty("releaseNumber") ?: resolveGitTag() ?: projectVersion).toString()
+ext.bundleVersion = bundleVersion
+ext.projectVersion = bundleVersion
+
+allprojects {
+  version = bundleVersion
+  ext.projectVersion = bundleVersion
+}
+
 buildscript {
   repositories {
     mavenCentral()
@@ -59,7 +85,7 @@ configure(subprojects) {
 }
 
 subprojects {
-  version = "$projectVersion"
+  version = bundleVersion
   ext.appName = 'k3d'
   repositories {
     mavenCentral()
