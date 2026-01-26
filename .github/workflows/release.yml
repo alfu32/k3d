@@ -76,7 +76,8 @@ jobs:
           $appImage = "dist\jpackage\$appName"
           $msixRoot = "dist\msix\$appName"
           if (Test-Path $msixRoot) { Remove-Item $msixRoot -Recurse -Force }
-          Copy-Item (Join-Path $appImage "*") $msixRoot -Recurse -Force
+          New-Item $msixRoot -ItemType Directory -Force | Out-Null
+          Copy-Item -Path (Join-Path $appImage "*") -Destination $msixRoot -Recurse -Force
           $assetsDir = Join-Path $msixRoot "Assets"
           New-Item $assetsDir -ItemType Directory -Force | Out-Null
           Copy-Item "assets\appicon.png" (Join-Path $assetsDir "Square150x150Logo.png")
