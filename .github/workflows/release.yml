@@ -249,9 +249,9 @@ jobs:
           else
             gh release edit "$TAG" --draft="$DRAFT" --prerelease="$PRERELEASE"
           fi
-          files=$(find artifacts -type f -name "*.zip")
+          files=$(find artifacts -type f \( -name "*.zip" -o -name "*.msi" -o -name "*.msix" \))
           if [ -z "$files" ]; then
-            echo "No zip artifacts found."
+            echo "No release artifacts found."
             exit 1
           fi
           gh release upload "$TAG" $files --clobber
