@@ -28,6 +28,51 @@ tasks.register('pluginApiJar', Jar) {
   from sourceSets.main.output
 }
 
+def resolveGitValue = { List<String> args ->
+  try {
+    def process = new ProcessBuilder(args)
+      .directory(rootProject.rootDir)
+      .redirectErrorStream(true)
+      .start()
+    def output = process.inputStream.text.trim()
+    def code = process.waitFor()
+    return code == 0 ? output : ""
+  } catch (Exception ignored) {
+    return ""
+  }
+}
+
+tasks.register('generateK3DVersion') {
+  def outFile = file("src/main/kotlin/com/github/alfu32/sketch/K3DVersion.kt")
+  outputs.file(outFile)
+  doLast {
+    def commit = resolveGitValue(["git", "rev-parse", "HEAD"])
+    def branch = resolveGitValue(["git", "branch", "--show-current"])
+    def tag = resolveGitValue(["git", "describe", "--tags", "--abbrev=0"])
+    def buildDate = new Date().format("yyyy-MM-dd HH:mm:ss", TimeZone.getTimeZone("UTC"))
+    def buildVersion = (project.findProperty("releaseNumber") ?: project.version).toString()
+    outFile.parentFile.mkdirs()
+    outFile.text = """package com.github.alfu32.sketch
+
+data class K3DVersion(
+  val buildGitCommit:String = "${commit}",
+  val buildDate:String = "${buildDate}",
+  val buildGitBranch:String = "${branch}",
+  val buildGitTag:String = "${tag}",
+  val buildVersion:String = "${buildVersion}"
+)
+"""
+  }
+}
+
+tasks.named('compileKotlin') {
+  dependsOn 'generateK3DVersion'
+}
+
+tasks.named('compileJava') {
+  dependsOn 'generateK3DVersion'
+}
+
 tasks.register('copyPluginApiJar', Copy) {
   dependsOn 'pluginApiJar'
   from tasks.named('pluginApiJar').flatMap { it.archiveFile }
