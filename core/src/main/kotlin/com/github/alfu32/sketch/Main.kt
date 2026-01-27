@@ -237,6 +237,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             { toolId -> toolController.setTool(toolId) },
             { modelUnit },
             { snapEpsilon },
+            { gridSpacing },
             pluginsDir,
             { modelFile }
         )

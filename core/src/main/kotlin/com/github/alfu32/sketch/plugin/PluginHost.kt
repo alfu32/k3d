@@ -28,6 +28,7 @@ class PluginHost(
     private val setActiveTool: (ToolId) -> Unit,
     private val getModelUnit: () -> com.github.alfu32.sketch.model.ModelUnit,
     private val getSnapEpsilon: () -> Float,
+    private val getGridSpacing: () -> Float,
     private val pluginsDir: File,
     private val getCurrentFile: () -> File? = { null }
 ) : PluginRegistry {
@@ -383,7 +384,8 @@ class PluginHost(
             lighting,
             shadow,
             getModelUnit(),
-            getSnapEpsilon()
+            getSnapEpsilon(),
+            getGridSpacing()
         )
         val selection = buildSelectionSnapshot()
         val snap = getCursorSnap()
