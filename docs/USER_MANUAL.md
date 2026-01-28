@@ -2,7 +2,7 @@
 
 This manual covers installation, navigation, selection, tools, panels, and common workflows.
 
-![Placeholder: Main UI](screenshots/ui-main.png)
+![Placeholder: Main UI](docs/img_1.png)
 TODO: Replace with a main UI screenshot.
 
 ## Installation

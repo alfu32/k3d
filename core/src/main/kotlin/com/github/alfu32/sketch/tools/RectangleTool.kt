@@ -60,7 +60,7 @@ class RectangleTool(
             for (i in 0 until 4) {
                 val a = cornersLocal[i]
                 val b = cornersLocal[(i + 1) % 4]
-                group.lineStore.addSegment(a, b)
+                group.addSketchSegment(a, b)
             }
             val preferred = normal?.let { group.vectorToLocal(it) }
                 ?: pickNormalWorld?.let { group.vectorToLocal(it) }

@@ -27,55 +27,17 @@ class DraftLineStore {
         }
     }
 
-    fun addSegment(start: Vector3, end: Vector3) {
+    fun addSegment(start: Vector3, end: Vector3, autoCleanup: Boolean = true) {
         if (start.dst2(end) <= epsilonSq) {
             return
         }
-        val before = segments.size
-        val newStart = snapToExistingEndpoint(start) ?: Vector3(start)
-        val newEnd = snapToExistingEndpoint(end) ?: Vector3(end)
-        val splitPoints = mutableListOf(PointOnSegment(0f, newStart), PointOnSegment(1f, newEnd))
-
-        var i = 0
-        while (i < segments.size) {
-            val existing = segments[i]
-            val intersection = intersectSegments(newStart, newEnd, existing.start, existing.end) ?: run {
-                i++
-                continue
+        val changed = addSegmentInternal(start, end)
+        if (autoCleanup) {
+            withChangeSuppressed {
+                cleanupJts()
             }
-            val snapped = snapToExistingEndpoint(intersection.point)
-            val point = snapped ?: intersection.point
-            val t = paramAlong(newStart, newEnd, point)
-            val u = paramAlong(existing.start, existing.end, point)
-
-            if (u > epsilon && u < 1f - epsilon) {
-                segments.removeAt(i)
-                segments.add(i, Segment(Vector3(existing.start), Vector3(point)))
-                segments.add(i + 1, Segment(Vector3(point), Vector3(existing.end)))
-                i += 2
-            } else {
-                i++
-            }
-
-            if (t > epsilon && t < 1f - epsilon) {
-                splitPoints.add(PointOnSegment(t, Vector3(point)))
-            }
-        }
-
-        val orderedPoints = splitPoints
-            .sortedBy { it.t }
-            .map { it.point }
-            .let { dedupePoints(it) }
-
-        for (p in 0 until orderedPoints.size - 1) {
-            val a = orderedPoints[p]
-            val b = orderedPoints[p + 1]
-            if (a.dst2(b) > epsilonSq) {
-                segments.add(Segment(Vector3(a), Vector3(b)))
-            }
-        }
-
-        if (segments.size != before) {
+            notifyChange()
+        } else if (changed) {
             notifyChange()
         }
     }
@@ -177,9 +139,7 @@ class DraftLineStore {
         if (segments.isEmpty()) {
             return
         }
-        val snapshot = segments.toList()
-        segments.clear()
-        snapshot.forEach { addSegment(it.start, it.end) }
+        cleanupJts()
         notifyChange()
     }
 
@@ -389,6 +349,201 @@ class DraftLineStore {
     fun notifyExternalChange() {
         notifyChange()
     }
+
+    fun cleanupJts() {
+        if (segments.isEmpty()) {
+            return
+        }
+        val grouped = segments.groupBy { lineKey(it) }
+        val newSegments = mutableListOf<Segment>()
+        val newSelected = mutableSetOf<Segment>()
+
+        grouped.values.forEach { group ->
+            if (group.isEmpty()) {
+                return@forEach
+            }
+            val ref = group.first().start
+            val dir = Vector3(group.first().end).sub(ref)
+            if (dir.len2() <= epsilonSq) {
+                return@forEach
+            }
+            dir.nor()
+
+            val forcedTs = mutableListOf<Float>()
+            group.forEach { seg ->
+                segments.forEach { other ->
+                    if (group.contains(other)) {
+                        return@forEach
+                    }
+                    if (lineKey(other) == lineKey(seg)) {
+                        return@forEach
+                    }
+                    val hit = intersectSegments(seg.start, seg.end, other.start, other.end) ?: return@forEach
+                    val t = dir.dot(Vector3(hit.point).sub(ref))
+                    forcedTs.add(t)
+                }
+            }
+            val forcedSplit = forcedTs.distinct().sorted()
+
+            val intervals = group.mapNotNull { seg ->
+                val t0 = dir.dot(Vector3(seg.start).sub(ref))
+                val t1 = dir.dot(Vector3(seg.end).sub(ref))
+                if (kotlin.math.abs(t0 - t1) <= epsilon) {
+                    null
+                } else {
+                    if (t0 <= t1) Interval(t0, t1) else Interval(t1, t0)
+                }
+            }.sortedBy { it.start }
+            val hadSelection = group.any { selected.contains(it) }
+            val mergedIntervals = mergeIntervals(intervals)
+            mergedIntervals.forEach { interval ->
+                val splits = forcedSplit.filter { it > interval.start + epsilon && it < interval.end - epsilon }
+                var last = interval.start
+                if (splits.isEmpty()) {
+                    val p0 = Vector3(ref).mulAdd(dir, interval.start)
+                    val p1 = Vector3(ref).mulAdd(dir, interval.end)
+                    if (p0.dst2(p1) <= epsilonSq) {
+                        return@forEach
+                    }
+                    val seg = Segment(p0, p1)
+                    newSegments.add(seg)
+                    if (hadSelection) {
+                        newSelected.add(seg)
+                    }
+                    return@forEach
+                }
+                splits.forEach { split ->
+                    val p0 = Vector3(ref).mulAdd(dir, last)
+                    val p1 = Vector3(ref).mulAdd(dir, split)
+                    if (p0.dst2(p1) > epsilonSq) {
+                        val seg = Segment(p0, p1)
+                        newSegments.add(seg)
+                        if (hadSelection) {
+                            newSelected.add(seg)
+                        }
+                    }
+                    last = split
+                }
+                val p0 = Vector3(ref).mulAdd(dir, last)
+                val p1 = Vector3(ref).mulAdd(dir, interval.end)
+                if (p0.dst2(p1) > epsilonSq) {
+                    val seg = Segment(p0, p1)
+                    newSegments.add(seg)
+                    if (hadSelection) {
+                        newSelected.add(seg)
+                    }
+                }
+            }
+        }
+
+        segments.clear()
+        segments.addAll(newSegments)
+        selected.clear()
+        selected.addAll(newSelected)
+    }
+
+    private fun addSegmentInternal(start: Vector3, end: Vector3): Boolean {
+        if (start.dst2(end) <= epsilonSq) {
+            return false
+        }
+        val before = segments.size
+        val newStart = snapToExistingEndpoint(start) ?: Vector3(start)
+        val newEnd = snapToExistingEndpoint(end) ?: Vector3(end)
+        val splitPoints = mutableListOf(PointOnSegment(0f, newStart), PointOnSegment(1f, newEnd))
+
+        var i = 0
+        while (i < segments.size) {
+            val existing = segments[i]
+            val intersection = intersectSegments(newStart, newEnd, existing.start, existing.end) ?: run {
+                i++
+                continue
+            }
+            val snapped = snapToExistingEndpoint(intersection.point)
+            val point = snapped ?: intersection.point
+            val t = paramAlong(newStart, newEnd, point)
+            val u = paramAlong(existing.start, existing.end, point)
+
+            if (u > epsilon && u < 1f - epsilon) {
+                segments.removeAt(i)
+                segments.add(i, Segment(Vector3(existing.start), Vector3(point)))
+                segments.add(i + 1, Segment(Vector3(point), Vector3(existing.end)))
+                i += 2
+            } else {
+                i++
+            }
+
+            if (t > epsilon && t < 1f - epsilon) {
+                splitPoints.add(PointOnSegment(t, Vector3(point)))
+            }
+        }
+
+        val orderedPoints = splitPoints
+            .sortedBy { it.t }
+            .map { it.point }
+            .let { dedupePoints(it) }
+
+        for (p in 0 until orderedPoints.size - 1) {
+            val a = orderedPoints[p]
+            val b = orderedPoints[p + 1]
+            if (a.dst2(b) > epsilonSq) {
+                segments.add(Segment(Vector3(a), Vector3(b)))
+            }
+        }
+
+        return segments.size != before
+    }
+
+    private data class LineKey(
+        val dx: Int,
+        val dy: Int,
+        val dz: Int,
+        val mx: Int,
+        val my: Int,
+        val mz: Int
+    )
+
+    private fun lineKey(segment: Segment): LineKey {
+        val dir = Vector3(segment.end).sub(segment.start)
+        if (dir.len2() <= epsilonSq) {
+            return LineKey(0, 0, 0, 0, 0, 0)
+        }
+        dir.nor()
+        if (dir.y < 0f || (dir.y == 0f && (dir.x < 0f || (dir.x == 0f && dir.z < 0f)))) {
+            dir.scl(-1f)
+        }
+        val moment = Vector3(segment.start).crs(dir)
+        return LineKey(
+            quant(dir.x),
+            quant(dir.y),
+            quant(dir.z),
+            quant(moment.x),
+            quant(moment.y),
+            quant(moment.z)
+        )
+    }
+
+    private fun quant(value: Float): Int = kotlin.math.round(value / epsilon).toInt()
+
+    private data class Interval(val start: Float, val end: Float)
+
+    private fun mergeIntervals(intervals: List<Interval>): List<Interval> {
+        if (intervals.isEmpty()) {
+            return emptyList()
+        }
+        val result = mutableListOf<Interval>()
+        var current = intervals.first()
+        for (i in 1 until intervals.size) {
+            val next = intervals[i]
+            if (next.start <= current.end + epsilon) {
+                current = Interval(current.start, kotlin.math.max(current.end, next.end))
+            } else {
+                result.add(current)
+                current = next
+            }
+        }
+        result.add(current)
+        return result
+    }
     private fun segmentIntersectsAabb(a: Vector3, b: Vector3, min: Vector3, max: Vector3): Boolean {
         var tmin = 0f
         var tmax = 1f
@@ -451,7 +606,5 @@ class DraftLineStore {
     private fun vertexKey(point: Vector3): VertexKey {
         return VertexKey(quant(point.x), quant(point.y), quant(point.z))
     }
-
-    private fun quant(value: Float): Int = kotlin.math.round(value / epsilon).toInt()
 
 }

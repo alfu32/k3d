@@ -61,6 +61,11 @@ class GroupScene(
             get() = prototype.definitionAxisW
             set(value) { prototype.definitionAxisW = value }
 
+        fun addSketchSegment(startLocal: Vector3, endLocal: Vector3) {
+            lineStore.addSegment(startLocal, endLocal, autoCleanup = false)
+            lineStore.cleanupJts()
+        }
+
         fun worldAxes(): Axes {
             val matrix = worldMatrix()
             return axesFromMatrix(matrix)
@@ -451,7 +456,7 @@ class GroupScene(
             selectedEdges.forEach { seg ->
                 val a = Vector3(seg.start).sub(origin)
                 val b = Vector3(seg.end).sub(origin)
-                group.lineStore.addSegment(a, b)
+                group.lineStore.addSegment(a, b, autoCleanup = false)
             }
         }
         if (selectedFaces.isNotEmpty()) {
@@ -508,7 +513,7 @@ class GroupScene(
             group.lineStore.getSegments().forEach { seg ->
                 val a = toParentSpace(group, seg.start)
                 val b = toParentSpace(group, seg.end)
-                parent.lineStore.addSegment(a, b)
+                parent.lineStore.addSegment(a, b, autoCleanup = false)
             }
             group.faceStore.getTriangles().forEach { tri ->
                 val color = group.faceStore.colorFor(tri)

@@ -93,7 +93,7 @@ class CircleTool(
         for (i in 0 until segments) {
             val a = group.toLocal(points[i])
             val b = group.toLocal(points[(i + 1) % segments])
-            group.lineStore.addSegment(a, b)
+            group.addSketchSegment(a, b)
             group.faceStore.addTriangle(centerLocal, b, a)
         }
     }

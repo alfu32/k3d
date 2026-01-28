@@ -16,6 +16,7 @@ dependencies {
   api "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
   api "org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutinesVersion"
   implementation "org.apache.groovy:groovy:4.0.21"
+  implementation "org.locationtech.jts:jts-core:1.19.0"
 
   if(enableGraalNative == 'true') {
     implementation "io.github.berstanio:gdx-svmhelper-annotations:$graalHelperVersion"

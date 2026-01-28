@@ -7,7 +7,7 @@ class ModelCleanup(
         val cleaned = mutableSetOf<String>()
         scene.allPrototypes().forEach { prototype ->
             if (cleaned.add(prototype.id)) {
-                prototype.lineStore.cleanup()
+                prototype.lineStore.cleanupJts()
             }
         }
     }

@@ -2,6 +2,16 @@ package com.github.alfu32.sketch.model
 
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
+import com.github.alfu32.sketch.tools.PlaneBasis
+import com.github.alfu32.sketch.tools.planeBasisFromNormal
+import org.locationtech.jts.geom.Coordinate
+import org.locationtech.jts.geom.Geometry
+import org.locationtech.jts.geom.GeometryFactory
+import org.locationtech.jts.geom.LineString
+import org.locationtech.jts.geom.Polygon
+import org.locationtech.jts.operation.polygonize.Polygonizer
+import org.locationtech.jts.operation.union.UnaryUnionOp
+import org.locationtech.jts.triangulate.DelaunayTriangulationBuilder
 
 class DraftFaceStore(
     private val defaultColor: com.badlogic.gdx.graphics.Color = com.badlogic.gdx.graphics.Color(0.93f, 0.93f, 0.93f, 1f)
@@ -16,6 +26,9 @@ class DraftFaceStore(
     private var suppressChange = false
     private val epsilon = 1e-4f
     private val epsilonSq = epsilon * epsilon
+    private val jtsScale = 10000.0
+    private val epsilon2d = (epsilon * jtsScale).toFloat()
+    private val planeEps = 1e-2f
 
     fun setChangeListener(listener: () -> Unit) {
         onChange = listener
@@ -349,6 +362,178 @@ class DraftFaceStore(
         triangles.addAll(merged)
     }
 
+    fun cutBySegmentInPlane(start: Vector3, end: Vector3): Int {
+        if (triangles.isEmpty()) {
+            return 0
+        }
+        val dir = Vector3(end).sub(start)
+        if (dir.len2() <= epsilonSq) {
+            return 0
+        }
+        val startTime = System.nanoTime()
+        var iteration = 0
+        var totalSplits = 0
+
+        while (iteration < 10 && (System.nanoTime() - startTime) < 1_000_000_000L) {
+            iteration++
+            var changed = false
+            val newTriangles = mutableListOf<Triangle>()
+            val newColors = mutableMapOf<Triangle, com.badlogic.gdx.graphics.Color>()
+            val newSelected = mutableSetOf<Triangle>()
+
+            triangles.forEach { tri ->
+                val color = colors[tri] ?: defaultColor
+                val wasSelected = selected.contains(tri)
+                val split = splitTriangleByLine(tri, start, end)
+                if (split == null) {
+                    newTriangles.add(tri)
+                    newColors[tri] = color
+                    if (wasSelected) {
+                        newSelected.add(tri)
+                    }
+                } else {
+                    changed = true
+                    totalSplits += split.size
+                    split.forEach { next ->
+                        newTriangles.add(next)
+                        newColors[next] = com.badlogic.gdx.graphics.Color(color)
+                        if (wasSelected) {
+                            newSelected.add(next)
+                        }
+                    }
+                }
+            }
+
+            if (!changed) {
+                break
+            }
+            triangles.clear()
+            triangles.addAll(newTriangles)
+            colors.clear()
+            colors.putAll(newColors)
+            selected.clear()
+            selected.addAll(newSelected)
+        }
+
+        if (totalSplits > 0) {
+            notifyChange()
+        }
+        return totalSplits
+    }
+
+    fun cleanupJts(keepPoints: List<Vector3> = emptyList()) {
+        if (triangles.isEmpty()) {
+            return
+        }
+        val geometryFactory = GeometryFactory()
+        val newTriangles = mutableListOf<Triangle>()
+        val newColors = mutableMapOf<Triangle, com.badlogic.gdx.graphics.Color>()
+        val newSelected = mutableSetOf<Triangle>()
+
+        val groups = triangles.groupBy { planeKey(it) }
+        groups.values.forEach { group ->
+            if (group.isEmpty()) {
+                return@forEach
+            }
+            val base = group.first()
+            val normal = Vector3(base.b).sub(base.a).crs(Vector3(base.c).sub(base.a))
+            if (normal.len2() <= epsilonSq) {
+                group.forEach { tri ->
+                    newTriangles.add(tri)
+                    newColors[tri] = colors[tri] ?: defaultColor
+                    if (selected.contains(tri)) {
+                        newSelected.add(tri)
+                    }
+                }
+                return@forEach
+            }
+            val basis = planeBasisFromNormal(normal)
+            val origin = Vector3(base.a)
+            val polygons = group.map { tri ->
+                val coords = arrayOf(
+                    toCoord(tri.a, origin, basis),
+                    toCoord(tri.b, origin, basis),
+                    toCoord(tri.c, origin, basis),
+                    toCoord(tri.a, origin, basis)
+                )
+                geometryFactory.createPolygon(coords)
+            }
+
+            val union = try {
+                UnaryUnionOp.union(polygons)
+            } catch (ex: Exception) {
+                null
+            }
+
+            if (union == null || union.isEmpty) {
+                group.forEach { tri ->
+                    newTriangles.add(tri)
+                    newColors[tri] = colors[tri] ?: defaultColor
+                    if (selected.contains(tri)) {
+                        newSelected.add(tri)
+                    }
+                }
+                return@forEach
+            }
+
+            val hadSelection = group.any { selected.contains(it) }
+            val groupColor = colors[group.first()] ?: defaultColor
+            val polygonsToTriangulate = collectPolygons(union)
+            if (polygonsToTriangulate.isEmpty()) {
+                group.forEach { tri ->
+                    newTriangles.add(tri)
+                    newColors[tri] = colors[tri] ?: defaultColor
+                    if (selected.contains(tri)) {
+                        newSelected.add(tri)
+                    }
+                }
+                return@forEach
+            }
+
+            val keepInPlane = keepPoints.filter { pointOnPlane(it, normal, -normal.dot(origin)) }
+            var triangulationFailed = false
+            polygonsToTriangulate.forEach { polygon ->
+                val triangles2d = tryTriangulatePolygon(polygon, keepInPlane, origin, basis, geometryFactory)
+                if (triangles2d == null || triangles2d.isEmpty()) {
+                    triangulationFailed = true
+                    return@forEach
+                }
+                triangles2d.forEach { tri2d ->
+                    val coords = tri2d.coordinates
+                    if (coords.size < 4) {
+                        return@forEach
+                    }
+                    val a = fromCoord(coords[0], origin, basis)
+                    val b = fromCoord(coords[1], origin, basis)
+                    val c = fromCoord(coords[2], origin, basis)
+                    val tri = Triangle(a, b, c)
+                    newTriangles.add(tri)
+                    newColors[tri] = com.badlogic.gdx.graphics.Color(groupColor)
+                    if (hadSelection) {
+                        newSelected.add(tri)
+                    }
+                }
+            }
+
+            if (triangulationFailed) {
+                group.forEach { tri ->
+                    newTriangles.add(tri)
+                    newColors[tri] = colors[tri] ?: defaultColor
+                    if (selected.contains(tri)) {
+                        newSelected.add(tri)
+                    }
+                }
+            }
+        }
+
+        triangles.clear()
+        triangles.addAll(newTriangles)
+        colors.clear()
+        colors.putAll(newColors)
+        selected.clear()
+        selected.addAll(newSelected)
+    }
+
     private fun removeClosingPoint(points: List<Vector3>): List<Vector3> {
         if (points.size < 2) {
             return points
@@ -359,6 +544,236 @@ class DraftFaceStore(
             points.dropLast(1)
         } else {
             points
+        }
+    }
+
+    private fun splitTriangleByLine(tri: Triangle, start: Vector3, end: Vector3): List<Triangle>? {
+        val normal = Vector3(tri.b).sub(tri.a).crs(Vector3(tri.c).sub(tri.a))
+        if (normal.len2() <= epsilonSq) {
+            return null
+        }
+        normal.nor()
+        val planeD = -normal.dot(tri.a)
+        val distStart = normal.dot(start) + planeD
+        val distEnd = normal.dot(end) + planeD
+        if (kotlin.math.abs(distStart) > planeEps || kotlin.math.abs(distEnd) > planeEps) {
+            return null
+        }
+        val startProj = Vector3(start).mulAdd(normal, -distStart)
+        val endProj = Vector3(end).mulAdd(normal, -distEnd)
+
+        val basis = planeBasisFromNormal(normal)
+        val origin = Vector3(tri.a)
+        val geometryFactory = GeometryFactory()
+
+        val triCoords = arrayOf(
+            toCoord(tri.a, origin, basis),
+            toCoord(tri.b, origin, basis),
+            toCoord(tri.c, origin, basis),
+            toCoord(tri.a, origin, basis)
+        )
+        val start2d = toCoord(startProj, origin, basis)
+        val end2d = toCoord(endProj, origin, basis)
+        val dir2d = Vector2(
+            (end2d.x - start2d.x).toFloat(),
+            (end2d.y - start2d.y).toFloat()
+        )
+        if (dir2d.len2() <= epsilonSq) {
+            return null
+        }
+        val linePoint = Vector2(start2d.x.toFloat(), start2d.y.toFloat())
+        val tri2d = listOf(
+            Vector2(triCoords[0].x.toFloat(), triCoords[0].y.toFloat()),
+            Vector2(triCoords[1].x.toFloat(), triCoords[1].y.toFloat()),
+            Vector2(triCoords[2].x.toFloat(), triCoords[2].y.toFloat())
+        )
+        val pos = clipPolygonByLine(tri2d, linePoint, dir2d, true)
+        val neg = clipPolygonByLine(tri2d, linePoint, dir2d, false)
+        if (pos.size < 3 || neg.size < 3) {
+            return null
+        }
+        val result = mutableListOf<Triangle>()
+        triangulateConvex(pos).forEach { polyTri ->
+            result.add(Triangle(
+                fromCoord(polyTri[0], origin, basis),
+                fromCoord(polyTri[1], origin, basis),
+                fromCoord(polyTri[2], origin, basis)
+            ))
+        }
+        triangulateConvex(neg).forEach { polyTri ->
+            result.add(Triangle(
+                fromCoord(polyTri[0], origin, basis),
+                fromCoord(polyTri[1], origin, basis),
+                fromCoord(polyTri[2], origin, basis)
+            ))
+        }
+        return if (result.isEmpty()) null else result
+    }
+
+    private fun pointOnPlane(point: Vector3, normal: Vector3, d: Float): Boolean {
+        val dist = normal.dot(point) + d
+        return kotlin.math.abs(dist) <= planeEps
+    }
+
+    private fun toCoord(point: Vector3, origin: Vector3, basis: PlaneBasis): Coordinate {
+        val rel = Vector3(point).sub(origin)
+        val u = rel.dot(basis.axisU) * jtsScale
+        val v = rel.dot(basis.axisV) * jtsScale
+        return Coordinate(u, v)
+    }
+
+    private fun fromCoord(coord: Coordinate, origin: Vector3, basis: PlaneBasis): Vector3 {
+        val u = (coord.x / jtsScale).toFloat()
+        val v = (coord.y / jtsScale).toFloat()
+        return Vector3(origin).mulAdd(basis.axisU, u).mulAdd(basis.axisV, v)
+    }
+
+    private fun fromCoord(coord: Vector2, origin: Vector3, basis: PlaneBasis): Vector3 {
+        val u = coord.x / jtsScale.toFloat()
+        val v = coord.y / jtsScale.toFloat()
+        return Vector3(origin).mulAdd(basis.axisU, u).mulAdd(basis.axisV, v)
+    }
+
+    private fun clipPolygonByLine(
+        polygon: List<Vector2>,
+        linePoint: Vector2,
+        lineDir: Vector2,
+        keepPositive: Boolean
+    ): List<Vector2> {
+        if (polygon.isEmpty()) {
+            return emptyList()
+        }
+        val output = mutableListOf<Vector2>()
+        val n = polygon.size
+        for (i in 0 until n) {
+            val a = polygon[i]
+            val b = polygon[(i + 1) % n]
+            val da = lineSide(a, linePoint, lineDir)
+            val db = lineSide(b, linePoint, lineDir)
+            val aInside = if (keepPositive) da >= -epsilon2d else da <= epsilon2d
+            val bInside = if (keepPositive) db >= -epsilon2d else db <= epsilon2d
+            if (aInside && bInside) {
+                output.add(Vector2(b))
+            } else if (aInside && !bInside) {
+                val inter = intersectLineSegment2D(a, b, linePoint, lineDir)
+                if (inter != null) {
+                    output.add(inter)
+                }
+            } else if (!aInside && bInside) {
+                val inter = intersectLineSegment2D(a, b, linePoint, lineDir)
+                if (inter != null) {
+                    output.add(inter)
+                }
+                output.add(Vector2(b))
+            }
+        }
+        return output
+    }
+
+    private fun lineSide(point: Vector2, linePoint: Vector2, lineDir: Vector2): Float {
+        val dx = point.x - linePoint.x
+        val dy = point.y - linePoint.y
+        return lineDir.x * dy - lineDir.y * dx
+    }
+
+    private fun intersectLineSegment2D(
+        a: Vector2,
+        b: Vector2,
+        linePoint: Vector2,
+        lineDir: Vector2
+    ): Vector2? {
+        val segDir = Vector2(b).sub(a)
+        val denom = lineDir.x * segDir.y - lineDir.y * segDir.x
+        if (kotlin.math.abs(denom) < epsilon2d) {
+            return null
+        }
+        val ax = a.x - linePoint.x
+        val ay = a.y - linePoint.y
+        val t = (lineDir.x * ay - lineDir.y * ax) / denom
+        return if (t >= -epsilon && t <= 1f + epsilon) {
+            Vector2(a.x + segDir.x * t, a.y + segDir.y * t)
+        } else {
+            null
+        }
+    }
+
+    private fun triangulateConvex(polygon: List<Vector2>): List<List<Vector2>> {
+        if (polygon.size < 3) {
+            return emptyList()
+        }
+        val result = mutableListOf<List<Vector2>>()
+        for (i in 1 until polygon.size - 1) {
+            result.add(listOf(polygon[0], polygon[i], polygon[i + 1]))
+        }
+        return result
+    }
+
+    private fun extendLine(line: LineString, polygon: Polygon): LineString {
+        val coords = line.coordinates
+        if (coords.size < 2) {
+            return line
+        }
+        val a = coords.first()
+        val b = coords.last()
+        val dx = b.x - a.x
+        val dy = b.y - a.y
+        val len = kotlin.math.sqrt(dx * dx + dy * dy)
+        if (len <= 1e-9) {
+            return line
+        }
+        val env = polygon.envelopeInternal
+        val diag = kotlin.math.hypot(env.width, env.height)
+        val scale = (diag + len) * 2.0
+        val ux = dx / len
+        val uy = dy / len
+        val extendedA = Coordinate(a.x - ux * scale, a.y - uy * scale)
+        val extendedB = Coordinate(b.x + ux * scale, b.y + uy * scale)
+        val geometryFactory = GeometryFactory()
+        return geometryFactory.createLineString(arrayOf(extendedA, extendedB))
+    }
+
+    private fun collectPolygons(geometry: Geometry): List<Polygon> {
+        val result = mutableListOf<Polygon>()
+        when (geometry) {
+            is Polygon -> result.add(geometry)
+            else -> {
+                for (i in 0 until geometry.numGeometries) {
+                    val child = geometry.getGeometryN(i)
+                    if (child is Polygon) {
+                        result.add(child)
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    private fun tryTriangulatePolygon(
+        polygon: Polygon,
+        keepPoints: List<Vector3>,
+        origin: Vector3,
+        basis: PlaneBasis,
+        geometryFactory: GeometryFactory
+    ): List<Polygon>? {
+        return try {
+            val boundaryCoords = polygon.exteriorRing.coordinates.toMutableList()
+            keepPoints.forEach { point ->
+                boundaryCoords.add(toCoord(point, origin, basis))
+            }
+            val sites = geometryFactory.createMultiPointFromCoords(boundaryCoords.toTypedArray())
+            val builder = DelaunayTriangulationBuilder()
+            builder.setSites(sites)
+            val triangles = builder.getTriangles(geometryFactory)
+            val result = mutableListOf<Polygon>()
+            for (i in 0 until triangles.numGeometries) {
+                val tri = triangles.getGeometryN(i)
+                if (tri is Polygon && polygon.covers(tri)) {
+                    result.add(tri)
+                }
+            }
+            result
+        } catch (ex: Exception) {
+            null
         }
     }
 

@@ -61,7 +61,7 @@ class LineTool(
             val endWorld = Vector3(world)
             val startLocal = group.toLocal(startWorld)
             val endLocal = group.toLocal(endWorld)
-            group.lineStore.addSegment(startLocal, endLocal)
+            group.addSketchSegment(startLocal, endLocal)
             anchorWorld = Vector3(endWorld)
             polylinePointsLocal.add(Vector3(endLocal))
             if (polylinePointsLocal.size >= 3 && polylinePointsLocal.first().dst2(endLocal) <= epsilonSq) {

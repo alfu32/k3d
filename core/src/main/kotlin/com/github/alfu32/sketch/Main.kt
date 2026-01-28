@@ -955,6 +955,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun drawDraftLines() {
         val defaultColor = Color(0.2f, 0.2f, 0.2f, 1f)
+        val crossSize = 0.1f
         scene.walkGroups(scene.root) { group ->
             val selected = group.lineStore.getSelected()
             group.lineStore.getSegments().forEach { segment ->
@@ -968,6 +969,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 } else {
                     shapeRenderer.line(start, end)
                 }
+                drawLineCross(start, crossSize)
+                drawLineCross(end, crossSize)
             }
         }
         scene.root.lineStore.getSegments().forEach { segment ->
@@ -979,8 +982,17 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             } else {
                 shapeRenderer.line(segment.start, segment.end)
             }
+            drawLineCross(segment.start, crossSize)
+            drawLineCross(segment.end, crossSize)
         }
         Gdx.gl.glLineWidth(2f)
+    }
+
+    private fun drawLineCross(point: Vector3, size: Float) {
+        val half = size * 0.5f
+        shapeRenderer.line(point.x - half, point.y, point.z, point.x + half, point.y, point.z)
+        shapeRenderer.line(point.x, point.y - half, point.z, point.x, point.y + half, point.z)
+        shapeRenderer.line(point.x, point.y, point.z - half, point.x, point.y, point.z + half)
     }
 
     private fun drawDimensions() {

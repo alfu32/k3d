@@ -142,7 +142,7 @@ object ModelPersistence {
             scene.root.lineStore.clearAll()
             scene.root.faceStore.clearAll()
             loaded.lineStore.getSegments().forEach { seg ->
-                scene.root.lineStore.addSegment(seg.start, seg.end)
+                scene.root.lineStore.addSegment(seg.start, seg.end, autoCleanup = false)
             }
             loaded.faceStore.getTriangles().forEach { tri ->
                 scene.root.faceStore.addTriangle(tri.a, tri.b, tri.c, loaded.faceStore.colorFor(tri))
@@ -155,7 +155,7 @@ object ModelPersistence {
             }
         } else {
             snapshot.segments.forEach { segment ->
-                scene.root.lineStore.addSegment(segment.start.toVector3(), segment.end.toVector3())
+                scene.root.lineStore.addSegment(segment.start.toVector3(), segment.end.toVector3(), autoCleanup = false)
             }
             snapshot.faces.forEach { face ->
                 scene.root.faceStore.addTriangle(
@@ -263,7 +263,7 @@ object ModelPersistence {
 
         private fun applyGeometry(prototype: GroupScene.ObjectPrototype, defaultColor: Color? = null) {
             segments.forEach { segment ->
-                prototype.lineStore.addSegment(segment.start.toVector3(), segment.end.toVector3())
+                prototype.lineStore.addSegment(segment.start.toVector3(), segment.end.toVector3(), autoCleanup = false)
             }
             faces.forEach { face ->
                 prototype.faceStore.addTriangle(
@@ -496,7 +496,7 @@ object ModelPersistence {
                 instanceAxisW = instAxisW
             )
             segments.forEach { segment ->
-                group.lineStore.addSegment(segment.start.toVector3(), segment.end.toVector3())
+                group.lineStore.addSegment(segment.start.toVector3(), segment.end.toVector3(), autoCleanup = false)
             }
             faces.forEach { face ->
                 group.faceStore.addTriangle(

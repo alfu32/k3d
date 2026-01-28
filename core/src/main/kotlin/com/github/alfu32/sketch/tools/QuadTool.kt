@@ -76,7 +76,7 @@ class QuadTool(
         for (i in 0 until 4) {
             val p0 = cornersLocal[i]
             val p1 = cornersLocal[(i + 1) % 4]
-            group.lineStore.addSegment(p0, p1)
+            group.addSketchSegment(p0, p1)
         }
         val normalPref = pickNormalWorld?.let { group.vectorToLocal(it) }
             ?: Vector3(cornersLocal[1]).sub(cornersLocal[0])

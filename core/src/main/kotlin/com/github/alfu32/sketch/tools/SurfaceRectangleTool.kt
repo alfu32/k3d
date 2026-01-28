@@ -68,7 +68,7 @@ class SurfaceRectangleTool(
         for (i in 0 until 4) {
             val a = cornersLocal[i]
             val b = cornersLocal[(i + 1) % 4]
-            group.lineStore.addSegment(a, b)
+            group.addSketchSegment(a, b)
         }
         val preferred = (this.normalWorld ?: Vector3(0f, 1f, 0f)).let { group.vectorToLocal(it) }
         addRectangleFace(group, cornersLocal, preferred)

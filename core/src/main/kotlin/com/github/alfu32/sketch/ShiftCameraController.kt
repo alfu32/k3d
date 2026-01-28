@@ -5,6 +5,10 @@ import com.badlogic.gdx.Input
 import com.badlogic.gdx.graphics.PerspectiveCamera
 import com.badlogic.gdx.graphics.g3d.utils.CameraInputController
 import com.badlogic.gdx.math.Vector3
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.sqrt
 
 class ShiftCameraController(
     camera: PerspectiveCamera,
@@ -14,6 +18,8 @@ class ShiftCameraController(
     private val panStartPos = Vector3()
     private val panStartTarget = Vector3()
     private val panStartGrab = Vector3()
+    private val panPlaneNormal = Vector3()
+    private val panPlanePoint = Vector3()
     private val tmp = Vector3()
     private val tmpDir = Vector3()
     private val zoomDir = Vector3()
@@ -41,7 +47,10 @@ class ShiftCameraController(
         if (translating) {
             panStartPos.set(camera.position)
             panStartTarget.set(target)
-            val picked = pickWorldPoint(screenX, screenY)
+            setPanPlaneNormal()
+            panPlanePoint.set(target)
+            val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
+            val picked = intersectRayPlane(ray.origin, ray.direction, panPlanePoint, panPlaneNormal)
             if (picked == null) {
                 translating = false
                 return super.touchDown(screenX, screenY, pointer, button)
@@ -54,10 +63,8 @@ class ShiftCameraController(
     override fun touchDragged(screenX: Int, screenY: Int, pointer: Int): Boolean {
         if (translating) {
             val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
-            tmpDir.set(ray.direction).nor()
-            tmp.set(panStartGrab).sub(panStartPos)
-            val t = tmp.dot(tmpDir)
-            tmp.mulAdd(tmpDir, -t)
+            val hit = intersectRayPlane(ray.origin, ray.direction, panPlanePoint, panPlaneNormal) ?: return true
+            tmp.set(panStartGrab).sub(hit).scl(0.92f)
             camera.position.set(panStartPos).add(tmp)
             target.set(panStartTarget).add(tmp)
             camera.update()
@@ -88,5 +95,39 @@ class ShiftCameraController(
         camera.position.mulAdd(zoomDir, step)
         camera.update()
         return true
+    }
+
+    private fun setPanPlaneNormal() {
+        val view = Vector3(target).sub(camera.position)
+        val horiz = sqrt(view.x * view.x + view.z * view.z)
+        val angle = abs(atan2(view.y, horiz))
+        val threshold = (PI * 0.25).toFloat()
+        if (angle >= threshold || horiz <= 1e-4f) {
+            panPlaneNormal.set(0f, 1f, 0f)
+            return
+        }
+        panPlaneNormal.set(view.x, 0f, view.z)
+        if (panPlaneNormal.len2() <= 1e-6f) {
+            panPlaneNormal.set(0f, 1f, 0f)
+        } else {
+            panPlaneNormal.nor()
+        }
+    }
+
+    private fun intersectRayPlane(
+        rayOrigin: Vector3,
+        rayDir: Vector3,
+        planePoint: Vector3,
+        planeNormal: Vector3
+    ): Vector3? {
+        val denom = planeNormal.dot(rayDir)
+        if (kotlin.math.abs(denom) < 1e-6f) {
+            return null
+        }
+        val t = Vector3(planePoint).sub(rayOrigin).dot(planeNormal) / denom
+        if (t < 0f) {
+            return null
+        }
+        return Vector3(rayOrigin).mulAdd(rayDir, t)
     }
 }

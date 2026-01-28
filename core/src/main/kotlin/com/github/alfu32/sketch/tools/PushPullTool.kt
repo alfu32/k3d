@@ -141,14 +141,14 @@ class PushPullTool(
             val ap = Vector3(a).add(offset)
             val bp = Vector3(b).add(offset)
             addSideQuad(a, b, ap, bp, reverse)
-            group.lineStore.addSegment(ap, bp)
+            group.lineStore.addSegment(ap, bp, autoCleanup = false)
             val aKey = vertexKey(a)
             val bKey = vertexKey(b)
             if (verticalKeys.add(aKey)) {
-                group.lineStore.addSegment(a, ap)
+                group.lineStore.addSegment(a, ap, autoCleanup = false)
             }
             if (verticalKeys.add(bKey)) {
-                group.lineStore.addSegment(b, bp)
+                group.lineStore.addSegment(b, bp, autoCleanup = false)
             }
         }
     }
