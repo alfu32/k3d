@@ -6,7 +6,9 @@
 [USER_MANUAL.md](USER_MANUAL.md)
 
 [PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md)
-![img.png](documentation/img.png)
+
+
+![img.png](img.png)
 
 K3D is a Kotlin + libGDX (jvm) desktop application for interactively creating and editing simple 3D geometry. It focuses on direct modeling with edges and planar faces, real-time snapping, and tool-driven workflows.
 
@@ -19,6 +21,8 @@ K3D is a Kotlin + libGDX (jvm) desktop application for interactively creating an
 - Includes snapping to endpoints, midpoints, grid points/lines, and guides.
 - Offers push/pull extrusion on planar faces.
 - Provides a cleanup action to split intersections and re-weld edges.
+
+![img_1.png](img_1.png)
 
 ## What it is intended to do
 
