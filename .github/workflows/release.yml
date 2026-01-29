@@ -70,9 +70,9 @@ jobs:
           $version = "${{ inputs.tag }}"
           $appName = "K3D"
           $displayName = "K3D Editor"
-          $publisher = "CN=K3D0"
+          $publisher = "CN=7F0CBC95-8035-4AF2-9B17-C38D58351CE5"
           $publisherDisplayName = "K3D0"
-          $packageName = "com.github.alfu32.k3d"
+          $packageName = "K3D0.k3d-free"
 
           $appImage = "dist\jpackage\$appName"
           $msixRoot = "dist\msix"
