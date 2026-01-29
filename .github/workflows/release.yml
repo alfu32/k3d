@@ -164,6 +164,32 @@ jobs:
           appx-manifest-path: dist/msix/AppxManifest.xml
           icon-path: assets/appsplash.png
           priconfig-path: scripts/priconfig.xml
+      - name: Sign MSIX (Windows)
+        shell: powershell
+        env:
+          K3D_PFX_B64: ${{ secrets.K3D_PFX_B64 }}
+          K3D_PFX_PASSWORD: ${{ secrets.K3D_PFX_PASSWORD }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $msixPath = "${{ steps.msix-build.outputs.msix-path }}"
+          if ([string]::IsNullOrWhiteSpace($msixPath) -or !(Test-Path $msixPath)) {
+            throw "MSIX not found: $msixPath"
+          }
+          if ([string]::IsNullOrWhiteSpace($env:K3D_PFX_B64)) { throw "K3D_PFX_B64 secret is empty" }
+          if ([string]::IsNullOrWhiteSpace($env:K3D_PFX_PASSWORD)) { throw "K3D_PFX_PASSWORD secret is empty" }
+
+          $pfxPath = Join-Path $env:RUNNER_TEMP "k3d-sign.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:K3D_PFX_B64))
+
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if ($null -eq $signtool) { throw "signtool.exe not found (Windows SDK required)" }
+
+          & $signtool.FullName sign /fd SHA256 /f $pfxPath /p $env:K3D_PFX_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $msixPath
+          $msiPath = Join-Path "dist\installer" ("k3d-${{ inputs.tag }}.msi")
+          if (Test-Path $msiPath) {
+            & $signtool.FullName sign /fd SHA256 /f $pfxPath /p $env:K3D_PFX_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $msiPath
+          }
       - name: Debug MSIX build workspace
         shell: powershell
         run: |
