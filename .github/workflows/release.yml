@@ -171,6 +171,8 @@ jobs:
           K3D_PFX_PASSWORD: ${{ secrets.K3D_PFX_PASSWORD }}
         run: |
           $ErrorActionPreference = "Stop"
+          Write-Host "Runner time (UTC):"
+          Get-Date -Format o
           $msixPath = "${{ steps.msix-build.outputs.msix-path }}"
           if ([string]::IsNullOrWhiteSpace($msixPath) -or !(Test-Path $msixPath)) {
             throw "MSIX not found: $msixPath"
