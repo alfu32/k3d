@@ -84,6 +84,14 @@ jobs:
           Copy-Item "assets\appicon.png" (Join-Path $assetsDir "Square150x150Logo.png")
           Copy-Item "assets\appicon.png" (Join-Path $assetsDir "Square44x44Logo.png")
           Copy-Item "assets\appicon.png" (Join-Path $assetsDir "StoreLogo.png")
+          $baseNames = @("Square150x150Logo", "Square44x44Logo", "StoreLogo")
+          foreach ($name in $baseNames) {
+            $scaled = Join-Path $assetsDir ("{0}.scale-100.png" -f $name)
+            $base = Join-Path $assetsDir ("{0}.png" -f $name)
+            if ((Test-Path $scaled) -and !(Test-Path $base)) {
+              Copy-Item $scaled $base -Force
+            }
+          }
           $manifest = @(
             '<?xml version="1.0" encoding="utf-8"?>',
             '<Package',
