@@ -47,6 +47,8 @@ K3D is a Kotlin + libGDX (jvm) desktop application for interactively creating an
 [SPEC.group.md](specification/SPEC.group.md)
 [SPEC.lighting.md](specification/SPEC.lighting.md)
 
+[PRIVACY_POLICY.md](PRIVACY_POLICY.md)
+
 ## downloads
 
 https://github.com/alfu32/k3d/releases/latest/download/k3d-jvm-plugins-2.0.0.zip
