@@ -465,8 +465,9 @@ def configureBundleTask = { String name, String osLabel, TaskProvider jdkTask, F
     from(project(":core").tasks.named("pluginApiJar").flatMap { it.archiveFile }) {
       into("plugins")
     }
-    from(resolveJdkRoot(jdkCache)) {
+    from({ resolveJdkRoot(jdkCache) }) {
       into("jre")
+      exclude("*.zip", "*.tar.gz", "*.tar")
     }
     if (includeUnixLauncher) {
       from(file("$launcherDir/k3d-editor"))
@@ -502,8 +503,9 @@ def configureBundleDirTask = { String name, String osLabel, TaskProvider jdkTask
     from(project(":core").tasks.named("pluginApiJar").flatMap { it.archiveFile }) {
       into("plugins")
     }
-    from(resolveJdkRoot(jdkCache)) {
+    from({ resolveJdkRoot(jdkCache) }) {
       into("jre")
+      exclude("*.zip", "*.tar.gz", "*.tar")
     }
     if (includeUnixLauncher) {
       from(file("$launcherDir/k3d-editor"))
