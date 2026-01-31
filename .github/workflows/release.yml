@@ -65,7 +65,7 @@ jobs:
           New-Item $pluginsDir -ItemType Directory -Force | Out-Null
           Copy-Item "core\build\libs\k3d-plugin-api*.jar" $pluginsDir -Force
           Copy-Item "scripts\*.groovy" $pluginsDir -Force
-          & $jpackage --type msi --name $appName --app-version $version --vendor "alfu32" --win-console `
+          & $jpackage --type msi --name $appName --app-version $version --vendor "alfu32" `
             --app-image $appImage --dest "dist\installer" `
             --icon "lwjgl3\icons\logo.ico" --win-per-user-install --win-menu --win-shortcut
       - name: Prepare MSIX layout
