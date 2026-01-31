@@ -72,6 +72,10 @@ private fun handleCommand(args: Array<String>): Array<String>? {
             if (command.startsWith("--file") || command.startsWith("--size") || command.startsWith("--plugins")) {
                 return args
             }
+            val fileArg = args[0]
+            if (fileArg.endsWith(".k3d", ignoreCase = true) || File(fileArg).exists()) {
+                return arrayOf("--file", fileArg)
+            }
             printHelp()
             null
         }

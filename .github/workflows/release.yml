@@ -57,11 +57,16 @@ jobs:
           $jarPath = Join-Path $jarDir "k3d-$version.jar"
           $jpackage = Join-Path $env:JAVA_HOME "bin\jpackage.exe"
           if (!(Test-Path $jarPath)) { throw "Jar not found: $jarPath" }
-          & $jpackage --type app-image --name $appName --app-version $version --vendor "alfu32" `
+          & $jpackage --type app-image --name $appName --app-version $version --vendor "alfu32" --win-console `
             --input $jarDir --main-jar "k3d-$version.jar" --dest "dist\jpackage" `
             --icon "lwjgl3\icons\logo.ico"
-          & $jpackage --type msi --name $appName --app-version $version --vendor "alfu32" `
-            --input $jarDir --main-jar "k3d-$version.jar" --dest "dist\installer" `
+          $appImage = "dist\jpackage\$appName"
+          $pluginsDir = Join-Path $appImage "plugins"
+          New-Item $pluginsDir -ItemType Directory -Force | Out-Null
+          Copy-Item "core\build\libs\k3d-plugin-api*.jar" $pluginsDir -Force
+          Copy-Item "scripts\*.groovy" $pluginsDir -Force
+          & $jpackage --type msi --name $appName --app-version $version --vendor "alfu32" --win-console `
+            --app-image $appImage --dest "dist\installer" `
             --icon "lwjgl3\icons\logo.ico" --win-per-user-install --win-menu --win-shortcut
       - name: Prepare MSIX layout
         shell: powershell

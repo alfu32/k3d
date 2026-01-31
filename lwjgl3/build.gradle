@@ -207,7 +207,11 @@ def resolveJdkRoot = { File cacheDir ->
   if (candidates.size() == 1) {
     return candidates.first()
   }
-  def direct = candidates.find { new File(it, "bin/java").exists() || new File(it, "Contents/Home/bin/java").exists() }
+  def direct = candidates.find {
+    new File(it, "bin/java").exists() ||
+      new File(it, "bin/java.exe").exists() ||
+      new File(it, "Contents/Home/bin/java").exists()
+  }
   return direct ?: cacheDir
 }
 
