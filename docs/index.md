@@ -51,7 +51,13 @@ K3D is a Kotlin + libGDX (jvm) desktop application for interactively creating an
 
 ## downloads
 
-https://github.com/alfu32/k3d/releases/latest/download/k3d-jvm-plugins-2.0.0.zip
+Get the latest release artifacts from the releases page:
+
+- Windows: `.zip`, `.msi`, `.msix`
+- Linux: `.tar.gz` (preferred), `.zip`
+- macOS: `.tar.gz` (preferred), `.zip`
+
+https://github.com/alfu32/k3d/releases
 ## Status
 
 This is an active work-in-progress. APIs and behavior may change as modeling and topology features evolve.

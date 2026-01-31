@@ -28,11 +28,11 @@ jobs:
           distribution: "temurin"
           java-version: "21"
       - name: Build Linux bundle
-        run: ./gradlew :lwjgl3:bundleLinux -PreleaseNumber="${{ inputs.tag }}"
+        run: ./gradlew :lwjgl3:bundleLinuxTar -PreleaseNumber="${{ inputs.tag }}"
       - uses: actions/upload-artifact@v4
         with:
           name: k3d-linux
-          path: dist/*.zip
+          path: dist/*.tar.gz
 
   build-windows:
     runs-on: windows-latest
@@ -61,7 +61,7 @@ jobs:
             --input $jarDir --main-jar "k3d-$version.jar" --dest "dist\jpackage" `
             --icon "lwjgl3\icons\logo.ico"
           $appImage = "dist\jpackage\$appName"
-          $pluginsDir = Join-Path $appImage "plugins"
+          $pluginsDir = Join-Path $appImage "app\\plugins"
           New-Item $pluginsDir -ItemType Directory -Force | Out-Null
           Copy-Item "core\build\libs\k3d-plugin-api*.jar" $pluginsDir -Force
           Copy-Item "scripts\*.groovy" $pluginsDir -Force
@@ -264,11 +264,11 @@ jobs:
           distribution: "temurin"
           java-version: "21"
       - name: Build macOS bundle (arm64)
-        run: ./gradlew :lwjgl3:bundleMacArm64 -PreleaseNumber="${{ inputs.tag }}"
+        run: ./gradlew :lwjgl3:bundleMacArm64Tar -PreleaseNumber="${{ inputs.tag }}"
       - uses: actions/upload-artifact@v4
         with:
           name: k3d-mac
-          path: dist/*.zip
+          path: dist/*.tar.gz
 
   release:
     runs-on: ubuntu-latest
@@ -292,7 +292,7 @@ jobs:
           else
             gh release edit "$TAG" --draft="$DRAFT" --prerelease="$PRERELEASE"
           fi
-          files=$(find artifacts -type f \( -name "*.zip" -o -name "*.msi" -o -name "*.msix" \))
+          files=$(find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.msi" -o -name "*.msix" \))
           if [ -z "$files" ]; then
             echo "No release artifacts found."
             exit 1

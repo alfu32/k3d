@@ -7,19 +7,20 @@ TODO: Replace with a main UI screenshot.
 
 ## Installation
 
-### Windows (ZIP)
-1. Unzip the distribution archive.
-2. Run `k3d-jre.cmd` to use the bundled runtime, or `k3d.cmd` to use a system Java.
-3. Optional: run `k3d.install.cmd` to add K3D to PATH and register `.k3d` files.
+### Windows (ZIP / MSI / MSIX)
+1. ZIP: unzip the distribution archive.
+2. MSI/MSIX: install the package from the release artifacts.
+3. Run `k3d-jre.cmd` to use the bundled runtime, or `k3d.cmd` to use a system Java.
+4. Optional (ZIP only): run `k3d.install.cmd` to add K3D to PATH and register `.k3d` files.
 
-### Linux (ZIP)
-1. Unzip the distribution archive.
-2. Make the launcher executable if needed: `chmod +x k3d-jre k3d-editor`.
+### Linux (TAR.GZ recommended)
+1. Extract the `.tar.gz` distribution archive (preferred, preserves executable flags).
+2. If you used a ZIP, make the launcher executable: `chmod +x k3d-jre k3d-editor`.
 3. Run `./k3d-jre` for the bundled runtime, or `./k3d-editor` for system Java.
 
-### macOS (ZIP)
-1. Unzip the distribution archive.
-2. Make the launcher executable if needed: `chmod +x k3d-jre k3d-editor`.
+### macOS (TAR.GZ recommended)
+1. Extract the `.tar.gz` distribution archive (preferred, preserves executable flags).
+2. If you used a ZIP, make the launcher executable: `chmod +x k3d-jre k3d-editor`.
 3. Run `./k3d-jre` for the bundled runtime, or `./k3d-editor` for system Java.
 
 ### Plugins location
