@@ -203,9 +203,25 @@ def jdkCacheDir = file("$buildDir/jdk-cache")
 def launcherDir = file("$buildDir/generated/launchers")
 
 def resolveJdkRoot = { File cacheDir ->
-  def candidates = cacheDir.exists() ? cacheDir.listFiles().findAll { it.isDirectory() } : []
+  if (!cacheDir.exists()) {
+    return cacheDir
+  }
+  def candidates = cacheDir.listFiles().findAll { it.isDirectory() }
   if (candidates.size() == 1) {
     return candidates.first()
+  }
+  def javaFiles = project.fileTree(cacheDir) {
+    include "**/bin/java"
+    include "**/bin/java.exe"
+    include "**/Contents/Home/bin/java"
+  }.files
+  if (!javaFiles.isEmpty()) {
+    def best = javaFiles.min { it.absolutePath.length() }
+    def path = best.absolutePath.replace("\\", "/")
+    if (path.endsWith("/Contents/Home/bin/java")) {
+      return best.parentFile.parentFile.parentFile.parentFile
+    }
+    return best.parentFile.parentFile
   }
   def direct = candidates.find {
     new File(it, "bin/java").exists() ||
