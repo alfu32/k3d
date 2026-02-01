@@ -51,7 +51,10 @@ private fun handleCommand(args: Array<String>): Array<String>? {
     }
     val command = args[0].lowercase()
     return when (command) {
-        "edit" -> args.drop(1).toTypedArray()
+        "edit" -> {
+            System.setProperty("k3d.devConsole", "true")
+            args.drop(1).toTypedArray()
+        }
         "groovy" -> {
             runGroovy(args.drop(1))
             null

@@ -42,6 +42,16 @@ import com.github.alfu32.sketch.model.ModelPersistence
 import com.github.alfu32.sketch.model.ModelCleanup
 import com.github.alfu32.sketch.model.ModelUnit
 import com.github.alfu32.sketch.render.SketchShaderProvider
+import com.github.alfu32.sketch.console.AppFacade
+import com.github.alfu32.sketch.console.ConsoleGroovyRuntime
+import com.github.alfu32.sketch.console.ConsolePaths
+import com.github.alfu32.sketch.console.ConsoleThread
+import com.github.alfu32.sketch.console.ConsoleUtils
+import com.github.alfu32.sketch.console.SelectionFacade
+import com.github.alfu32.sketch.console.TerminalController
+import com.github.alfu32.sketch.tui.ConsoleTui
+import com.github.alfu32.sketch.tui.HistoryManager
+import com.github.alfu32.sketch.tui.OutputPane
 import com.github.alfu32.sketch.plugin.PluginHost
 import com.github.alfu32.sketch.tools.CircleTool
 import com.github.alfu32.sketch.tools.LinearDimensionTool
@@ -131,6 +141,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var installDir: java.io.File
     private lateinit var objectPlaceTool: ObjectPlaceTool
     private val cameraTarget = Vector3(0f, 0f, 0f)
+    private var consoleThread: ConsoleThread? = null
+    private var consoleRuntime: ConsoleGroovyRuntime? = null
+    private var consoleTerminal: TerminalController? = null
 
     override fun create() {
         if (!VisUI.isLoaded()) {
@@ -493,6 +506,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         uiOverlay.refreshPluginPanels()
         setupMeshes()
         setupRenderables()
+        startConsoleIfRequested()
     }
 
     private fun pickPanPoint(screenX: Int, screenY: Int): Vector3? {
@@ -630,6 +644,12 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
         if (::pluginHost.isInitialized) {
             pluginHost.dispatchClose()
+        }
+        consoleThread?.shutdown()
+        try {
+            consoleThread?.join(500)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
         }
         shapeRenderer.dispose()
         faceMesh.dispose()
@@ -951,6 +971,29 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             applyOp()
         }
         return if (output.size == 1) output.pop() else null
+    }
+
+    private fun startConsoleIfRequested() {
+        if (!shouldStartConsole()) {
+            return
+        }
+        val outputPane = OutputPane()
+        val history = HistoryManager(ConsolePaths.historyFile())
+        val consoleUtils = ConsoleUtils(outputPane)
+        val appFacade = AppFacade(Gdx.app)
+        val selectionFacade = SelectionFacade(scene)
+        val runtime = ConsoleGroovyRuntime(appFacade, scene, selectionFacade, consoleUtils)
+        val terminal = TerminalController()
+        val tui = ConsoleTui(runtime, terminal, outputPane, history) {
+            consoleThread?.shutdown()
+        }
+        consoleRuntime = runtime
+        consoleTerminal = terminal
+        consoleThread = ConsoleThread(runtime, tui, terminal).apply { start() }
+    }
+
+    private fun shouldStartConsole(): Boolean {
+        return System.getProperty("k3d.devConsole") == "true"
     }
 
     private fun drawDraftLines() {
