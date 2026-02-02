@@ -19,7 +19,7 @@ fun main(args: Array<String>) {
     val (width, height) = parseSize(args)
     Lwjgl3Application(Main(commandArgs), Lwjgl3ApplicationConfiguration().apply {
         var ver = K3DVersion()
-        setTitle("K3D ${ver.buildGitTag} ${ver.buildGitBranch} ${ver.buildGitCommit} ${ver.buildDate.substring(0..10)}")
+        setTitle("K3D ${preferVersion(ver)}")
 
         setWindowIcon("appicon.png")
         //// Vsync limits the frames per second to what your hardware can display, and helps eliminate

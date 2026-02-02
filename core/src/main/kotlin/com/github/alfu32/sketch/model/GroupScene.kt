@@ -206,19 +206,28 @@ class GroupScene(
             return if (hasAny) bounds else null
         }
 
-        fun orientedBoundsCorners(): Array<Vector3>? {
+        fun orientedBoundsCorners(): Array<Vector3>? = orientedBoundsCorners(0f)
+
+        fun orientedBoundsCorners(expandRatio: Float): Array<Vector3>? {
             val bounds = localBounds() ?: return null
             val min = bounds.min
             val max = bounds.max
+            val center = Vector3(min).lerp(max, 0.5f)
+            val half = Vector3(max).sub(min).scl(0.5f)
+            if (expandRatio > 0f) {
+                half.scl(1f + expandRatio)
+            }
+            val expandedMin = Vector3(center).sub(half)
+            val expandedMax = Vector3(center).add(half)
             val corners = arrayOf(
-                Vector3(min.x, min.y, min.z),
-                Vector3(max.x, min.y, min.z),
-                Vector3(max.x, min.y, max.z),
-                Vector3(min.x, min.y, max.z),
-                Vector3(min.x, max.y, min.z),
-                Vector3(max.x, max.y, min.z),
-                Vector3(max.x, max.y, max.z),
-                Vector3(min.x, max.y, max.z)
+                Vector3(expandedMin.x, expandedMin.y, expandedMin.z),
+                Vector3(expandedMax.x, expandedMin.y, expandedMin.z),
+                Vector3(expandedMax.x, expandedMin.y, expandedMax.z),
+                Vector3(expandedMin.x, expandedMin.y, expandedMax.z),
+                Vector3(expandedMin.x, expandedMax.y, expandedMin.z),
+                Vector3(expandedMax.x, expandedMax.y, expandedMin.z),
+                Vector3(expandedMax.x, expandedMax.y, expandedMax.z),
+                Vector3(expandedMin.x, expandedMax.y, expandedMax.z)
             )
             corners.indices.forEach { idx ->
                 corners[idx] = toWorld(corners[idx])

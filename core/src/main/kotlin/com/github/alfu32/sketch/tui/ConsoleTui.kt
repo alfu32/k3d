@@ -200,6 +200,10 @@ class ConsoleTui(
                 handleExamples()
                 true
             }
+            ":version", ":ver", ":v" -> {
+                handleVersion()
+                true
+            }
             ":objects" -> {
                 handleObjects()
                 true
@@ -304,12 +308,23 @@ class ConsoleTui(
                   :exit / :x            Exit the application
                   :term / :terminal     Open a shell (exit returns to console)
                   :examples             Show example snippets
+                  :version / :ver / :v  Show version info
                   :history / :hist      Show history
                   :objects              List top-level objects
                   :list / :ls [name]    List fields/methods
                   :line / :l x,z[,y] .. Draw polyline
                   :poly / :polyline / :pl x,z[,y] ..  Draw closed poly + fill
                   :circle / :c cx,cz[,y],r  Draw circle
+
+            Basic access to the application object model:
+                (use app.run { ... } for mutating the model):
+
+                - Plugin host: pluginHost.reloadEnabledAndInit()
+                - Lighting: app.run { lighting.ambientLightValue = 0.8f; lightingCtl.apply() }
+                - Camera: app.run { cameraCtl.setPosition(10f, 8f, 6f); cameraCtl.setTarget(0f, 0f, 0f) }
+                - Color: app.run { status.paintColor.set(1f, 0f, 0f, 1f) }
+                - Unit: app.run { unit.set("mm", 0.001f) }
+                - Save name: app.run { save.set("examples/new-name.k3d") }
             """.trimIndent()
         )
     }
@@ -384,6 +399,25 @@ class ConsoleTui(
                 - Save name: app.run { save.set("examples/new-name.k3d") }
             """.trimIndent()
         )
+    }
+
+    private fun handleVersion() {
+        val version = runtime.binding.getProperty("version")
+        if (version == null) {
+            outputPane.append("Version info unavailable.")
+            return
+        }
+        val klass = version.javaClass
+        val fields = klass.declaredFields
+            .filter { !java.lang.reflect.Modifier.isStatic(it.modifiers) }
+            .associate { field ->
+                field.isAccessible = true
+                field.name to (field.get(version)?.toString() ?: "")
+            }
+        val lines = fields.entries.joinToString(",\n") { (key, value) ->
+            "  \"$key\": \"${value.replace("\"", "\\\"")}\""
+        }
+        outputPane.append("{\n$lines\n}")
     }
 
     private fun handleLine(commandText: String, args: String) {

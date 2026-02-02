@@ -56,6 +56,8 @@ import com.github.alfu32.sketch.console.SaveFacade
 import com.github.alfu32.sketch.tui.ConsoleTui
 import com.github.alfu32.sketch.tui.HistoryManager
 import com.github.alfu32.sketch.tui.OutputPane
+import com.github.alfu32.sketch.K3DVersion
+import com.badlogic.gdx.Graphics
 import com.github.alfu32.sketch.plugin.PluginHost
 import com.github.alfu32.sketch.tools.CircleTool
 import com.github.alfu32.sketch.tools.LinearDimensionTool
@@ -109,6 +111,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var groundRenderable: MeshRenderableProvider
     private val selectedFaceColor = Color(1f, 0f, 0f, 0.3f)
     private val selectedLineColor = Color(1f, 0f, 0f, 1f)
+    private val selectedEntityBoxColor = Color(0.2f, 0.7f, 0.95f, 1f)
+    private val editModeBoxColor = Color(1f, 0.6f, 0.2f, 1f)
     private val selectedLineWidth = 8f
     private lateinit var toolController: ToolController
     private lateinit var toolInput: ToolInputProcessor
@@ -495,6 +499,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         )
 
         modelFile = resolveModelFile(startupArgs)
+        updateWindowTitle()
 
         shapeRenderer = ShapeRenderer()
         spriteBatch = SpriteBatch()
@@ -638,6 +643,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         camera.viewportHeight = height.toFloat()
         camera.update()
         uiOverlay.resize(width, height)
+        updateWindowTitle()
     }
 
     override fun dispose() {
@@ -1009,7 +1015,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 "cameraCtl" to cameraFacade,
                 "status" to statusModel,
                 "unit" to unitFacade,
-                "save" to saveFacade
+                "save" to saveFacade,
+                "version" to K3DVersion()
             )
         )
         val terminal = TerminalController()
@@ -1028,6 +1035,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private fun setSaveName(file: java.io.File) {
         modelFile = file.absoluteFile
         statusModel.message = "Save file set to ${modelFile.name}"
+        updateWindowTitle()
     }
 
     private fun openTerminal() {
@@ -1045,6 +1053,39 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         } finally {
             terminal.enterRawMode()
         }
+    }
+
+    private fun updateWindowTitle() {
+        if (!::modelFile.isInitialized) {
+            return
+        }
+        val version = preferVersion(K3DVersion())
+        val totalMax = (Gdx.graphics.width / 8).coerceAtLeast(30)
+        val separator = " | "
+        val pathMax = (totalMax - version.length - separator.length).coerceAtLeast(10)
+        val path = trimMiddle(modelFile.absolutePath, pathMax)
+        Gdx.graphics.setTitle("$version$separator$path")
+    }
+
+    private fun preferVersion(ver: K3DVersion): String {
+        return when {
+            ver.buildVersion.isNotBlank() -> ver.buildVersion
+            ver.buildGitTag.isNotBlank() -> ver.buildGitTag
+            else -> "unknown"
+        }
+    }
+
+    private fun trimMiddle(text: String, maxLength: Int): String {
+        if (text.length <= maxLength) {
+            return text
+        }
+        if (maxLength <= 2) {
+            return text.take(maxLength)
+        }
+        val keep = maxLength - 2
+        val head = (keep + 1) / 2
+        val tail = keep / 2
+        return text.take(head) + ".." + text.takeLast(tail)
     }
 
     private fun drawDraftLines() {
@@ -1338,7 +1379,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun drawSelectionHighlights() {
+        drawSelectedEntityBounds()
         drawGroupSelectionHighlights()
+        drawActiveGroupEditBounds()
     }
 
     private fun runCleanup() {
@@ -1715,9 +1758,114 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
         shapeRenderer.color = selectedLineColor
         groups.forEach { group ->
-            val corners = group.orientedBoundsCorners() ?: return@forEach
+            val corners = group.orientedBoundsCorners(0.05f) ?: return@forEach
             drawWireBox(corners)
         }
+    }
+
+    private fun drawSelectedEntityBounds() {
+        val bounds = computeSelectedEntityBounds() ?: return
+        val expanded = expandBounds(bounds, 0.02f)
+        val corners = cornersFromBounds(expanded)
+        shapeRenderer.color = selectedEntityBoxColor
+        drawWireBox(corners)
+    }
+
+    private fun drawActiveGroupEditBounds() {
+        if (!scene.isEditing()) {
+            return
+        }
+        val group = scene.activeGroup()
+        val corners = group.orientedBoundsCorners(0.08f) ?: return
+        shapeRenderer.color = editModeBoxColor
+        drawWireBox(corners)
+    }
+
+    private fun computeSelectedEntityBounds(): com.badlogic.gdx.math.collision.BoundingBox? {
+        val group = scene.activeGroup()
+        val bounds = com.badlogic.gdx.math.collision.BoundingBox()
+        var hasAny = false
+        scene.selectedGroups().forEach { selectedGroup ->
+            val groupBounds = selectedGroup.worldBounds() ?: return@forEach
+            if (!hasAny) {
+                bounds.set(groupBounds)
+                hasAny = true
+            } else {
+                bounds.ext(groupBounds)
+            }
+        }
+        group.lineStore.getSelected().forEach { segment ->
+            val a = group.toWorld(segment.start)
+            val b = group.toWorld(segment.end)
+            if (!hasAny) {
+                bounds.set(a, a)
+                hasAny = true
+            }
+            bounds.ext(a)
+            bounds.ext(b)
+        }
+        group.faceStore.getSelected().forEach { tri ->
+            val a = group.toWorld(tri.a)
+            val b = group.toWorld(tri.b)
+            val c = group.toWorld(tri.c)
+            if (!hasAny) {
+                bounds.set(a, a)
+                hasAny = true
+            }
+            bounds.ext(a)
+            bounds.ext(b)
+            bounds.ext(c)
+        }
+        group.dimensionStore.getSelected().forEach { dimension ->
+            val start = group.toWorld(dimension.start)
+            val end = group.toWorld(dimension.end)
+            val offsetPoint = group.toWorld(com.badlogic.gdx.math.Vector3(dimension.start).add(dimension.offset))
+            if (!hasAny) {
+                bounds.set(start, start)
+                hasAny = true
+            }
+            bounds.ext(start)
+            bounds.ext(end)
+            bounds.ext(offsetPoint)
+        }
+        group.textStore.getSelected().forEach { text ->
+            val pos = group.toWorld(text.position)
+            if (!hasAny) {
+                bounds.set(pos, pos)
+                hasAny = true
+            }
+            bounds.ext(pos)
+        }
+        return if (hasAny) bounds else null
+    }
+
+    private fun expandBounds(
+        bounds: com.badlogic.gdx.math.collision.BoundingBox,
+        expandRatio: Float
+    ): com.badlogic.gdx.math.collision.BoundingBox {
+        if (expandRatio <= 0f) {
+            return com.badlogic.gdx.math.collision.BoundingBox(bounds)
+        }
+        val center = com.badlogic.gdx.math.Vector3(bounds.min).lerp(bounds.max, 0.5f)
+        val half = com.badlogic.gdx.math.Vector3(bounds.max).sub(bounds.min).scl(0.5f * (1f + expandRatio))
+        val min = com.badlogic.gdx.math.Vector3(center).sub(half)
+        val max = com.badlogic.gdx.math.Vector3(center).add(half)
+        return com.badlogic.gdx.math.collision.BoundingBox(min, max)
+    }
+
+    private fun cornersFromBounds(bounds: com.badlogic.gdx.math.collision.BoundingBox): kotlin.Array<Vector3> {
+        val min = bounds.min
+        val max = bounds.max
+        return arrayOf(
+            Vector3(min.x, min.y, min.z),
+            Vector3(max.x, min.y, min.z),
+            Vector3(max.x, min.y, max.z),
+            Vector3(min.x, min.y, max.z),
+            Vector3(min.x, max.y, min.z),
+            Vector3(max.x, max.y, min.z),
+            Vector3(max.x, max.y, max.z),
+            Vector3(min.x, max.y, max.z)
+        )
     }
 
     private fun drawWireBox(corners: kotlin.Array<Vector3>) {
