@@ -9,13 +9,15 @@ class ConsoleGroovyRuntime(
     appFacade: AppFacade,
     sceneFacade: GroupScene,
     selectionFacade: SelectionFacade,
-    consoleUtils: ConsoleUtils
+    consoleUtils: ConsoleUtils,
+    extraBindings: Map<String, Any?> = emptyMap()
 ) {
     val binding: Binding = Binding().apply {
         setProperty("app", appFacade)
         setProperty("scene", sceneFacade)
         setProperty("selection", selectionFacade)
         setProperty("console", consoleUtils)
+        extraBindings.forEach { (name, value) -> setProperty(name, value) }
     }
     val classLoader: GroovyClassLoader = GroovyClassLoader(javaClass.classLoader)
     val shell: GroovyShell = GroovyShell(classLoader, binding)

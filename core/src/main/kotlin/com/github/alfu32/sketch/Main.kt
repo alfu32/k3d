@@ -44,11 +44,15 @@ import com.github.alfu32.sketch.model.ModelUnit
 import com.github.alfu32.sketch.render.SketchShaderProvider
 import com.github.alfu32.sketch.console.AppFacade
 import com.github.alfu32.sketch.console.ConsoleGroovyRuntime
+import com.github.alfu32.sketch.console.CameraFacade
 import com.github.alfu32.sketch.console.ConsolePaths
 import com.github.alfu32.sketch.console.ConsoleThread
 import com.github.alfu32.sketch.console.ConsoleUtils
+import com.github.alfu32.sketch.console.LightingFacade
 import com.github.alfu32.sketch.console.SelectionFacade
 import com.github.alfu32.sketch.console.TerminalController
+import com.github.alfu32.sketch.console.UnitFacade
+import com.github.alfu32.sketch.console.SaveFacade
 import com.github.alfu32.sketch.tui.ConsoleTui
 import com.github.alfu32.sketch.tui.HistoryManager
 import com.github.alfu32.sketch.tui.OutputPane
@@ -982,9 +986,34 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val consoleUtils = ConsoleUtils(outputPane)
         val appFacade = AppFacade(Gdx.app)
         val selectionFacade = SelectionFacade(scene)
-        val runtime = ConsoleGroovyRuntime(appFacade, scene, selectionFacade, consoleUtils)
+        val unitFacade = UnitFacade({ modelUnit }, ::updateModelUnit)
+        val saveFacade = SaveFacade({ modelFile }, ::setSaveName)
+        val cameraFacade = CameraFacade(camera, cameraTarget) { camera.update() }
+        val lightingFacade = LightingFacade(lightingSettings, shadowSettings) {
+            applyLightingSettings(lightingSettings)
+            applyShadowSettings(shadowSettings)
+            uiOverlay.refreshLightingControls()
+        }
+        val runtime = ConsoleGroovyRuntime(
+            appFacade,
+            scene,
+            selectionFacade,
+            consoleUtils,
+            mapOf(
+                "pluginHost" to pluginHost,
+                "lighting" to lightingSettings,
+                "shadow" to shadowSettings,
+                "lightingCtl" to lightingFacade,
+                "camera" to camera,
+                "cameraTarget" to cameraTarget,
+                "cameraCtl" to cameraFacade,
+                "status" to statusModel,
+                "unit" to unitFacade,
+                "save" to saveFacade
+            )
+        )
         val terminal = TerminalController()
-        val tui = ConsoleTui(runtime, terminal, outputPane, history) {
+        val tui = ConsoleTui(runtime, terminal, outputPane, history, ::openTerminal) {
             consoleThread?.shutdown()
         }
         consoleRuntime = runtime
@@ -994,6 +1023,28 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun shouldStartConsole(): Boolean {
         return System.getProperty("k3d.devConsole") == "true"
+    }
+
+    private fun setSaveName(file: java.io.File) {
+        modelFile = file.absoluteFile
+        statusModel.message = "Save file set to ${modelFile.name}"
+    }
+
+    private fun openTerminal() {
+        val terminal = consoleTerminal ?: return
+        terminal.restore()
+        println("Entering shell. Type 'exit' to return to the K3D console.")
+        val shell = System.getenv("SHELL") ?: "/bin/bash"
+        try {
+            ProcessBuilder(shell)
+                .inheritIO()
+                .start()
+                .waitFor()
+        } catch (_: Exception) {
+            println("Failed to launch shell: $shell")
+        } finally {
+            terminal.enterRawMode()
+        }
     }
 
     private fun drawDraftLines() {

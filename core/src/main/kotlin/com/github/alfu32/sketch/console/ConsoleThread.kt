@@ -18,7 +18,18 @@ class ConsoleThread(
         terminal.enterRawMode()
         try {
             tui.history.loadFromDisk()
-            tui.outputPane.append("Dev console ready. Use app.run { ... } for LibGDX mutations.")
+            tui.outputPane.append(
+                "\n" +
+                "\n" +
+                "\n" +
+                " ██╗  ██╗ ██████╗  ██████╗       ██████╗  ██████╗  ███╗   ██╗ ███████╗  ██████╗  ██╗      ███████╗\n" +
+                    " ██║ ██╔╝ ╚════██╗ ██╔══██╗     ██╔════╝ ██╔═══██╗ ████╗  ██║ ██╔════╝ ██╔═══██╗ ██║      ██╔════╝\n" +
+                    " █████╔╝   █████╔╝ ██║  ██║     ██║      ██║   ██║ ██╔██╗ ██║ ███████╗ ██║   ██║ ██║      █████╗  \n" +
+                    " ██╔═██╗   ╚═══██╗ ██║  ██║     ██║      ██║   ██║ ██║╚██╗██║ ╚════██║ ██║   ██║ ██║      ██╔══╝  \n" +
+                    " ██║  ██╗ ██████╔╝ ██████╔╝     ╚██████╗ ╚██████╔╝ ██║ ╚████║ ███████║ ╚██████╔╝ ███████╗ ███████╗\n" +
+                    " ╚═╝  ╚═╝ ╚═════╝  ╚═════╝       ╚═════╝  ╚═════╝  ╚═╝  ╚═══╝ ╚══════╝  ╚═════╝  ╚══════╝ ╚══════╝"
+            )
+            tui.printHelp()
             tui.render()
             val input = System.`in`
             while (running) {
@@ -52,6 +63,7 @@ class ConsoleThread(
         }
         return when (first) {
             10, 13 -> InputEvent.Key(InputKeys.ENTER, 0)
+            9 -> InputEvent.Key(InputKeys.TAB, 0)
             127, 8 -> InputEvent.Key(InputKeys.BACKSPACE, 0)
             27 -> parseEscapeSequence(input)
             else -> {

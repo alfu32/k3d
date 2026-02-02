@@ -6,6 +6,7 @@ sealed class InputEvent {
 }
 
 object InputKeys {
+    const val TAB = -13
     const val ENTER = -1
     const val BACKSPACE = -2
     const val DELETE = -3

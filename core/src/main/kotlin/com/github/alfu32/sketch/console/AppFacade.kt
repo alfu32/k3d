@@ -8,4 +8,8 @@ class AppFacade(
     fun run(block: () -> Unit) {
         application.postRunnable(block)
     }
+
+    fun exit() {
+        application.exit()
+    }
 }

@@ -8,7 +8,8 @@ class OutputPane(
 
     @Synchronized
     fun append(text: String) {
-        val newLines = text.split("\n")
+        val normalized = text.replace("\r\n", "\n").replace("\r", "")
+        val newLines = normalized.split("\n")
         lines.addAll(newLines)
         if (scrollOffset > 0) {
             scrollOffset += newLines.size

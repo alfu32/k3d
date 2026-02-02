@@ -47,6 +47,8 @@ class HistoryManager(
         index = -1
     }
 
+    fun entries(): List<String> = entries.toList()
+
     fun loadFromDisk() {
         if (!file.exists()) {
             return
