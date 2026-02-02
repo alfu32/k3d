@@ -97,7 +97,20 @@ TODO: Replace with a distance input screenshot.
 TODO: Replace with an objects panel screenshot.
 
 ## Built-in tools
+### Built-in console
 
+after launching the application ( the jar basically ).
+the console exposes a chromium like dev console that allows you to draw, inspect and manage the model through text commands.
+the console is basically a  groovy scripting console that has extra metacommands built in, type :help to list them, type :examples to 
+list examples.
+
+you can also manipulate the model or draw on the model with either model commands or meta commands.
+
+plugins can also provide their own command line interface aliases
+
+
+![img_2.png](docs/img_2.png)
+![img_3.png](docs/img_3.png)
 ### Select
 - Default tool.
 - Supports click, window, and volume selection.

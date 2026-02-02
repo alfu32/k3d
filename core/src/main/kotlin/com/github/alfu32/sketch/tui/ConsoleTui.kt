@@ -44,6 +44,10 @@ class ConsoleTui(
             val line = outputLines.getOrNull(i) ?: ""
             builder.append(padLine(line, width)).append('\n')
         }
+        builder.append("""
+            █▄▀ ▀▀█ █▀▄   █▀▀ █▀█ █▄ █ █▀▀ █▀█ █   █▀▀
+            █ █ ▄██ █▄▀   █▄▄ █▄█ █ ▀█ ▄▄█ █▄█ █▄▄ ██▄
+        """.trimIndent()).append('\n')
         builder.append("-".repeat(width)).append('\n')
 
         val lines = editorPane.lines()
@@ -294,12 +298,6 @@ class ConsoleTui(
     fun printHelp() {
         outputPane.append(
             """
-
-
-
-
-             █▄▀ ▀▀█ █▀▄   █▀▀ █▀█ █▄ █ █▀▀ █▀█ █   █▀▀
-             █ █ ▄██ █▄▀   █▄▄ █▄█ █ ▀█ ▄▄█ █▄█ █▄▄ ██▄
 
             Console commands:
                   :help                 Show this help
