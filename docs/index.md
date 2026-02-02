@@ -8,11 +8,11 @@ K3D is a Kotlin + libGDX desktop modeler for fast, direct 3D sketching. It focus
 
 ## Start here
 
-- User Manual: `USER_MANUAL.md`
-- Shortcuts: `SHORTCUTS.md`
-- Plugin Development: `PLUGIN_DEVELOPMENT.md`
-- Privacy Policy: `PRIVACY_POLICY.md`
-- License: `LICENSE.md`
+- User Manual: [`USER_MANUAL.md`](USER_MANUAL.md)
+- Shortcuts: [`SHORTCUTS.md`](SHORTCUTS.md)
+- Plugin Development: [`PLUGIN_DEVELOPMENT.md`](PLUGIN_DEVELOPMENT.md)
+- Privacy Policy: [`PRIVACY_POLICY.md`](PRIVACY_POLICY.md)
+- License: [`LICENSE.md`](LICENSE.md)
 
 ## Highlights
 
@@ -48,12 +48,12 @@ https://github.com/alfu32/k3d/releases
 
 ## Specifications
 
-- `specification/SPEC.md`
-- `specification/SPEC.ARCH.md`
-- `specification/SPEC.grid.md`
-- `specification/SPEC.group.md`
-- `specification/SPEC.lighting.md`
-- `specification/ROADMAP.md`
+- [`specification/SPEC.md`](specification/SPEC.md)
+- [`specification/SPEC.ARCH.md`](specification/SPEC.ARCH.md)
+- [`specification/SPEC.grid.md`](specification/SPEC.grid.md)
+- [`specification/SPEC.group.md`](specification/SPEC.group.md)
+- [`specification/SPEC.lighting.md`](specification/SPEC.lighting.md)
+- [`specification/ROADMAP.md`](specification/ROADMAP.md)
 
 ## Status
 

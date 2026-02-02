@@ -87,10 +87,10 @@ help                                     Show help
 
 ## Documentation
 
-- User manual: `docs/USER_MANUAL.md`
-- Shortcuts: `SHORTCUTS.md`
-- Plugin development: `docs/PLUGIN_DEVELOPMENT.md`
-- Specs: `docs/specification/`
+- User manual: [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md)
+- Shortcuts: [`SHORTCUTS.md`](SHORTCUTS.md)
+- Plugin development: [`docs/PLUGIN_DEVELOPMENT.md`](docs/PLUGIN_DEVELOPMENT.md)
+- Specs: [`docs/specification/`](docs/specification/)
 
 ## Status
 
