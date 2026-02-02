@@ -152,6 +152,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private var consoleThread: ConsoleThread? = null
     private var consoleRuntime: ConsoleGroovyRuntime? = null
     private var consoleTerminal: TerminalController? = null
+    private lateinit var undoManager: com.github.alfu32.sketch.model.UndoRedoManager
+    private var restoringSnapshot = false
 
     override fun create() {
         if (!VisUI.isLoaded()) {
@@ -219,6 +221,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             cleanupAction = ::runCleanup,
             clearSelectionAction = ::clearSelection,
             deleteSelectionAction = ::deleteSelection,
+            undoAction = ::undoAction,
+            redoAction = ::redoAction,
             groupSelectionAction = ::groupSelection,
             objectPrototypeSelectionAction = ::objectPrototypeSelection,
             ungroupSelectionAction = ::ungroupSelection,
@@ -505,11 +509,12 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         spriteBatch = SpriteBatch()
         textFont = loadTextFont()
         setupLighting()
+        setupUndoManager()
         loadModel()
         applyLightingSettings(lightingSettings)
         applyShadowSettings(shadowSettings)
         uiOverlay.refreshLightingControls()
-        scene.setChangeListener { saveModel() }
+        scene.setChangeListener { onModelChanged() }
         pluginHost.loadCatalog()
         pluginHost.reloadEnabledAndInit()
         uiOverlay.refreshPluginPanels()
@@ -550,6 +555,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         if (distanceInputActive) {
             uiOverlay.updateDistancePopupHover(Gdx.input.x, Gdx.input.y)
         }
+        undoManager.update()
         pluginHost.dispatchUpdate(Gdx.graphics.deltaTime)
         toolController.update(Gdx.graphics.deltaTime)
 
@@ -893,23 +899,28 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun updateDistanceInput(text: String) {
-        val anchor = statusModel.anchorWorld ?: return
-        val snap = lastSnap ?: return
-        val cursor = snap.world ?: return
-        if (text.isBlank()) {
+        try {
+            val anchor = statusModel.anchorWorld ?: return
+            val snap = lastSnap ?: return
+            val cursor = snap.world ?: return
+            if (text.isBlank()) {
+                distanceOverrideSnap = null
+                return
+            }
+            val distance = parseDistanceExpression(text) ?: return
+            val direction = Vector3(cursor).sub(anchor)
+            if (direction.len2() <= 1e-6f) {
+                return
+            }
+            direction.nor()
+            val point = Vector3(anchor).mulAdd(direction, distance.toFloat())
+            val normal = snap.normal ?: Vector3(0f, 1f, 0f)
+            distanceOverrideSnap = SnapResult(point, normal, snap.type, snap.screenX, snap.screenY, true)
+            toolController.pointerMoved(point, normal, true)
+        } catch (_: Exception) {
             distanceOverrideSnap = null
-            return
+            statusModel.message = "Distance input error."
         }
-        val distance = parseDistanceExpression(text) ?: return
-        val direction = Vector3(cursor).sub(anchor)
-        if (direction.len2() <= 1e-6f) {
-            return
-        }
-        direction.nor()
-        val point = Vector3(anchor).mulAdd(direction, distance.toFloat())
-        val normal = snap.normal ?: Vector3(0f, 1f, 0f)
-        distanceOverrideSnap = SnapResult(point, normal, snap.type, snap.screenX, snap.screenY, true)
-        toolController.pointerMoved(point, normal, true)
     }
 
     private fun commitDistanceInput(text: String) {
@@ -1384,6 +1395,63 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         drawActiveGroupEditBounds()
     }
 
+    private fun setupUndoManager() {
+        undoManager = com.github.alfu32.sketch.model.UndoRedoManager(
+            snapshotProvider = { snapshotForUndo() },
+            applySnapshot = { snapshot -> applyUndoSnapshot(snapshot) },
+            onSnapshotApplied = {
+                uiOverlay.refreshLightingControls()
+                updateWindowTitle()
+            }
+        )
+    }
+
+    private fun snapshotForUndo(): ModelPersistence.ModelSnapshot {
+        return ModelPersistence.snapshot(
+            scene,
+            camera,
+            cameraTarget,
+            lightingSettings,
+            shadowSettings,
+            modelUnit,
+            snapEpsilon,
+            gridSpacing
+        ).apply {
+            undoHistory = null
+        }
+    }
+
+    private fun applyUndoSnapshot(snapshot: ModelPersistence.ModelSnapshot) {
+        restoringSnapshot = true
+        try {
+            ModelPersistence.applySnapshot(
+                snapshot,
+                scene,
+                camera,
+                cameraTarget,
+                lightingSettings,
+                shadowSettings,
+                modelUnit,
+                { value -> applySnapEpsilon(value, false) },
+                { value -> applyGridSpacing(value, false) }
+            )
+            scene.applyChangeListenerToAll()
+            applyLightingSettings(lightingSettings)
+            applyShadowSettings(shadowSettings)
+            cameraController.target.set(cameraTarget)
+        } finally {
+            restoringSnapshot = false
+        }
+    }
+
+    private fun onModelChanged() {
+        if (restoringSnapshot) {
+            return
+        }
+        undoManager.markChanged()
+        saveModel()
+    }
+
     private fun runCleanup() {
         val startEdges = totalEdgeCount()
         val startFaces = totalFaceCount()
@@ -1392,7 +1460,26 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val endEdges = totalEdgeCount()
         val endFaces = totalFaceCount()
         statusModel.message = "Cleanup done | edges $endEdges faces $endFaces"
+        undoManager.commit("Cleanup")
         saveModel()
+    }
+
+    private fun undoAction() {
+        if (undoManager.undo()) {
+            statusModel.message = "Undo."
+            saveModel()
+        } else {
+            statusModel.message = "Nothing to undo."
+        }
+    }
+
+    private fun redoAction() {
+        if (undoManager.redo()) {
+            statusModel.message = "Redo."
+            saveModel()
+        } else {
+            statusModel.message = "Nothing to redo."
+        }
     }
 
     private fun clearSelection() {
@@ -1410,6 +1497,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             statusModel.message =
                 "Deleted | edges $edges faces $faces dimensions $dimensions texts $texts groups $groups"
             if (groups > 0 && edges + faces == 0) {
+                undoManager.commit("Delete")
                 saveModel()
             }
         }
@@ -1419,6 +1507,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val flipped = activeFaceStore().flipSelected()
         if (flipped > 0) {
             statusModel.message = "Flipped faces: $flipped"
+            undoManager.commit("Flip Faces")
+            saveModel()
         }
     }
 
@@ -1432,7 +1522,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             shadowSettings,
             modelUnit,
             snapEpsilon,
-            gridSpacing
+            gridSpacing,
+            undoManager.exportHistory()
         )
         if (::pluginHost.isInitialized) {
             pluginHost.dispatchSave()
@@ -1455,6 +1546,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 { value -> applyGridSpacing(value, false) }
             )
             scene.applyChangeListenerToAll()
+            val history = result.snapshot?.undoHistory
+            undoManager.importHistory(history)
+            if (history == null || history.entries.isEmpty()) {
+                undoManager.reset("Loaded")
+            }
             if (result.ok && result.needsResave) {
                 ModelPersistence.save(
                     modelFile,
@@ -1465,12 +1561,14 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                     shadowSettings,
                     modelUnit,
                     snapEpsilon,
-                    gridSpacing
+                    gridSpacing,
+                    undoManager.exportHistory()
                 )
             }
             cameraController.target.set(cameraTarget)
             statusModel.message = "Loaded ${modelFile.name}"
         } else {
+            undoManager.reset("Created")
             saveModel()
             statusModel.message = "Created ${modelFile.name}"
         }
@@ -1577,6 +1675,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         if (name.isNotBlank() && name != target.name) {
             target.name = name
             statusModel.message = "Object renamed."
+            undoManager.commit("Rename Object")
             saveModel()
         }
     }
@@ -1586,6 +1685,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         if (target.gluedToSurface != glued) {
             target.gluedToSurface = glued
             statusModel.message = if (glued) "Object glue enabled." else "Object glue disabled."
+            undoManager.commit("Toggle Glue")
             saveModel()
         }
     }
@@ -1607,6 +1707,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val created = scene.createGroupFromSelection()
         if (created != null) {
             statusModel.message = "Object created."
+            undoManager.commit("Create Object")
             saveModel()
         }
     }
@@ -1649,6 +1750,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private fun deleteObjectPrototype(prototypeId: String) {
         if (scene.deletePrototype(prototypeId)) {
             statusModel.message = "Object prototype deleted."
+            undoManager.commit("Delete Prototype")
             saveModel()
         } else {
             statusModel.message = "Cannot delete: object has instances."
@@ -1666,6 +1768,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         modelUnit.name = name
         modelUnit.size = size
         statusModel.message = "Model unit updated."
+        undoManager.markChanged()
         saveModel()
     }
 
@@ -1676,6 +1779,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         snapEpsilon = value
         snapper.snapPixels = value
         if (save) {
+            undoManager.markChanged()
             saveModel()
         }
     }
@@ -1692,6 +1796,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         gridSpacing = next
         snapper.gridSpacing = next
         if (save) {
+            undoManager.markChanged()
             saveModel()
         }
     }
@@ -1704,6 +1809,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val count = scene.ungroupSelected()
         if (count > 0) {
             statusModel.message = "Ungrouped $count group(s)."
+            undoManager.commit("Ungroup")
             saveModel()
         }
     }
@@ -1938,6 +2044,17 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun applyLightingSettings(settings: LightingSettings) {
+        val changed = shadowLightValue != settings.shadowLightValue ||
+            shadowLightAlpha != settings.shadowLightAlpha ||
+            directionalLightValue != settings.directionalLightValue ||
+            directionalLightAlpha != settings.directionalLightAlpha ||
+            ambientLightValue != settings.ambientLightValue ||
+            ambientLightAlpha != settings.ambientLightAlpha ||
+            specularLightValue != settings.specularLightValue ||
+            specularLightAlpha != settings.specularLightAlpha
+        if (!changed) {
+            return
+        }
         shadowLightValue = settings.shadowLightValue
         shadowLightAlpha = settings.shadowLightAlpha
         directionalLightValue = settings.directionalLightValue
@@ -1947,14 +2064,30 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         specularLightValue = settings.specularLightValue
         specularLightAlpha = settings.specularLightAlpha
         updateLighting()
+        if (!restoringSnapshot) {
+            undoManager.markChanged()
+            saveModel()
+        }
     }
 
     private fun applyShadowSettings(settings: ShadowSettings) {
+        val changed = shadowBias != settings.shadowBias ||
+            shadowNormalBias != settings.shadowNormalBias ||
+            shadowPcfMode != settings.pcfMode ||
+            shadowDither != settings.dither ||
+            shadowUseCsm != settings.useCsm
+        if (!changed) {
+            return
+        }
         shadowBias = settings.shadowBias
         shadowNormalBias = settings.shadowNormalBias
         shadowPcfMode = settings.pcfMode
         shadowDither = settings.dither
         shadowUseCsm = settings.useCsm
+        if (!restoringSnapshot) {
+            undoManager.markChanged()
+            saveModel()
+        }
     }
 
     private fun updateLighting() {

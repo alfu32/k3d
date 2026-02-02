@@ -262,15 +262,24 @@ class SketchUiOverlay(
         distanceCancelHandler = onCancel
         val popup = distancePopup ?: return
         val field = distanceField ?: return
-        field.text = text
-        field.selectAll()
+        val wasVisible = popup.isVisible
+        if (!wasVisible) {
+            if (text.isNotBlank()) {
+                field.text = text
+                field.selectAll()
+            } else {
+                field.text = ""
+            }
+        }
         popup.pack()
         val stageCoords = stage.screenToStageCoordinates(com.badlogic.gdx.math.Vector2(screenX.toFloat(), screenY.toFloat()))
         popup.setPosition(stageCoords.x, stageCoords.y)
         popup.isVisible = true
         stage.keyboardFocus = field
         stage.scrollFocus = field
-        distanceChangeHandler?.invoke(field.text)
+        if (!wasVisible && field.text.isNotBlank()) {
+            distanceChangeHandler?.invoke(field.text)
+        }
     }
 
     fun hideDistancePopup(cancel: Boolean) {

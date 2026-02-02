@@ -30,6 +30,7 @@ K3D is a Kotlin + libGDX desktop modeler for fast, direct 3D sketching. It focus
 - Double-click groups to enter edit mode; double-click faces for coplanar selection; triple-click for connected geometry.
 - Snap to grid intersections/lines, endpoints, midpoints, line segments, faces, and guides.
 - Guides: `G` for grid guides, `T` for axis guides (Esc clears guides in Select mode).
+- Undo/redo: `Ctrl+Z` / `Ctrl+Y` (or `Ctrl+Shift+Z`).
 
 ## Objects (groups and prototypes)
 
@@ -53,6 +54,7 @@ edit --file path/to/model.k3d
 ```
 
 Inside the console, type `:help` and `:examples` for meta commands and snippets. Use `app.run { ... }` to mutate the model safely.
+Use `:perf` to print memory, disk, thread, and CPU stats.
 
 ## Files and autosave
 

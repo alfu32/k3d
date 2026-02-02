@@ -385,7 +385,8 @@ class PluginHost(
             shadow,
             getModelUnit(),
             getSnapEpsilon(),
-            getGridSpacing()
+            getGridSpacing(),
+            null
         )
         val selection = buildSelectionSnapshot()
         val snap = getCursorSnap()

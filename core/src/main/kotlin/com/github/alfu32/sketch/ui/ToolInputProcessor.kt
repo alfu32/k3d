@@ -13,6 +13,8 @@ class ToolInputProcessor(
     private val cleanupAction: () -> Unit,
     private val clearSelectionAction: () -> Unit,
     private val deleteSelectionAction: () -> Unit,
+    private val undoAction: () -> Unit,
+    private val redoAction: () -> Unit,
     private val groupSelectionAction: () -> Unit,
     private val objectPrototypeSelectionAction: () -> Unit,
     private val ungroupSelectionAction: () -> Unit,
@@ -31,6 +33,28 @@ class ToolInputProcessor(
         when (keycode) {
             Input.Keys.CONTROL_LEFT, Input.Keys.CONTROL_RIGHT -> {
                 if (controller.toggleCopyMode()) {
+                    return true
+                }
+            }
+            Input.Keys.Z -> {
+                val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
+                    Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+                val shift = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) ||
+                    Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT)
+                if (ctrl && shift) {
+                    redoAction()
+                    return true
+                }
+                if (ctrl) {
+                    undoAction()
+                    return true
+                }
+            }
+            Input.Keys.Y -> {
+                val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
+                    Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+                if (ctrl) {
+                    redoAction()
                     return true
                 }
             }

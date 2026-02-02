@@ -3,7 +3,9 @@ package com.github.alfu32.sketch.tui
 import com.github.alfu32.sketch.console.ConsoleGroovyRuntime
 import com.github.alfu32.sketch.console.TerminalController
 import org.codehaus.groovy.control.MultipleCompilationErrorsException
+import java.io.File
 import java.io.StringWriter
+import java.lang.management.ManagementFactory
 import java.util.Locale
 
 class ConsoleTui(
@@ -212,6 +214,10 @@ class ConsoleTui(
                 handleHistory()
                 true
             }
+            ":perf" -> {
+                handlePerf()
+                true
+            }
             else -> {
                 return handleMetaCommandWithArgs(trimmed)
             }
@@ -299,6 +305,60 @@ class ConsoleTui(
         outputPane.append(lines.joinToString("\n"))
     }
 
+    private fun handlePerf() {
+        val runtime = Runtime.getRuntime()
+        val usedMem = runtime.totalMemory() - runtime.freeMemory()
+        val totalMem = runtime.totalMemory()
+        val maxMem = runtime.maxMemory()
+        val heapInfo = "Memory (heap): ${formatBytes(usedMem)} used / ${formatBytes(totalMem)} total / ${formatBytes(maxMem)} max"
+
+        val osBean = ManagementFactory.getOperatingSystemMXBean()
+        val cpuInfo = buildCpuInfo(osBean)
+
+        val threadBean = ManagementFactory.getThreadMXBean()
+        val threadInfo = "Threads: ${threadBean.threadCount} live / ${threadBean.peakThreadCount} peak"
+
+        val userDir = System.getProperty("user.dir") ?: "."
+        val disk = File(userDir)
+        val diskInfo = "Disk ($userDir): ${formatBytes(disk.usableSpace)} usable / ${formatBytes(disk.totalSpace)} total"
+
+        outputPane.append(listOf(heapInfo, cpuInfo, threadInfo, diskInfo).joinToString("\n"))
+    }
+
+    private fun buildCpuInfo(osBean: java.lang.management.OperatingSystemMXBean): String {
+        val processors = osBean.availableProcessors
+        val systemLoad = osBean.systemLoadAverage
+        val extra = if (osBean is com.sun.management.OperatingSystemMXBean) {
+            val processLoad = osBean.processCpuLoad
+            val systemCpu = osBean.systemCpuLoad
+            val parts = mutableListOf<String>()
+            if (processLoad >= 0.0) {
+                parts.add("process ${(processLoad * 100.0).formatPercent()}")
+            }
+            if (systemCpu >= 0.0) {
+                parts.add("system ${(systemCpu * 100.0).formatPercent()}")
+            }
+            if (parts.isNotEmpty()) " (${parts.joinToString(", ")})" else ""
+        } else {
+            ""
+        }
+        val loadText = if (systemLoad >= 0.0) String.format(Locale.US, "%.2f", systemLoad) else "n/a"
+        return "CPU: $processors cores, load $loadText$extra"
+    }
+
+    private fun formatBytes(value: Long): String {
+        val unit = 1024.0
+        if (value < unit) {
+            return "$value B"
+        }
+        val exp = (kotlin.math.log(value.toDouble()) / kotlin.math.log(unit)).toInt()
+        val prefix = "KMGTPE"[exp - 1]
+        val scaled = value / kotlin.math.pow(unit, exp.toDouble())
+        return String.format(Locale.US, "%.2f %sB", scaled, prefix)
+    }
+
+    private fun Double.formatPercent(): String = String.format(Locale.US, "%.1f%%", this)
+
     fun printHelp() {
         outputPane.append(
             """
@@ -310,6 +370,7 @@ class ConsoleTui(
                   :examples             Show example snippets
                   :version / :ver / :v  Show version info
                   :history / :hist      Show history
+                  :perf                 Show performance stats
                   :objects              List top-level objects
                   :list / :ls [name]    List fields/methods
                   :line / :l x,z[,y] .. Draw polyline

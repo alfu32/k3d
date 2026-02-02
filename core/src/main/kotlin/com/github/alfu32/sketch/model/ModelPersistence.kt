@@ -4,7 +4,12 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.utils.Json
 import com.badlogic.gdx.utils.JsonWriter
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.Base64
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 
 object ModelPersistence {
     private const val VERSION = 8
@@ -18,9 +23,10 @@ object ModelPersistence {
         shadow: com.github.alfu32.sketch.ui.ShadowSettings,
         modelUnit: ModelUnit,
         snapEpsilon: Float,
-        gridSpacing: Float
+        gridSpacing: Float,
+        undoHistory: UndoHistoryDto? = null
     ) {
-        val snapshot = snapshot(scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilon, gridSpacing)
+        val snapshot = snapshot(scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilon, gridSpacing, undoHistory)
         val json = Json().apply {
             setOutputType(JsonWriter.OutputType.json)
         }
@@ -37,7 +43,8 @@ object ModelPersistence {
         shadow: com.github.alfu32.sketch.ui.ShadowSettings,
         modelUnit: ModelUnit,
         snapEpsilon: Float,
-        gridSpacing: Float
+        gridSpacing: Float,
+        undoHistory: UndoHistoryDto? = null
     ): ModelSnapshot {
         return ModelSnapshot().apply {
             version = VERSION
@@ -49,10 +56,11 @@ object ModelPersistence {
             this.modelUnit = ModelUnitDto(modelUnit)
             this.snapEpsilon = snapEpsilon
             this.gridSpacing = gridSpacing
+            this.undoHistory = undoHistory
         }
     }
 
-    data class LoadResult(val ok: Boolean, val needsResave: Boolean)
+    data class LoadResult(val ok: Boolean, val needsResave: Boolean, val snapshot: ModelSnapshot? = null)
 
     fun load(
         file: File,
@@ -87,7 +95,7 @@ object ModelPersistence {
             snapshot.modelUnit == null ||
             snapshot.snapEpsilon == null ||
             snapshot.gridSpacing == null
-        return LoadResult(true, needsResave)
+        return LoadResult(true, needsResave, snapshot)
     }
 
     fun applySnapshot(
@@ -204,6 +212,19 @@ object ModelPersistence {
         var modelUnit: ModelUnitDto? = null
         var snapEpsilon: Float? = null
         var gridSpacing: Float? = null
+        var undoHistory: UndoHistoryDto? = null
+    }
+
+    class UndoHistoryDto {
+        var maxEntries: Int = 0
+        var index: Int = -1
+        var entries: MutableList<UndoEntryDto> = mutableListOf()
+    }
+
+    class UndoEntryDto {
+        var data: String = ""
+        var label: String? = null
+        var timestamp: Long = 0L
     }
 
     class ModelUnitDto() {
@@ -698,5 +719,27 @@ object ModelPersistence {
     private fun registerLegacyPrototypes(scene: GroupScene, group: GroupScene.GroupNode) {
         scene.registerPrototypeForLoad(group.prototype)
         group.children.forEach { child -> registerLegacyPrototypes(scene, child) }
+    }
+
+    fun encodeSnapshot(snapshot: ModelSnapshot): String {
+        val json = Json().apply {
+            setOutputType(JsonWriter.OutputType.json)
+        }
+        val text = json.toJson(snapshot)
+        val output = ByteArrayOutputStream()
+        GZIPOutputStream(output).use { stream ->
+            stream.write(text.toByteArray(Charsets.UTF_8))
+        }
+        return Base64.getEncoder().encodeToString(output.toByteArray())
+    }
+
+    fun decodeSnapshot(encoded: String): ModelSnapshot? {
+        return try {
+            val decoded = Base64.getDecoder().decode(encoded)
+            val text = GZIPInputStream(ByteArrayInputStream(decoded)).bufferedReader().readText()
+            Json().fromJson(ModelSnapshot::class.java, text)
+        } catch (_: Exception) {
+            null
+        }
     }
 }

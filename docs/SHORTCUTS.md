@@ -8,6 +8,8 @@ This is a quick reference for keyboard and mouse shortcuts.
 - `Delete`: Delete selection.
 - `Backspace`: Clear current numeric input buffer.
 - `Enter`: Commit current numeric input buffer.
+- `Ctrl+Z`: Undo.
+- `Ctrl+Y` or `Ctrl+Shift+Z`: Redo.
 
 ## Camera navigation
 - Right mouse drag: Orbit.

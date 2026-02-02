@@ -61,6 +61,7 @@ You can also pass a `.k3d` path directly (the launcher converts it into `--file`
 - Right panels: selection, object info, objects list, model settings, lighting, plugins.
 - Status bar: current tool, status message, snap info, cursor, and numeric input.
 - Command palette: search and run tools and commands (`Ctrl+Shift+P`).
+- Undo/Redo: `Ctrl+Z` / `Ctrl+Y` (or `Ctrl+Shift+Z`).
 
 Panels are collapsible: double-click a panel title bar to toggle its content.
 Click inside the viewport to restore focus if keyboard shortcuts appear to be ignored.
@@ -323,6 +324,7 @@ Common meta commands:
 - `:help` / `:examples`
 - `:exit` to quit the app
 - `:history` to list prior commands
+- `:perf` to show memory, disk, threads, and CPU stats
 - `:objects` to list top-level objects
 - `:list` to inspect bound variables
 - `:line`, `:poly`, `:circle` to draw geometry
