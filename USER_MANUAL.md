@@ -342,7 +342,7 @@ K3D loads Groovy plugins from the plugins folder at startup and via the Plugin M
 
 - Use the Plugin Manager to add, download, enable/disable, and reload plugins.
 - Plugin tools appear in the toolbar and command palette.
-- For development details, see `docs/PLUGIN_DEVELOPMENT.md`.
+- For development details, see [`docs/PLUGIN_DEVELOPMENT.md`](docs/PLUGIN_DEVELOPMENT.md).
 
 ## Tips and troubleshooting
 
@@ -351,4 +351,4 @@ K3D loads Groovy plugins from the plugins folder at startup and via the Plugin M
 - If guides clutter the view, press `Esc` in Select mode to clear them.
 - If a plugin fails to load, open Plugin Manager and read the error log.
 
-For keyboard shortcuts, see `SHORTCUTS.md`.
+For keyboard shortcuts, see [`SHORTCUTS.md`](SHORTCUTS.md).
