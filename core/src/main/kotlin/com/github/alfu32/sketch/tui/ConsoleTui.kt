@@ -7,6 +7,7 @@ import java.io.File
 import java.io.StringWriter
 import java.lang.management.ManagementFactory
 import java.util.Locale
+import kotlin.math.ln
 
 class ConsoleTui(
     private val runtime: ConsoleGroovyRuntime,
@@ -351,9 +352,9 @@ class ConsoleTui(
         if (value < unit) {
             return "$value B"
         }
-        val exp = (kotlin.math.log(value.toDouble()) / kotlin.math.log(unit)).toInt()
+        val exp = (ln(value.toDouble()) / ln(unit)).toInt()
         val prefix = "KMGTPE"[exp - 1]
-        val scaled = value / kotlin.math.pow(unit, exp.toDouble())
+        val scaled = value / Math.pow(unit, exp.toDouble())
         return String.format(Locale.US, "%.2f %sB", scaled, prefix)
     }
 
