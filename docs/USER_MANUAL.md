@@ -2,7 +2,7 @@
 
 This manual covers installation, navigation, selection, tools, panels, and workflows for K3D.
 
-![Screenshot placeholder: Main UI](images/img_4.png)
+![Screenshot placeholder: Main UI](images/img_2.png)
 
 ## Installation and launch
 
@@ -52,8 +52,6 @@ You can also pass a `.k3d` path directly (the launcher converts it into `--file`
 - K3D autosaves whenever geometry or settings change.
 - Model files store: geometry, objects, camera, lighting, shadow settings, units, snap radius, and grid spacing.
 
-![Screenshot placeholder: File + autosave](images/img_5.png)
-
 ## UI overview
 
 - Viewport: the 3D drawing surface.
@@ -66,7 +64,7 @@ You can also pass a `.k3d` path directly (the launcher converts it into `--file`
 Panels are collapsible: double-click a panel title bar to toggle its content.
 Click inside the viewport to restore focus if keyboard shortcuts appear to be ignored.
 
-![Screenshot placeholder: Panels](images/img_6.png)
+![Screenshot placeholder: Panels](images/img_3.png)
 
 ## Navigation (camera)
 
