@@ -25,6 +25,8 @@ import com.kotcrab.vis.ui.widget.VisTextField
 import com.kotcrab.vis.ui.widget.color.ColorPicker
 import com.kotcrab.vis.ui.widget.color.ColorPickerListener
 import com.github.alfu32.sketch.plugin.PluginHost
+import com.github.alfu32.sketch.plugin.capabilities.PanelPosition
+import com.github.alfu32.sketch.plugin.capabilities.PluginPanel
 import java.util.Locale
 
 class SketchUiOverlay(
@@ -115,6 +117,8 @@ class SketchUiOverlay(
     private val buttonLabels = mutableMapOf<VisImageTextButton, String>()
     private val pluginToolButtons = mutableMapOf<String, VisImageTextButton>()
     private val pluginToolbars = mutableMapOf<String, CollapsibleWindow>()
+    private val pluginPanels = mutableMapOf<String, CollapsibleWindow>()
+    private val pluginPanelPositions = mutableMapOf<String, PanelPosition>()
     private var pluginTooltip: CollapsibleWindow? = null
     private val hoveredButtons = mutableSetOf<VisImageTextButton>()
     private val iconTextures = mutableListOf<Texture>()
@@ -467,6 +471,7 @@ class SketchUiOverlay(
     fun refreshPluginPanels() {
         pluginManagerPanel?.refresh(force = true)
         commandPaletteUI?.refreshList()
+        rebuildPluginPanels()
     }
 
     fun dispose() {
@@ -1011,6 +1016,12 @@ class SketchUiOverlay(
             val y = height - 12f - window.height - (idx * (window.height + 8f))
             window.setPosition(12f, y)
         }
+        val rightPanels = pluginPanels.filter { pluginPanelPositions[it.key] == PanelPosition.RIGHT && it.value.isVisible }
+        positionPanelStack(rightPanels.values.toList(), 12f, 8f, 6f)
+        val leftPanels = pluginPanels.filter { pluginPanelPositions[it.key] == PanelPosition.LEFT && it.value.isVisible }
+        positionPanelStackLeft(leftPanels.values.toList(), 12f, 8f, 6f)
+        val bottomPanels = pluginPanels.filter { pluginPanelPositions[it.key] == PanelPosition.BOTTOM && it.value.isVisible }
+        positionPanelStackBottom(bottomPanels.values.toList(), 12f, 12f, 6f)
     }
 
     private fun positionPanelStack(
@@ -1032,6 +1043,78 @@ class SketchUiOverlay(
             panel.setPosition(width - rightPadding - panelWidth, y - panelHeight)
             y -= panelHeight + gap
         }
+    }
+
+    private fun positionPanelStackLeft(
+        panels: List<CollapsibleWindow>,
+        leftPadding: Float,
+        topPadding: Float,
+        gap: Float
+    ) {
+        val height = if (stage.viewport.screenHeight > 0) stage.viewport.screenHeight.toFloat() else Gdx.graphics.height.toFloat()
+        var y = height - topPadding
+        panels.forEach { panel ->
+            if (!panel.isVisible) {
+                return@forEach
+            }
+            panel.pack()
+            val panelHeight = panel.height
+            panel.setPosition(leftPadding, y - panelHeight)
+            y -= panelHeight + gap
+        }
+    }
+
+    private fun positionPanelStackBottom(
+        panels: List<CollapsibleWindow>,
+        leftPadding: Float,
+        bottomPadding: Float,
+        gap: Float
+    ) {
+        var x = leftPadding
+        panels.forEach { panel ->
+            if (!panel.isVisible) {
+                return@forEach
+            }
+            panel.pack()
+            panel.setPosition(x, bottomPadding)
+            x += panel.width + gap
+        }
+    }
+
+    private fun rebuildPluginPanels() {
+        val host = pluginHost ?: return
+        val entries = host.pluginUiElements()
+        val panels = entries.mapNotNull { entry ->
+            val panel = entry.element as? PluginPanel ?: return@mapNotNull null
+            Triple("${entry.pluginId}.${panel.id}", panel, entry)
+        }
+        pluginPanels.values.forEach { it.remove() }
+        pluginPanels.clear()
+        pluginPanelPositions.clear()
+        panels.forEach { (panelId, panel, _) ->
+            val window = CollapsibleWindow(panel.title)
+            val content = panel.creator(host.pluginContext())
+            window.add(content).grow()
+            window.pack()
+            if (panel.width > 0f || panel.height > 0f) {
+                val width = if (panel.width > 0f) panel.width else window.width
+                val height = if (panel.height > 0f) panel.height else window.height
+                window.setSize(width, height)
+            }
+            window.isVisible = false
+            stage.addActor(window)
+            pluginPanels[panelId] = window
+            pluginPanelPositions[panelId] = panel.position
+        }
+        pluginPanelsPositioned = false
+    }
+
+    fun showPluginPanel(panelId: String) {
+        val panel = pluginPanels[panelId] ?: return
+        panel.isVisible = true
+        panel.toFront()
+        needsPanelLayout = true
+        pluginPanelsPositioned = false
     }
 
     private fun buildLightingSlider(

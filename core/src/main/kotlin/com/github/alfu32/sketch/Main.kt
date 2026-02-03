@@ -297,6 +297,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
         // Set up plugin host for UI
         uiOverlay.setPluginHost(pluginHost)
+        pluginHost.setShowPluginPanelHandler { panelId ->
+            uiOverlay.showPluginPanel(panelId)
+        }
         pluginHost.getCommandPalette().registerCommand(
             com.github.alfu32.sketch.plugin.PaletteCommand(
                 id = "view.objects",

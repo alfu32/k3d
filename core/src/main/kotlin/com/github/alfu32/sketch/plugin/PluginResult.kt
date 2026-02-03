@@ -18,6 +18,7 @@ data class PluginResult(
 sealed class PluginChange {
     data class ReplaceModel(val snapshot: ModelPersistence.ModelSnapshot) : PluginChange()
     data class StatusMessage(val message: String) : PluginChange()
+    data class ShowPluginPanel(val panelId: String) : PluginChange()
 }
 
 data class PluginDraw(

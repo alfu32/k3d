@@ -44,6 +44,7 @@ class PluginHost(
     private val pluginTools = mutableMapOf<String, com.github.alfu32.sketch.plugin.capabilities.PluginTool>()
     private var activePluginToolId: String? = null
     private val helperScripts = setOf("encode_base64.groovy")
+    private var showPluginPanelHandler: (String) -> Unit = {}
 
     fun loadCatalog() {
         catalog = PluginCatalog.load(catalogFile)
@@ -113,6 +114,18 @@ class PluginHost(
                 isEnabled = plugin.id in enabledPlugins,
                 isScript = pluginIdToEntry[plugin.id]?.startsWith("file:") == true
             )
+        }
+    }
+
+    fun setShowPluginPanelHandler(handler: (String) -> Unit) {
+        showPluginPanelHandler = handler
+    }
+
+    fun pluginUiElements(): List<PluginUiEntry> {
+        return plugins.filter { it.id in enabledPlugins }.flatMap { plugin ->
+            plugin.registerUIElements().map { element ->
+                PluginUiEntry(plugin.id, plugin.name, element)
+            }
         }
     }
 
@@ -214,7 +227,11 @@ class PluginHost(
                     category = command.category,
                     tags = command.getSearchTags(),
                     priority = if (command.isVisibleInPalette) 1 else 0,
-                    execute = { command.execute(buildContext()) }
+                    execute = {
+                        val result = command.execute(buildContext())
+                        applyResult(result)
+                        result
+                    }
                 )
             )
         }
@@ -371,6 +388,9 @@ class PluginHost(
                 }
                 is PluginChange.StatusMessage -> {
                     statusModel.message = change.message
+                }
+                is PluginChange.ShowPluginPanel -> {
+                    showPluginPanelHandler(change.panelId)
                 }
             }
         }
