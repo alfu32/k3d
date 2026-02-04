@@ -1,6 +1,8 @@
-![K3D app icon](assets/appicon.png)
 
-# K3D
+
+# ![K3D app icon](assets/appicon.png) K3D
+
+![img_0-logo_3d.png](docs/images/img_0-logo_3d.png)
 
 K3D is a Kotlin + libGDX desktop modeler for fast, direct 3D sketching. It focuses on edges, planar faces, and tool-driven workflows with precise snapping, groups (objects), and a live Groovy console for power users.
 

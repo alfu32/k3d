@@ -20,9 +20,9 @@ import com.kotcrab.vis.ui.widget.VisTextField
 import java.util.Locale
 
 class PolylineSettings {
-    int arcSegments = 24
-    float doubleLineSize = 0.1f
-    float doubleLineOffset = 0f
+    float arcMaxLength = 0.7f
+    float doubleLineSize = 1f
+    float doubleLineOffset = 0.5f
 }
 
 class PolylinePlugin implements Plugin {
@@ -57,8 +57,8 @@ class PolylinePlugin implements Plugin {
                 { ctx ->
                     def content = new VisTable()
                     content.defaults().pad(4f).left().growX()
-                    content.add(new VisLabel("Arc segments")).left().row()
-                    def arcField = new VisTextField(settings.arcSegments.toString())
+                    content.add(new VisLabel("Arc max length")).left().row()
+                    def arcField = new VisTextField(String.format(Locale.US, "%.3f", settings.arcMaxLength))
                     content.add(arcField).growX().row()
                     content.add(new VisLabel("Double line size")).left().padTop(4f).row()
                     def sizeField = new VisTextField(String.format(Locale.US, "%.3f", settings.doubleLineSize))
@@ -71,8 +71,8 @@ class PolylinePlugin implements Plugin {
                         @Override
                         void changed(ChangeListener.ChangeEvent event, com.badlogic.gdx.scenes.scene2d.Actor actor) {
                             try {
-                                int value = Integer.parseInt(arcField.text.trim())
-                                settings.arcSegments = Math.max(3, value)
+                                float value = Float.parseFloat(arcField.text.trim())
+                                settings.arcMaxLength = Math.max(0.001f, value)
                             } catch (Exception ignored) {
                             }
                         }
@@ -194,8 +194,8 @@ class PolylineTool implements PluginTool {
                 arcCenter = new Vector3(hit)
                 return
             }
-            def arcPoints = arcPointsFromCenter(points.last(), hit, arcCenter, arcSteps())
-            appendArcPoints(arcPoints)
+            def arcPoints = arcPointsFromCenter(points.last(), hit, arcCenter)
+            appendArcPointsPreview(arcPoints)
             arcCenter = null
             return
         }
@@ -204,8 +204,8 @@ class PolylineTool implements PluginTool {
                 arcPass1 = new Vector3(hit)
                 return
             }
-            def arcPoints = arcPointsThrough(points.last(), arcPass1, hit, arcSteps())
-            appendArcPoints(arcPoints)
+            def arcPoints = arcPointsThrough(points.last(), arcPass1, hit)
+            appendArcPointsPreview(arcPoints)
             arcPass1 = null
             return
         }
@@ -303,22 +303,18 @@ class PolylineTool implements PluginTool {
             closed = false
             return
         }
-        def snapshot = context.model
         def faces = points.size() >= 3 ? triangulate(points) : []
-        def target = resolveTargetPrototype(snapshot)
-        def targetSegments = target != null ? target.segments : snapshot.segments
-        def targetFaces = target != null ? target.faces : snapshot.faces
-        faces.each { tri ->
-            targetFaces.add(new ModelPersistence.FaceDto(
+        def faceDtos = faces.collect { tri ->
+            new ModelPersistence.FaceDto(
                 new ModelPersistence.Vec3Dto(tri[0]),
                 new ModelPersistence.Vec3Dto(tri[1]),
                 new ModelPersistence.Vec3Dto(tri[2]),
                 new ModelPersistence.ColorDto(new Color(0.8f, 0.8f, 0.8f, 1f))
-            ))
+            )
         }
-        addSegments(targetSegments, points, closed)
+        def segmentDtos = buildSegments(points, closed)
         context.getApplyResult().invoke(new PluginResult([
-            new PluginChange.ReplaceModel(snapshot),
+            new PluginChange.AddToActiveGroup(segmentDtos, faceDtos),
             new PluginChange.StatusMessage("Polyline finalized.")
         ], true, null))
         points.clear()
@@ -327,19 +323,24 @@ class PolylineTool implements PluginTool {
         closed = false
     }
 
-    private void addSegments(def list, List<Vector3> pts, boolean close) {
+    private List<ModelPersistence.SegmentDto> buildSegments(List<Vector3> pts, boolean close) {
+        def list = []
         for (int i = 0; i < pts.size() - 1; i++) {
+            if (pts[i].dst2(pts[i + 1]) <= epsilon * epsilon) {
+                continue
+            }
             list.add(new ModelPersistence.SegmentDto(
                 new ModelPersistence.Vec3Dto(pts[i]),
                 new ModelPersistence.Vec3Dto(pts[i + 1])
             ))
         }
-        if (close && pts.size() > 1) {
+        if (close && pts.size() > 1 && pts.last().dst2(pts.first()) > epsilon * epsilon) {
             list.add(new ModelPersistence.SegmentDto(
                 new ModelPersistence.Vec3Dto(pts.last()),
                 new ModelPersistence.Vec3Dto(pts.first())
             ))
         }
+        return list
     }
 
     private ModelPersistence.ObjectPrototypeDto resolveTargetPrototype(def snapshot) {
@@ -353,10 +354,10 @@ class PolylineTool implements PluginTool {
 
     private List<Vector3> previewArc(Vector3 start, Vector3 cursor) {
         if (arcMode == "center" && arcCenter != null) {
-            return arcPointsFromCenter(start, cursor, arcCenter, arcSteps())
+            return arcPointsFromCenter(start, cursor, arcCenter)
         }
         if (arcMode == "three" && arcPass1 != null) {
-            return arcPointsThrough(start, arcPass1, cursor, arcSteps())
+            return arcPointsThrough(start, arcPass1, cursor)
         }
         return null
     }
@@ -373,7 +374,7 @@ class PolylineTool implements PluginTool {
         }
     }
 
-    private void appendArcPoints(List<Vector3> arcPoints) {
+    private void appendArcPointsPreview(List<Vector3> arcPoints) {
         if (arcPoints.isEmpty()) {
             return
         }
@@ -388,11 +389,7 @@ class PolylineTool implements PluginTool {
         }
     }
 
-    private int arcSteps() {
-        return Math.max(3, settings.arcSegments)
-    }
-
-    private List<Vector3> arcPointsFromCenter(Vector3 start, Vector3 end, Vector3 center, int steps) {
+    private List<Vector3> arcPointsFromCenter(Vector3 start, Vector3 end, Vector3 center) {
         Vector3 startVec = new Vector3(start).sub(center)
         Vector3 endVec = new Vector3(end).sub(center)
         float radius = startVec.len()
@@ -414,10 +411,11 @@ class PolylineTool implements PluginTool {
         if (Math.abs(delta) <= epsilon) {
             return [start, end]
         }
+        int steps = stepsForArc(radius, delta)
         return buildArcPoints(center, u, v, radius, delta, steps)
     }
 
-    private List<Vector3> arcPointsThrough(Vector3 start, Vector3 mid, Vector3 end, int steps) {
+    private List<Vector3> arcPointsThrough(Vector3 start, Vector3 mid, Vector3 end) {
         Vector3 ab = new Vector3(mid).sub(start)
         Vector3 ac = new Vector3(end).sub(start)
         Vector3 normal = new Vector3(ab).crs(ac)
@@ -459,6 +457,7 @@ class PolylineTool implements PluginTool {
         if (Math.abs(delta) <= epsilon) {
             return [start, end]
         }
+        int steps = stepsForArc(radius, delta)
         return buildArcPoints(center, u2, v2, radius, delta, steps)
     }
 
@@ -488,6 +487,16 @@ class PolylineTool implements PluginTool {
         float twoPi = (float)(Math.PI * 2.0)
         float a = angle % twoPi
         return a < 0f ? a + twoPi : a
+    }
+
+    private int stepsForArc(float radius, float delta) {
+        float maxLen = settings.arcMaxLength
+        if (maxLen <= 0.0001f) {
+            return 16
+        }
+        float arcLength = Math.abs(delta) * radius
+        int steps = (int)Math.ceil(arcLength / maxLen)
+        return Math.max(1, Math.min(steps, 512))
     }
 
     private boolean isBetweenCCW(float start, float mid, float end) {
@@ -621,12 +630,16 @@ class DoubleLineTool implements PluginTool {
 
     private final PolylineSettings settings
     private final List<Vector3> points = []
+    private final List<Vector3> cachedLeft = []
+    private final List<Vector3> cachedRight = []
+    private final List<ModelPersistence.FaceDto> cachedStripFaces = []
     private String arcMode = "line"
     private Vector3 arcCenter = null
     private Vector3 arcPass1 = null
     private boolean closed = false
     private final float closeDistance = 0.15f
     private final float epsilon = 0.0001f
+    private final Color stripColor = new Color(0.8f, 0.8f, 0.8f, 1f)
 
     DoubleLineTool(PolylineSettings settings) {
         this.settings = settings
@@ -635,6 +648,9 @@ class DoubleLineTool implements PluginTool {
     @Override
     void onActivate(PluginContext context) {
         points.clear()
+        cachedLeft.clear()
+        cachedRight.clear()
+        cachedStripFaces.clear()
         arcMode = "line"
         arcCenter = null
         arcPass1 = null
@@ -644,6 +660,9 @@ class DoubleLineTool implements PluginTool {
     @Override
     void onDeactivate(PluginContext context) {
         points.clear()
+        cachedLeft.clear()
+        cachedRight.clear()
+        cachedStripFaces.clear()
         arcMode = "line"
         arcCenter = null
         arcPass1 = null
@@ -666,6 +685,7 @@ class DoubleLineTool implements PluginTool {
         }
         if (points.isEmpty()) {
             points.add(new Vector3(hit))
+            initCachedOffsets()
             return
         }
         if (isClosing(hit)) {
@@ -678,7 +698,7 @@ class DoubleLineTool implements PluginTool {
                 arcCenter = new Vector3(hit)
                 return
             }
-            def arcPoints = arcPointsFromCenter(points.last(), hit, arcCenter, arcSteps())
+            def arcPoints = arcPointsFromCenter(points.last(), hit, arcCenter)
             appendArcPoints(arcPoints)
             arcCenter = null
             return
@@ -688,12 +708,15 @@ class DoubleLineTool implements PluginTool {
                 arcPass1 = new Vector3(hit)
                 return
             }
-            def arcPoints = arcPointsThrough(points.last(), arcPass1, hit, arcSteps())
+            def arcPoints = arcPointsThrough(points.last(), arcPass1, hit)
             appendArcPoints(arcPoints)
             arcPass1 = null
             return
         }
+        int before = points.size()
         points.add(new Vector3(hit))
+        updateCachedOffsets(before - 1, points.size() - 1, false)
+        updateStripFacesRange(before - 1, points.size() - 2, false)
     }
 
     @Override
@@ -775,23 +798,26 @@ class DoubleLineTool implements PluginTool {
     private void finalizeDoubleLine(PluginContext context) {
         if (points.size() < 2) {
             points.clear()
+            cachedLeft.clear()
+            cachedRight.clear()
+            cachedStripFaces.clear()
             arcCenter = null
             arcPass1 = null
             closed = false
             return
         }
-        def snapshot = context.model
-        def target = resolveTargetPrototype(snapshot)
-        def targetSegments = target != null ? target.segments : snapshot.segments
-        def targetFaces = target != null ? target.faces : snapshot.faces
-        def paths = buildDoublePaths(points)
-        addDoubleSegments(targetSegments, paths.left, paths.right)
-        addStripFaces(targetFaces, paths.left, paths.right, closed)
+        updateCachedOffsets(0, points.size() - 1, closed)
+        rebuildStripFaces(closed)
+        def loop = buildLoop(cachedLeft, cachedRight)
+        def segmentDtos = buildSegments(loop, true)
         context.getApplyResult().invoke(new PluginResult([
-            new PluginChange.ReplaceModel(snapshot),
+            new PluginChange.AddToActiveGroup(segmentDtos, cachedStripFaces),
             new PluginChange.StatusMessage("Double line finalized.")
         ], true, null))
         points.clear()
+        cachedLeft.clear()
+        cachedRight.clear()
+        cachedStripFaces.clear()
         arcCenter = null
         arcPass1 = null
         closed = false
@@ -806,16 +832,36 @@ class DoubleLineTool implements PluginTool {
         return null
     }
 
-    private void addDoubleSegments(def list, List<Vector3> left, List<Vector3> right) {
+    private List<Vector3> buildLoop(List<Vector3> left, List<Vector3> right) {
         if (left == null || right == null || left.size() < 2 || right.size() < 2) {
-            return
+            return []
         }
         def loop = new ArrayList<Vector3>()
         loop.addAll(left)
         def reversedRight = new ArrayList<Vector3>(right)
         java.util.Collections.reverse(reversedRight)
         loop.addAll(reversedRight)
-        addPolylineSegments(list, loop, true)
+        return loop
+    }
+
+    private List<ModelPersistence.SegmentDto> buildSegments(List<Vector3> pts, boolean close) {
+        def list = []
+        for (int i = 0; i < pts.size() - 1; i++) {
+            if (pts[i].dst2(pts[i + 1]) <= epsilon * epsilon) {
+                continue
+            }
+            list.add(new ModelPersistence.SegmentDto(
+                new ModelPersistence.Vec3Dto(pts[i]),
+                new ModelPersistence.Vec3Dto(pts[i + 1])
+            ))
+        }
+        if (close && pts.size() > 1 && pts.last().dst2(pts.first()) > 0f) {
+            list.add(new ModelPersistence.SegmentDto(
+                new ModelPersistence.Vec3Dto(pts.last()),
+                new ModelPersistence.Vec3Dto(pts.first())
+            ))
+        }
+        return list
     }
 
     private void drawDoublePreview(ShapeRenderer shapeRenderer, List<Vector3> pts) {
@@ -850,60 +896,167 @@ class DoubleLineTool implements PluginTool {
     }
 
     private void addPolylineSegments(def list, List<Vector3> pts, boolean close) {
-        if (pts.size() < 2) {
-            return
-        }
-        for (int i = 0; i < pts.size() - 1; i++) {
-            list.add(new ModelPersistence.SegmentDto(
-                new ModelPersistence.Vec3Dto(pts[i]),
-                new ModelPersistence.Vec3Dto(pts[i + 1])
-            ))
-        }
-        if (close) {
-            list.add(new ModelPersistence.SegmentDto(
-                new ModelPersistence.Vec3Dto(pts.last()),
-                new ModelPersistence.Vec3Dto(pts.first())
-            ))
-        }
+        buildSegments(pts, close).each { list.add(it) }
     }
 
-    private Map buildDoublePaths(List<Vector3> pts) {
+    private void initCachedOffsets() {
+        cachedLeft.clear()
+        cachedRight.clear()
+        cachedStripFaces.clear()
+        cachedLeft.add(offsetPoint(0, offsetA(), false))
+        cachedRight.add(offsetPoint(0, offsetB(), false))
+    }
+
+    private void appendArcPoints(List<Vector3> arcPoints) {
+        if (arcPoints.isEmpty()) {
+            return
+        }
+        if (arcPoints.size() == 1) {
+            return
+        }
+        int before = points.size()
+        for (int i = 1; i < arcPoints.size(); i++) {
+            Vector3 next = arcPoints[i]
+            if (points.last().dst(next) > epsilon) {
+                points.add(new Vector3(next))
+            }
+        }
+        updateCachedOffsets(before - 1, points.size() - 1, false)
+        updateStripFacesRange(before - 1, points.size() - 2, false)
+    }
+
+    private float offsetA() {
         float size = Math.max(0f, settings.doubleLineSize)
         float offset = settings.doubleLineOffset
-        float half = size * 0.5f
-        float offsetA = offset - half
-        float offsetB = offset + half
-        def left = buildOffsetPath(pts, offsetA, closed)
-        def right = buildOffsetPath(pts, offsetB, closed)
-        return [left: left, right: right]
+        return offset - (size * 0.5f)
     }
 
-    private void addStripFaces(def list, List<Vector3> left, List<Vector3> right, boolean close) {
-        if (left == null || right == null) {
+    private float offsetB() {
+        float size = Math.max(0f, settings.doubleLineSize)
+        float offset = settings.doubleLineOffset
+        return offset + (size * 0.5f)
+    }
+
+    private void updateCachedOffsets(int from, int to, boolean isClosed) {
+        if (points.isEmpty()) {
             return
         }
-        int count = Math.min(left.size(), right.size())
-        if (count < 2) {
+        int start = Math.max(0, from)
+        int end = Math.min(points.size() - 1, to)
+        if (cachedLeft.size() != points.size()) {
+            cachedLeft.clear()
+            cachedRight.clear()
+            for (int i = 0; i < points.size(); i++) {
+                cachedLeft.add(new Vector3())
+                cachedRight.add(new Vector3())
+            }
+            start = 0
+            end = points.size() - 1
+        }
+        for (int i = start; i <= end; i++) {
+            cachedLeft[i].set(offsetPoint(i, offsetA(), isClosed))
+            cachedRight[i].set(offsetPoint(i, offsetB(), isClosed))
+        }
+    }
+
+    private Vector3 offsetPoint(int index, float offset, boolean isClosed) {
+        int count = points.size()
+        Vector3 curr = points[index]
+        Vector3 prev = index > 0 ? points[index - 1] : (isClosed ? points[count - 1] : null)
+        Vector3 next = index < count - 1 ? points[index + 1] : (isClosed ? points[0] : null)
+        Vector3 perpPrev = prev != null ? segmentPerp(prev, curr) : null
+        Vector3 perpNext = next != null ? segmentPerp(curr, next) : null
+        Vector3 offsetDir = null
+        if (perpPrev != null && perpNext != null) {
+            Vector3 miter = new Vector3(perpPrev).add(perpNext)
+            if (miter.len2() > epsilon * epsilon) {
+                miter.nor()
+                float denom = miter.dot(perpPrev)
+                if (Math.abs(denom) > 0.01f) {
+                    float scale = offset / denom
+                    float maxScale = Math.abs(offset) * 10f + 1f
+                    if (Math.abs(scale) <= maxScale) {
+                        offsetDir = new Vector3(miter).scl(scale)
+                    }
+                }
+            }
+        }
+        if (offsetDir == null) {
+            Vector3 fallback = perpPrev != null ? perpPrev : perpNext
+            if (fallback != null) {
+                offsetDir = new Vector3(fallback).scl(offset)
+            } else {
+                offsetDir = new Vector3(0f, 0f, 0f)
+            }
+        }
+        if (!isFinite(offsetDir)) {
+            offsetDir.set(0f, 0f, 0f)
+        }
+        return new Vector3(curr).add(offsetDir)
+    }
+
+    private void updateStripFacesRange(int fromSegment, int toSegment, boolean isClosed) {
+        if (cachedLeft.size() < 2 || cachedRight.size() < 2) {
             return
         }
-        int limit = close ? count : count - 1
-        for (int i = 0; i < limit; i++) {
+        int count = Math.min(cachedLeft.size(), cachedRight.size())
+        int segCount = isClosed ? count : count - 1
+        if (segCount <= 0) {
+            return
+        }
+        if (cachedStripFaces.size() != segCount * 2) {
+            cachedStripFaces.clear()
+            for (int i = 0; i < segCount * 2; i++) {
+                cachedStripFaces.add(new ModelPersistence.FaceDto())
+            }
+        }
+        int start = Math.max(0, fromSegment)
+        int end = Math.min(segCount - 1, toSegment)
+        for (int i = start; i <= end; i++) {
             int next = (i + 1) % count
-            Vector3 a = left[i]
-            Vector3 b = left[next]
-            Vector3 c = right[next]
-            Vector3 d = right[i]
-            list.add(new ModelPersistence.FaceDto(
+            Vector3 a = cachedLeft[i]
+            Vector3 b = cachedLeft[next]
+            Vector3 c = cachedRight[next]
+            Vector3 d = cachedRight[i]
+            cachedStripFaces[i * 2] = new ModelPersistence.FaceDto(
                 new ModelPersistence.Vec3Dto(a),
                 new ModelPersistence.Vec3Dto(b),
                 new ModelPersistence.Vec3Dto(c),
-                new ModelPersistence.ColorDto(new Color(0.8f, 0.8f, 0.8f, 1f))
-            ))
-            list.add(new ModelPersistence.FaceDto(
+                new ModelPersistence.ColorDto(stripColor)
+            )
+            cachedStripFaces[i * 2 + 1] = new ModelPersistence.FaceDto(
                 new ModelPersistence.Vec3Dto(a),
                 new ModelPersistence.Vec3Dto(c),
                 new ModelPersistence.Vec3Dto(d),
-                new ModelPersistence.ColorDto(new Color(0.8f, 0.8f, 0.8f, 1f))
+                new ModelPersistence.ColorDto(stripColor)
+            )
+        }
+    }
+
+    private void rebuildStripFaces(boolean isClosed) {
+        if (cachedLeft.size() < 2 || cachedRight.size() < 2) {
+            return
+        }
+        int count = Math.min(cachedLeft.size(), cachedRight.size())
+        int segCount = isClosed ? count : count - 1
+        cachedStripFaces.clear()
+        for (int i = 0; i < segCount; i++) {
+            int next = (i + 1) % count
+            Vector3 a = cachedLeft[i]
+            Vector3 b = cachedLeft[next]
+            Vector3 c = cachedRight[next]
+            Vector3 d = cachedRight[i]
+            cachedStripFaces.add(new ModelPersistence.FaceDto(
+                new ModelPersistence.Vec3Dto(a),
+                new ModelPersistence.Vec3Dto(b),
+                new ModelPersistence.Vec3Dto(c),
+                new ModelPersistence.ColorDto(stripColor)
+            ))
+            cachedStripFaces.add(new ModelPersistence.FaceDto(
+                new ModelPersistence.Vec3Dto(a),
+                new ModelPersistence.Vec3Dto(c),
+                new ModelPersistence.Vec3Dto(d),
+                new ModelPersistence.ColorDto(stripColor)
             ))
         }
     }
@@ -967,34 +1120,15 @@ class DoubleLineTool implements PluginTool {
 
     private List<Vector3> previewArc(Vector3 start, Vector3 cursor) {
         if (arcMode == "center" && arcCenter != null) {
-            return arcPointsFromCenter(start, cursor, arcCenter, arcSteps())
+            return arcPointsFromCenter(start, cursor, arcCenter)
         }
         if (arcMode == "three" && arcPass1 != null) {
-            return arcPointsThrough(start, arcPass1, cursor, arcSteps())
+            return arcPointsThrough(start, arcPass1, cursor)
         }
         return null
     }
 
-    private void appendArcPoints(List<Vector3> arcPoints) {
-        if (arcPoints.isEmpty()) {
-            return
-        }
-        if (arcPoints.size() == 1) {
-            return
-        }
-        for (int i = 1; i < arcPoints.size(); i++) {
-            Vector3 next = arcPoints[i]
-            if (points.last().dst(next) > epsilon) {
-                points.add(new Vector3(next))
-            }
-        }
-    }
-
-    private int arcSteps() {
-        return Math.max(3, settings.arcSegments)
-    }
-
-    private List<Vector3> arcPointsFromCenter(Vector3 start, Vector3 end, Vector3 center, int steps) {
+    private List<Vector3> arcPointsFromCenter(Vector3 start, Vector3 end, Vector3 center) {
         Vector3 startVec = new Vector3(start).sub(center)
         Vector3 endVec = new Vector3(end).sub(center)
         float radius = startVec.len()
@@ -1016,10 +1150,11 @@ class DoubleLineTool implements PluginTool {
         if (Math.abs(delta) <= epsilon) {
             return [start, end]
         }
+        int steps = stepsForArc(radius, delta)
         return buildArcPoints(center, u, v, radius, delta, steps)
     }
 
-    private List<Vector3> arcPointsThrough(Vector3 start, Vector3 mid, Vector3 end, int steps) {
+    private List<Vector3> arcPointsThrough(Vector3 start, Vector3 mid, Vector3 end) {
         Vector3 ab = new Vector3(mid).sub(start)
         Vector3 ac = new Vector3(end).sub(start)
         Vector3 normal = new Vector3(ab).crs(ac)
@@ -1061,6 +1196,7 @@ class DoubleLineTool implements PluginTool {
         if (Math.abs(delta) <= epsilon) {
             return [start, end]
         }
+        int steps = stepsForArc(radius, delta)
         return buildArcPoints(center, u2, v2, radius, delta, steps)
     }
 
@@ -1090,6 +1226,16 @@ class DoubleLineTool implements PluginTool {
         float twoPi = (float)(Math.PI * 2.0)
         float a = angle % twoPi
         return a < 0f ? a + twoPi : a
+    }
+
+    private int stepsForArc(float radius, float delta) {
+        float maxLen = settings.arcMaxLength
+        if (maxLen <= 0.0001f) {
+            return 16
+        }
+        float arcLength = Math.abs(delta) * radius
+        int steps = (int)Math.ceil(arcLength / maxLen)
+        return Math.max(1, Math.min(steps, 512))
     }
 
     private boolean isBetweenCCW(float start, float mid, float end) {

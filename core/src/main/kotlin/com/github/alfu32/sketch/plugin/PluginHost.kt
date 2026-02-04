@@ -392,6 +392,25 @@ class PluginHost(
                 is PluginChange.ShowPluginPanel -> {
                     showPluginPanelHandler(change.panelId)
                 }
+                is PluginChange.AddToActiveGroup -> {
+                    val group = scene.activeGroup()
+                    change.segments.forEach { segment ->
+                        group.lineStore.addSegment(
+                            segment.start.toVector3(),
+                            segment.end.toVector3(),
+                            autoCleanup = false
+                        )
+                    }
+                    change.faces.forEach { face ->
+                        group.faceStore.addTriangle(
+                            face.a.toVector3(),
+                            face.b.toVector3(),
+                            face.c.toVector3(),
+                            face.color.toColor()
+                        )
+                    }
+                    scene.applyChangeListenerToAll()
+                }
             }
         }
     }

@@ -29,6 +29,7 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.math.Quaternion
 import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Vector3
+import com.badlogic.gdx.files.FileHandle
 import com.badlogic.gdx.utils.Array
 import com.badlogic.gdx.utils.Pool
 import com.github.alfu32.sketch.input.GuideManager
@@ -84,6 +85,10 @@ import com.github.alfu32.sketch.ui.ToolId
 import com.github.alfu32.sketch.ui.ToolInputProcessor
 import com.github.alfu32.sketch.ui.PluginToolAdapter
 import com.kotcrab.vis.ui.VisUI
+import com.kotcrab.vis.ui.widget.file.FileChooser
+import com.kotcrab.vis.ui.widget.file.FileChooserAdapter
+import com.kotcrab.vis.ui.widget.file.FileTypeFilter
+import java.io.File
 
 /** [com.badlogic.gdx.ApplicationListener] implementation shared by all platforms. */
 class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : ApplicationAdapter() {
@@ -446,6 +451,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 priority = 1,
                 execute = {
                     addGridGuide()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "export.svg_view",
+                name = "Export> SVG (View)",
+                description = "Export current view as SVG",
+                icon = "export",
+                category = "Export",
+                tags = listOf("export", "svg", "view"),
+                priority = 1,
+                execute = {
+                    showSvgExportDialog()
                     com.github.alfu32.sketch.plugin.PluginResult.success()
                 }
             )
@@ -865,6 +885,205 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             renderer.line(sx, sy, ex, ey)
             dist += step
         }
+    }
+
+    private fun showSvgExportDialog() {
+        val chooser = FileChooser(System.getProperty("user.dir"), FileChooser.Mode.SAVE)
+        chooser.getTitleLabel().setText("Export SVG (View)")
+        chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
+        chooser.setDefaultFileName("view.svg")
+        val filter = FileTypeFilter(true)
+        filter.addRule("SVG", "svg")
+        chooser.setFileTypeFilter(filter)
+        chooser.setListener(object : FileChooserAdapter() {
+            override fun selected(files: Array<FileHandle>?) {
+                if (files == null || files.size == 0) {
+                    return
+                }
+                val handle = files.first()
+                val target = if (handle.extension().lowercase() == "svg") handle.file()
+                else File(handle.file().parentFile, "${handle.file().name}.svg")
+                exportSvgView(target)
+            }
+        })
+        uiOverlay.stage.addActor(chooser)
+    }
+
+    private fun exportSvgView(file: File) {
+        val width = Gdx.graphics.width.toFloat()
+        val height = Gdx.graphics.height.toFloat()
+        val view = Matrix4(camera.view)
+        val sb = StringBuilder()
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" width="$width" height="$height" viewBox="0 0 $width $height">""")
+        sb.append("\n")
+        fun toSvgY(y: Float): Float = height - y
+        fun colorHex(color: Color): String {
+            val r = (color.r.coerceIn(0f, 1f) * 255).toInt()
+            val g = (color.g.coerceIn(0f, 1f) * 255).toInt()
+            val b = (color.b.coerceIn(0f, 1f) * 255).toInt()
+            return String.format("#%02x%02x%02x", r, g, b)
+        }
+        fun project(world: Vector3): Vector3? {
+            val v = Vector3(world)
+            camera.project(v, 0f, 0f, width, height)
+            if (!v.x.isFinite() || !v.y.isFinite() || !v.z.isFinite()) {
+                return null
+            }
+            if (v.z < 0f || v.z > 1f) {
+                return null
+            }
+            return v
+        }
+        fun lineSvg(a: Vector3, b: Vector3, color: Color, widthPx: Float = 1f) {
+            val pa = project(a) ?: return
+            val pb = project(b) ?: return
+            val stroke = colorHex(color)
+            val opacity = color.a.coerceIn(0f, 1f)
+            sb.append("""<line x1="${pa.x}" y1="${toSvgY(pa.y)}" x2="${pb.x}" y2="${toSvgY(pb.y)}" stroke="$stroke" stroke-width="$widthPx" stroke-opacity="$opacity" />""")
+            sb.append("\n")
+        }
+        fun triangleSvg(a: Vector3, b: Vector3, c: Vector3, color: Color) {
+            val pa = project(a) ?: return
+            val pb = project(b) ?: return
+            val pc = project(c) ?: return
+            val fill = colorHex(color)
+            val opacity = color.a.coerceIn(0f, 1f)
+            sb.append(
+                """<polygon points="${pa.x},${toSvgY(pa.y)} ${pb.x},${toSvgY(pb.y)} ${pc.x},${toSvgY(pc.y)}" fill="$fill" fill-opacity="$opacity" stroke="none" />"""
+            )
+            sb.append("\n")
+        }
+        fun depth(point: Vector3): Float {
+            val cam = Vector3(point).mul(view)
+            return cam.z
+        }
+        fun collectGroups(): List<GroupScene.GroupNode> {
+            val groups = mutableListOf<GroupScene.GroupNode>()
+            groups.add(scene.root)
+            scene.walkGroups(scene.root) { group -> groups.add(group) }
+            return groups
+        }
+
+        // Grid
+        val gridColor = Color(0.35f, 0.35f, 0.35f, 1f)
+        val halfSize = 20
+        for (i in -halfSize..halfSize) {
+            val offset = i * gridSpacing
+            lineSvg(Vector3(-halfSize * gridSpacing, 0f, offset), Vector3(halfSize * gridSpacing, 0f, offset), gridColor)
+            lineSvg(Vector3(offset, 0f, -halfSize * gridSpacing), Vector3(offset, 0f, halfSize * gridSpacing), gridColor)
+        }
+
+        // Guides
+        val extent = gridSpacing * 10f
+        guideManager.getGridGuides().forEach { guide ->
+            drawGuidePlaneSvg(guide.origin, guide.axisU, guide.axisV, extent, ::lineSvg)
+            drawGuidePlaneSvg(guide.origin, guide.axisU, guide.axisW, extent, ::lineSvg)
+            drawGuidePlaneSvg(guide.origin, guide.axisV, guide.axisW, extent, ::lineSvg)
+        }
+        guideManager.getAxisGuides().forEach { guide ->
+            val origin = guide.origin
+            val axisU = guide.axisU
+            val axisV = guide.axisV
+            val axisW = guide.axisW
+            val uStart = Vector3(origin).mulAdd(axisU, -extent)
+            val uEnd = Vector3(origin).mulAdd(axisU, extent)
+            lineSvg(uStart, uEnd, axisColor(axisU))
+            val vStart = Vector3(origin).mulAdd(axisV, -extent)
+            val vEnd = Vector3(origin).mulAdd(axisV, extent)
+            lineSvg(vStart, vEnd, axisColor(axisV))
+            val wStart = Vector3(origin).mulAdd(axisW, -extent)
+            val wEnd = Vector3(origin).mulAdd(axisW, extent)
+            lineSvg(wStart, wEnd, axisColor(axisW))
+        }
+
+        // Faces (sorted far to near)
+        data class FaceEntry(val a: Vector3, val b: Vector3, val c: Vector3, val color: Color, val depth: Float)
+        val faces = mutableListOf<FaceEntry>()
+        collectGroups().forEach { group ->
+            group.faceStore.getTriangles().forEach { tri ->
+                val a = group.toWorld(tri.a)
+                val b = group.toWorld(tri.b)
+                val c = group.toWorld(tri.c)
+                val color = group.faceStore.colorFor(tri)
+                val d = (depth(a) + depth(b) + depth(c)) / 3f
+                faces.add(FaceEntry(a, b, c, color, d))
+            }
+        }
+        faces.sortedBy { it.depth }.forEach { tri ->
+            triangleSvg(tri.a, tri.b, tri.c, tri.color)
+        }
+
+        // Edges
+        val edgeColor = Color(0.1f, 0.1f, 0.1f, 1f)
+        collectGroups().forEach { group ->
+            group.lineStore.getSegments().forEach { seg ->
+                lineSvg(group.toWorld(seg.start), group.toWorld(seg.end), edgeColor)
+            }
+        }
+
+        // Axes + active group axes
+        lineSvg(Vector3(0f, 0f, 0f), Vector3(2.5f, 0f, 0f), Color(0.85f, 0.25f, 0.25f, 1f))
+        lineSvg(Vector3(0f, 0f, 0f), Vector3(0f, 2.5f, 0f), Color(0.25f, 0.85f, 0.35f, 1f))
+        lineSvg(Vector3(0f, 0f, 0f), Vector3(0f, 0f, 2.5f), Color(0.35f, 0.45f, 0.95f, 1f))
+        val active = scene.activeGroup()
+        if (active !== scene.root) {
+            val origin = active.worldOrigin()
+            val axes = active.worldAxes()
+            lineSvg(origin, Vector3(origin).mulAdd(axes.u.nor(), 1.8f), Color(0.85f, 0.25f, 0.25f, 1f))
+            lineSvg(origin, Vector3(origin).mulAdd(axes.v.nor(), 1.8f), Color(0.25f, 0.85f, 0.35f, 1f))
+            lineSvg(origin, Vector3(origin).mulAdd(axes.w.nor(), 1.8f), Color(0.35f, 0.45f, 0.95f, 1f))
+        }
+
+        // Camera target
+        val half = 0.5f
+        lineSvg(Vector3(cameraTarget.x - half, cameraTarget.y, cameraTarget.z), Vector3(cameraTarget.x + half, cameraTarget.y, cameraTarget.z), Color(1f, 0.55f, 0.1f, 1f))
+        lineSvg(Vector3(cameraTarget.x, cameraTarget.y - half, cameraTarget.z), Vector3(cameraTarget.x, cameraTarget.y + half, cameraTarget.z), Color(1f, 0.55f, 0.1f, 1f))
+        lineSvg(Vector3(cameraTarget.x, cameraTarget.y, cameraTarget.z - half), Vector3(cameraTarget.x, cameraTarget.y, cameraTarget.z + half), Color(1f, 0.55f, 0.1f, 1f))
+
+        // Text
+        collectGroups().forEach { group ->
+            group.textStore.getTexts().forEach { text ->
+                val pos = if (text.screenText) text.position else group.toWorld(text.position)
+                val p = project(pos) ?: return@forEach
+                val x = p.x
+                val y = toSvgY(p.y)
+                val size = (text.size * 64f).coerceAtLeast(8f)
+                sb.append("""<text x="$x" y="$y" font-size="$size" fill="#111">${escapeSvg(text.text)}</text>""")
+                sb.append("\n")
+            }
+        }
+
+        sb.append("</svg>")
+        file.writeText(sb.toString())
+        statusModel.message = "Exported SVG view to ${file.absolutePath}"
+    }
+
+    private fun drawGuidePlaneSvg(
+        origin: Vector3,
+        axisU: Vector3,
+        axisV: Vector3,
+        extent: Float,
+        line: (Vector3, Vector3, Color, Float) -> Unit
+    ) {
+        val steps = (extent / gridSpacing).toInt()
+        for (i in -steps..steps) {
+            val offset = i * gridSpacing
+            val startU = Vector3(origin).mulAdd(axisU, -extent).mulAdd(axisV, offset)
+            val endU = Vector3(origin).mulAdd(axisU, extent).mulAdd(axisV, offset)
+            val startV = Vector3(origin).mulAdd(axisV, -extent).mulAdd(axisU, offset)
+            val endV = Vector3(origin).mulAdd(axisV, extent).mulAdd(axisU, offset)
+            line(startU, endU, axisColor(axisU), 1f)
+            line(startV, endV, axisColor(axisV), 1f)
+        }
+    }
+
+    private fun escapeSvg(text: String): String {
+        return text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&apos;")
     }
 
     private fun updateCursorStatus() {

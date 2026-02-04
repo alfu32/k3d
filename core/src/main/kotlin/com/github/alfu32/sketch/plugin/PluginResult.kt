@@ -19,6 +19,10 @@ sealed class PluginChange {
     data class ReplaceModel(val snapshot: ModelPersistence.ModelSnapshot) : PluginChange()
     data class StatusMessage(val message: String) : PluginChange()
     data class ShowPluginPanel(val panelId: String) : PluginChange()
+    data class AddToActiveGroup(
+        val segments: List<ModelPersistence.SegmentDto> = emptyList(),
+        val faces: List<ModelPersistence.FaceDto> = emptyList()
+    ) : PluginChange()
 }
 
 data class PluginDraw(
