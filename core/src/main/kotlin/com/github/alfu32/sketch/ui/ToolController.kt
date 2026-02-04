@@ -97,11 +97,17 @@ class ToolController(
     }
 
     fun handleKeyDown(keycode: Int): Boolean {
+        if (activeTool.onKeyDown(status, keycode)) {
+            return true
+        }
         val pluginTool = (activeTool as? PluginToolAdapter) ?: return false
         return pluginTool.handleKeyDown(keycode, status)
     }
 
     fun handleKeyUp(keycode: Int): Boolean {
+        if (activeTool.onKeyUp(status, keycode)) {
+            return true
+        }
         val pluginTool = (activeTool as? PluginToolAdapter) ?: return false
         return pluginTool.handleKeyUp(keycode, status)
     }

@@ -22,4 +22,4 @@ order|name|line|col|start_x|end_x|start_y|end_y
 21|stretch|6|1|0|31|160|191
 22|skew|6|2|32|63|160|191
 23|double_line|6|3|64|95|160|191
-23|polyline|6|4|96|127|160|191
+24|polyline|6|4|96|127|160|191

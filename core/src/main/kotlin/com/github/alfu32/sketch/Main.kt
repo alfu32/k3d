@@ -66,6 +66,9 @@ import com.github.alfu32.sketch.tools.LineTool
 import com.github.alfu32.sketch.tools.MoveTool
 import com.github.alfu32.sketch.tools.ObjectPlaceTool
 import com.github.alfu32.sketch.tools.PaintTool
+import com.github.alfu32.sketch.tools.PolylineSettings
+import com.github.alfu32.sketch.tools.PolylineToolInternal
+import com.github.alfu32.sketch.tools.DoubleLineToolInternal
 import com.github.alfu32.sketch.tools.PushPullTool
 import com.github.alfu32.sketch.tools.QuadTool
 import com.github.alfu32.sketch.tools.RectangleTool
@@ -123,6 +126,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var toolInput: ToolInputProcessor
     private lateinit var uiOverlay: SketchUiOverlay
     private lateinit var toolPointer: ToolPointerProcessor
+    private val polylineSettings = PolylineSettings()
     private lateinit var statusModel: StatusModel
     private lateinit var scene: GroupScene
     private lateinit var modelCleanup: ModelCleanup
@@ -204,6 +208,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             listOf(
                 SelectTool(scene, camera),
                 LineTool(scene),
+                PolylineToolInternal(scene, polylineSettings),
+                DoubleLineToolInternal(scene, polylineSettings),
                 RectangleTool(scene),
                 SurfaceRectangleTool(scene),
                 QuadTool(scene),
@@ -297,7 +303,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             lightingSettings,
             ::applyLightingSettings,
             shadowSettings,
-            ::applyShadowSettings
+            ::applyShadowSettings,
+            polylineSettings
         )
 
         // Set up plugin host for UI
@@ -376,6 +383,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 priority = 1,
                 execute = {
                     uiOverlay.showModelSettingsPanel()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.polyline_settings",
+                name = "View> Polyline Settings",
+                description = "Show polyline settings panel",
+                icon = "view",
+                category = "View",
+                tags = listOf("polyline", "settings", "panel"),
+                priority = 1,
+                execute = {
+                    uiOverlay.showPolylineSettingsPanel()
                     com.github.alfu32.sketch.plugin.PluginResult.success()
                 }
             )

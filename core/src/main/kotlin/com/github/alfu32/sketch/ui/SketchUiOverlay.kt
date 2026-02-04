@@ -27,6 +27,7 @@ import com.kotcrab.vis.ui.widget.color.ColorPickerListener
 import com.github.alfu32.sketch.plugin.PluginHost
 import com.github.alfu32.sketch.plugin.capabilities.PanelPosition
 import com.github.alfu32.sketch.plugin.capabilities.PluginPanel
+import com.github.alfu32.sketch.tools.PolylineSettings
 import java.util.Locale
 
 class SketchUiOverlay(
@@ -54,7 +55,8 @@ class SketchUiOverlay(
     private val lightingSettings: LightingSettings,
     private val lightingChanged: (LightingSettings) -> Unit,
     private val shadowSettings: ShadowSettings,
-    private val shadowChanged: (ShadowSettings) -> Unit
+    private val shadowChanged: (ShadowSettings) -> Unit,
+    private val polylineSettings: PolylineSettings
 ) {
     private open class CollapsibleWindow(
         title: String,
@@ -162,6 +164,7 @@ class SketchUiOverlay(
     private var objectPrototypeItems: List<ObjectPrototypeInfo> = emptyList()
     private lateinit var objectsDeleteButton: VisTextButton
     private lateinit var modelSettingsPanel: CollapsibleWindow
+    private lateinit var polylineSettingsPanel: CollapsibleWindow
     private val unitNameField = VisTextField()
     private val unitSizeField = VisTextField()
     private val gridSpacingField = VisTextField()
@@ -198,6 +201,7 @@ class SketchUiOverlay(
         groupPanel = buildGroupPanel()
         objectsPanel = buildObjectsPanel()
         modelSettingsPanel = buildModelSettingsPanel()
+        polylineSettingsPanel = buildPolylineSettingsPanel()
         lightingPanel = buildLightingPanel()
         val mainRow = Table()
         mainRow.add(toolbar).top().left().pad(6f)
@@ -210,6 +214,7 @@ class SketchUiOverlay(
         stage.addActor(groupPanel)
         stage.addActor(objectsPanel)
         stage.addActor(modelSettingsPanel)
+        stage.addActor(polylineSettingsPanel)
         lightingPanel?.let { stage.addActor(it) }
         positionPanels()
         needsPanelLayout = true
@@ -454,6 +459,11 @@ class SketchUiOverlay(
 
     fun showModelSettingsPanel() {
         modelSettingsPanel.isVisible = true
+        needsPanelLayout = true
+    }
+
+    fun showPolylineSettingsPanel() {
+        polylineSettingsPanel.isVisible = true
         needsPanelLayout = true
     }
 
@@ -791,6 +801,44 @@ class SketchUiOverlay(
         return panel
     }
 
+    private fun buildPolylineSettingsPanel(): CollapsibleWindow {
+        val panel = CollapsibleWindow("Polyline Settings")
+        val content = VisTable()
+        content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        content.defaults().pad(4f).left().growX()
+        val arcField = VisTextField(String.format(Locale.US, "%.3f", polylineSettings.arcMaxLength))
+        val sizeField = VisTextField(String.format(Locale.US, "%.3f", polylineSettings.doubleLineSize))
+        val offsetField = VisTextField(String.format(Locale.US, "%.3f", polylineSettings.doubleLineOffset))
+        content.add(VisLabel("Arc max length")).left().row()
+        content.add(arcField).growX().row()
+        content.add(VisLabel("Double line size")).left().padTop(4f).row()
+        content.add(sizeField).growX().row()
+        content.add(VisLabel("Double line offset")).left().padTop(4f).row()
+        content.add(offsetField).growX().row()
+        panel.add(content).growX()
+        panel.isVisible = false
+
+        arcField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                val value = arcField.text.toFloatOrNull() ?: return
+                polylineSettings.arcMaxLength = value.coerceAtLeast(0.001f)
+            }
+        })
+        sizeField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                val value = sizeField.text.toFloatOrNull() ?: return
+                polylineSettings.doubleLineSize = value.coerceAtLeast(0f)
+            }
+        })
+        offsetField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                val value = offsetField.text.toFloatOrNull() ?: return
+                polylineSettings.doubleLineOffset = value
+            }
+        })
+        return panel
+    }
+
     private fun updateGroupPanel() {
         val info = groupInfoProvider()
         val wasVisible = groupPanel.isVisible
@@ -983,6 +1031,7 @@ class SketchUiOverlay(
         panels.add(groupPanel)
         panels.add(objectsPanel)
         panels.add(modelSettingsPanel)
+        panels.add(polylineSettingsPanel)
         lightingPanel?.let { panels.add(it) }
         panels.forEach {
             it.invalidateHierarchy()
@@ -1324,6 +1373,8 @@ class SketchUiOverlay(
         val iconName = when (toolId) {
             ToolId.SELECT -> "select"
             ToolId.LINE -> "line"
+            ToolId.POLYLINE -> "polyline"
+            ToolId.DOUBLE_LINE -> "double_line"
             ToolId.RECTANGLE -> "rectangle"
             ToolId.SURFACE_RECTANGLE -> "surface_rect"
             ToolId.QUAD -> "quad"
@@ -1344,6 +1395,8 @@ class SketchUiOverlay(
         val color = when (toolId) {
             ToolId.SELECT -> Color(0.85f, 0.85f, 0.85f, 1f)
             ToolId.LINE -> Color(0.95f, 0.75f, 0.25f, 1f)
+            ToolId.POLYLINE -> Color(0.95f, 0.75f, 0.25f, 1f)
+            ToolId.DOUBLE_LINE -> Color(0.35f, 0.75f, 0.95f, 1f)
             ToolId.RECTANGLE -> Color(0.35f, 0.75f, 0.95f, 1f)
             ToolId.SURFACE_RECTANGLE -> Color(0.35f, 0.85f, 0.65f, 1f)
             ToolId.QUAD -> Color(0.55f, 0.85f, 0.95f, 1f)

@@ -60,6 +60,14 @@ class PluginToolAdapter(
         pluginHost.activePluginTool()?.onDraw3D(pluginHost.pluginContext(), renderer)
     }
 
+    override fun onKeyDown(status: StatusModel, keycode: Int): Boolean {
+        return handleKeyDown(keycode, status)
+    }
+
+    override fun onKeyUp(status: StatusModel, keycode: Int): Boolean {
+        return handleKeyUp(keycode, status)
+    }
+
     fun update(delta: Float, status: StatusModel) {
         pluginHost.activePluginTool()?.onUpdate(pluginHost.pluginContext(), delta)
     }

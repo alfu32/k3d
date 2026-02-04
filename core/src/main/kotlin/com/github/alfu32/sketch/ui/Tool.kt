@@ -45,6 +45,14 @@ interface Tool {
         return false
     }
 
+    fun onKeyDown(status: StatusModel, keycode: Int): Boolean {
+        return false
+    }
+
+    fun onKeyUp(status: StatusModel, keycode: Int): Boolean {
+        return false
+    }
+
     fun render(renderer: ShapeRenderer) {
         // Default no-op.
     }

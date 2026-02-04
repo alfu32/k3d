@@ -37,12 +37,12 @@ class PolylinePlugin implements Plugin {
 
     @Override
     List<PluginTool> registerTools() {
-        return [new PolylineTool(settings), new DoubleLineTool(settings)]
+        return [new GroovyPolylineTool(settings), new GroovyDoubleLineTool(settings)]
     }
 
     @Override
     List<PluginCommand> registerCommands() {
-        return [new ShowPolylineSettingsCommand(SETTINGS_PANEL_KEY)]
+        return [new GroovyShowPolylineSettingsCommand(SETTINGS_PANEL_KEY)]
     }
 
     @Override
@@ -50,7 +50,7 @@ class PolylinePlugin implements Plugin {
         return [
             new PluginPanel(
                 SETTINGS_PANEL_ID,
-                "Polyline Settings",
+                "Groovy Polyline Settings",
                 260f,
                 220f,
                 PanelPosition.RIGHT,
@@ -104,9 +104,9 @@ class PolylinePlugin implements Plugin {
     }
 }
 
-class ShowPolylineSettingsCommand implements PluginCommand {
+class GroovyShowPolylineSettingsCommand implements PluginCommand {
     String id = "show_settings"
-    String name = "Show Polyline Settings"
+    String name = "Show Groovy Polyline Settings"
     String description = "Show the polyline settings panel."
     String category = "View"
     com.github.alfu32.sketch.plugin.capabilities.KeyBinding shortcut = null
@@ -114,7 +114,7 @@ class ShowPolylineSettingsCommand implements PluginCommand {
     boolean isVisibleInPalette() { return true }
     private final String panelId
 
-    ShowPolylineSettingsCommand(String panelId) {
+    GroovyShowPolylineSettingsCommand(String panelId) {
         this.panelId = panelId
     }
 
@@ -126,7 +126,7 @@ class ShowPolylineSettingsCommand implements PluginCommand {
     }
 }
 
-class PolylineTool implements PluginTool {
+class GroovyPolylineTool implements PluginTool {
     String id = "polyline"
     String name = "Polyline"
     String description = "Draw a polyline and preview faces."
@@ -144,7 +144,7 @@ class PolylineTool implements PluginTool {
     private final float closeDistance = 0.15f
     private final float epsilon = 0.0001f
 
-    PolylineTool(PolylineSettings settings) {
+    GroovyPolylineTool(PolylineSettings settings) {
         this.settings = settings
     }
 
@@ -619,7 +619,7 @@ class PolylineTool implements PluginTool {
     }
 }
 
-class DoubleLineTool implements PluginTool {
+class GroovyDoubleLineTool implements PluginTool {
     String id = "double_line"
     String name = "Double Line"
     String description = "Draw double parallel lines with line and arc modes."
@@ -641,7 +641,7 @@ class DoubleLineTool implements PluginTool {
     private final float epsilon = 0.0001f
     private final Color stripColor = new Color(0.8f, 0.8f, 0.8f, 1f)
 
-    DoubleLineTool(PolylineSettings settings) {
+    GroovyDoubleLineTool(PolylineSettings settings) {
         this.settings = settings
     }
 

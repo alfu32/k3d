@@ -3,6 +3,8 @@ package com.github.alfu32.sketch.ui
 enum class ToolId(val displayName: String) {
     SELECT("Select"),
     LINE("Line"),
+    POLYLINE("Polyline"),
+    DOUBLE_LINE("Double Line"),
     RECTANGLE("Rectangle"),
     SURFACE_RECTANGLE("Surface Rect"),
     QUAD("Quad"),
