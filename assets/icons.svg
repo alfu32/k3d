@@ -27,15 +27,15 @@
      inkscape:pagecheckerboard="false"
      inkscape:document-units="px"
      showgrid="true"
-     inkscape:zoom="11.313708"
-     inkscape:cx="128.78182"
-     inkscape:cy="25.234874"
+     inkscape:zoom="0.35355339"
+     inkscape:cx="274.35743"
+     inkscape:cy="929.13832"
      inkscape:window-width="1876"
      inkscape:window-height="1016"
      inkscape:window-x="0"
      inkscape:window-y="664"
      inkscape:window-maximized="1"
-     inkscape:current-layer="layer1"
+     inkscape:current-layer="layer5"
      units="px"
      width="128px"
      inkscape:snap-global="true"
@@ -226,7 +226,7 @@
      inkscape:label="DEFAULT_ICONS"
      inkscape:groupmode="layer"
      id="layer1"
-     style="display:inline">
+     style="display:none">
     <path
        style="color:#000000;fill:#060200;fill-opacity:1;-inkscape-stroke:none"
        d="m 11.642578,39.553184 v 1.263222 h 2.115235 v -1.280762 l -1.059417,0.309866 z"
@@ -1634,7 +1634,7 @@
      inkscape:groupmode="layer"
      id="layer5"
      inkscape:label="APP_GRAPHICS_2"
-     style="display:none">
+     style="display:inline">
     <g
        id="g4806">
       <polyline
