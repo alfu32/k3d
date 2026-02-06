@@ -503,6 +503,12 @@ class GroupScene(
             }
             clearGroupSelection()
         }
+        parent.lineStore.clearSelection()
+        parent.faceStore.clearSelection()
+        parent.dimensionStore.clearSelection()
+        parent.textStore.clearSelection()
+        clearGroupSelection()
+        selectedGroups.add(group)
         applyChangeListenerToAll()
         notifyChange()
         if (isEditing()) {
@@ -515,6 +521,25 @@ class GroupScene(
         val targets = selectedGroups.toList()
         if (targets.isEmpty()) {
             return 0
+        }
+        data class ParentSnapshot(
+            val lines: Set<DraftLineStore.Segment>,
+            val faces: Set<DraftFaceStore.Triangle>,
+            val dimensions: Set<DraftDimensionStore.LinearDimension>,
+            val texts: Set<DraftTextStore.TextEntity>
+        )
+        val parentSnapshots = mutableMapOf<GroupNode, ParentSnapshot>()
+        val movedChildren = mutableMapOf<GroupNode, MutableList<GroupNode>>()
+        targets.forEach { group ->
+            val parent = group.parent ?: return@forEach
+            parentSnapshots.getOrPut(parent) {
+                ParentSnapshot(
+                    lines = parent.lineStore.getSegments().toSet(),
+                    faces = parent.faceStore.getTriangles().toSet(),
+                    dimensions = parent.dimensionStore.getDimensions().toSet(),
+                    texts = parent.textStore.getTexts().toSet()
+                )
+            }
         }
         var count = 0
         targets.forEach { group ->
@@ -543,6 +568,7 @@ class GroupScene(
             }
             group.children.forEach { child ->
                 reparentGroup(child, parent)
+                movedChildren.getOrPut(parent) { mutableListOf() }.add(child)
             }
             group.children.clear()
             parent.children.remove(group)
@@ -550,6 +576,17 @@ class GroupScene(
             count++
         }
         clearGroupSelection()
+        parentSnapshots.forEach { (parent, snapshot) ->
+            parent.lineStore.clearSelection()
+            parent.faceStore.clearSelection()
+            parent.dimensionStore.clearSelection()
+            parent.textStore.clearSelection()
+            parent.lineStore.getSegments().filter { it !in snapshot.lines }.forEach { parent.lineStore.addSelection(it) }
+            parent.faceStore.getTriangles().filter { it !in snapshot.faces }.forEach { parent.faceStore.addSelection(it) }
+            parent.dimensionStore.getDimensions().filter { it !in snapshot.dimensions }.forEach { parent.dimensionStore.addSelection(it) }
+            parent.textStore.getTexts().filter { it !in snapshot.texts }.forEach { parent.textStore.addSelection(it) }
+            movedChildren[parent].orEmpty().forEach { addGroupSelection(it) }
+        }
         applyChangeListenerToAll()
         notifyChange()
         if (isEditing()) {

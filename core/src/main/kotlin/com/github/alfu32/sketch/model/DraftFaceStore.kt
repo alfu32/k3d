@@ -4,6 +4,7 @@ import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
 import com.github.alfu32.sketch.tools.PlaneBasis
 import com.github.alfu32.sketch.tools.planeBasisFromNormal
+import com.github.alfu32.sketch.model.DraftLineStore
 import org.locationtech.jts.geom.Coordinate
 import org.locationtech.jts.geom.Geometry
 import org.locationtech.jts.geom.GeometryFactory
@@ -28,6 +29,7 @@ class DraftFaceStore(
     private val epsilonSq = epsilon * epsilon
     private val jtsScale = 10000.0
     private val epsilon2d = (epsilon * jtsScale).toFloat()
+    private val cutEps2d = 1e-2f
     private val planeEps = 1e-2f
 
     fun setChangeListener(listener: () -> Unit) {
@@ -135,6 +137,22 @@ class DraftFaceStore(
         triangles.removeAll(selected)
         selected.clear()
         notifyChange()
+        return before - triangles.size
+    }
+
+    fun deleteTriangles(items: Collection<Triangle>): Int {
+        if (items.isEmpty()) {
+            return 0
+        }
+        val before = triangles.size
+        triangles.removeAll(items.toSet())
+        items.forEach { tri ->
+            colors.remove(tri)
+            selected.remove(tri)
+        }
+        if (before != triangles.size) {
+            notifyChange()
+        }
         return before - triangles.size
     }
 
@@ -421,6 +439,99 @@ class DraftFaceStore(
         return totalSplits
     }
 
+    fun cutSelectedByPolyline(points: List<Vector3>, segments: List<DraftLineStore.Segment>): Int {
+        if (selected.isEmpty() || triangles.isEmpty()) {
+            return 0
+        }
+        val selectedTriangles = selected.toMutableSet()
+        if (selectedTriangles.isEmpty()) {
+            return 0
+        }
+        val first = selectedTriangles.first()
+        val normal = Vector3(first.b).sub(first.a).crs(Vector3(first.c).sub(first.a))
+        if (normal.len2() <= epsilonSq) {
+            return 0
+        }
+        val basis = planeBasisFromNormal(normal)
+        val origin = Vector3(first.a)
+        val dedupedPoints = dedupePoints(points, 1e-2f)
+        var totalSplits = 0
+
+        dedupedPoints.forEach { point ->
+            val p2 = to2d(point, origin, basis)
+            val target = selectedTriangles.firstOrNull { tri ->
+                val a2 = to2d(tri.a, origin, basis)
+                val b2 = to2d(tri.b, origin, basis)
+                val c2 = to2d(tri.c, origin, basis)
+                !pointOnTriangleBoundary2d(p2, a2, b2, c2) && pointInTriangle2d(p2, a2, b2, c2)
+            } ?: return@forEach
+            val color = colors[target] ?: defaultColor
+            val split = splitTriangleAtPoint(target, point)
+            triangles.remove(target)
+            colors.remove(target)
+            selectedTriangles.remove(target)
+            split.forEach { next ->
+                triangles.add(next)
+                colors[next] = com.badlogic.gdx.graphics.Color(color)
+                selectedTriangles.add(next)
+            }
+            totalSplits += split.size
+        }
+
+        selected.clear()
+        selected.addAll(selectedTriangles)
+
+        segments.forEach { segment ->
+            val s = segment.start
+            val e = segment.end
+            var changed = true
+            var iterations = 0
+            while (changed && iterations < 20) {
+                iterations++
+                changed = false
+                val newTriangles = mutableListOf<Triangle>()
+                val newColors = mutableMapOf<Triangle, com.badlogic.gdx.graphics.Color>()
+                val newSelected = mutableSetOf<Triangle>()
+                triangles.forEach { tri ->
+                    val color = colors[tri] ?: defaultColor
+                    val wasSelected = selectedTriangles.contains(tri)
+                    if (!wasSelected) {
+                        newTriangles.add(tri)
+                        newColors[tri] = color
+                        return@forEach
+                    }
+                    val split = splitTriangleBySegmentCut(tri, s, e, origin, basis)
+                    if (split == null) {
+                        newTriangles.add(tri)
+                        newColors[tri] = color
+                        newSelected.add(tri)
+                    } else {
+                        changed = true
+                        totalSplits += split.size
+                        split.forEach { next ->
+                            newTriangles.add(next)
+                            newColors[next] = com.badlogic.gdx.graphics.Color(color)
+                            newSelected.add(next)
+                        }
+                    }
+                }
+                triangles.clear()
+                triangles.addAll(newTriangles)
+                colors.clear()
+                colors.putAll(newColors)
+                selectedTriangles.clear()
+                selectedTriangles.addAll(newSelected)
+            }
+        }
+
+        selected.clear()
+        selected.addAll(selectedTriangles)
+        if (totalSplits > 0) {
+            notifyChange()
+        }
+        return totalSplits
+    }
+
     fun cleanupJts(keepPoints: List<Vector3> = emptyList()) {
         if (triangles.isEmpty()) {
             return
@@ -610,9 +721,604 @@ class DraftFaceStore(
         return if (result.isEmpty()) null else result
     }
 
+    private fun splitTriangleByLineCut(tri: Triangle, start: Vector3, end: Vector3): List<Triangle>? {
+        val normal = Vector3(tri.b).sub(tri.a).crs(Vector3(tri.c).sub(tri.a))
+        if (normal.len2() <= epsilonSq) {
+            return null
+        }
+        normal.nor()
+        val planeD = -normal.dot(tri.a)
+        val distStart = normal.dot(start) + planeD
+        val distEnd = normal.dot(end) + planeD
+        if (kotlin.math.abs(distStart) > planeEps || kotlin.math.abs(distEnd) > planeEps) {
+            return null
+        }
+        val startProj = Vector3(start).mulAdd(normal, -distStart)
+        val endProj = Vector3(end).mulAdd(normal, -distEnd)
+
+        val basis = planeBasisFromNormal(normal)
+        val origin = Vector3(tri.a)
+
+        val tri2d = listOf(
+            to2d(tri.a, origin, basis),
+            to2d(tri.b, origin, basis),
+            to2d(tri.c, origin, basis)
+        )
+        val start2d = to2d(startProj, origin, basis)
+        val end2d = to2d(endProj, origin, basis)
+        val dir2d = Vector2(end2d).sub(start2d)
+        if (dir2d.len2() <= cutEps2d * cutEps2d) {
+            return null
+        }
+        val linePoint = Vector2(start2d)
+        val pos = clipPolygonByLineEps(tri2d, linePoint, dir2d, true, cutEps2d)
+        val neg = clipPolygonByLineEps(tri2d, linePoint, dir2d, false, cutEps2d)
+        if (pos.size < 3 || neg.size < 3) {
+            val sideA = lineSide(tri2d[0], linePoint, dir2d)
+            val sideB = lineSide(tri2d[1], linePoint, dir2d)
+            val sideC = lineSide(tri2d[2], linePoint, dir2d)
+            val sides = floatArrayOf(sideA, sideB, sideC)
+            val zeros = sides.count { kotlin.math.abs(it) <= cutEps2d }
+            if (zeros >= 2) {
+                return null
+            }
+            val signs = sides.map { if (it > cutEps2d) 1 else if (it < -cutEps2d) -1 else 0 }
+            val verts = listOf(
+                Pair(tri2d[0], tri.a),
+                Pair(tri2d[1], tri.b),
+                Pair(tri2d[2], tri.c)
+            )
+            val intersections = mutableListOf<Pair<Vector2, Pair<Vector3, Vector3>>>()
+            val edges = listOf(
+                Triple(0, 1, Pair(tri.a, tri.b)),
+                Triple(1, 2, Pair(tri.b, tri.c)),
+                Triple(2, 0, Pair(tri.c, tri.a))
+            )
+            edges.forEach { (i, j, edge3d) ->
+                val si = signs[i]
+                val sj = signs[j]
+                if (si == 0 && sj == 0) {
+                    return@forEach
+                }
+                if (si == 0 && sj != 0 || sj == 0 && si != 0 || si != sj) {
+                    val inter = intersectLineSegment2DEps(tri2d[i], tri2d[j], linePoint, dir2d, cutEps2d)
+                    if (inter != null) {
+                        intersections.add(Pair(inter, edge3d))
+                    }
+                }
+            }
+            if (intersections.size < 2) {
+                return null
+            }
+            val inter1 = intersections[0].first
+            val inter2 = intersections[1].first
+            val i1 = from2d(inter1, origin, basis)
+            val i2 = from2d(inter2, origin, basis)
+            val posIndices = signs.withIndex().filter { it.value > 0 }.map { it.index }
+            val negIndices = signs.withIndex().filter { it.value < 0 }.map { it.index }
+            val result = mutableListOf<Triangle>()
+            if (posIndices.size == 1 && negIndices.size == 2) {
+                val p = verts[posIndices[0]].second
+                val n1 = verts[negIndices[0]].second
+                val n2 = verts[negIndices[1]].second
+                result.add(Triangle(Vector3(p), Vector3(i1), Vector3(i2)))
+                result.add(Triangle(Vector3(n1), Vector3(n2), Vector3(i2)))
+                result.add(Triangle(Vector3(n1), Vector3(i2), Vector3(i1)))
+                return result
+            }
+            if (negIndices.size == 1 && posIndices.size == 2) {
+                val n = verts[negIndices[0]].second
+                val p1 = verts[posIndices[0]].second
+                val p2 = verts[posIndices[1]].second
+                result.add(Triangle(Vector3(n), Vector3(i1), Vector3(i2)))
+                result.add(Triangle(Vector3(p1), Vector3(p2), Vector3(i2)))
+                result.add(Triangle(Vector3(p1), Vector3(i2), Vector3(i1)))
+                return result
+            }
+            return null
+        }
+        val result = mutableListOf<Triangle>()
+        triangulateConvex(pos).forEach { polyTri ->
+            result.add(
+                Triangle(
+                    from2d(polyTri[0], origin, basis),
+                    from2d(polyTri[1], origin, basis),
+                    from2d(polyTri[2], origin, basis)
+                )
+            )
+        }
+        triangulateConvex(neg).forEach { polyTri ->
+            result.add(
+                Triangle(
+                    from2d(polyTri[0], origin, basis),
+                    from2d(polyTri[1], origin, basis),
+                    from2d(polyTri[2], origin, basis)
+                )
+            )
+        }
+        return if (result.isEmpty()) null else result
+    }
+
+    private fun splitTriangleBySegmentCut(
+        tri: Triangle,
+        start: Vector3,
+        end: Vector3,
+        origin: Vector3,
+        basis: PlaneBasis
+    ): List<Triangle>? {
+        val normal = Vector3(tri.b).sub(tri.a).crs(Vector3(tri.c).sub(tri.a))
+        if (normal.len2() <= epsilonSq) {
+            return null
+        }
+        normal.nor()
+        val planeD = -normal.dot(tri.a)
+        val distStart = normal.dot(start) + planeD
+        val distEnd = normal.dot(end) + planeD
+        if (kotlin.math.abs(distStart) > planeEps || kotlin.math.abs(distEnd) > planeEps) {
+            return null
+        }
+        val s2 = to2d(start, origin, basis)
+        val e2 = to2d(end, origin, basis)
+        val segMid = Vector2((s2.x + e2.x) * 0.5f, (s2.y + e2.y) * 0.5f)
+        val a2 = to2d(tri.a, origin, basis)
+        val b2 = to2d(tri.b, origin, basis)
+        val c2 = to2d(tri.c, origin, basis)
+
+        val midInside = pointInTriangle2d(segMid, a2, b2, c2) || pointOnTriangleBoundary2d(segMid, a2, b2, c2)
+        if (!midInside) {
+            return null
+        }
+
+        if (segmentCollinearOverlap2d(s2, e2, a2, b2) ||
+            segmentCollinearOverlap2d(s2, e2, b2, c2) ||
+            segmentCollinearOverlap2d(s2, e2, c2, a2)
+        ) {
+            return null
+        }
+
+        val points = mutableListOf<Vector2>()
+        if (pointInTriangle2d(s2, a2, b2, c2) || pointOnTriangleBoundary2d(s2, a2, b2, c2)) {
+            addIntersection(points, s2)
+        }
+        if (pointInTriangle2d(e2, a2, b2, c2) || pointOnTriangleBoundary2d(e2, a2, b2, c2)) {
+            addIntersection(points, e2)
+        }
+        addIntersection(points, segmentIntersection2d(s2, e2, a2, b2))
+        addIntersection(points, segmentIntersection2d(s2, e2, b2, c2))
+        addIntersection(points, segmentIntersection2d(s2, e2, c2, a2))
+        if (points.size < 2) {
+            val sOnEdge = pointOnTriangleBoundary2d(s2, a2, b2, c2)
+            val eOnEdge = pointOnTriangleBoundary2d(e2, a2, b2, c2)
+            if (sOnEdge && !eOnEdge) {
+                val proj = projectPointToTriangleBoundary(e2, a2, b2, c2)
+                if (proj != null) {
+                    addIntersection(points, proj)
+                }
+            } else if (eOnEdge && !sOnEdge) {
+                val proj = projectPointToTriangleBoundary(s2, a2, b2, c2)
+                if (proj != null) {
+                    addIntersection(points, proj)
+                }
+            }
+            if (points.size < 2) {
+                println("[CutHoles] segCut miss points=${points.size} midInside=$midInside s2=(${s2.x},${s2.y}) e2=(${e2.x},${e2.y}) tri=(${a2.x},${a2.y}) (${b2.x},${b2.y}) (${c2.x},${c2.y})")
+                return null
+            }
+        }
+
+        val dir = Vector2(e2).sub(s2)
+        val len2 = dir.len2()
+        if (len2 <= cutEps2d * cutEps2d) {
+            return null
+        }
+        val sorted = points
+            .distinctBy { Pair(kotlin.math.round(it.x / cutEps2d), kotlin.math.round(it.y / cutEps2d)) }
+            .sortedBy { p -> ((p.x - s2.x) * dir.x + (p.y - s2.y) * dir.y) / len2 }
+        if (sorted.size < 2) {
+            return null
+        }
+        val p1 = sorted.first()
+        val p2 = sorted.last()
+        if (p1.dst2(p2) <= cutEps2d * cutEps2d) {
+            return null
+        }
+        val tri2d = listOf(a2, b2, c2)
+        val linePoint = Vector2(p1)
+        val lineDir = Vector2(p2).sub(p1)
+        if (lineDir.len2() <= cutEps2d * cutEps2d) {
+            return null
+        }
+        val pos = clipPolygonByLineEps(tri2d, linePoint, lineDir, true, cutEps2d)
+        val neg = clipPolygonByLineEps(tri2d, linePoint, lineDir, false, cutEps2d)
+        if (pos.size < 3 || neg.size < 3) {
+            return null
+        }
+        val result = mutableListOf<Triangle>()
+        triangulateConvex(pos).forEach { polyTri ->
+            result.add(
+                Triangle(
+                    from2d(polyTri[0], origin, basis),
+                    from2d(polyTri[1], origin, basis),
+                    from2d(polyTri[2], origin, basis)
+                )
+            )
+        }
+        triangulateConvex(neg).forEach { polyTri ->
+            result.add(
+                Triangle(
+                    from2d(polyTri[0], origin, basis),
+                    from2d(polyTri[1], origin, basis),
+                    from2d(polyTri[2], origin, basis)
+                )
+            )
+        }
+        return if (result.isEmpty()) null else result
+    }
+
+    private fun splitTriangleBySegment(tri: Triangle, start: Vector3, end: Vector3): List<Triangle>? {
+        val normal = Vector3(tri.b).sub(tri.a).crs(Vector3(tri.c).sub(tri.a))
+        if (normal.len2() <= epsilonSq) {
+            return null
+        }
+        normal.nor()
+        val planeD = -normal.dot(tri.a)
+        val distStart = normal.dot(start) + planeD
+        val distEnd = normal.dot(end) + planeD
+        if (kotlin.math.abs(distStart) > planeEps || kotlin.math.abs(distEnd) > planeEps) {
+            return null
+        }
+        val basis = planeBasisFromNormal(normal)
+        val origin = Vector3(tri.a)
+        val a2 = to2d(tri.a, origin, basis)
+        val b2 = to2d(tri.b, origin, basis)
+        val c2 = to2d(tri.c, origin, basis)
+        val s2 = to2d(start, origin, basis)
+        val e2 = to2d(end, origin, basis)
+
+        if (segmentCollinearOverlap2d(s2, e2, a2, b2) ||
+            segmentCollinearOverlap2d(s2, e2, b2, c2) ||
+            segmentCollinearOverlap2d(s2, e2, c2, a2)
+        ) {
+            return null
+        }
+
+        val startOnEdge = pointOnTriangleBoundary2d(s2, a2, b2, c2)
+        val endOnEdge = pointOnTriangleBoundary2d(e2, a2, b2, c2)
+        val startInside = !startOnEdge && pointInTriangle2d(s2, a2, b2, c2)
+        val endInside = !endOnEdge && pointInTriangle2d(e2, a2, b2, c2)
+
+        if (startInside && endInside) {
+            return splitTriangleByLine(tri, start, end)
+        }
+        if (startOnEdge && endInside) {
+            return splitTriangleFromEdgePoint(tri, start, end, s2, a2, b2, c2)
+        }
+        if (endOnEdge && startInside) {
+            return splitTriangleFromEdgePoint(tri, end, start, e2, a2, b2, c2)
+        }
+        if (startInside) {
+            return splitTriangleAtPoint(tri, start)
+        }
+        if (endInside) {
+            return splitTriangleAtPoint(tri, end)
+        }
+
+        val intersections = mutableListOf<Vector2>()
+        if (startOnEdge) {
+            addIntersection(intersections, s2)
+        }
+        if (endOnEdge) {
+            addIntersection(intersections, e2)
+        }
+        addIntersection(intersections, segmentIntersection2d(s2, e2, a2, b2))
+        addIntersection(intersections, segmentIntersection2d(s2, e2, b2, c2))
+        addIntersection(intersections, segmentIntersection2d(s2, e2, c2, a2))
+        if (intersections.size < 2) {
+            val mid = Vector2((s2.x + e2.x) * 0.5f, (s2.y + e2.y) * 0.5f)
+            val midInside = pointInTriangle2d(mid, a2, b2, c2) || pointOnTriangleBoundary2d(mid, a2, b2, c2)
+            if (!midInside || intersections.isEmpty()) {
+                return null
+            }
+        }
+        return splitTriangleByLine(tri, start, end)
+    }
+
+    private fun splitTriangleAtPoint(tri: Triangle, point: Vector3): List<Triangle> {
+        return listOf(
+            Triangle(Vector3(point), Vector3(tri.a), Vector3(tri.b)),
+            Triangle(Vector3(point), Vector3(tri.b), Vector3(tri.c)),
+            Triangle(Vector3(point), Vector3(tri.c), Vector3(tri.a))
+        )
+    }
+
+    private fun splitTriangleFromEdgePoint(
+        tri: Triangle,
+        edgePoint: Vector3,
+        insidePoint: Vector3,
+        edgePoint2d: Vector2,
+        a2: Vector2,
+        b2: Vector2,
+        c2: Vector2
+    ): List<Triangle>? {
+        val edgeIndex = edgeIndexForPoint(edgePoint2d, a2, b2, c2)
+        val a = Vector3(tri.a)
+        val b = Vector3(tri.b)
+        val c = Vector3(tri.c)
+        val p = Vector3(edgePoint)
+        val q = Vector3(insidePoint)
+
+        val nearA = edgePoint2d.dst2(a2) <= cutEps2d * cutEps2d
+        val nearB = edgePoint2d.dst2(b2) <= cutEps2d * cutEps2d
+        val nearC = edgePoint2d.dst2(c2) <= cutEps2d * cutEps2d
+        if (nearA) {
+            return listOf(
+                Triangle(Vector3(a), Vector3(b), Vector3(q)),
+                Triangle(Vector3(a), Vector3(q), Vector3(c))
+            )
+        }
+        if (nearB) {
+            return listOf(
+                Triangle(Vector3(b), Vector3(c), Vector3(q)),
+                Triangle(Vector3(b), Vector3(q), Vector3(a))
+            )
+        }
+        if (nearC) {
+            return listOf(
+                Triangle(Vector3(c), Vector3(a), Vector3(q)),
+                Triangle(Vector3(c), Vector3(q), Vector3(b))
+            )
+        }
+
+        return when (edgeIndex) {
+            0 -> listOf(
+                Triangle(Vector3(a), Vector3(p), Vector3(q)),
+                Triangle(Vector3(p), Vector3(b), Vector3(q)),
+                Triangle(Vector3(q), Vector3(b), Vector3(c))
+            )
+            1 -> listOf(
+                Triangle(Vector3(b), Vector3(p), Vector3(q)),
+                Triangle(Vector3(p), Vector3(c), Vector3(q)),
+                Triangle(Vector3(q), Vector3(c), Vector3(a))
+            )
+            2 -> listOf(
+                Triangle(Vector3(c), Vector3(p), Vector3(q)),
+                Triangle(Vector3(p), Vector3(a), Vector3(q)),
+                Triangle(Vector3(q), Vector3(a), Vector3(b))
+            )
+            else -> null
+        }
+    }
+
+    private fun to2d(point: Vector3, origin: Vector3, basis: PlaneBasis): Vector2 {
+        val rel = Vector3(point).sub(origin)
+        return Vector2(rel.dot(basis.axisU), rel.dot(basis.axisV))
+    }
+
+    private fun edgeIndexForPoint(p: Vector2, a: Vector2, b: Vector2, c: Vector2): Int {
+        if (pointOnSegment2d(p, a, b)) {
+            return 0
+        }
+        if (pointOnSegment2d(p, b, c)) {
+            return 1
+        }
+        if (pointOnSegment2d(p, c, a)) {
+            return 2
+        }
+        return -1
+    }
+
+    private fun pointInTriangle2d(p: Vector2, a: Vector2, b: Vector2, c: Vector2): Boolean {
+        val v0x = c.x - a.x
+        val v0y = c.y - a.y
+        val v1x = b.x - a.x
+        val v1y = b.y - a.y
+        val v2x = p.x - a.x
+        val v2y = p.y - a.y
+        val dot00 = v0x * v0x + v0y * v0y
+        val dot01 = v0x * v1x + v0y * v1y
+        val dot02 = v0x * v2x + v0y * v2y
+        val dot11 = v1x * v1x + v1y * v1y
+        val dot12 = v1x * v2x + v1y * v2y
+        val denom = dot00 * dot11 - dot01 * dot01
+        if (kotlin.math.abs(denom) < cutEps2d) {
+            return false
+        }
+        val invDenom = 1f / denom
+        val u = (dot11 * dot02 - dot01 * dot12) * invDenom
+        val v = (dot00 * dot12 - dot01 * dot02) * invDenom
+        return u >= -cutEps2d && v >= -cutEps2d && u + v <= 1f + cutEps2d
+    }
+
+    private fun pointOnTriangleBoundary2d(p: Vector2, a: Vector2, b: Vector2, c: Vector2): Boolean {
+        return pointOnSegment2d(p, a, b) || pointOnSegment2d(p, b, c) || pointOnSegment2d(p, c, a)
+    }
+
+    private fun pointOnSegment2d(p: Vector2, a: Vector2, b: Vector2): Boolean {
+        val abx = b.x - a.x
+        val aby = b.y - a.y
+        val apx = p.x - a.x
+        val apy = p.y - a.y
+        val cross = abx * apy - aby * apx
+        if (kotlin.math.abs(cross) > cutEps2d) {
+            return false
+        }
+        val dot = apx * abx + apy * aby
+        if (dot < -cutEps2d) {
+            return false
+        }
+        val lenSq = abx * abx + aby * aby
+        if (dot > lenSq + cutEps2d) {
+            return false
+        }
+        return true
+    }
+
+    private fun segmentIntersection2d(a: Vector2, b: Vector2, c: Vector2, d: Vector2): Vector2? {
+        val r = Vector2(b).sub(a)
+        val s = Vector2(d).sub(c)
+        val denom = r.x * s.y - r.y * s.x
+        if (kotlin.math.abs(denom) < cutEps2d) {
+            return null
+        }
+        val cma = Vector2(c).sub(a)
+        val t = (cma.x * s.y - cma.y * s.x) / denom
+        val u = (cma.x * r.y - cma.y * r.x) / denom
+        return if (t >= -cutEps2d && t <= 1f + cutEps2d && u >= -cutEps2d && u <= 1f + cutEps2d) {
+            Vector2(a.x + r.x * t, a.y + r.y * t)
+        } else {
+            null
+        }
+    }
+
+    private fun segmentCollinearOverlap2d(a: Vector2, b: Vector2, c: Vector2, d: Vector2): Boolean {
+        val ab = Vector2(b).sub(a)
+        val ac = Vector2(c).sub(a)
+        val ad = Vector2(d).sub(a)
+        val cross1 = ab.x * ac.y - ab.y * ac.x
+        val cross2 = ab.x * ad.y - ab.y * ad.x
+        if (kotlin.math.abs(cross1) > cutEps2d || kotlin.math.abs(cross2) > cutEps2d) {
+            return false
+        }
+        val minAx = kotlin.math.min(a.x, b.x) - cutEps2d
+        val maxAx = kotlin.math.max(a.x, b.x) + cutEps2d
+        val minAy = kotlin.math.min(a.y, b.y) - cutEps2d
+        val maxAy = kotlin.math.max(a.y, b.y) + cutEps2d
+        val minCx = kotlin.math.min(c.x, d.x)
+        val maxCx = kotlin.math.max(c.x, d.x)
+        val minCy = kotlin.math.min(c.y, d.y)
+        val maxCy = kotlin.math.max(c.y, d.y)
+        val overlapX = maxCx >= minAx && minCx <= maxAx
+        val overlapY = maxCy >= minAy && minCy <= maxAy
+        return overlapX && overlapY
+    }
+
+    private fun addIntersection(list: MutableList<Vector2>, point: Vector2?) {
+        if (point == null) {
+            return
+        }
+        if (list.none { it.dst2(point) <= cutEps2d * cutEps2d }) {
+            list.add(point)
+        }
+    }
+
+    private fun projectPointToTriangleBoundary(p: Vector2, a: Vector2, b: Vector2, c: Vector2): Vector2? {
+        val candidates = listOf(
+            closestPointOnSegment2d(p, a, b),
+            closestPointOnSegment2d(p, b, c),
+            closestPointOnSegment2d(p, c, a)
+        )
+        return candidates.minByOrNull { it.dst2(p) }
+    }
+
+    private fun closestPointOnSegment2d(p: Vector2, a: Vector2, b: Vector2): Vector2 {
+        val ab = Vector2(b).sub(a)
+        val lenSq = ab.len2()
+        if (lenSq <= cutEps2d * cutEps2d) {
+            return Vector2(a)
+        }
+        val t = ((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / lenSq
+        val clamped = t.coerceIn(0f, 1f)
+        return Vector2(a.x + ab.x * clamped, a.y + ab.y * clamped)
+    }
+
+    private fun segmentIntersectsTriangle2d(s: Vector2, e: Vector2, a: Vector2, b: Vector2, c: Vector2): Boolean {
+        if (segmentCollinearOverlap2d(s, e, a, b) ||
+            segmentCollinearOverlap2d(s, e, b, c) ||
+            segmentCollinearOverlap2d(s, e, c, a)
+        ) {
+            return false
+        }
+        if (pointInTriangle2d(s, a, b, c) || pointInTriangle2d(e, a, b, c)) {
+            return true
+        }
+        if (segmentIntersection2d(s, e, a, b) != null) return true
+        if (segmentIntersection2d(s, e, b, c) != null) return true
+        if (segmentIntersection2d(s, e, c, a) != null) return true
+        return false
+    }
+
+    private fun dedupePoints(points: List<Vector3>, tolerance: Float): List<Vector3> {
+        if (points.isEmpty()) {
+            return emptyList()
+        }
+        val scale = 1f / tolerance
+        val seen = mutableSetOf<Triple<Int, Int, Int>>()
+        val result = mutableListOf<Vector3>()
+        points.forEach { p ->
+            val key = Triple(
+                kotlin.math.round(p.x * scale).toInt(),
+                kotlin.math.round(p.y * scale).toInt(),
+                kotlin.math.round(p.z * scale).toInt()
+            )
+            if (seen.add(key)) {
+                result.add(p)
+            }
+        }
+        return result
+    }
+
     private fun pointOnPlane(point: Vector3, normal: Vector3, d: Float): Boolean {
         val dist = normal.dot(point) + d
         return kotlin.math.abs(dist) <= planeEps
+    }
+
+    private fun clipPolygonByLineEps(
+        polygon: List<Vector2>,
+        linePoint: Vector2,
+        lineDir: Vector2,
+        keepPositive: Boolean,
+        eps: Float
+    ): List<Vector2> {
+        if (polygon.isEmpty()) {
+            return emptyList()
+        }
+        val output = mutableListOf<Vector2>()
+        val n = polygon.size
+        for (i in 0 until n) {
+            val a = polygon[i]
+            val b = polygon[(i + 1) % n]
+            val da = lineSide(a, linePoint, lineDir)
+            val db = lineSide(b, linePoint, lineDir)
+            val aInside = if (keepPositive) da >= -eps else da <= eps
+            val bInside = if (keepPositive) db >= -eps else db <= eps
+            if (aInside && bInside) {
+                output.add(Vector2(b))
+            } else if (aInside && !bInside) {
+                val inter = intersectLineSegment2DEps(a, b, linePoint, lineDir, eps)
+                if (inter != null) {
+                    output.add(inter)
+                }
+            } else if (!aInside && bInside) {
+                val inter = intersectLineSegment2DEps(a, b, linePoint, lineDir, eps)
+                if (inter != null) {
+                    output.add(inter)
+                }
+                output.add(Vector2(b))
+            }
+        }
+        return output
+    }
+
+    private fun intersectLineSegment2DEps(
+        a: Vector2,
+        b: Vector2,
+        linePoint: Vector2,
+        lineDir: Vector2,
+        eps: Float
+    ): Vector2? {
+        val segDir = Vector2(b).sub(a)
+        val denom = lineDir.x * segDir.y - lineDir.y * segDir.x
+        if (kotlin.math.abs(denom) < eps) {
+            return null
+        }
+        val ax = a.x - linePoint.x
+        val ay = a.y - linePoint.y
+        val t = (lineDir.x * ay - lineDir.y * ax) / denom
+        return if (t >= -eps && t <= 1f + eps) {
+            Vector2(a.x + segDir.x * t, a.y + segDir.y * t)
+        } else {
+            null
+        }
     }
 
     private fun toCoord(point: Vector3, origin: Vector3, basis: PlaneBasis): Coordinate {
@@ -620,6 +1326,12 @@ class DraftFaceStore(
         val u = rel.dot(basis.axisU) * jtsScale
         val v = rel.dot(basis.axisV) * jtsScale
         return Coordinate(u, v)
+    }
+
+    private fun from2d(point: Vector2, origin: Vector3, basis: PlaneBasis): Vector3 {
+        return Vector3(origin)
+            .mulAdd(basis.axisU, point.x)
+            .mulAdd(basis.axisV, point.y)
     }
 
     private fun fromCoord(coord: Coordinate, origin: Vector3, basis: PlaneBasis): Vector3 {

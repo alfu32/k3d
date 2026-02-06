@@ -1375,6 +1375,9 @@ class SketchUiOverlay(
             ToolId.LINE -> "line"
             ToolId.POLYLINE -> "polyline"
             ToolId.DOUBLE_LINE -> "double_line"
+            ToolId.FACE_OUTLINE -> "line"
+            ToolId.LINE_OFFSET -> "offset"
+            ToolId.CUT_HOLES -> "cleanup"
             ToolId.RECTANGLE -> "rectangle"
             ToolId.SURFACE_RECTANGLE -> "surface_rect"
             ToolId.QUAD -> "quad"
@@ -1397,6 +1400,9 @@ class SketchUiOverlay(
             ToolId.LINE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.POLYLINE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.DOUBLE_LINE -> Color(0.35f, 0.75f, 0.95f, 1f)
+            ToolId.FACE_OUTLINE -> Color(0.95f, 0.75f, 0.25f, 1f)
+            ToolId.LINE_OFFSET -> Color(0.35f, 0.75f, 0.95f, 1f)
+            ToolId.CUT_HOLES -> Color(0.85f, 0.55f, 0.35f, 1f)
             ToolId.RECTANGLE -> Color(0.35f, 0.75f, 0.95f, 1f)
             ToolId.SURFACE_RECTANGLE -> Color(0.35f, 0.85f, 0.65f, 1f)
             ToolId.QUAD -> Color(0.55f, 0.85f, 0.95f, 1f)

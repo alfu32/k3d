@@ -61,7 +61,10 @@ import com.github.alfu32.sketch.K3DVersion
 import com.badlogic.gdx.Graphics
 import com.github.alfu32.sketch.plugin.PluginHost
 import com.github.alfu32.sketch.tools.CircleTool
+import com.github.alfu32.sketch.tools.CutHolesTool
+import com.github.alfu32.sketch.tools.FaceOutlineTool
 import com.github.alfu32.sketch.tools.LinearDimensionTool
+import com.github.alfu32.sketch.tools.LineOffsetTool
 import com.github.alfu32.sketch.tools.LineTool
 import com.github.alfu32.sketch.tools.MoveTool
 import com.github.alfu32.sketch.tools.ObjectPlaceTool
@@ -210,6 +213,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 LineTool(scene),
                 PolylineToolInternal(scene, polylineSettings),
                 DoubleLineToolInternal(scene, polylineSettings),
+                FaceOutlineTool(scene),
+                LineOffsetTool(scene),
+                CutHolesTool(scene) { toolController.setTool(ToolId.SELECT) },
                 RectangleTool(scene),
                 SurfaceRectangleTool(scene),
                 QuadTool(scene),
@@ -499,6 +505,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ToolId.SURFACE_RECTANGLE,
             ToolId.QUAD,
             ToolId.CIRCLE,
+            ToolId.FACE_OUTLINE,
+            ToolId.LINE_OFFSET,
+            ToolId.CUT_HOLES,
             ToolId.LINEAR_DIMENSION,
             ToolId.TEXT,
             ToolId.PUSH_PULL,

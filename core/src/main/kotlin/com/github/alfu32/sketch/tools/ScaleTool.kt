@@ -70,7 +70,7 @@ class ScaleTool(
             status.message = "Scale vectors are too short."
             return true
         }
-        val axisWorld = refVec.nor()
+        val planeAxis = planeAxisFor(refVec, nextVec)
         val scale = nextLen / refLen
         if (kotlin.math.abs(scale - 1f) <= 1e-4f) {
             clearTransient()
@@ -78,16 +78,15 @@ class ScaleTool(
             return true
         }
         val cLocal = group.toLocal(cWorld)
-        val axisLocal = group.vectorToLocal(axisWorld).nor()
         val scaledFaces = group.faceStore.transformSelected { point ->
-            scaleAlongAxis(point, cLocal, axisLocal, scale)
+            scalePoint(point, cLocal, scale, planeAxis)
         }
         val scaledEdges = group.lineStore.transformSelected { point ->
-            scaleAlongAxis(point, cLocal, axisLocal, scale)
+            scalePoint(point, cLocal, scale, planeAxis)
         }
         val scaledGroups = scene.transformSelectedGroups(
-            { point -> scaleAlongAxis(point, cWorld, axisWorld, scale) },
-            { vector -> scaleVectorAlongAxis(vector, axisWorld, scale) }
+            { point -> scalePoint(point, cWorld, scale, planeAxis) },
+            { vector -> scaleVector(vector, scale, planeAxis) }
         )
         status.message = "Scaled | edges $scaledEdges faces $scaledFaces groups $scaledGroups"
         clearTransient()
@@ -112,10 +111,10 @@ class ScaleTool(
             val refLen = refVec.len()
             val nextLen = nextVec.len()
             if (refLen > 1e-6f && nextLen > 1e-6f) {
-                val axis = refVec.nor()
+                val planeAxis = planeAxisFor(refVec, nextVec)
                 val scale = nextLen / refLen
-                renderPreview(renderer, c, axis, scale)
-                renderGroupPreview(renderer, c, axis, scale)
+                renderPreview(renderer, c, scale, planeAxis)
+                renderGroupPreview(renderer, c, scale, planeAxis)
             }
         }
     }
@@ -126,15 +125,14 @@ class ScaleTool(
         hasHover = false
     }
 
-    private fun renderPreview(renderer: ShapeRenderer, center: Vector3, axis: Vector3, scale: Float) {
+    private fun renderPreview(renderer: ShapeRenderer, center: Vector3, scale: Float, planeAxis: PlaneAxis?) {
         renderer.color = Color(0.25f, 0.85f, 0.55f, 1f)
         val group = scene.activeGroup()
         val centerLocal = group.toLocal(center)
-        val axisLocal = group.vectorToLocal(axis).nor()
         group.faceStore.getSelected().forEach { tri ->
-            val a = scaleAlongAxis(tri.a, centerLocal, axisLocal, scale)
-            val b = scaleAlongAxis(tri.b, centerLocal, axisLocal, scale)
-            val c = scaleAlongAxis(tri.c, centerLocal, axisLocal, scale)
+            val a = scalePoint(tri.a, centerLocal, scale, planeAxis)
+            val b = scalePoint(tri.b, centerLocal, scale, planeAxis)
+            val c = scalePoint(tri.c, centerLocal, scale, planeAxis)
             val aw = group.toWorld(a)
             val bw = group.toWorld(b)
             val cw = group.toWorld(c)
@@ -143,28 +141,62 @@ class ScaleTool(
             renderer.line(cw.x, cw.y, cw.z, aw.x, aw.y, aw.z)
         }
         group.lineStore.getSelected().forEach { segment ->
-            val a = scaleAlongAxis(segment.start, centerLocal, axisLocal, scale)
-            val b = scaleAlongAxis(segment.end, centerLocal, axisLocal, scale)
+            val a = scalePoint(segment.start, centerLocal, scale, planeAxis)
+            val b = scalePoint(segment.end, centerLocal, scale, planeAxis)
             val aw = group.toWorld(a)
             val bw = group.toWorld(b)
             renderer.line(aw.x, aw.y, aw.z, bw.x, bw.y, bw.z)
         }
     }
 
-    private fun scaleAlongAxis(point: Vector3, center: Vector3, axis: Vector3, scale: Float): Vector3 {
+    private fun scalePoint(point: Vector3, center: Vector3, scale: Float, planeAxis: PlaneAxis?): Vector3 {
         val v = Vector3(point).sub(center)
-        val parallel = Vector3(axis).scl(v.dot(axis))
-        val perpendicular = Vector3(v).sub(parallel)
-        return Vector3(center).add(perpendicular).add(parallel.scl(scale))
+        return if (planeAxis == null) {
+            Vector3(center).add(v.scl(scale))
+        } else {
+            val scaled = Vector3(v)
+            when (planeAxis) {
+                PlaneAxis.X -> {
+                    scaled.y *= scale
+                    scaled.z *= scale
+                }
+                PlaneAxis.Y -> {
+                    scaled.x *= scale
+                    scaled.z *= scale
+                }
+                PlaneAxis.Z -> {
+                    scaled.x *= scale
+                    scaled.y *= scale
+                }
+            }
+            Vector3(center).add(scaled)
+        }
     }
 
-    private fun scaleVectorAlongAxis(vector: Vector3, axis: Vector3, scale: Float): Vector3 {
-        val parallel = Vector3(axis).scl(vector.dot(axis))
-        val perpendicular = Vector3(vector).sub(parallel)
-        return Vector3(perpendicular).add(parallel.scl(scale))
+    private fun scaleVector(vector: Vector3, scale: Float, planeAxis: PlaneAxis?): Vector3 {
+        return if (planeAxis == null) {
+            Vector3(vector).scl(scale)
+        } else {
+            val scaled = Vector3(vector)
+            when (planeAxis) {
+                PlaneAxis.X -> {
+                    scaled.y *= scale
+                    scaled.z *= scale
+                }
+                PlaneAxis.Y -> {
+                    scaled.x *= scale
+                    scaled.z *= scale
+                }
+                PlaneAxis.Z -> {
+                    scaled.x *= scale
+                    scaled.y *= scale
+                }
+            }
+            scaled
+        }
     }
 
-    private fun renderGroupPreview(renderer: ShapeRenderer, center: Vector3, axis: Vector3, scale: Float) {
+    private fun renderGroupPreview(renderer: ShapeRenderer, center: Vector3, scale: Float, planeAxis: PlaneAxis?) {
         if (scene.selectedGroups().isEmpty()) {
             return
         }
@@ -182,7 +214,7 @@ class ScaleTool(
                 Vector3(bounds.max.x, bounds.max.y, bounds.max.z)
             )
             corners.forEach { corner ->
-                val scaled = scaleAlongAxis(corner, center, axis, scale)
+                val scaled = scalePoint(corner, center, scale, planeAxis)
                 corner.set(scaled)
             }
             val min = corners.reduce { a, b -> Vector3(
@@ -207,6 +239,30 @@ class ScaleTool(
             renderer.line(max.x, min.y, min.z, max.x, max.y, min.z)
             renderer.line(max.x, min.y, max.z, max.x, max.y, max.z)
             renderer.line(min.x, min.y, max.z, min.x, max.y, max.z)
+        }
+    }
+
+    private enum class PlaneAxis {
+        X,
+        Y,
+        Z
+    }
+
+    private fun planeAxisFor(refVec: Vector3, nextVec: Vector3): PlaneAxis? {
+        val normal = Vector3(refVec).crs(nextVec)
+        if (normal.len2() <= 1e-6f) {
+            return null
+        }
+        normal.nor()
+        val absX = kotlin.math.abs(normal.x)
+        val absY = kotlin.math.abs(normal.y)
+        val absZ = kotlin.math.abs(normal.z)
+        val threshold = 0.98f
+        return when {
+            absX >= threshold && absX >= absY && absX >= absZ -> PlaneAxis.X
+            absY >= threshold && absY >= absX && absY >= absZ -> PlaneAxis.Y
+            absZ >= threshold && absZ >= absX && absZ >= absY -> PlaneAxis.Z
+            else -> null
         }
     }
 }
