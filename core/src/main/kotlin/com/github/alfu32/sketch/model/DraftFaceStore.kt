@@ -481,9 +481,22 @@ class DraftFaceStore(
         selected.clear()
         selected.addAll(selectedTriangles)
 
-        segments.forEach { segment ->
+        val sortedSegments = segments.sortedWith(compareBy(
+            { segmentKeyMin(it) },
+            { segmentKeyMax(it) }
+        ))
+        var globalChanged: Boolean
+        var globalGuard = 0
+        do {
+            globalChanged = false
+            globalGuard++
+            sortedSegments.forEach { segment ->
             val s = segment.start
             val e = segment.end
+            if (flipDiagonalForSegment(s, e, selectedTriangles)) {
+                totalSplits += 2
+                globalChanged = true
+            }
             var changed = true
             var iterations = 0
             while (changed && iterations < 20) {
@@ -507,6 +520,7 @@ class DraftFaceStore(
                         newSelected.add(tri)
                     } else {
                         changed = true
+                        globalChanged = true
                         totalSplits += split.size
                         split.forEach { next ->
                             newTriangles.add(next)
@@ -522,7 +536,8 @@ class DraftFaceStore(
                 selectedTriangles.clear()
                 selectedTriangles.addAll(newSelected)
             }
-        }
+            }
+        } while (globalChanged && globalGuard < 5)
 
         selected.clear()
         selected.addAll(selectedTriangles)
@@ -530,6 +545,254 @@ class DraftFaceStore(
             notifyChange()
         }
         return totalSplits
+    }
+
+    fun cutSelectedByPolygon(points: List<Vector3>): Int {
+        if (selected.isEmpty() || triangles.isEmpty() || points.size < 3) {
+            return 0
+        }
+        val geometryFactory = GeometryFactory()
+        val newTriangles = mutableListOf<Triangle>()
+        val newColors = mutableMapOf<Triangle, com.badlogic.gdx.graphics.Color>()
+        val newSelected = mutableSetOf<Triangle>()
+        val unselected = triangles.filter { !selected.contains(it) }
+        val unselectedColors = unselected.associateWith { colors[it] ?: defaultColor }
+        val selectedGroups = selected.groupBy { planeKey(it) }
+
+        selectedGroups.values.forEach { group ->
+            if (group.isEmpty()) {
+                return@forEach
+            }
+            val base = group.first()
+            val normal = Vector3(base.b).sub(base.a).crs(Vector3(base.c).sub(base.a))
+            if (normal.len2() <= epsilonSq) {
+                group.forEach { tri ->
+                    newTriangles.add(tri)
+                    newColors[tri] = colors[tri] ?: defaultColor
+                    newSelected.add(tri)
+                }
+                return@forEach
+            }
+            val basis = planeBasisFromNormal(normal)
+            val origin = Vector3(base.a)
+            val holePoints = points.filter { pointOnPlane(it, normal, -normal.dot(origin)) }
+            if (holePoints.size < 3) {
+                group.forEach { tri ->
+                    newTriangles.add(tri)
+                    newColors[tri] = colors[tri] ?: defaultColor
+                    newSelected.add(tri)
+                }
+                return@forEach
+            }
+            val holeCoords = mutableListOf<Coordinate>()
+            holePoints.forEach { holeCoords.add(toCoord(it, origin, basis)) }
+            if (holeCoords.size >= 2) {
+                val first = holeCoords.first()
+                val last = holeCoords.last()
+                val dx = first.x - last.x
+                val dy = first.y - last.y
+                if (dx * dx + dy * dy > epsilon2d * epsilon2d) {
+                    holeCoords.add(Coordinate(first))
+                }
+            }
+            val holePolygon = try {
+                geometryFactory.createPolygon(holeCoords.toTypedArray())
+            } catch (ex: Exception) {
+                null
+            }
+            if (holePolygon == null || holePolygon.isEmpty) {
+                group.forEach { tri ->
+                    newTriangles.add(tri)
+                    newColors[tri] = colors[tri] ?: defaultColor
+                    newSelected.add(tri)
+                }
+                return@forEach
+            }
+            val facePolys = group.map { tri ->
+                val coords = arrayOf(
+                    toCoord(tri.a, origin, basis),
+                    toCoord(tri.b, origin, basis),
+                    toCoord(tri.c, origin, basis),
+                    toCoord(tri.a, origin, basis)
+                )
+                geometryFactory.createPolygon(coords)
+            }
+            val union = try {
+                UnaryUnionOp.union(facePolys)
+            } catch (ex: Exception) {
+                null
+            }
+            if (union == null || union.isEmpty) {
+                group.forEach { tri ->
+                    newTriangles.add(tri)
+                    newColors[tri] = colors[tri] ?: defaultColor
+                    newSelected.add(tri)
+                }
+                return@forEach
+            }
+            val diff = try {
+                union.difference(holePolygon)
+            } catch (ex: Exception) {
+                null
+            }
+            if (diff == null || diff.isEmpty) {
+                group.forEach { tri ->
+                    newTriangles.add(tri)
+                    newColors[tri] = colors[tri] ?: defaultColor
+                    newSelected.add(tri)
+                }
+                return@forEach
+            }
+            val polygonsToTriangulate = collectPolygons(diff)
+            if (polygonsToTriangulate.isEmpty()) {
+                group.forEach { tri ->
+                    newTriangles.add(tri)
+                    newColors[tri] = colors[tri] ?: defaultColor
+                    newSelected.add(tri)
+                }
+                return@forEach
+            }
+            val groupColor = colors[group.first()] ?: defaultColor
+            polygonsToTriangulate.forEach { polygon ->
+                val triangles2d = tryTriangulatePolygon(polygon, emptyList(), origin, basis, geometryFactory)
+                if (triangles2d == null || triangles2d.isEmpty()) {
+                    return@forEach
+                }
+                triangles2d.forEach { tri2d ->
+                    val coords = tri2d.coordinates
+                    if (coords.size < 4) return@forEach
+                    val a = fromCoord(coords[0], origin, basis)
+                    val b = fromCoord(coords[1], origin, basis)
+                    val c = fromCoord(coords[2], origin, basis)
+                    val tri = Triangle(a, b, c)
+                    newTriangles.add(tri)
+                    newColors[tri] = com.badlogic.gdx.graphics.Color(groupColor)
+                    newSelected.add(tri)
+                }
+            }
+        }
+
+        triangles.clear()
+        triangles.addAll(unselected)
+        triangles.addAll(newTriangles)
+        colors.clear()
+        colors.putAll(unselectedColors)
+        colors.putAll(newColors)
+        selected.clear()
+        selected.addAll(newSelected)
+        notifyChange()
+        return newTriangles.size
+    }
+
+    private fun flipDiagonalForSegment(
+        start: Vector3,
+        end: Vector3,
+        selectedTriangles: MutableSet<Triangle>
+    ): Boolean {
+        if (selectedTriangles.size < 2) {
+            return false
+        }
+        val triList = selectedTriangles.toList().sortedWith(compareBy(
+            { triangleKey(it) }
+        ))
+        val matchStart = vertexMatch(start)
+        val matchEnd = vertexMatch(end)
+        if (matchStart == null || matchEnd == null) {
+            return false
+        }
+        for (i in 0 until triList.size) {
+            val t1 = triList[i]
+            for (j in i + 1 until triList.size) {
+                val t2 = triList[j]
+                val shared = sharedEdge(t1, t2) ?: continue
+                val c1 = otherVertex(t1, shared.first, shared.second) ?: continue
+                val c2 = otherVertex(t2, shared.first, shared.second) ?: continue
+                if (!matchStart(c1) || !matchEnd(c2)) {
+                    if (!matchStart(c2) || !matchEnd(c1)) {
+                        continue
+                    }
+                }
+                val color1 = colors[t1] ?: defaultColor
+                val color2 = colors[t2] ?: defaultColor
+                triangles.remove(t1)
+                triangles.remove(t2)
+                colors.remove(t1)
+                colors.remove(t2)
+                selectedTriangles.remove(t1)
+                selectedTriangles.remove(t2)
+                val normal = Vector3(t1.b).sub(t1.a).crs(Vector3(t1.c).sub(t1.a))
+                val a = Vector3(start)
+                val b = Vector3(end)
+                val tA = orientTriangle(a, b, Vector3(shared.first), normal)
+                val tB = orientTriangle(b, a, Vector3(shared.second), normal)
+                triangles.add(tA)
+                triangles.add(tB)
+                colors[tA] = com.badlogic.gdx.graphics.Color(color1)
+                colors[tB] = com.badlogic.gdx.graphics.Color(color2)
+                selectedTriangles.add(tA)
+                selectedTriangles.add(tB)
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun vertexMatch(target: Vector3): ((Vector3) -> Boolean)? {
+        return { v -> v.dst2(target) <= epsilonSq }
+    }
+
+    private fun triangleKey(tri: Triangle): Long {
+        val keys = listOf(vertexKey(tri.a), vertexKey(tri.b), vertexKey(tri.c))
+            .sortedWith { a, b -> compareKeys(a, b) }
+        var h = 1469598103934665603L
+        keys.forEach { k ->
+            h = h * 31 + k.x
+            h = h * 31 + k.y
+            h = h * 31 + k.z
+        }
+        return h
+    }
+
+    private fun segmentKeyMin(segment: DraftLineStore.Segment): Long {
+        val a = vertexKey(segment.start)
+        val b = vertexKey(segment.end)
+        return if (compareKeys(a, b) <= 0) hashVertexKey(a) else hashVertexKey(b)
+    }
+
+    private fun segmentKeyMax(segment: DraftLineStore.Segment): Long {
+        val a = vertexKey(segment.start)
+        val b = vertexKey(segment.end)
+        return if (compareKeys(a, b) <= 0) hashVertexKey(b) else hashVertexKey(a)
+    }
+
+    private fun hashVertexKey(key: VertexKey): Long {
+        var h = 1469598103934665603L
+        h = h * 31 + key.x
+        h = h * 31 + key.y
+        h = h * 31 + key.z
+        return h
+    }
+
+    private fun sharedEdge(a: Triangle, b: Triangle): Pair<Vector3, Vector3>? {
+        val vertsA = listOf(a.a, a.b, a.c)
+        val vertsB = listOf(b.a, b.b, b.c)
+        val shared = vertsA.filter { va -> vertsB.any { vb -> va.dst2(vb) <= epsilonSq } }
+        return if (shared.size == 2) Pair(shared[0], shared[1]) else null
+    }
+
+    private fun otherVertex(tri: Triangle, a: Vector3, b: Vector3): Vector3? {
+        return listOf(tri.a, tri.b, tri.c).firstOrNull {
+            it.dst2(a) > epsilonSq && it.dst2(b) > epsilonSq
+        }
+    }
+
+    private fun orientTriangle(a: Vector3, b: Vector3, c: Vector3, normal: Vector3): Triangle {
+        val n = Vector3(b).sub(a).crs(Vector3(c).sub(a))
+        return if (n.dot(normal) >= 0f) {
+            Triangle(Vector3(a), Vector3(b), Vector3(c))
+        } else {
+            Triangle(Vector3(a), Vector3(c), Vector3(b))
+        }
     }
 
     fun cleanupJts(keepPoints: List<Vector3> = emptyList()) {
@@ -886,25 +1149,24 @@ class DraftFaceStore(
         addIntersection(points, segmentIntersection2d(s2, e2, a2, b2))
         addIntersection(points, segmentIntersection2d(s2, e2, b2, c2))
         addIntersection(points, segmentIntersection2d(s2, e2, c2, a2))
-        if (points.size < 2) {
-            val sOnEdge = pointOnTriangleBoundary2d(s2, a2, b2, c2)
-            val eOnEdge = pointOnTriangleBoundary2d(e2, a2, b2, c2)
-            if (sOnEdge && !eOnEdge) {
-                val proj = projectPointToTriangleBoundary(e2, a2, b2, c2)
-                if (proj != null) {
-                    addIntersection(points, proj)
-                }
-            } else if (eOnEdge && !sOnEdge) {
-                val proj = projectPointToTriangleBoundary(s2, a2, b2, c2)
-                if (proj != null) {
-                    addIntersection(points, proj)
-                }
-            }
             if (points.size < 2) {
-                println("[CutHoles] segCut miss points=${points.size} midInside=$midInside s2=(${s2.x},${s2.y}) e2=(${e2.x},${e2.y}) tri=(${a2.x},${a2.y}) (${b2.x},${b2.y}) (${c2.x},${c2.y})")
-                return null
+                val sOnEdge = pointOnTriangleBoundary2d(s2, a2, b2, c2)
+                val eOnEdge = pointOnTriangleBoundary2d(e2, a2, b2, c2)
+                if (sOnEdge && !eOnEdge) {
+                    val proj = projectPointToTriangleBoundary(e2, a2, b2, c2)
+                    if (proj != null) {
+                        addIntersection(points, proj)
+                    }
+                } else if (eOnEdge && !sOnEdge) {
+                    val proj = projectPointToTriangleBoundary(s2, a2, b2, c2)
+                    if (proj != null) {
+                        addIntersection(points, proj)
+                    }
+                }
+                if (points.size < 2) {
+                    return null
+                }
             }
-        }
 
         val dir = Vector2(e2).sub(s2)
         val len2 = dir.len2()

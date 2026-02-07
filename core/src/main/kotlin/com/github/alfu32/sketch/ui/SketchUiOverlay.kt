@@ -500,7 +500,12 @@ class SketchUiOverlay(
         group.setMinCheckCount(1)
         group.setUncheckLast(false)
 
-        ToolId.values().filter { it != ToolId.PLUGIN && it != ToolId.OBJECT_PLACE }.forEach { toolId ->
+        ToolId.values().filter {
+            it != ToolId.PLUGIN &&
+                it != ToolId.OBJECT_PLACE &&
+                it != ToolId.CUT_HOLES &&
+                it != ToolId.CUT_HOLES_2
+        }.forEach { toolId ->
             val icon = createIconDrawable(toolId)
             val button = VisImageTextButton(toolId.displayName, icon)
             applyWhiteButtonStyle(button)
@@ -1378,6 +1383,7 @@ class SketchUiOverlay(
             ToolId.FACE_OUTLINE -> "line"
             ToolId.LINE_OFFSET -> "offset"
             ToolId.CUT_HOLES -> "cleanup"
+            ToolId.CUT_HOLES_2 -> "cleanup"
             ToolId.RECTANGLE -> "rectangle"
             ToolId.SURFACE_RECTANGLE -> "surface_rect"
             ToolId.QUAD -> "quad"
@@ -1403,6 +1409,7 @@ class SketchUiOverlay(
             ToolId.FACE_OUTLINE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.LINE_OFFSET -> Color(0.35f, 0.75f, 0.95f, 1f)
             ToolId.CUT_HOLES -> Color(0.85f, 0.55f, 0.35f, 1f)
+            ToolId.CUT_HOLES_2 -> Color(0.85f, 0.55f, 0.35f, 1f)
             ToolId.RECTANGLE -> Color(0.35f, 0.75f, 0.95f, 1f)
             ToolId.SURFACE_RECTANGLE -> Color(0.35f, 0.85f, 0.65f, 1f)
             ToolId.QUAD -> Color(0.55f, 0.85f, 0.95f, 1f)

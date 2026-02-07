@@ -62,6 +62,7 @@ import com.badlogic.gdx.Graphics
 import com.github.alfu32.sketch.plugin.PluginHost
 import com.github.alfu32.sketch.tools.CircleTool
 import com.github.alfu32.sketch.tools.CutHolesTool
+import com.github.alfu32.sketch.tools.CutHolesTool2
 import com.github.alfu32.sketch.tools.FaceOutlineTool
 import com.github.alfu32.sketch.tools.LinearDimensionTool
 import com.github.alfu32.sketch.tools.LineOffsetTool
@@ -216,6 +217,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 FaceOutlineTool(scene),
                 LineOffsetTool(scene),
                 CutHolesTool(scene) { toolController.setTool(ToolId.SELECT) },
+                CutHolesTool2(scene) { toolController.setTool(ToolId.SELECT) },
                 RectangleTool(scene),
                 SurfaceRectangleTool(scene),
                 QuadTool(scene),
@@ -498,6 +500,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 }
             )
         )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "edit.cut_rect_hole",
+                name = "Edit> Cut Rect Hole",
+                description = "Cut a rectangular hole from selected faces using selected polyline",
+                icon = "edit",
+                category = "Edit",
+                tags = listOf("cut", "hole", "rect"),
+                priority = 1,
+                execute = {
+                    cutRectHole()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
         listOf(
             ToolId.SELECT,
             ToolId.LINE,
@@ -508,6 +525,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ToolId.FACE_OUTLINE,
             ToolId.LINE_OFFSET,
             ToolId.CUT_HOLES,
+            ToolId.CUT_HOLES_2,
             ToolId.LINEAR_DIMENSION,
             ToolId.TEXT,
             ToolId.PUSH_PULL,
@@ -2092,6 +2110,96 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun activeTextStore(): com.github.alfu32.sketch.model.DraftTextStore {
         return activeGroup().textStore
+    }
+
+    private fun cutRectHole() {
+        val group = scene.activeGroup()
+        val faces = group.faceStore.getSelected()
+        val segments = group.lineStore.getSelected()
+        if (faces.isEmpty() || segments.isEmpty()) {
+            statusModel.message = "Select faces and hole polyline first."
+            return
+        }
+        val loops = orderedLoops(segments.toList())
+        val loop = loops.firstOrNull { it.closed && it.points.size >= 3 }
+        if (loop == null) {
+            statusModel.message = "Hole polyline must be a closed loop."
+            return
+        }
+        val count = group.faceStore.cutSelectedByPolygon(loop.points)
+        if (count > 0) {
+            statusModel.message = "Cut rect hole | triangles $count"
+            undoManager.commit("Cut Rect Hole")
+            saveModel()
+        } else {
+            statusModel.message = "Cut rect hole failed."
+        }
+    }
+
+    private data class OrderedLoop(val points: List<Vector3>, val closed: Boolean)
+
+    private data class VertexKey(val x: Int, val y: Int, val z: Int)
+
+    private fun orderedLoops(segments: List<com.github.alfu32.sketch.model.DraftLineStore.Segment>): List<OrderedLoop> {
+        if (segments.isEmpty()) {
+            return emptyList()
+        }
+        val keyEps = 1e-3f
+        fun vertexKey(point: Vector3): VertexKey {
+            return VertexKey(
+                kotlin.math.round(point.x / keyEps).toInt(),
+                kotlin.math.round(point.y / keyEps).toInt(),
+                kotlin.math.round(point.z / keyEps).toInt()
+            )
+        }
+        val endpointMap = mutableMapOf<VertexKey, MutableList<com.github.alfu32.sketch.model.DraftLineStore.Segment>>()
+        val segmentKeys = mutableMapOf<com.github.alfu32.sketch.model.DraftLineStore.Segment, Pair<VertexKey, VertexKey>>()
+        val keyToPoint = mutableMapOf<VertexKey, Vector3>()
+        segments.forEach { segment ->
+            val a = vertexKey(segment.start).also { keyToPoint.putIfAbsent(it, Vector3(segment.start)) }
+            val b = vertexKey(segment.end).also { keyToPoint.putIfAbsent(it, Vector3(segment.end)) }
+            endpointMap.getOrPut(a) { mutableListOf() }.add(segment)
+            endpointMap.getOrPut(b) { mutableListOf() }.add(segment)
+            segmentKeys[segment] = Pair(a, b)
+        }
+        val loops = mutableListOf<OrderedLoop>()
+        val visited = mutableSetOf<com.github.alfu32.sketch.model.DraftLineStore.Segment>()
+        segments.forEach { start ->
+            if (visited.contains(start)) {
+                return@forEach
+            }
+            val keys = segmentKeys[start] ?: return@forEach
+            val startKey = keys.first
+            val points = mutableListOf<Vector3>()
+            points.add(Vector3(keyToPoint[startKey] ?: start.start))
+            var current = startKey
+            var closed = false
+            while (true) {
+                val candidates = endpointMap[current].orEmpty().filter { it !in visited }
+                if (candidates.isEmpty()) {
+                    break
+                }
+                val nextSeg = candidates.first()
+                visited.add(nextSeg)
+                val (a, b) = segmentKeys[nextSeg]!!
+                val nextKey = if (a == current) b else a
+                points.add(Vector3(keyToPoint[nextKey] ?: if (a == current) nextSeg.end else nextSeg.start))
+                current = nextKey
+                if (current == startKey) {
+                    closed = true
+                    break
+                }
+            }
+            if (closed && points.size > 1) {
+                val first = points.first()
+                val last = points.last()
+                if (first.dst2(last) <= keyEps * keyEps) {
+                    points.removeAt(points.lastIndex)
+                }
+            }
+            loops.add(OrderedLoop(points, closed))
+        }
+        return loops
     }
 
     private fun totalEdgeCount(): Int {

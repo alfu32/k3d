@@ -8,6 +8,7 @@ enum class ToolId(val displayName: String) {
     FACE_OUTLINE("Face Outline"),
     LINE_OFFSET("Line Offset"),
     CUT_HOLES("Cut Holes"),
+    CUT_HOLES_2("Cut Holes 2"),
     RECTANGLE("Rectangle"),
     SURFACE_RECTANGLE("Surface Rect"),
     QUAD("Quad"),
