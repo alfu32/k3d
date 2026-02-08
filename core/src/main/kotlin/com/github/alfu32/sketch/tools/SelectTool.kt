@@ -98,6 +98,17 @@ class SelectTool(
             }
             return false
         }
+        if (isAltPressed()) {
+            selectingWindow = true
+            windowDragActive = false
+            windowStartX = Gdx.input.x
+            windowStartY = Gdx.input.y
+            windowEndX = windowStartX
+            windowEndY = windowStartY
+            // Alt forces 2D window selection only, never starts the 3D volume mode.
+            pendingVolumeStart = null
+            return true
+        }
         val ray = camera.getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
         val faceHit = pickFaceWorld(ray)
         val edgeHit = pickEdgeWorld(ray, Gdx.input.x, Gdx.input.y)
@@ -726,6 +737,11 @@ class SelectTool(
             shift -> SelectionMode.ADD
             else -> SelectionMode.REPLACE
         }
+    }
+
+    private fun isAltPressed(): Boolean {
+        return Gdx.input.isKeyPressed(Input.Keys.ALT_LEFT) ||
+            Gdx.input.isKeyPressed(Input.Keys.ALT_RIGHT)
     }
 
     private fun faceIntersectsRect(a: Vector3, b: Vector3, c: Vector3, rect: WindowRectTopLeft): Boolean {

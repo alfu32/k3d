@@ -18,9 +18,6 @@ class LineTool(
     private var anchorWorld: Vector3? = null
     private val hover = Vector3()
     private var hasHover = false
-    private val polylinePointsLocal = mutableListOf<Vector3>()
-    private var preferredNormalLocal: Vector3? = null
-    private val epsilonSq = 1e-4f
 
     override fun onEnter(status: StatusModel) {
         status.message = "Click to start a line."
@@ -52,9 +49,6 @@ class LineTool(
         val group = scene.activeGroup()
         if (anchorWorld == null) {
             anchorWorld = Vector3(world)
-            preferredNormalLocal = normal?.let { group.vectorToLocal(it) }
-            polylinePointsLocal.clear()
-            polylinePointsLocal.add(group.toLocal(world))
             status.message = "Click to finish segment. Esc cancels."
         } else {
             val startWorld = anchorWorld ?: return false
@@ -63,19 +57,7 @@ class LineTool(
             val endLocal = group.toLocal(endWorld)
             group.addSketchSegment(startLocal, endLocal)
             anchorWorld = Vector3(endWorld)
-            polylinePointsLocal.add(Vector3(endLocal))
-            if (polylinePointsLocal.size >= 3 && polylinePointsLocal.first().dst2(endLocal) <= epsilonSq) {
-                val facing = normal?.let { group.vectorToLocal(it) } ?: preferredNormalLocal
-                group.faceStore.addPolygon(polylinePointsLocal, facing)
-                polylinePointsLocal.clear()
-                polylinePointsLocal.add(Vector3(endLocal))
-                status.message = "Face created. Click to continue line. Esc cancels."
-            } else {
-                status.message = "Click to continue line. Esc cancels."
-            }
-        }
-        if (normal != null) {
-            preferredNormalLocal = scene.activeGroup().vectorToLocal(normal)
+            status.message = "Click to continue line. Esc cancels."
         }
         return true
     }
@@ -95,7 +77,5 @@ class LineTool(
     private fun clearTransient() {
         anchorWorld = null
         hasHover = false
-        polylinePointsLocal.clear()
-        preferredNormalLocal = null
     }
 }

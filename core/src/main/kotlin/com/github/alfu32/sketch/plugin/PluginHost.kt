@@ -43,7 +43,7 @@ class PluginHost(
     private val enabledPlugins = mutableSetOf<String>()
     private val pluginTools = mutableMapOf<String, com.github.alfu32.sketch.plugin.capabilities.PluginTool>()
     private var activePluginToolId: String? = null
-    private val helperScripts = setOf("encode_base64.groovy")
+    private val helperScripts = setOf("encode_base64.groovy", "polyline.groovy")
     private var showPluginPanelHandler: (String) -> Unit = {}
 
     fun loadCatalog() {

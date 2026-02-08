@@ -49,6 +49,7 @@ done
 mkdir -p dist/plugins
 cp core/build/libs/k3d-plugin-api*.jar dist/plugins/ 2>/dev/null || true
 cp scripts/*.groovy dist/plugins/ 2>/dev/null || true
+rm -f dist/plugins/polyline.groovy
 
 
 export LAUNCHER_LINUX=dist/k3d-editor

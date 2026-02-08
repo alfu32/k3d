@@ -83,6 +83,7 @@ tasks.register('copyPluginApiJar', Copy) {
 tasks.register('copySamplePlugins', Copy) {
   from "${rootProject.rootDir}/scripts"
   include '**/*.groovy'
+  exclude 'polyline.groovy'
   into "${rootProject.rootDir}/dist/plugins"
 }
 

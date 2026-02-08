@@ -504,8 +504,7 @@ class SketchUiOverlay(
             it != ToolId.PLUGIN &&
                 it != ToolId.OBJECT_PLACE &&
                 it != ToolId.CUT_HOLES &&
-                it != ToolId.CUT_HOLES_2 &&
-                it != ToolId.CUT_OUT_3
+                it != ToolId.CUT_HOLES_2
         }.forEach { toolId ->
             val icon = createIconDrawable(toolId)
             val button = VisImageTextButton(toolId.displayName, icon)
