@@ -61,6 +61,7 @@ import com.github.alfu32.sketch.K3DVersion
 import com.badlogic.gdx.Graphics
 import com.github.alfu32.sketch.plugin.PluginHost
 import com.github.alfu32.sketch.tools.CircleTool
+import com.github.alfu32.sketch.tools.ConstructionLineTool
 import com.github.alfu32.sketch.tools.CutHolesTool
 import com.github.alfu32.sketch.tools.CutHolesTool2
 import com.github.alfu32.sketch.tools.CutOut3Tool
@@ -212,7 +213,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             statusModel,
             listOf(
                 SelectTool(scene, camera),
-                LineTool(scene),
+                LineTool(scene) { toolController.setTool(ToolId.SELECT) },
+                ConstructionLineTool(scene) { toolController.setTool(ToolId.SELECT) },
                 PolylineToolInternal(scene, polylineSettings),
                 DoubleLineToolInternal(scene, polylineSettings),
                 FaceOutlineTool(scene),
@@ -520,6 +522,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         listOf(
             ToolId.SELECT,
             ToolId.LINE,
+            ToolId.CONSTRUCTION_LINE,
             ToolId.RECTANGLE,
             ToolId.SURFACE_RECTANGLE,
             ToolId.QUAD,
@@ -638,10 +641,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         camera.up.set(0f, 1f, 0f)
         camera.lookAt(cameraTarget)
         camera.update()
+        handleGlobalDistanceShortcut()
         updateCursorStatus()
-        if (distanceInputActive) {
-            uiOverlay.updateDistancePopupHover(Gdx.input.x, Gdx.input.y)
-        }
         undoManager.update()
         pluginHost.dispatchUpdate(Gdx.graphics.deltaTime)
         toolController.update(Gdx.graphics.deltaTime)
@@ -1182,6 +1183,14 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             { text -> commitDistanceInput(text) },
             { cancelDistanceInput() }
         )
+    }
+
+    private fun handleGlobalDistanceShortcut() {
+        val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
+            Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+        if (ctrl && Gdx.input.isKeyJustPressed(Input.Keys.N)) {
+            startDistanceInput()
+        }
     }
 
     private fun updateDistanceInput(text: String) {

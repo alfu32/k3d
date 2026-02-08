@@ -9,19 +9,19 @@ import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
 
-class LineTool(
+class ConstructionLineTool(
     private val scene: GroupScene,
     private val onSelectTool: () -> Unit
 ) : Tool {
-    override val id: ToolId = ToolId.LINE
-    override val message: String = "Click to start a line."
+    override val id: ToolId = ToolId.CONSTRUCTION_LINE
+    override val message: String = "Click to start a construction line."
 
     private var anchorWorld: Vector3? = null
     private val hover = Vector3()
     private var hasHover = false
 
     override fun onEnter(status: StatusModel) {
-        status.message = "Click to start a line."
+        status.message = message
     }
 
     override fun onExit(status: StatusModel) {
@@ -57,8 +57,8 @@ class LineTool(
             val startLocal = group.toLocal(startWorld)
             val endLocal = group.toLocal(endWorld)
             group.addSketchSegment(startLocal, endLocal)
-            anchorWorld = Vector3(endWorld)
-            status.message = "Click to continue line. Enter finishes. Esc selects."
+            anchorWorld = null
+            status.message = message
         }
         return true
     }
@@ -91,7 +91,7 @@ class LineTool(
     override fun render(renderer: ShapeRenderer) {
         val start = anchorWorld
         if (start != null && hasHover) {
-            renderer.color = Color(0.95f, 0.75f, 0.25f, 1f)
+            renderer.color = Color(0.65f, 0.9f, 0.65f, 1f)
             renderer.line(start.x, start.y, start.z, hover.x, hover.y, hover.z)
         }
     }

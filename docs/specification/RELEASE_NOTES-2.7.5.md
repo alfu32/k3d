@@ -24,3 +24,4 @@
 - Updated packaging/loader behavior to prevent legacy polyline plugin reinjection from dist/plugin script copy paths.
 - Fixed collapsible panel UX (including Plugin Manager): double-click title collapse/expand now keeps the title bar anchored (no downward jump).
 - Fixed UI focus/input routing so typing in panel text/number controls no longer leaks keystrokes to the main canvas/tool handlers.
+- Hardened `Ctrl+N` numeric distance popup lifecycle: shortcut now reopens reliably, popup no longer auto-disappears on hover drift, and position is clamped near cursor within viewport bounds.

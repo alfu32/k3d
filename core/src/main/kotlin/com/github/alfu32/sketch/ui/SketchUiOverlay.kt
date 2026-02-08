@@ -285,8 +285,13 @@ class SketchUiOverlay(
         }
         popup.pack()
         val stageCoords = stage.screenToStageCoordinates(com.badlogic.gdx.math.Vector2(screenX.toFloat(), screenY.toFloat()))
-        popup.setPosition(stageCoords.x, stageCoords.y)
+        val maxX = (stage.width - popup.width).coerceAtLeast(0f)
+        val maxY = (stage.height - popup.height).coerceAtLeast(0f)
+        val x = stageCoords.x.coerceIn(0f, maxX)
+        val y = stageCoords.y.coerceIn(0f, maxY)
+        popup.setPosition(x, y)
         popup.isVisible = true
+        popup.toFront()
         stage.keyboardFocus = field
         stage.scrollFocus = field
         if (!wasVisible && field.text.isNotBlank()) {
@@ -332,16 +337,7 @@ class SketchUiOverlay(
     }
 
     fun updateDistancePopupHover(screenX: Int, screenY: Int) {
-        val popup = distancePopup ?: return
-        if (!popup.isVisible) {
-            return
-        }
-        val stageCoords = stage.screenToStageCoordinates(com.badlogic.gdx.math.Vector2(screenX.toFloat(), screenY.toFloat()))
-        val hit = stage.hit(stageCoords.x, stageCoords.y, true)
-        val isOverPopup = hit != null && hit.isDescendantOf(popup)
-        if (!isOverPopup) {
-            hideDistancePopup(cancel = true)
-        }
+        // Kept for compatibility. Popup visibility is explicitly managed by Enter/Escape/Ctrl+N.
     }
 
     fun isUiCapturingInput(): Boolean {
@@ -1384,6 +1380,7 @@ class SketchUiOverlay(
         val iconName = when (toolId) {
             ToolId.SELECT -> "select"
             ToolId.LINE -> "line"
+            ToolId.CONSTRUCTION_LINE -> "line"
             ToolId.POLYLINE -> "polyline"
             ToolId.DOUBLE_LINE -> "double_line"
             ToolId.FACE_OUTLINE -> "line"
@@ -1411,6 +1408,7 @@ class SketchUiOverlay(
         val color = when (toolId) {
             ToolId.SELECT -> Color(0.85f, 0.85f, 0.85f, 1f)
             ToolId.LINE -> Color(0.95f, 0.75f, 0.25f, 1f)
+            ToolId.CONSTRUCTION_LINE -> Color(0.65f, 0.9f, 0.65f, 1f)
             ToolId.POLYLINE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.DOUBLE_LINE -> Color(0.35f, 0.75f, 0.95f, 1f)
             ToolId.FACE_OUTLINE -> Color(0.95f, 0.75f, 0.25f, 1f)
