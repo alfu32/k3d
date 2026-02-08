@@ -4,7 +4,7 @@ This is a quick reference for keyboard and mouse shortcuts.
 
 ## General
 - `Ctrl+Shift+P`: Command palette.
-- `Esc`: Cancel active tool, clear selection, exit object edit.
+- `Esc`: Cancel/exit active tool, clear selection, exit object edit.
 - `Delete`: Delete selection.
 - `Backspace`: Clear current numeric input buffer.
 - `Enter`: Commit current numeric input buffer.
@@ -29,6 +29,11 @@ This is a quick reference for keyboard and mouse shortcuts.
 - Drag right-to-left: Window select (intersect).
 - Click empty space, then click second corner: Volume select.
 
+## Tool-specific keys
+- `Line`: `Enter` finishes the current chain, `Esc` exits to Select.
+- `Construction Line`: `Enter` clears current segment draft, `Esc` exits to Select.
+- `Polyline` / `Double Line`: `Esc` cancel, `Enter` finalize, `Backspace` remove last segment.
+
 ## Objects
 - `Ctrl+O`: Create object prototype from selection.
 - Double-click prototype in Objects panel: Place instance.
@@ -43,6 +48,10 @@ This is a quick reference for keyboard and mouse shortcuts.
 ## Numeric input
 - `Ctrl+N`: Show numeric input popup at cursor.
 - `0-9`, `.`, `-`: Direct numeric input while a tool is active.
+
+## Input focus behavior
+- Keyboard input stays in focused panel fields while editing text/numbers.
+- Viewport keys (`Esc`, `Delete`, tool shortcuts) apply when the pointer is over the canvas.
 
 ## Grouping
 - `Ctrl+G`: Group (create object prototype) from selection.

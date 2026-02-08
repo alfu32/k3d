@@ -62,7 +62,7 @@ You can also pass a `.k3d` path directly (the launcher converts it into `--file`
 - Undo/Redo: `Ctrl+Z` / `Ctrl+Y` (or `Ctrl+Shift+Z`).
 
 Panels are collapsible: double-click a panel title bar to toggle its content. Collapse/expand keeps the title bar anchored in place.
-Click inside the viewport to restore focus if keyboard shortcuts appear to be ignored.
+Keyboard focus is panel-aware: typing in focused fields stays in UI controls, while viewport shortcuts apply when the cursor is over the canvas.
 
 ![Screenshot placeholder: Panels](images/img_3.png)
 
@@ -151,9 +151,18 @@ Objects let you reuse geometry and isolate edits.
 
 - Click to start a line chain; each click adds another segment.
 - Line tool creates edges only and does not auto-create faces.
-- `Esc` cancels the active line chain.
+- `Enter` finishes the current chain and keeps the tool active.
+- `Esc` exits to Select.
 - Input: left-click to place each segment endpoint.
 - Modifiers: numeric input allowed for segment length.
+
+### Construction Line
+
+- Draws one segment per two clicks and does not auto-chain to the next segment.
+- Tool stays active after each segment so you can place independent construction lines quickly.
+- `Enter` clears an in-progress segment.
+- `Esc` exits to Select.
+- Input: left-click start, left-click end.
 
 ### Rectangle
 
@@ -218,6 +227,8 @@ Objects let you reuse geometry and isolate edits.
 
 - Click to set a pivot; click again to set the scale.
 - `Ctrl` toggles copy mode (if enabled, duplicates before scaling).
+- If the reference direction is axis-aligned (`X`, `Y`, or `Z`), scaling is constrained to that single axis (squash/stretch).
+- Otherwise scaling uses the existing plane/uniform constrained behavior.
 - Input: left-click pivot, left-click to set scale.
 - Modifiers: Ctrl toggles copy mode; numeric input overrides factor.
 
@@ -232,10 +243,6 @@ Objects let you reuse geometry and isolate edits.
 - Click a face to apply the active color.
 - Use the Color action button to pick the active color.
 - Input: left-click face to paint.
-
-### Eraser
-
-- Placeholder tool in this build (no erase behavior yet).
 
 ### Object
 
@@ -347,7 +354,7 @@ K3D loads Groovy plugins from the plugins folder at startup and via the Plugin M
 
 ## Tips and troubleshooting
 
-- If input feels ignored, click the viewport to return focus.
+- If a panel field is focused, move the cursor over the viewport to apply canvas shortcuts (`Esc`, `Delete`, tool keys).
 - If snapping is too aggressive, reduce **Snap radius** in Model Settings.
 - If guides clutter the view, press `Esc` in Select mode to clear them.
 - If a plugin fails to load, open Plugin Manager and read the error log.

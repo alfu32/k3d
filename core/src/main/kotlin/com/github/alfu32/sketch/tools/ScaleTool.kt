@@ -70,8 +70,13 @@ class ScaleTool(
             status.message = "Scale vectors are too short."
             return true
         }
-        val planeAxis = planeAxisFor(refVec, nextVec)
-        val scale = nextLen / refLen
+        val constraint = scaleConstraintFor(refVec, nextVec)
+        val scale = scaleFor(constraint, refVec, nextVec)
+        if (!scale.isFinite()) {
+            clearTransient()
+            status.message = "Invalid scale."
+            return true
+        }
         if (kotlin.math.abs(scale - 1f) <= 1e-4f) {
             clearTransient()
             status.message = "No scale."
@@ -79,14 +84,14 @@ class ScaleTool(
         }
         val cLocal = group.toLocal(cWorld)
         val scaledFaces = group.faceStore.transformSelected { point ->
-            scalePoint(point, cLocal, scale, planeAxis)
+            scalePoint(point, cLocal, scale, constraint)
         }
         val scaledEdges = group.lineStore.transformSelected { point ->
-            scalePoint(point, cLocal, scale, planeAxis)
+            scalePoint(point, cLocal, scale, constraint)
         }
         val scaledGroups = scene.transformSelectedGroups(
-            { point -> scalePoint(point, cWorld, scale, planeAxis) },
-            { vector -> scaleVector(vector, scale, planeAxis) }
+            { point -> scalePoint(point, cWorld, scale, constraint) },
+            { vector -> scaleVector(vector, scale, constraint) }
         )
         status.message = "Scaled | edges $scaledEdges faces $scaledFaces groups $scaledGroups"
         clearTransient()
@@ -111,10 +116,12 @@ class ScaleTool(
             val refLen = refVec.len()
             val nextLen = nextVec.len()
             if (refLen > 1e-6f && nextLen > 1e-6f) {
-                val planeAxis = planeAxisFor(refVec, nextVec)
-                val scale = nextLen / refLen
-                renderPreview(renderer, c, scale, planeAxis)
-                renderGroupPreview(renderer, c, scale, planeAxis)
+                val constraint = scaleConstraintFor(refVec, nextVec)
+                val scale = scaleFor(constraint, refVec, nextVec)
+                if (scale.isFinite()) {
+                    renderPreview(renderer, c, scale, constraint)
+                    renderGroupPreview(renderer, c, scale, constraint)
+                }
             }
         }
     }
@@ -125,14 +132,14 @@ class ScaleTool(
         hasHover = false
     }
 
-    private fun renderPreview(renderer: ShapeRenderer, center: Vector3, scale: Float, planeAxis: PlaneAxis?) {
+    private fun renderPreview(renderer: ShapeRenderer, center: Vector3, scale: Float, constraint: ScaleConstraint) {
         renderer.color = Color(0.25f, 0.85f, 0.55f, 1f)
         val group = scene.activeGroup()
         val centerLocal = group.toLocal(center)
         group.faceStore.getSelected().forEach { tri ->
-            val a = scalePoint(tri.a, centerLocal, scale, planeAxis)
-            val b = scalePoint(tri.b, centerLocal, scale, planeAxis)
-            val c = scalePoint(tri.c, centerLocal, scale, planeAxis)
+            val a = scalePoint(tri.a, centerLocal, scale, constraint)
+            val b = scalePoint(tri.b, centerLocal, scale, constraint)
+            val c = scalePoint(tri.c, centerLocal, scale, constraint)
             val aw = group.toWorld(a)
             val bw = group.toWorld(b)
             val cw = group.toWorld(c)
@@ -141,62 +148,78 @@ class ScaleTool(
             renderer.line(cw.x, cw.y, cw.z, aw.x, aw.y, aw.z)
         }
         group.lineStore.getSelected().forEach { segment ->
-            val a = scalePoint(segment.start, centerLocal, scale, planeAxis)
-            val b = scalePoint(segment.end, centerLocal, scale, planeAxis)
+            val a = scalePoint(segment.start, centerLocal, scale, constraint)
+            val b = scalePoint(segment.end, centerLocal, scale, constraint)
             val aw = group.toWorld(a)
             val bw = group.toWorld(b)
             renderer.line(aw.x, aw.y, aw.z, bw.x, bw.y, bw.z)
         }
     }
 
-    private fun scalePoint(point: Vector3, center: Vector3, scale: Float, planeAxis: PlaneAxis?): Vector3 {
+    private fun scalePoint(point: Vector3, center: Vector3, scale: Float, constraint: ScaleConstraint): Vector3 {
         val v = Vector3(point).sub(center)
-        return if (planeAxis == null) {
-            Vector3(center).add(v.scl(scale))
-        } else {
-            val scaled = Vector3(v)
-            when (planeAxis) {
-                PlaneAxis.X -> {
-                    scaled.y *= scale
-                    scaled.z *= scale
-                }
-                PlaneAxis.Y -> {
-                    scaled.x *= scale
-                    scaled.z *= scale
-                }
-                PlaneAxis.Z -> {
-                    scaled.x *= scale
-                    scaled.y *= scale
-                }
+        val scaled = Vector3(v)
+        when (constraint) {
+            ScaleConstraint.UNIFORM -> {
+                scaled.scl(scale)
             }
-            Vector3(center).add(scaled)
+            ScaleConstraint.PLANE_X -> {
+                scaled.y *= scale
+                scaled.z *= scale
+            }
+            ScaleConstraint.PLANE_Y -> {
+                scaled.x *= scale
+                scaled.z *= scale
+            }
+            ScaleConstraint.PLANE_Z -> {
+                scaled.x *= scale
+                scaled.y *= scale
+            }
+            ScaleConstraint.AXIS_X -> {
+                scaled.x *= scale
+            }
+            ScaleConstraint.AXIS_Y -> {
+                scaled.y *= scale
+            }
+            ScaleConstraint.AXIS_Z -> {
+                scaled.z *= scale
+            }
         }
+        return Vector3(center).add(scaled)
     }
 
-    private fun scaleVector(vector: Vector3, scale: Float, planeAxis: PlaneAxis?): Vector3 {
-        return if (planeAxis == null) {
-            Vector3(vector).scl(scale)
-        } else {
-            val scaled = Vector3(vector)
-            when (planeAxis) {
-                PlaneAxis.X -> {
-                    scaled.y *= scale
-                    scaled.z *= scale
-                }
-                PlaneAxis.Y -> {
-                    scaled.x *= scale
-                    scaled.z *= scale
-                }
-                PlaneAxis.Z -> {
-                    scaled.x *= scale
-                    scaled.y *= scale
-                }
+    private fun scaleVector(vector: Vector3, scale: Float, constraint: ScaleConstraint): Vector3 {
+        val scaled = Vector3(vector)
+        when (constraint) {
+            ScaleConstraint.UNIFORM -> {
+                scaled.scl(scale)
             }
-            scaled
+            ScaleConstraint.PLANE_X -> {
+                scaled.y *= scale
+                scaled.z *= scale
+            }
+            ScaleConstraint.PLANE_Y -> {
+                scaled.x *= scale
+                scaled.z *= scale
+            }
+            ScaleConstraint.PLANE_Z -> {
+                scaled.x *= scale
+                scaled.y *= scale
+            }
+            ScaleConstraint.AXIS_X -> {
+                scaled.x *= scale
+            }
+            ScaleConstraint.AXIS_Y -> {
+                scaled.y *= scale
+            }
+            ScaleConstraint.AXIS_Z -> {
+                scaled.z *= scale
+            }
         }
+        return scaled
     }
 
-    private fun renderGroupPreview(renderer: ShapeRenderer, center: Vector3, scale: Float, planeAxis: PlaneAxis?) {
+    private fun renderGroupPreview(renderer: ShapeRenderer, center: Vector3, scale: Float, constraint: ScaleConstraint) {
         if (scene.selectedGroups().isEmpty()) {
             return
         }
@@ -214,7 +237,7 @@ class ScaleTool(
                 Vector3(bounds.max.x, bounds.max.y, bounds.max.z)
             )
             corners.forEach { corner ->
-                val scaled = scalePoint(corner, center, scale, planeAxis)
+                val scaled = scalePoint(corner, center, scale, constraint)
                 corner.set(scaled)
             }
             val min = corners.reduce { a, b -> Vector3(
@@ -242,13 +265,42 @@ class ScaleTool(
         }
     }
 
-    private enum class PlaneAxis {
-        X,
-        Y,
-        Z
+    private enum class ScaleConstraint {
+        UNIFORM,
+        PLANE_X,
+        PLANE_Y,
+        PLANE_Z,
+        AXIS_X,
+        AXIS_Y,
+        AXIS_Z
     }
 
-    private fun planeAxisFor(refVec: Vector3, nextVec: Vector3): PlaneAxis? {
+    private fun scaleConstraintFor(refVec: Vector3, nextVec: Vector3): ScaleConstraint {
+        val axisConstraint = axisConstraintFor(refVec)
+        if (axisConstraint != null) {
+            return axisConstraint
+        }
+        return planeConstraintFor(refVec, nextVec) ?: ScaleConstraint.UNIFORM
+    }
+
+    private fun axisConstraintFor(refVec: Vector3): ScaleConstraint? {
+        if (refVec.len2() <= 1e-6f) {
+            return null
+        }
+        val dir = Vector3(refVec).nor()
+        val absX = kotlin.math.abs(dir.x)
+        val absY = kotlin.math.abs(dir.y)
+        val absZ = kotlin.math.abs(dir.z)
+        val threshold = 0.995f
+        return when {
+            absX >= threshold && absX >= absY && absX >= absZ -> ScaleConstraint.AXIS_X
+            absY >= threshold && absY >= absX && absY >= absZ -> ScaleConstraint.AXIS_Y
+            absZ >= threshold && absZ >= absX && absZ >= absY -> ScaleConstraint.AXIS_Z
+            else -> null
+        }
+    }
+
+    private fun planeConstraintFor(refVec: Vector3, nextVec: Vector3): ScaleConstraint? {
         val normal = Vector3(refVec).crs(nextVec)
         if (normal.len2() <= 1e-6f) {
             return null
@@ -259,10 +311,32 @@ class ScaleTool(
         val absZ = kotlin.math.abs(normal.z)
         val threshold = 0.98f
         return when {
-            absX >= threshold && absX >= absY && absX >= absZ -> PlaneAxis.X
-            absY >= threshold && absY >= absX && absY >= absZ -> PlaneAxis.Y
-            absZ >= threshold && absZ >= absX && absZ >= absY -> PlaneAxis.Z
+            absX >= threshold && absX >= absY && absX >= absZ -> ScaleConstraint.PLANE_X
+            absY >= threshold && absY >= absX && absY >= absZ -> ScaleConstraint.PLANE_Y
+            absZ >= threshold && absZ >= absX && absZ >= absY -> ScaleConstraint.PLANE_Z
             else -> null
+        }
+    }
+
+    private fun scaleFor(constraint: ScaleConstraint, refVec: Vector3, nextVec: Vector3): Float {
+        return when (constraint) {
+            ScaleConstraint.AXIS_X -> componentScale(refVec.x, nextVec.x)
+            ScaleConstraint.AXIS_Y -> componentScale(refVec.y, nextVec.y)
+            ScaleConstraint.AXIS_Z -> componentScale(refVec.z, nextVec.z)
+            else -> nextVec.len() / refVec.len()
+        }
+    }
+
+    private fun componentScale(ref: Float, next: Float): Float {
+        val denom = kotlin.math.abs(ref)
+        if (denom <= 1e-6f) {
+            return Float.NaN
+        }
+        val raw = next / ref
+        val minMagnitude = 1e-1f
+        return when {
+            raw >= 0f -> kotlin.math.max(raw, minMagnitude)
+            else -> kotlin.math.min(raw, -minMagnitude)
         }
     }
 }

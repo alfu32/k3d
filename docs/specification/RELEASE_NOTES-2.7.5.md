@@ -20,8 +20,13 @@
 - Exposed `Cut Out 3` in UI as the `Cutout` button.
 - Select tool now ignores picking while `Alt` is pressed and starts 2D window selection directly; `Shift`/`Ctrl` selection mode behavior is preserved.
 - Line tool now creates edges only (no automatic face fill); polyline remains the face-capable path.
+- Line tool keyboard flow refined: `Enter` finishes the current line chain, `Esc` exits to Select.
+- Added `Construction Line` tool for single-segment drafting without automatic chaining.
+- Removed the unused Eraser placeholder tool from toolbar/commands.
 - Removed legacy `scripts/polyline.groovy` plugin source from the repository.
 - Updated packaging/loader behavior to prevent legacy polyline plugin reinjection from dist/plugin script copy paths.
 - Fixed collapsible panel UX (including Plugin Manager): double-click title collapse/expand now keeps the title bar anchored (no downward jump).
 - Fixed UI focus/input routing so typing in panel text/number controls no longer leaks keystrokes to the main canvas/tool handlers.
+- Fixed focus gating for global keys by using pointer-aware UI capture, restoring reliable `Esc` clear/cancel and `Delete` selection delete in the canvas.
+- Scale tool now uses axis-only squash/stretch when the reference vector is aligned with `X`, `Y`, or `Z`; non-axis references keep plane/uniform scaling behavior.
 - Hardened `Ctrl+N` numeric distance popup lifecycle: shortcut now reopens reliably, popup no longer auto-disappears on hover drift, and position is clamped near cursor within viewport bounds.
