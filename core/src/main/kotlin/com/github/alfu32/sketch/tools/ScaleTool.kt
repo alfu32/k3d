@@ -276,11 +276,19 @@ class ScaleTool(
     }
 
     private fun scaleConstraintFor(refVec: Vector3, nextVec: Vector3): ScaleConstraint {
+        val planarConstraint = principalPlaneFromComponents(refVec, nextVec)
+        if (planarConstraint != null) {
+            return planarConstraint
+        }
+        val planeConstraint = planeConstraintFor(refVec, nextVec)
+        if (planeConstraint != null) {
+            return planeConstraint
+        }
         val axisConstraint = axisConstraintFor(refVec)
         if (axisConstraint != null) {
             return axisConstraint
         }
-        return planeConstraintFor(refVec, nextVec) ?: ScaleConstraint.UNIFORM
+        return ScaleConstraint.UNIFORM
     }
 
     private fun axisConstraintFor(refVec: Vector3): ScaleConstraint? {
@@ -309,11 +317,30 @@ class ScaleTool(
         val absX = kotlin.math.abs(normal.x)
         val absY = kotlin.math.abs(normal.y)
         val absZ = kotlin.math.abs(normal.z)
-        val threshold = 0.98f
+        val threshold = 0.92f
         return when {
             absX >= threshold && absX >= absY && absX >= absZ -> ScaleConstraint.PLANE_X
             absY >= threshold && absY >= absX && absY >= absZ -> ScaleConstraint.PLANE_Y
             absZ >= threshold && absZ >= absX && absZ >= absY -> ScaleConstraint.PLANE_Z
+            else -> null
+        }
+    }
+
+    private fun principalPlaneFromComponents(refVec: Vector3, nextVec: Vector3): ScaleConstraint? {
+        val refLen = refVec.len()
+        val nextLen = nextVec.len()
+        if (refLen <= 1e-6f || nextLen <= 1e-6f) {
+            return null
+        }
+        // Accept small off-plane drift from snapping/inference noise.
+        val tol = 0.03f
+        fun nearZeroOnAxis(component: Float, length: Float): Boolean {
+            return kotlin.math.abs(component) <= length * tol
+        }
+        return when {
+            nearZeroOnAxis(refVec.x, refLen) && nearZeroOnAxis(nextVec.x, nextLen) -> ScaleConstraint.PLANE_X
+            nearZeroOnAxis(refVec.y, refLen) && nearZeroOnAxis(nextVec.y, nextLen) -> ScaleConstraint.PLANE_Y
+            nearZeroOnAxis(refVec.z, refLen) && nearZeroOnAxis(nextVec.z, nextLen) -> ScaleConstraint.PLANE_Z
             else -> null
         }
     }
