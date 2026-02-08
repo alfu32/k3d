@@ -102,6 +102,7 @@ class SketchUiOverlay(
         }
 
         private fun toggleCollapsed() {
+            val top = y + height
             collapsed = !collapsed
             val title = getTitleTable()
             children.forEach { child ->
@@ -111,6 +112,7 @@ class SketchUiOverlay(
             }
             invalidateHierarchy()
             pack()
+            setY(top - height)
         }
     }
 

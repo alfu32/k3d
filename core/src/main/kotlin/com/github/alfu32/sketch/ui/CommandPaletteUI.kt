@@ -56,6 +56,7 @@ class CommandPaletteUI(
         }
 
         private fun toggleCollapsed() {
+            val top = y + height
             collapsed = !collapsed
             val title = getTitleTable()
             children.forEach { child ->
@@ -65,6 +66,7 @@ class CommandPaletteUI(
             }
             invalidateHierarchy()
             pack()
+            setY(top - height)
         }
     }
 
