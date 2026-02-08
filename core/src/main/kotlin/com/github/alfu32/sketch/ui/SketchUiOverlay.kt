@@ -504,7 +504,8 @@ class SketchUiOverlay(
             it != ToolId.PLUGIN &&
                 it != ToolId.OBJECT_PLACE &&
                 it != ToolId.CUT_HOLES &&
-                it != ToolId.CUT_HOLES_2
+                it != ToolId.CUT_HOLES_2 &&
+                it != ToolId.CUT_OUT_3
         }.forEach { toolId ->
             val icon = createIconDrawable(toolId)
             val button = VisImageTextButton(toolId.displayName, icon)
@@ -1384,6 +1385,7 @@ class SketchUiOverlay(
             ToolId.LINE_OFFSET -> "offset"
             ToolId.CUT_HOLES -> "cleanup"
             ToolId.CUT_HOLES_2 -> "cleanup"
+            ToolId.CUT_OUT_3 -> "cleanup"
             ToolId.RECTANGLE -> "rectangle"
             ToolId.SURFACE_RECTANGLE -> "surface_rect"
             ToolId.QUAD -> "quad"
@@ -1410,6 +1412,7 @@ class SketchUiOverlay(
             ToolId.LINE_OFFSET -> Color(0.35f, 0.75f, 0.95f, 1f)
             ToolId.CUT_HOLES -> Color(0.85f, 0.55f, 0.35f, 1f)
             ToolId.CUT_HOLES_2 -> Color(0.85f, 0.55f, 0.35f, 1f)
+            ToolId.CUT_OUT_3 -> Color(0.85f, 0.55f, 0.35f, 1f)
             ToolId.RECTANGLE -> Color(0.35f, 0.75f, 0.95f, 1f)
             ToolId.SURFACE_RECTANGLE -> Color(0.35f, 0.85f, 0.65f, 1f)
             ToolId.QUAD -> Color(0.55f, 0.85f, 0.95f, 1f)

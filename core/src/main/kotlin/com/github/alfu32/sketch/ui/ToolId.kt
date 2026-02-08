@@ -9,6 +9,7 @@ enum class ToolId(val displayName: String) {
     LINE_OFFSET("Line Offset"),
     CUT_HOLES("Cut Holes"),
     CUT_HOLES_2("Cut Holes 2"),
+    CUT_OUT_3("Cut Out 3"),
     RECTANGLE("Rectangle"),
     SURFACE_RECTANGLE("Surface Rect"),
     QUAD("Quad"),

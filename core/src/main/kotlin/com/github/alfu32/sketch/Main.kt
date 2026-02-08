@@ -63,6 +63,7 @@ import com.github.alfu32.sketch.plugin.PluginHost
 import com.github.alfu32.sketch.tools.CircleTool
 import com.github.alfu32.sketch.tools.CutHolesTool
 import com.github.alfu32.sketch.tools.CutHolesTool2
+import com.github.alfu32.sketch.tools.CutOut3Tool
 import com.github.alfu32.sketch.tools.FaceOutlineTool
 import com.github.alfu32.sketch.tools.LinearDimensionTool
 import com.github.alfu32.sketch.tools.LineOffsetTool
@@ -218,6 +219,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 LineOffsetTool(scene),
                 CutHolesTool(scene) { toolController.setTool(ToolId.SELECT) },
                 CutHolesTool2(scene) { toolController.setTool(ToolId.SELECT) },
+                CutOut3Tool(scene) { toolController.setTool(ToolId.SELECT) },
                 RectangleTool(scene),
                 SurfaceRectangleTool(scene),
                 QuadTool(scene),
@@ -526,6 +528,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ToolId.LINE_OFFSET,
             ToolId.CUT_HOLES,
             ToolId.CUT_HOLES_2,
+            ToolId.CUT_OUT_3,
             ToolId.LINEAR_DIMENSION,
             ToolId.TEXT,
             ToolId.PUSH_PULL,
