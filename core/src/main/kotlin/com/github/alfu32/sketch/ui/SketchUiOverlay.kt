@@ -344,6 +344,13 @@ class SketchUiOverlay(
         return isFocusedUiActor(stage.keyboardFocus)
     }
 
+    fun isUiCapturingInputByPointer(): Boolean {
+        if (!isUiCapturingInput()) {
+            return false
+        }
+        return isUiHit(Gdx.input.x, Gdx.input.y)
+    }
+
     fun isUiHit(screenX: Int, screenY: Int): Boolean {
         val stageCoords = stage.screenToStageCoordinates(com.badlogic.gdx.math.Vector2(screenX.toFloat(), screenY.toFloat()))
         val hit = stage.hit(stageCoords.x, stageCoords.y, true) ?: return false

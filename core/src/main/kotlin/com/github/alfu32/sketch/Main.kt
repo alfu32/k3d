@@ -250,7 +250,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             exitGroupEditAction = ::exitGroupEditMode,
             lastSnapProvider = { lastSnap },
             showDistanceInput = { startDistanceInput() },
-            uiCapturesInput = { uiOverlay.isUiCapturingInput() }
+            uiCapturesInput = { uiOverlay.isUiCapturingInputByPointer() }
         )
         lightingSettings = LightingSettings(
             shadowLightValue = shadowLightValue,
@@ -567,15 +567,15 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             }
 
             override fun keyDown(keycode: Int): Boolean {
-                return uiOverlay.isUiCapturingInput()
+                return uiOverlay.isUiCapturingInputByPointer()
             }
 
             override fun keyUp(keycode: Int): Boolean {
-                return uiOverlay.isUiCapturingInput()
+                return uiOverlay.isUiCapturingInputByPointer()
             }
 
             override fun keyTyped(character: Char): Boolean {
-                return uiOverlay.isUiCapturingInput()
+                return uiOverlay.isUiCapturingInputByPointer()
             }
         }
         val cameraScrollForwarder = CameraScrollForwarder(cameraController)
