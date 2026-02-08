@@ -276,36 +276,11 @@ class ScaleTool(
     }
 
     private fun scaleConstraintFor(refVec: Vector3, nextVec: Vector3): ScaleConstraint {
-        val planarConstraint = principalPlaneFromComponents(refVec, nextVec)
-        if (planarConstraint != null) {
-            return planarConstraint
+        val fromReference = referenceConstraintFor(refVec)
+        if (fromReference != null) {
+            return fromReference
         }
-        val planeConstraint = planeConstraintFor(refVec, nextVec)
-        if (planeConstraint != null) {
-            return planeConstraint
-        }
-        val axisConstraint = axisConstraintFor(refVec)
-        if (axisConstraint != null) {
-            return axisConstraint
-        }
-        return ScaleConstraint.UNIFORM
-    }
-
-    private fun axisConstraintFor(refVec: Vector3): ScaleConstraint? {
-        if (refVec.len2() <= 1e-6f) {
-            return null
-        }
-        val dir = Vector3(refVec).nor()
-        val absX = kotlin.math.abs(dir.x)
-        val absY = kotlin.math.abs(dir.y)
-        val absZ = kotlin.math.abs(dir.z)
-        val threshold = 0.995f
-        return when {
-            absX >= threshold && absX >= absY && absX >= absZ -> ScaleConstraint.AXIS_X
-            absY >= threshold && absY >= absX && absY >= absZ -> ScaleConstraint.AXIS_Y
-            absZ >= threshold && absZ >= absX && absZ >= absY -> ScaleConstraint.AXIS_Z
-            else -> null
-        }
+        return planeConstraintFor(refVec, nextVec) ?: ScaleConstraint.UNIFORM
     }
 
     private fun planeConstraintFor(refVec: Vector3, nextVec: Vector3): ScaleConstraint? {
@@ -317,7 +292,7 @@ class ScaleTool(
         val absX = kotlin.math.abs(normal.x)
         val absY = kotlin.math.abs(normal.y)
         val absZ = kotlin.math.abs(normal.z)
-        val threshold = 0.92f
+        val threshold = 0.98f
         return when {
             absX >= threshold && absX >= absY && absX >= absZ -> ScaleConstraint.PLANE_X
             absY >= threshold && absY >= absX && absY >= absZ -> ScaleConstraint.PLANE_Y
@@ -326,23 +301,37 @@ class ScaleTool(
         }
     }
 
-    private fun principalPlaneFromComponents(refVec: Vector3, nextVec: Vector3): ScaleConstraint? {
-        val refLen = refVec.len()
-        val nextLen = nextVec.len()
-        if (refLen <= 1e-6f || nextLen <= 1e-6f) {
+    private fun referenceConstraintFor(refVec: Vector3): ScaleConstraint? {
+        val len = refVec.len()
+        if (len <= 1e-6f) {
             return null
         }
-        // Accept small off-plane drift from snapping/inference noise.
-        val tol = 0.03f
-        fun nearZeroOnAxis(component: Float, length: Float): Boolean {
-            return kotlin.math.abs(component) <= length * tol
+        // Classification is based on near-zero reference components, not normalized direction.
+        val tol = len * 0.03f
+        val zeroX = kotlin.math.abs(refVec.x) <= tol
+        val zeroY = kotlin.math.abs(refVec.y) <= tol
+        val zeroZ = kotlin.math.abs(refVec.z) <= tol
+        val zeroCount = (if (zeroX) 1 else 0) + (if (zeroY) 1 else 0) + (if (zeroZ) 1 else 0)
+
+        if (zeroCount >= 2) {
+            return when {
+                !zeroX -> ScaleConstraint.AXIS_X
+                !zeroY -> ScaleConstraint.AXIS_Y
+                !zeroZ -> ScaleConstraint.AXIS_Z
+                else -> null
+            }
         }
-        return when {
-            nearZeroOnAxis(refVec.x, refLen) && nearZeroOnAxis(nextVec.x, nextLen) -> ScaleConstraint.PLANE_X
-            nearZeroOnAxis(refVec.y, refLen) && nearZeroOnAxis(nextVec.y, nextLen) -> ScaleConstraint.PLANE_Y
-            nearZeroOnAxis(refVec.z, refLen) && nearZeroOnAxis(nextVec.z, nextLen) -> ScaleConstraint.PLANE_Z
-            else -> null
+
+        if (zeroCount == 1) {
+            return when {
+                zeroX -> ScaleConstraint.PLANE_X
+                zeroY -> ScaleConstraint.PLANE_Y
+                zeroZ -> ScaleConstraint.PLANE_Z
+                else -> null
+            }
         }
+
+        return null
     }
 
     private fun scaleFor(constraint: ScaleConstraint, refVec: Vector3, nextVec: Vector3): Float {

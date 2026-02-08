@@ -28,5 +28,6 @@
 - Fixed collapsible panel UX (including Plugin Manager): double-click title collapse/expand now keeps the title bar anchored (no downward jump).
 - Fixed UI focus/input routing so typing in panel text/number controls no longer leaks keystrokes to the main canvas/tool handlers.
 - Fixed focus gating for global keys by using pointer-aware UI capture, restoring reliable `Esc` clear/cancel and `Delete` selection delete in the canvas.
-- Scale tool now uses axis-only squash/stretch when the reference vector is aligned with `X`, `Y`, or `Z`; non-axis references keep plane/uniform scaling behavior.
+- Scale tool now preserves principal-plane scaling in `XOY`, `XOZ`, and `YOZ` references, and uses signed axis squash/stretch when the reference vector is aligned with `X`, `Y`, or `Z`.
+- Added axis zero-crossing guard for scale factors (minimum magnitude `0.1`) to avoid unstable blow-ups near zero.
 - Hardened `Ctrl+N` numeric distance popup lifecycle: shortcut now reopens reliably, popup no longer auto-disappears on hover drift, and position is clamped near cursor within viewport bounds.
