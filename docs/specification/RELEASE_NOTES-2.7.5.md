@@ -30,4 +30,6 @@
 - Fixed focus gating for global keys by using pointer-aware UI capture, restoring reliable `Esc` clear/cancel and `Delete` selection delete in the canvas.
 - Scale tool now preserves principal-plane scaling in `XOY`, `XOZ`, and `YOZ` references, and uses signed axis squash/stretch when the reference vector is aligned with `X`, `Y`, or `Z`.
 - Added axis zero-crossing guard for scale factors (minimum magnitude `0.1`) to avoid unstable blow-ups near zero.
+- Fixed scale constraint classifier regression so axis squash and reference-plane scaling are both applied reliably again.
+- Scale constraint detection now prioritizes near-zero reference-vector components (axis/plane intent), then falls back to plane-normal inference, then uniform scaling.
 - Hardened `Ctrl+N` numeric distance popup lifecycle: shortcut now reopens reliably, popup no longer auto-disappears on hover drift, and position is clamped near cursor within viewport bounds.
