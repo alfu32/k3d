@@ -14,7 +14,7 @@
 - Refined scale behavior to avoid unintended skewing and keep isometric scaling behavior in standard plane-constrained cases.
 - Added `Export> SVG (View)` command for vector export of the active camera view.
 - Added `Edit> Cut Rect Hole` command.
-- Added/iterated cut workflows:
+- Added/iterated cut workflows.
 - `Cut Holes` and `Cut Holes 2` kept as command-driven tools (hidden from toolbar).
 - New `Cut Out 3` pipeline uses global normal + per-segment infinite cutting planes, replacing triangles incrementally after each cut.
 - Exposed `Cut Out 3` in UI as the `Cutout` button.
@@ -22,3 +22,5 @@
 - Line tool now creates edges only (no automatic face fill); polyline remains the face-capable path.
 - Removed legacy `scripts/polyline.groovy` plugin source from the repository.
 - Updated packaging/loader behavior to prevent legacy polyline plugin reinjection from dist/plugin script copy paths.
+- Fixed collapsible panel UX (including Plugin Manager): double-click title collapse/expand now keeps the title bar anchored (no downward jump).
+- Fixed UI focus/input routing so typing in panel text/number controls no longer leaks keystrokes to the main canvas/tool handlers.

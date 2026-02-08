@@ -10,6 +10,7 @@ This is a quick reference for keyboard and mouse shortcuts.
 - `Enter`: Commit current numeric input buffer.
 - `Ctrl+Z`: Undo.
 - `Ctrl+Y` or `Ctrl+Shift+Z`: Redo.
+- Double-click panel title bar: Collapse/expand panel.
 
 ## Camera navigation
 - Right mouse drag: Orbit.
@@ -20,6 +21,7 @@ This is a quick reference for keyboard and mouse shortcuts.
 - Left click: Select.
 - Shift + click: Add to selection.
 - Ctrl + click: Remove from selection.
+- Alt + click-drag: Force 2D window selection (skip direct picking).
 - Double-click group: Enter object edit mode.
 - Double-click face: Select coplanar faces.
 - Triple-click face/edge: Select connected geometry.

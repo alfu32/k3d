@@ -565,6 +565,18 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 uiOverlay.clearUiFocus()
                 return false
             }
+
+            override fun keyDown(keycode: Int): Boolean {
+                return uiOverlay.isUiCapturingInput()
+            }
+
+            override fun keyUp(keycode: Int): Boolean {
+                return uiOverlay.isUiCapturingInput()
+            }
+
+            override fun keyTyped(character: Char): Boolean {
+                return uiOverlay.isUiCapturingInput()
+            }
         }
         val cameraScrollForwarder = CameraScrollForwarder(cameraController)
         val cameraEventRouter = CameraEventRouter(cameraController)

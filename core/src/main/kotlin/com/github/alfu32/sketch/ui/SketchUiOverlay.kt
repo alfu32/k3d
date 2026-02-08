@@ -5,6 +5,7 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.TextureRegion
+import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.ui.ImageTextButton
@@ -344,8 +345,7 @@ class SketchUiOverlay(
     }
 
     fun isUiCapturingInput(): Boolean {
-        val keyboard = stage.keyboardFocus
-        return keyboard is com.badlogic.gdx.scenes.scene2d.ui.TextField
+        return isFocusedUiActor(stage.keyboardFocus) || isFocusedUiActor(stage.scrollFocus)
     }
 
     fun isUiHit(screenX: Int, screenY: Int): Boolean {
@@ -357,6 +357,10 @@ class SketchUiOverlay(
     fun clearUiFocus() {
         stage.keyboardFocus = null
         stage.scrollFocus = null
+    }
+
+    private fun isFocusedUiActor(actor: Actor?): Boolean {
+        return actor != null && actor !== stage.root && actor.isDescendantOf(stage.root)
     }
 
     fun updateFromStatus() {

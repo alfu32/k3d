@@ -109,6 +109,7 @@ class PluginManagerPanel(private val pluginHost: PluginHost) : VisWindow("Plugin
     }
 
     private fun toggleCollapsed() {
+        val top = y + height
         collapsed = !collapsed
         val title = getTitleTable()
         children.forEach { child ->
@@ -118,6 +119,7 @@ class PluginManagerPanel(private val pluginHost: PluginHost) : VisWindow("Plugin
         }
         invalidateHierarchy()
         pack()
+        setY(top - height)
     }
 
     fun refresh(force: Boolean = false) {

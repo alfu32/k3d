@@ -61,7 +61,7 @@ You can also pass a `.k3d` path directly (the launcher converts it into `--file`
 - Command palette: search and run tools and commands (`Ctrl+Shift+P`).
 - Undo/Redo: `Ctrl+Z` / `Ctrl+Y` (or `Ctrl+Shift+Z`).
 
-Panels are collapsible: double-click a panel title bar to toggle its content.
+Panels are collapsible: double-click a panel title bar to toggle its content. Collapse/expand keeps the title bar anchored in place.
 Click inside the viewport to restore focus if keyboard shortcuts appear to be ignored.
 
 ![Screenshot placeholder: Panels](images/img_3.png)
@@ -86,6 +86,7 @@ Click inside the viewport to restore focus if keyboard shortcuts appear to be ig
 
 - Drag left-to-right: select items fully inside the window.
 - Drag right-to-left (dashed outline): select intersecting items.
+- Hold `Alt` while starting selection to force 2D window selection and skip direct picking.
 
 ### Volume selection
 
@@ -144,14 +145,14 @@ Objects let you reuse geometry and isolate edits.
 
 - Default tool for selection and multi-select.
 - Input: left-click for single select; drag for window/crossing selection; click empty space twice for volume selection.
-- Modifiers: Shift adds, Ctrl removes; Esc clears guides and selection.
+- Modifiers: Shift adds, Ctrl removes, Alt forces 2D window select; Esc clears guides and selection.
 
 ### Line
 
-- Click to start a polyline; click to add segments.
-- Closing a loop creates a face.
-- `Esc` cancels the active polyline.
-- Input: left-click to place each segment vertex.
+- Click to start a line chain; each click adds another segment.
+- Line tool creates edges only and does not auto-create faces.
+- `Esc` cancels the active line chain.
+- Input: left-click to place each segment endpoint.
 - Modifiers: numeric input allowed for segment length.
 
 ### Rectangle
