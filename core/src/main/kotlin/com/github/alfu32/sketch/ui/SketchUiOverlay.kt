@@ -341,7 +341,7 @@ class SketchUiOverlay(
     }
 
     fun isUiCapturingInput(): Boolean {
-        return isFocusedUiActor(stage.keyboardFocus) || isFocusedUiActor(stage.scrollFocus)
+        return isFocusedUiActor(stage.keyboardFocus)
     }
 
     fun isUiHit(screenX: Int, screenY: Int): Boolean {
@@ -1400,7 +1400,6 @@ class SketchUiOverlay(
             ToolId.SCALE -> "scale"
             ToolId.STRETCH -> "stretch"
             ToolId.PAINT -> "paint"
-            ToolId.ERASER -> "eraser"
             ToolId.OBJECT_PLACE -> "select"
             ToolId.PLUGIN -> "plugins"
         }
@@ -1428,7 +1427,6 @@ class SketchUiOverlay(
             ToolId.SCALE -> Color(0.95f, 0.55f, 0.75f, 1f)
             ToolId.STRETCH -> Color(0.95f, 0.65f, 0.25f, 1f)
             ToolId.PAINT -> Color(0.95f, 0.95f, 0.45f, 1f)
-            ToolId.ERASER -> Color(0.65f, 0.65f, 0.65f, 1f)
             ToolId.OBJECT_PLACE -> Color(0.85f, 0.85f, 0.85f, 1f)
             ToolId.PLUGIN -> Color(0.75f, 0.85f, 0.95f, 1f)
         }

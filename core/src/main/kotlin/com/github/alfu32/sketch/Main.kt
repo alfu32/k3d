@@ -84,7 +84,6 @@ import com.github.alfu32.sketch.tools.SelectTool
 import com.github.alfu32.sketch.tools.ScaleTool
 import com.github.alfu32.sketch.tools.StretchTool
 import com.github.alfu32.sketch.tools.TextTool
-import com.github.alfu32.sketch.ui.SimpleTool
 import com.github.alfu32.sketch.ui.SketchUiOverlay
 import com.github.alfu32.sketch.ui.LightingSettings
 import com.github.alfu32.sketch.ui.ShadowSettings
@@ -234,7 +233,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 ScaleTool(scene),
                 StretchTool(scene),
                 PaintTool(scene, camera) { statusModel.paintColor.cpy() },
-                SimpleTool(ToolId.ERASER, "Click to erase edges."),
                 objectPlaceTool
             )
         )
@@ -539,8 +537,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ToolId.ROTATE,
             ToolId.SCALE,
             ToolId.STRETCH,
-            ToolId.PAINT,
-            ToolId.ERASER
+            ToolId.PAINT
         ).forEach { toolId ->
             pluginHost.getCommandPalette().registerCommand(
                 com.github.alfu32.sketch.plugin.PaletteCommand(
