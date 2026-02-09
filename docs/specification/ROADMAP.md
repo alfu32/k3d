@@ -166,3 +166,35 @@ Performance guard
 
 - Use a shared epsilon for coplanarity and snapping (same as line epsilon or slightly larger).
 - When converting to JTS, scale coordinates if needed to keep precision (e.g., multiply by 1e4, round to int, then divide back after).
+
+---
+
+## 6) Internal roadmap update (M1 -> OpenSCAD first)
+
+Execution order
+
+1. M1: UI foundation (first and mandatory)
+   - Split standard tools into two groups: Construction and Modification; keep Actions separate.
+   - Standard tool buttons show labels at all times.
+   - Add delayed hover popover near target component (tooltip-like behavior).
+   - Move built-in tool groups into floating, movable toolbars with persisted layout.
+   - This is the enabling layer for all following internal plugins.
+
+2. M2: OpenSCAD integration (before voxel/architecture/mechanical)
+   - Add a generic parametric generation pipeline (`inputs -> generated faces/lines`).
+   - Add regeneration cache + invalidation on parameter/script change.
+   - Add safe execution boundary (timeouts/errors surfaced to UI without destabilizing session).
+   - Add explode behavior: OpenSCAD object -> static faces/lines.
+
+3. M3: Solid tools on top of the same backend
+   - Build boolean operations plugin (union/intersection/difference) using the same parametric/solid pipeline.
+   - Reuse execution, preview, caching, and explode paths from M2.
+
+4. M4: Domain plugins powered by the same core
+   - Voxel plugin (voxel group + voxel/volume/frame tools).
+   - Architecture plugin (wall/slab/stair + rectangular hole workflow).
+   - Mechanical plugin (gear object first, then additional parametric parts).
+
+5. M5: Consolidation
+   - Unify plugin object lifecycle (edit/open/close/explode/update) across all internal plugins.
+   - Keep fallback behavior for missing OpenSCAD runtime or execution failure.

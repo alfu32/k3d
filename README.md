@@ -96,6 +96,33 @@ help                                     Show help
 - Shortcuts: [`SHORTCUTS.md`](SHORTCUTS.md)
 - Plugin development: [`docs/PLUGIN_DEVELOPMENT.md`](docs/PLUGIN_DEVELOPMENT.md)
 - Specs: [`docs/specification/`](docs/specification/)
+- Detailed roadmap: [`docs/specification/ROADMAP.md`](docs/specification/ROADMAP.md)
+
+## Roadmap (current priorities)
+
+1. M1 - UI foundation
+   - Split built-in tools into Construction and Modification groups (Actions remain separate).
+   - Always show tool button labels.
+   - Add delayed hover popovers near controls.
+   - Use floating, movable toolbars with persisted layout.
+
+2. M2 - OpenSCAD integration (before domain plugins)
+   - Introduce a parametric generation pipeline (`inputs -> generated faces/lines`).
+   - Add regeneration cache and invalidation.
+   - Add safe execution boundaries (timeouts/errors surfaced in UI).
+   - Support explode of generated objects into static geometry.
+
+3. M3 - Solid tools on the same backend
+   - Add boolean operations (union / intersection / difference).
+
+4. M4 - Domain plugins on top of the core
+   - Voxel plugin (voxel, volume, frame).
+   - Architecture plugin (wall, slab, stair, rectangular hole workflow).
+   - Mechanical plugin (gear first, then additional parametric parts).
+
+5. M5 - Consolidation
+   - Unify plugin object lifecycle (edit/open/close/explode/update).
+   - Keep robust fallback behavior when OpenSCAD runtime is missing or fails.
 
 ## Status
 
