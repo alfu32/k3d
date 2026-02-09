@@ -679,6 +679,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         drawDraftLines()
         drawDimensions()
         toolController.render(shapeRenderer)
+        drawActiveToolMeasurementLine()
         drawPluginLines()
         shapeRenderer.end()
 
@@ -1480,6 +1481,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             val (lineStart, lineEnd) = DimensionMath.computeOffsetLine(start, end, offset)
             drawDimensionText(lineStart, lineEnd, start, end, offset, selected)
         }
+        drawActiveToolMeasurementLabels()
         spriteBatch.end()
 
         spriteBatch.projectionMatrix = uiOverlay.stage.camera.combined
@@ -1528,6 +1530,72 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val angleDeg = Math.toDegrees(angleRad.toDouble()).toFloat()
         val color = if (selected) selectedLineColor else Color(0.1f, 0.1f, 0.1f, 1f)
         drawRotatedTextScaled(label, screenPos.x, screenPos.y, angleDeg, scale, color)
+    }
+
+    private fun drawActiveToolMeasurementLine() {
+        val measurement = toolController.activeTool().measurement(statusModel) ?: return
+        val start = measurement.startWorld
+        val end = measurement.endWorld
+        if (start.dst2(end) <= 1e-8f) {
+            return
+        }
+        shapeRenderer.color = measurement.lineColor
+        shapeRenderer.line(start, end)
+    }
+
+    private fun drawActiveToolMeasurementLabels() {
+        val measurement = toolController.activeTool().measurement(statusModel) ?: return
+        val start = measurement.startWorld
+        val end = measurement.endWorld
+        if (start.dst2(end) <= 1e-8f) {
+            return
+        }
+        val screenA = camera.project(Vector3(start))
+        val screenB = camera.project(Vector3(end))
+        val dx = screenB.x - screenA.x
+        val dy = screenB.y - screenA.y
+        val screenLen = kotlin.math.sqrt(dx * dx + dy * dy)
+        if (screenLen <= 1f) {
+            return
+        }
+        var nx = -dy / screenLen
+        var ny = dx / screenLen
+        val midX = (screenA.x + screenB.x) * 0.5f
+        val midY = (screenA.y + screenB.y) * 0.5f
+        val angleRad = kotlin.math.atan2(dy, dx)
+        var angleDeg = Math.toDegrees(angleRad.toDouble()).toFloat()
+        val angleNorm = ((angleDeg % 360f) + 360f) % 360f
+        var sideSign = 1f
+        if (angleNorm in 90f..270f) {
+            // Keep text readable and swap the two label sides for backward-facing screen lines.
+            angleDeg += 180f
+            sideSign = -1f
+        }
+        nx *= sideSign
+        ny *= sideSign
+        val sideOffsetPx = 12f
+        // BitmapFont draws from baseline; keep labels lifted but closer to the line.
+        val liftPx = textFont.lineHeight * 0.75f
+        val lengthValue = start.dst(end) * modelUnit.size
+        val lengthLabel = formatMeasurement(lengthValue, modelUnit.name)
+        val delta = Vector3(end).sub(start).scl(modelUnit.size)
+        val relativeLabel = formatRelativeVector(delta, modelUnit.name)
+        drawRotatedTextScaled(
+            lengthLabel,
+            midX + nx * sideOffsetPx,
+            midY + ny * sideOffsetPx + liftPx,
+            angleDeg,
+            1f,
+            Color(0.1f, 0.1f, 0.1f, 1f)
+        )
+        drawRotatedTextScaled(
+            relativeLabel,
+            midX - nx * sideOffsetPx,
+            midY - ny * sideOffsetPx + liftPx,
+            angleDeg,
+            1f,
+            Color(0.15f, 0.15f, 0.15f, 0.95f)
+        )
     }
 
     private fun drawWorldTextModel(
@@ -1663,6 +1731,22 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             .trimEnd('0')
             .trimEnd('.')
         return if (unitName.isBlank()) formatted else "$formatted $unitName"
+    }
+
+    private fun formatRelativeVector(delta: Vector3, unitName: String): String {
+        val x = formatSignedComponent(delta.x)
+        val y = formatSignedComponent(delta.y)
+        val z = formatSignedComponent(delta.z)
+        val base = "($x, $y, $z)"
+        return if (unitName.isBlank()) base else "$base $unitName"
+    }
+
+    private fun formatSignedComponent(value: Float): String {
+        val roundedZero = if (kotlin.math.abs(value) < 1e-4f) 0f else value
+        val formatted = String.format(java.util.Locale.US, "%+.3f", roundedZero)
+            .trimEnd('0')
+            .trimEnd('.')
+        return if (formatted == "-0") "+0" else formatted
     }
 
     private fun drawPluginLines() {

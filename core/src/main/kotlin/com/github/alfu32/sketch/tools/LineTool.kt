@@ -8,6 +8,7 @@ import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
+import com.github.alfu32.sketch.ui.ToolMeasurement
 
 class LineTool(
     private val scene: GroupScene,
@@ -86,6 +87,17 @@ class LineTool(
 
     override fun anchorWorld(): Vector3? {
         return anchorWorld
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        val start = anchorWorld ?: return null
+        if (!hasHover) {
+            return null
+        }
+        return ToolMeasurement(
+            startWorld = Vector3(start),
+            endWorld = Vector3(hover)
+        )
     }
 
     override fun render(renderer: ShapeRenderer) {

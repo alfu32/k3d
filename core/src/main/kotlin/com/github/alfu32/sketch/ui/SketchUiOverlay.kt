@@ -7,14 +7,18 @@ import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.InputEvent
+import com.badlogic.gdx.scenes.scene2d.InputListener
 import com.badlogic.gdx.scenes.scene2d.Stage
+import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.badlogic.gdx.scenes.scene2d.ui.ImageTextButton
 import com.badlogic.gdx.scenes.scene2d.ui.ButtonGroup
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.scenes.scene2d.ui.HorizontalGroup
+import com.badlogic.gdx.scenes.scene2d.ui.Image
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
+import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 import com.kotcrab.vis.ui.widget.VisImageTextButton
 import com.kotcrab.vis.ui.widget.VisLabel
@@ -30,6 +34,7 @@ import com.github.alfu32.sketch.plugin.capabilities.PanelPosition
 import com.github.alfu32.sketch.plugin.capabilities.PluginPanel
 import com.github.alfu32.sketch.tools.PolylineSettings
 import java.util.Locale
+import kotlin.math.abs
 
 class SketchUiOverlay(
     private val controller: ToolController,
@@ -119,17 +124,31 @@ class SketchUiOverlay(
 
     val stage: Stage = Stage(ScreenViewport())
     private val toolButtons = mutableMapOf<ToolId, VisImageTextButton>()
+    private val toolButtonByWidget = mutableMapOf<VisImageTextButton, ToolId>()
     private val buttonLabels = mutableMapOf<VisImageTextButton, String>()
+    private val buttonMarkers = mutableMapOf<VisImageTextButton, Image>()
+    private val hoveredButtons = mutableSetOf<VisImageTextButton>()
+    private val builtInToolbars = linkedMapOf<String, CollapsibleWindow>()
     private val pluginToolButtons = mutableMapOf<String, VisImageTextButton>()
+    private val pluginToolByWidget = mutableMapOf<VisImageTextButton, String>()
     private val pluginToolbars = mutableMapOf<String, CollapsibleWindow>()
     private val pluginPanels = mutableMapOf<String, CollapsibleWindow>()
     private val pluginPanelPositions = mutableMapOf<String, PanelPosition>()
-    private var pluginTooltip: CollapsibleWindow? = null
-    private val hoveredButtons = mutableSetOf<VisImageTextButton>()
+    private var hoverPopoverWindow: CollapsibleWindow? = null
+    private var hoverPopoverTarget: VisImageTextButton? = null
+    private var hoverPopoverText: String = ""
+    private var hoverPopoverElapsed = 0f
+    private val hoverPopoverDelay = 0.5f
+    private var toolbarsPositioned = false
+    private val uiPrefs by lazy { Gdx.app.getPreferences("k3d-ui-layout") }
+    private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
+    private val toolbarLayoutVersion = 3
+    private val toolbarButtonSize = 32f
     private val iconTextures = mutableListOf<Texture>()
     private val iconDrawables = mutableMapOf<String, TextureRegionDrawable>()
     private var iconsTexture: Texture? = null
-    private var whiteButtonDrawable: TextureRegionDrawable? = null
+    private var buttonUpDrawable: TextureRegionDrawable? = null
+    private var markerDrawable: TextureRegionDrawable? = null
     private var darkBarDrawable: TextureRegionDrawable? = null
     private val toolLabel = VisLabel()
     private val messageLabel = VisLabel()
@@ -194,12 +213,13 @@ class SketchUiOverlay(
 
     init {
         iconDrawables.putAll(loadIconDrawables())
+        migrateBuiltinToolbarPrefs()
         val root = Table()
         root.setFillParent(true)
         stage.addActor(root)
         stage.viewport.update(Gdx.graphics.width, Gdx.graphics.height, true)
 
-        val toolbar = buildToolbar()
+        buildStandardToolbars().forEach { stage.addActor(it) }
         selectionPanel = buildSelectionPanel()
         groupPanel = buildGroupPanel()
         objectsPanel = buildObjectsPanel()
@@ -207,7 +227,6 @@ class SketchUiOverlay(
         polylineSettingsPanel = buildPolylineSettingsPanel()
         lightingPanel = buildLightingPanel()
         val mainRow = Table()
-        mainRow.add(toolbar).top().left().pad(6f)
         mainRow.add().expand().fill()
 
         root.add(mainRow).expand().fill().row()
@@ -418,6 +437,7 @@ class SketchUiOverlay(
             positionPanels()
             needsPanelLayout = false
         }
+        updateHoverPopover(delta)
         stage.act(delta)
     }
 
@@ -428,6 +448,7 @@ class SketchUiOverlay(
     fun resize(width: Int, height: Int) {
         stage.viewport.update(width, height, true)
         needsPanelLayout = true
+        toolbarsPositioned = false
         pluginPanelsPositioned = false
     }
 
@@ -499,134 +520,186 @@ class SketchUiOverlay(
         iconsTexture?.dispose()
     }
 
-    private fun buildToolbar(): VisTable {
-        val toolbar = VisTable()
-        toolbar.defaults().pad(2f).padRight(6f).left()
-        toolbar.add(VisLabel("Tools")).row()
+    private fun buildStandardToolbars(): List<CollapsibleWindow> {
+        val toolGroup = ButtonGroup<VisImageTextButton>()
+        toolGroup.setMaxCheckCount(1)
+        toolGroup.setMinCheckCount(1)
+        toolGroup.setUncheckLast(false)
 
-        val group = ButtonGroup<VisImageTextButton>()
-        group.setMaxCheckCount(1)
-        group.setMinCheckCount(1)
-        group.setUncheckLast(false)
+        val constructionTools = listOf(
+            ToolId.LINE,
+            ToolId.CONSTRUCTION_LINE,
+            ToolId.POLYLINE,
+            ToolId.DOUBLE_LINE,
+            ToolId.RECTANGLE,
+            ToolId.SURFACE_RECTANGLE,
+            ToolId.QUAD,
+            ToolId.CIRCLE,
+            ToolId.LINEAR_DIMENSION,
+            ToolId.TEXT,
+            ToolId.FACE_OUTLINE,
+            ToolId.LINE_OFFSET,
+            ToolId.CUT_OUT_3
+        )
+        val modificationTools = listOf(
+            ToolId.SELECT,
+            ToolId.PUSH_PULL,
+            ToolId.MOVE,
+            ToolId.ROTATE,
+            ToolId.SCALE,
+            ToolId.STRETCH,
+            ToolId.PAINT
+        )
 
-        ToolId.values().filter {
-            it != ToolId.PLUGIN &&
-                it != ToolId.OBJECT_PLACE &&
-                it != ToolId.CUT_HOLES &&
-                it != ToolId.CUT_HOLES_2
-        }.forEach { toolId ->
-            val icon = createIconDrawable(toolId)
-            val button = VisImageTextButton(toolId.displayName, icon)
-            applyWhiteButtonStyle(button)
-            applyIconStyle(button, icon)
-            button.setChecked(toolId == status.activeTool)
-            button.addListener(object : ClickListener() {
-                override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                    controller.setTool(toolId)
-                }
-            })
-            val cell = toolbar.add(button).padRight(6f)
-            cell.left()
-            toolbar.row()
-            group.add(button)
-            toolButtons[toolId] = button
-            buttonLabels[button] = toolId.displayName
-            button.addListener(object : ClickListener() {
-                override fun enter(event: InputEvent?, x: Float, y: Float, pointer: Int, fromActor: com.badlogic.gdx.scenes.scene2d.Actor?) {
-                    hoveredButtons.add(button)
-                    updateButtonLabels()
-                }
+        val construction = buildToolsToolbarWindow(
+            title = "Construction",
+            toolbarId = "builtin_toolbar_construction",
+            toolIds = constructionTools,
+            group = toolGroup
+        )
+        val modification = buildToolsToolbarWindow(
+            title = "Modification",
+            toolbarId = "builtin_toolbar_modification",
+            toolIds = modificationTools,
+            group = toolGroup
+        )
+        val actions = buildActionsToolbarWindow(
+            title = "Actions",
+            toolbarId = "builtin_toolbar_actions"
+        )
 
-                override fun exit(event: InputEvent?, x: Float, y: Float, pointer: Int, toActor: com.badlogic.gdx.scenes.scene2d.Actor?) {
-                    hoveredButtons.remove(button)
-                    updateButtonLabels()
-                }
-            })
+        builtInToolbars.clear()
+        builtInToolbars["builtin_toolbar_construction"] = construction
+        builtInToolbars["builtin_toolbar_modification"] = modification
+        builtInToolbars["builtin_toolbar_actions"] = actions
+        toolbarsPositioned = false
+        return listOf(construction, modification, actions)
+    }
+
+    private fun buildToolsToolbarWindow(
+        title: String,
+        toolbarId: String,
+        toolIds: List<ToolId>,
+        group: ButtonGroup<VisImageTextButton>
+    ): CollapsibleWindow {
+        val window = CollapsibleWindow(title, showCloseButton = false)
+        window.isResizable = false
+        val content = VisTable()
+        content.defaults().pad(2f).left()
+        toolIds.forEach { toolId ->
+            val button = createToolButton(toolId, group)
+            content.add(button).size(toolbarButtonSize, toolbarButtonSize)
+        }
+        window.add(content).pad(4f).left()
+        window.pack()
+        window.setSize(window.prefWidth, window.prefHeight)
+        attachToolbarPersistence(window, toolbarId)
+        return window
+    }
+
+    private fun createToolButton(toolId: ToolId, group: ButtonGroup<VisImageTextButton>): VisImageTextButton {
+        val icon = createIconDrawable(toolId)
+        val button = VisImageTextButton(toolId.displayName, icon)
+        applyWhiteButtonStyle(button)
+        applyIconStyle(button, icon)
+        button.setText("")
+        button.isChecked = toolId == status.activeTool
+        button.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                controller.setTool(toolId)
+            }
+        })
+        button.addListener(hoverListener(button))
+        attachButtonMarker(button)
+        group.add(button)
+        toolButtons[toolId] = button
+        toolButtonByWidget[button] = toolId
+        buttonLabels[button] = toolId.displayName
+        return button
+    }
+
+    private fun buildActionsToolbarWindow(title: String, toolbarId: String): CollapsibleWindow {
+        val window = CollapsibleWindow(title, showCloseButton = false)
+        window.isResizable = false
+        val content = VisTable()
+        content.defaults().pad(2f).left()
+
+        val cleanupButton = createActionButton(
+            label = "Cleanup",
+            icon = iconFor("cleanup", createActionIconDrawable(Color(0.55f, 0.85f, 0.65f, 1f)))
+        ) {
+            cleanupAction()
         }
 
-        toolbar.add(VisLabel("Actions")).padTop(8f).row()
-        val cleanupButton = VisImageTextButton("Cleanup", createActionIconDrawable(Color(0.55f, 0.85f, 0.65f, 1f)))
-        applyWhiteButtonStyle(cleanupButton)
-        applyIconStyle(cleanupButton, iconFor("cleanup", cleanupButton.image.drawable))
-        buttonLabels[cleanupButton] = "Cleanup"
-        cleanupButton.addListener(hoverListener(cleanupButton))
-        cleanupButton.addListener(object : ClickListener() {
-            override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                cleanupAction()
-            }
-        })
-        toolbar.add(cleanupButton).left().padRight(6f).row()
-
-        val colorButton = VisImageTextButton("Color", createActionIconDrawable(status.paintColor))
-        applyWhiteButtonStyle(colorButton)
-        applyIconStyle(colorButton, iconFor("color", colorButton.image.drawable))
-        buttonLabels[colorButton] = "Color"
-        colorButton.addListener(hoverListener(colorButton))
-        colorButton.addListener(object : ClickListener() {
-            override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                showColorPicker()
-            }
-        })
-        toolbar.add(colorButton).left().padRight(6f).row()
+        val colorButton = createActionButton(
+            label = "Color",
+            icon = iconFor("color", createActionIconDrawable(status.paintColor))
+        ) {
+            showColorPicker()
+        }
         paintColorButton = colorButton
 
-        val deleteButton = VisImageTextButton("Delete", createActionIconDrawable(Color(0.9f, 0.45f, 0.45f, 1f)))
-        applyWhiteButtonStyle(deleteButton)
-        applyIconStyle(deleteButton, iconFor("delete", deleteButton.image.drawable))
-        buttonLabels[deleteButton] = "Delete"
-        deleteButton.addListener(hoverListener(deleteButton))
-        deleteButton.addListener(object : ClickListener() {
+        val deleteButton = createActionButton(
+            label = "Delete",
+            icon = iconFor("delete", createActionIconDrawable(Color(0.9f, 0.45f, 0.45f, 1f)))
+        ) {
+            deleteSelectionAction()
+        }
+
+        val flipButton = createActionButton(
+            label = "Flip Faces",
+            icon = iconFor("flip_faces", createActionIconDrawable(Color(0.45f, 0.65f, 0.95f, 1f)))
+        ) {
+            flipFacesAction()
+        }
+
+        val lightingButton = createActionButton(
+            label = "Lighting",
+            icon = iconFor("lighting", createActionIconDrawable(Color(0.95f, 0.85f, 0.2f, 1f)))
+        ) {
+            lightingPanel?.let { panel ->
+                panel.isVisible = !panel.isVisible
+                needsPanelLayout = true
+                panel.toFront()
+            }
+        }
+
+        val pluginButton = createActionButton(
+            label = "Plugin Manager",
+            icon = iconFor("plugins", createActionIconDrawable(Color(0.6f, 0.6f, 0.6f, 1f)))
+        ) {
+            togglePluginManager()
+        }
+        val buttons = listOf(cleanupButton, colorButton, deleteButton, flipButton, lightingButton, pluginButton)
+        buttons.forEach { button ->
+            content.add(button).size(toolbarButtonSize, toolbarButtonSize)
+        }
+
+        window.add(content).pad(4f).left()
+        window.pack()
+        window.setSize(window.prefWidth, window.prefHeight)
+        attachToolbarPersistence(window, toolbarId)
+        return window
+    }
+
+    private fun createActionButton(
+        label: String,
+        icon: com.badlogic.gdx.scenes.scene2d.utils.Drawable,
+        onClick: () -> Unit
+    ): VisImageTextButton {
+        val button = VisImageTextButton(label, icon)
+        applyWhiteButtonStyle(button)
+        applyIconStyle(button, icon)
+        button.setText("")
+        buttonLabels[button] = label
+        button.addListener(hoverListener(button))
+        attachButtonMarker(button)
+        button.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                deleteSelectionAction()
+                onClick()
             }
         })
-        toolbar.add(deleteButton).left().padRight(6f).row()
-
-        val flipButton = VisImageTextButton("Flip Faces", createActionIconDrawable(Color(0.45f, 0.65f, 0.95f, 1f)))
-        applyWhiteButtonStyle(flipButton)
-        applyIconStyle(flipButton, iconFor("flip_faces", flipButton.image.drawable))
-        buttonLabels[flipButton] = "Flip Faces"
-        flipButton.addListener(hoverListener(flipButton))
-        flipButton.addListener(object : ClickListener() {
-            override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                flipFacesAction()
-            }
-        })
-        toolbar.add(flipButton).left().padRight(6f).row()
-
-        val lightingFallback = createActionIconDrawable(Color(0.95f, 0.85f, 0.2f, 1f))
-        val lightingIcon = iconFor("lighting", lightingFallback)
-        val lightingButton = VisImageTextButton("Lighting", lightingIcon)
-        applyWhiteButtonStyle(lightingButton)
-        applyIconStyle(lightingButton, lightingIcon)
-        buttonLabels[lightingButton] = "Lighting"
-        lightingButton.addListener(hoverListener(lightingButton))
-        lightingButton.addListener(object : ClickListener() {
-            override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                lightingPanel?.let { panel ->
-                    panel.isVisible = !panel.isVisible
-                    needsPanelLayout = true
-                    panel.toFront()
-                }
-            }
-        })
-        toolbar.add(lightingButton).left().padRight(6f).row()
-
-        val pluginFallback = createActionIconDrawable(Color(0.6f, 0.6f, 0.6f, 1f))
-        val pluginIcon = iconFor("plugins", pluginFallback)
-        val pluginButton = VisImageTextButton("Plugin Manager", pluginIcon)
-        applyWhiteButtonStyle(pluginButton)
-        applyIconStyle(pluginButton, pluginIcon)
-        buttonLabels[pluginButton] = "Plugin Manager"
-        pluginButton.addListener(hoverListener(pluginButton))
-        pluginButton.addListener(object : ClickListener() {
-            override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                togglePluginManager()
-            }
-        })
-        toolbar.add(pluginButton).left().padRight(6f).row()
-
-        return toolbar
+        return button
     }
 
     private fun buildStatusBar(): VisTable {
@@ -1053,6 +1126,10 @@ class SketchUiOverlay(
             it.toFront()
         }
         positionPanelStack(panels, 8f, 8f, 6f)
+        if (!toolbarsPositioned) {
+            positionTopFlowToolbars()
+            toolbarsPositioned = true
+        }
         if (!pluginPanelsPositioned) {
             positionPluginPanels()
             pluginPanelsPositioned = true
@@ -1073,11 +1150,6 @@ class SketchUiOverlay(
             val x = width - paletteWidth - 24f
             val y = (height - paletteHeight) * 0.5f
             palette.showDefaultAt(x, y)
-        }
-        pluginToolbars.values.forEachIndexed { idx, window ->
-            window.pack()
-            val y = height - 12f - window.height - (idx * (window.height + 8f))
-            window.setPosition(12f, y)
         }
         val rightPanels = pluginPanels.filter { pluginPanelPositions[it.key] == PanelPosition.RIGHT && it.value.isVisible }
         positionPanelStack(rightPanels.values.toList(), 12f, 8f, 6f)
@@ -1142,6 +1214,104 @@ class SketchUiOverlay(
             panel.setPosition(x, bottomPadding)
             x += panel.width + gap
         }
+    }
+
+    private fun positionTopFlowToolbars() {
+        val width = if (stage.viewport.screenWidth > 0) stage.viewport.screenWidth.toFloat() else Gdx.graphics.width.toFloat()
+        val height = if (stage.viewport.screenHeight > 0) stage.viewport.screenHeight.toFloat() else Gdx.graphics.height.toFloat()
+        val orderedBuiltInIds = listOf(
+            "builtin_toolbar_construction",
+            "builtin_toolbar_modification",
+            "builtin_toolbar_actions"
+        )
+        val margin = 12f
+        val gapX = 8f
+        val gapY = 8f
+        var x = margin
+        var yTop = height - margin
+        var rowHeight = 0f
+        val toolbarEntries = mutableListOf<Pair<String?, CollapsibleWindow>>()
+        orderedBuiltInIds.forEach { id ->
+            builtInToolbars[id]?.let { toolbarEntries.add(id to it) }
+        }
+        pluginToolbars.entries
+            .sortedBy { it.key }
+            .forEach { (_, window) ->
+                toolbarEntries.add(null to window)
+            }
+
+        toolbarEntries.forEach { (toolbarId, window) ->
+            if (!window.isVisible) {
+                return@forEach
+            }
+            window.invalidateHierarchy()
+            window.pack()
+            window.setSize(window.prefWidth, window.prefHeight)
+            if (x > margin && x + window.width > width - margin) {
+                x = margin
+                yTop -= rowHeight + gapY
+                rowHeight = 0f
+            }
+            window.setPosition(x, yTop - window.height)
+            window.toFront()
+            toolbarId?.let { saveToolbarPosition(it, window) }
+            x += window.width + gapX
+            rowHeight = kotlin.math.max(rowHeight, window.height)
+        }
+    }
+
+    private fun migrateBuiltinToolbarPrefs() {
+        val current = uiPrefs.getInteger(toolbarLayoutVersionKey, 0)
+        if (current == toolbarLayoutVersion) {
+            return
+        }
+        val toolbarIds = listOf(
+            "builtin_toolbar_construction",
+            "builtin_toolbar_modification",
+            "builtin_toolbar_actions"
+        )
+        toolbarIds.forEach { id ->
+            uiPrefs.remove("$id.x")
+            uiPrefs.remove("$id.y")
+        }
+        uiPrefs.putInteger(toolbarLayoutVersionKey, toolbarLayoutVersion)
+        uiPrefs.flush()
+    }
+
+    private fun attachToolbarPersistence(window: CollapsibleWindow, toolbarId: String) {
+        window.addListener(object : InputListener() {
+            override fun touchUp(
+                event: InputEvent?,
+                x: Float,
+                y: Float,
+                pointer: Int,
+                button: Int
+            ) {
+                saveToolbarPosition(toolbarId, window)
+            }
+        })
+    }
+
+    private fun readToolbarPosition(toolbarId: String): Vector2? {
+        val xKey = "$toolbarId.x"
+        val yKey = "$toolbarId.y"
+        if (!uiPrefs.contains(xKey) || !uiPrefs.contains(yKey)) {
+            return null
+        }
+        return Vector2(uiPrefs.getFloat(xKey), uiPrefs.getFloat(yKey))
+    }
+
+    private fun saveToolbarPosition(toolbarId: String, window: CollapsibleWindow) {
+        val xKey = "$toolbarId.x"
+        val yKey = "$toolbarId.y"
+        val prevX = uiPrefs.getFloat(xKey, Float.NaN)
+        val prevY = uiPrefs.getFloat(yKey, Float.NaN)
+        if (!prevX.isNaN() && !prevY.isNaN() && abs(prevX - window.x) < 0.25f && abs(prevY - window.y) < 0.25f) {
+            return
+        }
+        uiPrefs.putFloat(xKey, window.x)
+        uiPrefs.putFloat(yKey, window.y)
+        uiPrefs.flush()
     }
 
     private fun rebuildPluginPanels() {
@@ -1318,8 +1488,15 @@ class SketchUiOverlay(
             return
         }
         lastPluginTools = ids
-        pluginToolButtons.values.forEach { it.remove() }
+        pluginToolButtons.values.forEach { button ->
+            hoveredButtons.remove(button)
+            buttonLabels.remove(button)
+            buttonMarkers.remove(button)
+            pluginToolByWidget.remove(button)
+            button.remove()
+        }
         pluginToolButtons.clear()
+        pluginToolByWidget.clear()
         pluginToolbars.values.forEach { it.remove() }
         pluginToolbars.clear()
         val grouped = entries.groupBy { it.pluginId }
@@ -1336,8 +1513,10 @@ class SketchUiOverlay(
                 val button = VisImageTextButton(entry.name, icon)
                 applyWhiteButtonStyle(button)
                 applyIconStyle(button, icon)
+                button.setText("")
                 buttonLabels[button] = entry.name
                 button.addListener(hoverListener(button))
+                attachButtonMarker(button)
                 button.addListener(object : ClickListener() {
                     override fun clicked(event: InputEvent?, x: Float, y: Float) {
                         host.activatePluginTool(entry.id)
@@ -1345,12 +1524,16 @@ class SketchUiOverlay(
                 })
                 group.addActor(button)
                 pluginToolButtons[entry.id] = button
+                pluginToolByWidget[button] = entry.id
             }
             window.add(group).grow()
             stage.addActor(window)
             pluginToolbars[pluginId] = window
         }
         updatePluginToolSelection()
+        updateButtonLabels()
+        toolbarsPositioned = false
+        needsPanelLayout = true
         pluginPanelsPositioned = false
     }
 
@@ -1362,25 +1545,46 @@ class SketchUiOverlay(
         }
     }
 
-    private fun showPluginTooltip(button: VisImageTextButton, text: String) {
-        val tooltip = pluginTooltip ?: CollapsibleWindow("", showCloseButton = false).also {
+    private fun updateHoverPopover(delta: Float) {
+        val target = hoverPopoverTarget
+        if (target == null || target.stage == null || !target.isVisible) {
+            hideHoverPopover()
+            hoverPopoverElapsed = 0f
+            return
+        }
+        hoverPopoverElapsed += delta
+        if (hoverPopoverElapsed >= hoverPopoverDelay) {
+            showHoverPopover(target, hoverPopoverText)
+        }
+    }
+
+    private fun showHoverPopover(button: VisImageTextButton, text: String) {
+        if (text.isBlank()) {
+            return
+        }
+        val tooltip = hoverPopoverWindow ?: CollapsibleWindow("", showCloseButton = false).also {
             it.isModal = false
             it.isMovable = false
             it.isResizable = false
             it.setKeepWithinParent(false)
-            pluginTooltip = it
+            hoverPopoverWindow = it
             stage.addActor(it)
         }
         tooltip.clearChildren()
         tooltip.add(VisLabel(text)).pad(6f)
         tooltip.pack()
-        val pos = button.localToStageCoordinates(com.badlogic.gdx.math.Vector2(0f, 0f))
-        tooltip.setPosition(pos.x, pos.y - tooltip.height - 6f)
+        val pos = button.localToStageCoordinates(Vector2(0f, 0f))
+        val desiredX = pos.x
+        val desiredY = pos.y - tooltip.height - 6f
+        val maxX = (stage.width - tooltip.width).coerceAtLeast(0f)
+        val maxY = (stage.height - tooltip.height).coerceAtLeast(0f)
+        tooltip.setPosition(desiredX.coerceIn(0f, maxX), desiredY.coerceIn(0f, maxY))
+        tooltip.toFront()
         tooltip.isVisible = true
     }
 
-    private fun hidePluginTooltip() {
-        pluginTooltip?.isVisible = false
+    private fun hideHoverPopover() {
+        hoverPopoverWindow?.isVisible = false
     }
 
     private fun createIconDrawable(toolId: ToolId): TextureRegionDrawable {
@@ -1546,16 +1750,41 @@ class SketchUiOverlay(
         button.image?.drawable = icon
     }
 
-    private fun updateButtonLabels() {
-        buttonLabels.forEach { (button, label) ->
-            val isTool = toolButtons.containsValue(button)
-            val show = if (isTool) {
-                val toolId = toolButtons.entries.firstOrNull { it.value == button }?.key
-                toolId == status.activeTool || hoveredButtons.contains(button)
-            } else {
-                hoveredButtons.contains(button)
+    private fun attachButtonMarker(button: VisImageTextButton) {
+        val drawable = markerDrawable ?: createSolidDrawable(Color.WHITE).also { markerDrawable = it }
+        val marker = object : Image(drawable) {
+            override fun act(delta: Float) {
+                super.act(delta)
+                setPosition((button.width - width - 2f).coerceAtLeast(1f), (button.height - height - 2f).coerceAtLeast(1f))
             }
-            button.setText(if (show) label else "")
+        }.apply {
+            color = Color(0.35f, 0.35f, 0.35f, 0.8f)
+            setSize(4f, 4f)
+            touchable = Touchable.disabled
+        }
+        button.addActor(marker)
+        buttonMarkers[button] = marker
+    }
+
+    private fun updateButtonLabels() {
+        val host = pluginHost
+        val activePluginToolId = host?.activePluginToolId()
+        val activeColor = Color(0.2f, 0.75f, 0.25f, 1f)
+        val hoverColor = Color(0.95f, 0.65f, 0.15f, 1f)
+        val neutralColor = Color(0.35f, 0.35f, 0.35f, 0.8f)
+
+        buttonLabels.forEach { (button, _) ->
+            button.setText("")
+            val isHovered = hoveredButtons.contains(button)
+            val isActiveTool = toolButtonByWidget[button] == status.activeTool
+            val isActivePluginTool = pluginToolByWidget[button] != null && pluginToolByWidget[button] == activePluginToolId
+            val marker = buttonMarkers[button]
+            marker?.color = when {
+                (isActiveTool || isActivePluginTool) && isHovered -> hoverColor
+                isActiveTool || isActivePluginTool -> activeColor
+                isHovered -> hoverColor
+                else -> neutralColor
+            }
         }
     }
 
@@ -1563,23 +1792,46 @@ class SketchUiOverlay(
         return object : ClickListener() {
             override fun enter(event: InputEvent?, x: Float, y: Float, pointer: Int, fromActor: com.badlogic.gdx.scenes.scene2d.Actor?) {
                 hoveredButtons.add(button)
+                hoverPopoverTarget = button
+                hoverPopoverText = buttonLabels[button] ?: ""
+                hoverPopoverElapsed = 0f
+                hideHoverPopover()
                 updateButtonLabels()
             }
 
             override fun exit(event: InputEvent?, x: Float, y: Float, pointer: Int, toActor: com.badlogic.gdx.scenes.scene2d.Actor?) {
                 hoveredButtons.remove(button)
+                if (hoverPopoverTarget === button) {
+                    hoverPopoverTarget = null
+                    hoverPopoverText = ""
+                    hoverPopoverElapsed = 0f
+                    hideHoverPopover()
+                }
                 updateButtonLabels()
+            }
+
+            override fun touchDown(event: InputEvent?, x: Float, y: Float, pointer: Int, buttonCode: Int): Boolean {
+                hoveredButtons.remove(button)
+                hoverPopoverTarget = null
+                hoverPopoverText = ""
+                hoverPopoverElapsed = 0f
+                hideHoverPopover()
+                updateButtonLabels()
+                return false
             }
         }
     }
 
     private fun applyWhiteButtonStyle(button: VisImageTextButton) {
-        val drawable = whiteButtonDrawable ?: createWhiteButtonDrawable().also { whiteButtonDrawable = it }
+        val up = buttonUpDrawable ?: createButtonBackgroundDrawable(
+            fill = Color.WHITE,
+            border = Color(0.55f, 0.55f, 0.55f, 1f)
+        ).also { buttonUpDrawable = it }
         val style = button.style
-        style.up = drawable
-        style.down = drawable
-        style.checked = drawable
-        style.over = drawable
+        style.up = up
+        style.down = up
+        style.checked = up
+        style.over = up
         style.fontColor = Color.BLACK
         style.downFontColor = Color.BLACK
         style.overFontColor = Color.BLACK
@@ -1587,9 +1839,21 @@ class SketchUiOverlay(
         style.disabledFontColor = Color.DARK_GRAY
     }
 
-    private fun createWhiteButtonDrawable(): TextureRegionDrawable {
+    private fun createButtonBackgroundDrawable(fill: Color, border: Color): TextureRegionDrawable {
+        val pixmap = Pixmap(16, 16, Pixmap.Format.RGBA8888)
+        pixmap.setColor(fill)
+        pixmap.fill()
+        pixmap.setColor(border)
+        pixmap.drawRectangle(0, 0, 16, 16)
+        val texture = Texture(pixmap)
+        pixmap.dispose()
+        iconTextures.add(texture)
+        return TextureRegionDrawable(TextureRegion(texture))
+    }
+
+    private fun createSolidDrawable(color: Color): TextureRegionDrawable {
         val pixmap = Pixmap(2, 2, Pixmap.Format.RGBA8888)
-        pixmap.setColor(Color.WHITE)
+        pixmap.setColor(color)
         pixmap.fill()
         val texture = Texture(pixmap)
         pixmap.dispose()

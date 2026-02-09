@@ -8,6 +8,7 @@ import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
+import com.github.alfu32.sketch.ui.ToolMeasurement
 import kotlin.math.round
 
 class StretchTool(
@@ -152,6 +153,17 @@ class StretchTool(
                 renderGroupPreview(renderer, deltaWorld)
             }
         }
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        val startPoint = start ?: return null
+        if (!hasHover) {
+            return null
+        }
+        return ToolMeasurement(
+            startWorld = Vector3(startPoint),
+            endWorld = Vector3(hover)
+        )
     }
 
     private fun drawCross(renderer: ShapeRenderer, point: Vector3, size: Float) {

@@ -8,6 +8,7 @@ import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
+import com.github.alfu32.sketch.ui.ToolMeasurement
 
 class ScaleTool(
     private val scene: GroupScene
@@ -124,6 +125,17 @@ class ScaleTool(
                 }
             }
         }
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        val center = centerWorld ?: return null
+        if (!hasHover) {
+            return null
+        }
+        return ToolMeasurement(
+            startWorld = Vector3(center),
+            endWorld = Vector3(hover)
+        )
     }
 
     private fun clearTransient() {

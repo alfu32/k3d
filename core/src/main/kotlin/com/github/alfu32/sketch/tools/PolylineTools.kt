@@ -8,6 +8,7 @@ import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
+import com.github.alfu32.sketch.ui.ToolMeasurement
 import kotlin.math.abs
 import kotlin.math.ceil
 
@@ -136,6 +137,17 @@ class PolylineToolInternal(
             }
         }
         return false
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        if (pointsLocal.isEmpty() || !hasHover) {
+            return null
+        }
+        val group = scene.activeGroup()
+        return ToolMeasurement(
+            startWorld = group.toWorld(pointsLocal.last()),
+            endWorld = group.toWorld(hoverLocal)
+        )
     }
 
     override fun render(renderer: ShapeRenderer) {
@@ -568,6 +580,17 @@ class DoubleLineToolInternal(
             }
         }
         return false
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        if (pointsLocal.isEmpty() || !hasHover) {
+            return null
+        }
+        val group = scene.activeGroup()
+        return ToolMeasurement(
+            startWorld = group.toWorld(pointsLocal.last()),
+            endWorld = group.toWorld(hoverLocal)
+        )
     }
 
     override fun render(renderer: ShapeRenderer) {
