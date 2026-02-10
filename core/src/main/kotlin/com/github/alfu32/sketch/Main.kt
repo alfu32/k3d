@@ -66,6 +66,7 @@ import com.github.alfu32.sketch.tools.ConstructionLineTool
 import com.github.alfu32.sketch.tools.CutHolesTool
 import com.github.alfu32.sketch.tools.CutHolesTool2
 import com.github.alfu32.sketch.tools.CutOut3Tool
+import com.github.alfu32.sketch.tools.MeshIntersectionTool
 import com.github.alfu32.sketch.tools.FaceOutlineTool
 import com.github.alfu32.sketch.tools.LinearDimensionTool
 import com.github.alfu32.sketch.tools.LineOffsetTool
@@ -73,6 +74,7 @@ import com.github.alfu32.sketch.tools.LineTool
 import com.github.alfu32.sketch.tools.MoveTool
 import com.github.alfu32.sketch.tools.ObjectPlaceTool
 import com.github.alfu32.sketch.tools.PaintTool
+import com.github.alfu32.sketch.tools.PlaneSectionTool
 import com.github.alfu32.sketch.tools.PolylineSettings
 import com.github.alfu32.sketch.tools.PolylineToolInternal
 import com.github.alfu32.sketch.tools.DoubleLineToolInternal
@@ -230,6 +232,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 CutHolesTool(scene) { toolController.setTool(ToolId.SELECT) },
                 CutHolesTool2(scene) { toolController.setTool(ToolId.SELECT) },
                 CutOut3Tool(scene) { toolController.setTool(ToolId.SELECT) },
+                PlaneSectionTool(scene) { toolController.setTool(ToolId.SELECT) },
+                MeshIntersectionTool(scene) { toolController.setTool(ToolId.SELECT) },
                 RectangleTool(scene),
                 SurfaceRectangleTool(scene),
                 QuadTool(scene),
@@ -573,6 +577,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ToolId.CUT_HOLES,
             ToolId.CUT_HOLES_2,
             ToolId.CUT_OUT_3,
+            ToolId.PLANE_SECTION,
+            ToolId.MESH_INTERSECTION,
             ToolId.LINEAR_DIMENSION,
             ToolId.TEXT,
             ToolId.PUSH_PULL,

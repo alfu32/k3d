@@ -14,6 +14,8 @@ enum class ToolId(val displayName: String) {
     CUT_HOLES("Cut Holes"),
     CUT_HOLES_2("Cut Holes 2"),
     CUT_OUT_3("Cutout"),
+    PLANE_SECTION("Plane Section"),
+    MESH_INTERSECTION("Mesh Intersection"),
     RECTANGLE("Rectangle"),
     SURFACE_RECTANGLE("Surface Rect"),
     QUAD("Quad"),

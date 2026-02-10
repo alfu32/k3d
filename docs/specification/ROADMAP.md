@@ -179,6 +179,13 @@ Execution order
    - Add delayed hover popover near target component (tooltip-like behavior).
    - Move built-in tool groups into floating, movable toolbars with persisted layout.
    - This is the enabling layer for all following internal plugins.
+    1. refactor the UI standard toolbars:
+        - we need to split the tools in 2 : construction and modification and keep the actions as they are.
+        - the buttons shouldnt display their text on hover but display their text all the time
+        - we need hoezer to use ( or develop if it doesnt exist in visUI) a popover component that shows up near a designated component when we hover for a longer time ( similar to the title
+          behaviour in html , you know what i mean )
+        - the standard/built-in tool buttons should be grouped in floating toolbars, the toolbars must layout from top-left left to right then top to down but they are movable.
+        - this is a preparatory step to enable more flexibility in implementing the following features
 
 2. M2: OpenSCAD integration (before voxel/architecture/mechanical)
    - Add a generic parametric generation pipeline (`inputs -> generated faces/lines`).
@@ -191,9 +198,30 @@ Execution order
    - Reuse execution, preview, caching, and explode paths from M2.
 
 4. M4: Domain plugins powered by the same core
-   - Voxel plugin (voxel group + voxel/volume/frame tools).
-   - Architecture plugin (wall/slab/stair + rectangular hole workflow).
-   - Mechanical plugin (gear object first, then additional parametric parts).
+    1. create an internal plugin that provides functionality for drawing minecraft style:
+    - the plugin will provide a cube entity that has a position and is drawn as a cube, all the cubes have the size of 1 unit, have a color and are positioned at round positions in the minecraft
+      group,
+    - im thinking to provide a new type of entity, a voxel group, cubes will be placed inside a minecraft group which we will open/close for editing just like we open/close an object for editing,
+      the entity ( voxel group ) is similar to a point cloud, when moved or rotated the composing voxel should snap to round number ( unit ) positions and shouldnt rotate, they should always stay
+      paralel to the local coordinate axes and at integer/round ditance coordinates from the group origin. the group itself can be placed at fractional coordinates and rotated and its rendering will
+      take these into account.
+    - the plugin will provide the tools:
+        - voxel, a voxel will be placed on either the ground or on the face of a cube or another element.
+        - volume : given 2 points it will fill with voxels the entire cubical volume designated by the 2 points.
+        - frame, similar to volume but it will only fill the edges of the volume with voxels
+    - when exploded(ctrl-shift-g), a voxel group will result in faces and lines
+   2. create an internal plugin for architecture:
+   - well have a wall tool, a wall segment is rectangular, has thickness, inclination and height, can have rectangular holes which will be added by drawing a rectangle onto it and using add hole
+     tool, holes will be represented by their rectangular contour and by selecting and deleting this contour we will delete the hole in the wall/
+   - well also have a slab tool that has a rectangular contour.
+   - well also need a stair tool that is constructed on a contour, has a walking line and a height, the object will draw the steps according to these parameters, under the stair it has a
+     supporting structure that is defined by thickness.
+   - window frames and door frames will be defined by a rectangle and by 2 frame parameters : thickness and width, the user can construct them wherever they want and place them in wall holes
+   - when exploded(ctrl-shift-g), an architecture object/group will result in faces and lines
+   3. create an internal plugin for mechanical engineering:
+      for now all i can think of is a gear object that has a contour ( polyline ), teeth number ( teeth distributed evenly on the contour ) ,
+   4. an openscad object that will allow the user to code the openscad script that will give the internal drawing procedure of the openscad object.
+      an openscad object will be exploded to its current faces and lines rendering result.
 
 5. M5: Consolidation
    - Unify plugin object lifecycle (edit/open/close/explode/update) across all internal plugins.
