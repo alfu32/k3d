@@ -18,6 +18,19 @@ class PaintTool(
     override val message: String = "Paint faces."
 
     override fun onEnter(status: StatusModel) {
+        val group = scene.activeGroup()
+        if (scene.isVoxelGroup(group)) {
+            val color = colorProvider()
+            val selected = scene.paintSelectedVoxels(group, color)
+            if (selected > 0) {
+                scene.setVoxelColor(group, color, applyToExisting = false)
+                status.message = "Painted selected voxels."
+            } else {
+                scene.setVoxelColor(group, color, applyToExisting = false)
+                status.message = "Paint: click to apply color to voxel model."
+            }
+            return
+        }
         val applied = scene.activeGroup().faceStore.paintSelected(colorProvider())
         status.message = if (applied > 0) {
             "Paint applied to selection."
@@ -37,6 +50,18 @@ class PaintTool(
             return false
         }
         val group = scene.activeGroup()
+        if (scene.isVoxelGroup(group)) {
+            val color = colorProvider()
+            val selected = scene.paintSelectedVoxels(group, color)
+            if (selected > 0) {
+                scene.setVoxelColor(group, color, applyToExisting = false)
+                status.message = "Painted selected voxels."
+            } else {
+                val applied = scene.setVoxelColor(group, color, applyToExisting = true)
+                status.message = if (applied) "Voxel color applied to model." else "Voxel color unchanged."
+            }
+            return true
+        }
         val ray = camera.getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
         val localRay = com.badlogic.gdx.math.collision.Ray(
             group.toLocal(ray.origin),

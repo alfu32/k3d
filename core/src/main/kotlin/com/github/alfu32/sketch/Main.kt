@@ -84,6 +84,9 @@ import com.github.alfu32.sketch.tools.SelectTool
 import com.github.alfu32.sketch.tools.ScaleTool
 import com.github.alfu32.sketch.tools.StretchTool
 import com.github.alfu32.sketch.tools.TextTool
+import com.github.alfu32.sketch.tools.VoxelFrameTool
+import com.github.alfu32.sketch.tools.VoxelTool
+import com.github.alfu32.sketch.tools.VoxelVolumeTool
 import com.github.alfu32.sketch.ui.SketchUiOverlay
 import com.github.alfu32.sketch.ui.LightingSettings
 import com.github.alfu32.sketch.ui.ShadowSettings
@@ -216,6 +219,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 ConstructionLineTool(scene) { toolController.setTool(ToolId.SELECT) },
                 PolylineToolInternal(scene, polylineSettings),
                 DoubleLineToolInternal(scene, polylineSettings),
+                VoxelTool(scene) { toolController.setTool(ToolId.SELECT) },
+                VoxelVolumeTool(scene) { toolController.setTool(ToolId.SELECT) },
+                VoxelFrameTool(scene) { toolController.setTool(ToolId.SELECT) },
                 FaceOutlineTool(scene),
                 LineOffsetTool(scene),
                 CutHolesTool(scene) { toolController.setTool(ToolId.SELECT) },
@@ -429,6 +435,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         )
         pluginHost.getCommandPalette().registerCommand(
             com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "edit.new_voxel_group",
+                name = "Edit> New Voxel Group",
+                description = "Create a voxel group and enter edit mode",
+                icon = "edit",
+                category = "Edit",
+                tags = listOf("voxel", "group", "minecraft"),
+                priority = 1,
+                execute = {
+                    createVoxelGroup()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
                 id = "edit.group",
                 name = "Edit> Group",
                 description = "Create object prototype from selection",
@@ -521,6 +542,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ToolId.SELECT,
             ToolId.LINE,
             ToolId.CONSTRUCTION_LINE,
+            ToolId.VOXEL,
+            ToolId.VOXEL_VOLUME,
+            ToolId.VOXEL_FRAME,
             ToolId.RECTANGLE,
             ToolId.SURFACE_RECTANGLE,
             ToolId.QUAD,
@@ -1766,6 +1790,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun drawSelectionHighlights() {
+        drawSelectedVoxelHighlights()
         drawSelectedEntityBounds()
         drawGroupSelectionHighlights()
         drawActiveGroupEditBounds()
@@ -1864,15 +1889,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun deleteSelection() {
-        val edges = activeLineStore().deleteSelected()
-        val faces = activeFaceStore().deleteSelected()
+        val group = scene.activeGroup()
+        val voxelDeletes = if (scene.isVoxelGroup(group)) {
+            scene.deleteSelectedVoxels(group)
+        } else {
+            0
+        }
+        val edges = if (scene.isVoxelGroup(group)) 0 else activeLineStore().deleteSelected()
+        val faces = if (scene.isVoxelGroup(group)) 0 else activeFaceStore().deleteSelected()
         val dimensions = activeDimensionStore().deleteSelected()
         val texts = activeTextStore().deleteSelected()
         val groups = scene.deleteSelectedGroups()
-        if (edges + faces + dimensions + texts + groups > 0) {
+        if (edges + faces + voxelDeletes + dimensions + texts + groups > 0) {
             statusModel.message =
-                "Deleted | edges $edges faces $faces dimensions $dimensions texts $texts groups $groups"
-            if (groups > 0 && edges + faces == 0) {
+                "Deleted | voxels $voxelDeletes edges $edges faces $faces dimensions $dimensions texts $texts groups $groups"
+            if (groups > 0 && edges + faces + voxelDeletes == 0) {
                 undoManager.commit("Delete")
                 saveModel()
             }
@@ -2000,9 +2031,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val group = scene.activeGroup()
         val selectedTexts = group.textStore.getSelected()
         val selectedText = if (selectedTexts.size == 1) selectedTexts.first() else null
+        val selectedVoxels = scene.selectedVoxels(group).size
         return SketchUiOverlay.SelectionInfo(
             edgeCount = activeLineStore().getSelected().size,
             faceCount = activeFaceStore().getSelected().size,
+            voxelCount = selectedVoxels,
             groupCount = scene.selectedGroups().size,
             dimensionCount = group.dimensionStore.getSelected().size,
             textCount = selectedTexts.size,
@@ -2077,6 +2110,15 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun groupSelection() {
         objectPrototypeSelection()
+    }
+
+    private fun createVoxelGroup() {
+        val group = scene.createVoxelGroup(color = statusModel.paintColor)
+        scene.enterGroup(group)
+        statusModel.message = "Voxel group created. Editing voxel group."
+        toolController.setTool(ToolId.VOXEL)
+        undoManager.commit("Create Voxel Group")
+        saveModel()
     }
 
     private fun objectPrototypeSelection() {
@@ -2357,6 +2399,29 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val group = scene.activeGroup()
         val bounds = com.badlogic.gdx.math.collision.BoundingBox()
         var hasAny = false
+        val selectedVoxels = scene.selectedVoxels(group)
+        selectedVoxels.forEach { key ->
+            val min = Vector3(key.x.toFloat(), key.y.toFloat(), key.z.toFloat())
+            val max = Vector3((key.x + 1).toFloat(), (key.y + 1).toFloat(), (key.z + 1).toFloat())
+            val corners = arrayOf(
+                Vector3(min.x, min.y, min.z),
+                Vector3(max.x, min.y, min.z),
+                Vector3(max.x, min.y, max.z),
+                Vector3(min.x, min.y, max.z),
+                Vector3(min.x, max.y, min.z),
+                Vector3(max.x, max.y, min.z),
+                Vector3(max.x, max.y, max.z),
+                Vector3(min.x, max.y, max.z)
+            )
+            corners.forEach { corner ->
+                val world = group.toWorld(corner)
+                if (!hasAny) {
+                    bounds.set(world, world)
+                    hasAny = true
+                }
+                bounds.ext(world)
+            }
+        }
         scene.selectedGroups().forEach { selectedGroup ->
             val groupBounds = selectedGroup.worldBounds() ?: return@forEach
             if (!hasAny) {
@@ -2409,6 +2474,36 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             bounds.ext(pos)
         }
         return if (hasAny) bounds else null
+    }
+
+    private fun drawSelectedVoxelHighlights() {
+        val group = scene.activeGroup()
+        if (!scene.isVoxelGroup(group)) {
+            return
+        }
+        val selected = scene.selectedVoxels(group)
+        if (selected.isEmpty()) {
+            return
+        }
+        shapeRenderer.color = selectedLineColor
+        selected.forEach { key ->
+            val min = Vector3(key.x.toFloat(), key.y.toFloat(), key.z.toFloat())
+            val max = Vector3((key.x + 1).toFloat(), (key.y + 1).toFloat(), (key.z + 1).toFloat())
+            val corners = arrayOf(
+                Vector3(min.x, min.y, min.z),
+                Vector3(max.x, min.y, min.z),
+                Vector3(max.x, min.y, max.z),
+                Vector3(min.x, min.y, max.z),
+                Vector3(min.x, max.y, min.z),
+                Vector3(max.x, max.y, min.z),
+                Vector3(max.x, max.y, max.z),
+                Vector3(min.x, max.y, max.z)
+            )
+            corners.indices.forEach { idx ->
+                corners[idx] = group.toWorld(corners[idx])
+            }
+            drawWireBox(corners)
+        }
     }
 
     private fun expandBounds(

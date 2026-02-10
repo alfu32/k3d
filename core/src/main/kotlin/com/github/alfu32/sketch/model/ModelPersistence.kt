@@ -12,7 +12,7 @@ import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
 object ModelPersistence {
-    private const val VERSION = 8
+    private const val VERSION = 10
 
     fun save(
         file: File,
@@ -245,12 +245,21 @@ object ModelPersistence {
         var definitionAxisV: Vec3Dto = Vec3Dto()
         var definitionAxisW: Vec3Dto = Vec3Dto()
         var gluedToSurface: Boolean = false
+        var kind: String = GroupScene.PrototypeKind.MESH.name
+        var voxelColor: ColorDto? = null
+        var voxels: MutableList<VoxelDto> = mutableListOf()
         var segments: MutableList<SegmentDto> = mutableListOf()
         var faces: MutableList<FaceDto> = mutableListOf()
         var dimensions: MutableList<DimensionDto> = mutableListOf()
         var texts: MutableList<TextDto> = mutableListOf()
 
         fun toPrototype(defaultColor: Color): GroupScene.ObjectPrototype {
+            val prototypeKind = try {
+                GroupScene.PrototypeKind.valueOf(kind)
+            } catch (_: IllegalArgumentException) {
+                GroupScene.PrototypeKind.MESH
+            }
+            val voxelStore = if (prototypeKind == GroupScene.PrototypeKind.VOXEL) VoxelStore() else null
             val prototype = GroupScene.ObjectPrototype(
                 id = id.ifBlank { java.util.UUID.randomUUID().toString() },
                 name = name.ifBlank { "Object" },
@@ -259,6 +268,9 @@ object ModelPersistence {
                 definitionAxisV = definitionAxisV.toVector3(),
                 definitionAxisW = definitionAxisW.toVector3(),
                 gluedToSurface = gluedToSurface,
+                kind = prototypeKind,
+                voxelColor = voxelColor?.toColor() ?: Color(defaultColor),
+                voxelStore = voxelStore,
                 lineStore = DraftLineStore(),
                 faceStore = DraftFaceStore(defaultColor),
                 dimensionStore = DraftDimensionStore(),
@@ -275,6 +287,21 @@ object ModelPersistence {
             prototype.definitionAxisV.set(definitionAxisV.toVector3())
             prototype.definitionAxisW.set(definitionAxisW.toVector3())
             prototype.gluedToSurface = gluedToSurface
+            val parsedKind = try {
+                GroupScene.PrototypeKind.valueOf(kind)
+            } catch (_: IllegalArgumentException) {
+                GroupScene.PrototypeKind.MESH
+            }
+            prototype.kind = if (parsedKind == GroupScene.PrototypeKind.VOXEL && prototype.voxelStore == null) {
+                GroupScene.PrototypeKind.MESH
+            } else {
+                parsedKind
+            }
+            prototype.voxelColor = voxelColor?.toColor() ?: Color(defaultColor)
+            prototype.voxelStore?.clear()
+            voxels.forEach { voxel ->
+                prototype.voxelStore?.set(voxel.x, voxel.y, voxel.z, voxel.color.toColor())
+            }
             prototype.lineStore.clearAll()
             prototype.faceStore.clearAll()
             prototype.dimensionStore.clearAll()
@@ -311,6 +338,13 @@ object ModelPersistence {
                     text.screenText
                 )
             }
+            if (prototype.kind == GroupScene.PrototypeKind.VOXEL) {
+                prototype.voxelStore?.clear()
+                voxels.forEach { voxel ->
+                    prototype.voxelStore?.set(voxel.x, voxel.y, voxel.z, voxel.color.toColor())
+                }
+                rebuildVoxelGeometry(prototype)
+            }
         }
 
         companion object {
@@ -323,6 +357,11 @@ object ModelPersistence {
                 dto.definitionAxisV = Vec3Dto(prototype.definitionAxisV)
                 dto.definitionAxisW = Vec3Dto(prototype.definitionAxisW)
                 dto.gluedToSurface = prototype.gluedToSurface
+                dto.kind = prototype.kind.name
+                dto.voxelColor = ColorDto(prototype.voxelColor)
+                dto.voxels = prototype.voxelStore?.all()?.map { voxel ->
+                    VoxelDto(voxel.x, voxel.y, voxel.z, ColorDto(voxel.color))
+                }?.toMutableList() ?: mutableListOf()
                 dto.segments = prototype.lineStore.getSegments().map { seg ->
                     SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end))
                 }.toMutableList()
@@ -345,6 +384,20 @@ object ModelPersistence {
                 }.toMutableList()
                 return dto
             }
+        }
+    }
+
+    class VoxelDto() {
+        var x: Int = 0
+        var y: Int = 0
+        var z: Int = 0
+        var color: ColorDto = ColorDto()
+
+        constructor(x: Int, y: Int, z: Int, color: ColorDto) : this() {
+            this.x = x
+            this.y = y
+            this.z = z
+            this.color = color
         }
     }
 
@@ -406,6 +459,7 @@ object ModelPersistence {
                 definitionAxisV = Vector3(0f, 1f, 0f),
                 definitionAxisW = Vector3(0f, 0f, 1f),
                 gluedToSurface = false,
+                voxelColor = Color(defaultColor),
                 lineStore = DraftLineStore(),
                 faceStore = DraftFaceStore(defaultColor),
                 dimensionStore = DraftDimensionStore(),
@@ -503,6 +557,7 @@ object ModelPersistence {
                 definitionAxisV = defAxisV,
                 definitionAxisW = defAxisW,
                 gluedToSurface = gluedToSurface,
+                voxelColor = Color(defaultColor),
                 lineStore = DraftLineStore(),
                 faceStore = DraftFaceStore(defaultColor),
                 dimensionStore = DraftDimensionStore(),
@@ -719,6 +774,71 @@ object ModelPersistence {
     private fun registerLegacyPrototypes(scene: GroupScene, group: GroupScene.GroupNode) {
         scene.registerPrototypeForLoad(group.prototype)
         group.children.forEach { child -> registerLegacyPrototypes(scene, child) }
+    }
+
+    private data class FaceDef(val indices: IntArray, val dx: Int, val dy: Int, val dz: Int)
+
+    private fun rebuildVoxelGeometry(prototype: GroupScene.ObjectPrototype) {
+        if (prototype.kind != GroupScene.PrototypeKind.VOXEL) {
+            return
+        }
+        val voxels = prototype.voxelStore?.all().orEmpty()
+        prototype.lineStore.withChangeSuppressed {
+            prototype.lineStore.clearAll()
+        }
+        prototype.faceStore.withChangeSuppressed {
+            prototype.faceStore.clearAll()
+        }
+        if (voxels.isEmpty()) {
+            prototype.lineStore.notifyExternalChange()
+            prototype.faceStore.notifyExternalChange()
+            return
+        }
+        val occupied = voxels.associateBy { VoxelStore.Key(it.x, it.y, it.z) }
+        val corners = arrayOf(
+            Vector3(0f, 0f, 0f),
+            Vector3(1f, 0f, 0f),
+            Vector3(1f, 1f, 0f),
+            Vector3(0f, 1f, 0f),
+            Vector3(0f, 0f, 1f),
+            Vector3(1f, 0f, 1f),
+            Vector3(1f, 1f, 1f),
+            Vector3(0f, 1f, 1f)
+        )
+        val faces = arrayOf(
+            FaceDef(intArrayOf(0, 3, 7, 4), -1, 0, 0),
+            FaceDef(intArrayOf(1, 5, 6, 2), 1, 0, 0),
+            FaceDef(intArrayOf(0, 4, 5, 1), 0, -1, 0),
+            FaceDef(intArrayOf(3, 2, 6, 7), 0, 1, 0),
+            FaceDef(intArrayOf(0, 1, 2, 3), 0, 0, -1),
+            FaceDef(intArrayOf(4, 7, 6, 5), 0, 0, 1)
+        )
+        prototype.faceStore.withChangeSuppressed {
+            prototype.lineStore.withChangeSuppressed {
+                voxels.forEach { voxel ->
+                    val base = Vector3(voxel.x.toFloat(), voxel.y.toFloat(), voxel.z.toFloat())
+                    faces.forEach { def ->
+                        val neighbor = VoxelStore.Key(voxel.x + def.dx, voxel.y + def.dy, voxel.z + def.dz)
+                        if (occupied.containsKey(neighbor)) {
+                            return@forEach
+                        }
+                        val a = Vector3(corners[def.indices[0]]).add(base)
+                        val b = Vector3(corners[def.indices[1]]).add(base)
+                        val c = Vector3(corners[def.indices[2]]).add(base)
+                        val d = Vector3(corners[def.indices[3]]).add(base)
+                        prototype.faceStore.addTriangle(a, b, c, voxel.color)
+                        prototype.faceStore.addTriangle(a, c, d, voxel.color)
+                        prototype.lineStore.addSegment(a, b, autoCleanup = false)
+                        prototype.lineStore.addSegment(b, c, autoCleanup = false)
+                        prototype.lineStore.addSegment(c, d, autoCleanup = false)
+                        prototype.lineStore.addSegment(d, a, autoCleanup = false)
+                    }
+                }
+            }
+        }
+        prototype.lineStore.cleanupJts()
+        prototype.lineStore.notifyExternalChange()
+        prototype.faceStore.notifyExternalChange()
     }
 
     fun encodeSnapshot(snapshot: ModelSnapshot): String {

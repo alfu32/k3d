@@ -76,7 +76,15 @@ class MoveTool(
         }
         val group = scene.activeGroup()
         val localDelta = group.vectorToLocal(delta)
+        val voxelDx = kotlin.math.round(localDelta.x).toInt()
+        val voxelDy = kotlin.math.round(localDelta.y).toInt()
+        val voxelDz = kotlin.math.round(localDelta.z).toInt()
         if (status.copyMode) {
+            val movedVoxels = if (scene.isVoxelGroup(group)) {
+                scene.moveSelectedVoxels(group, voxelDx, voxelDy, voxelDz, copy = true)
+            } else {
+                0
+            }
             val movedFaces = group.faceStore.copySelected { point -> Vector3(point).add(localDelta) }
             val movedEdges = group.lineStore.copySelected { point -> Vector3(point).add(localDelta) }
             val movedDimensions = group.dimensionStore.copySelected { point -> Vector3(point).add(localDelta) }
@@ -87,8 +95,13 @@ class MoveTool(
             )
             alignSelectedGroupsIfNeeded()
             status.message =
-                "Copied | edges $movedEdges faces $movedFaces dims $movedDimensions texts $movedTexts groups $movedGroups"
+                "Copied | voxels $movedVoxels edges $movedEdges faces $movedFaces dims $movedDimensions texts $movedTexts groups $movedGroups"
         } else {
+            val movedVoxels = if (scene.isVoxelGroup(group)) {
+                scene.moveSelectedVoxels(group, voxelDx, voxelDy, voxelDz, copy = false)
+            } else {
+                0
+            }
             val movedFaces = group.faceStore.transformSelected { point -> Vector3(point).add(localDelta) }
             val movedEdges = group.lineStore.transformSelected { point -> Vector3(point).add(localDelta) }
             val movedDimensions = group.dimensionStore.transformSelected { point -> Vector3(point).add(localDelta) }
@@ -99,7 +112,7 @@ class MoveTool(
             )
             alignSelectedGroupsIfNeeded()
             status.message =
-                "Moved | edges $movedEdges faces $movedFaces dims $movedDimensions texts $movedTexts groups $movedGroups"
+                "Moved | voxels $movedVoxels edges $movedEdges faces $movedFaces dims $movedDimensions texts $movedTexts groups $movedGroups"
         }
         clearTransient()
         return true

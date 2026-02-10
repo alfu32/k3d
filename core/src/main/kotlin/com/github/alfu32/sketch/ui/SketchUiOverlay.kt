@@ -157,6 +157,7 @@ class SketchUiOverlay(
     private val cursorLabel = VisLabel()
     private val selectionEdgesLabel = VisLabel()
     private val selectionFacesLabel = VisLabel()
+    private val selectionVoxelsLabel = VisLabel()
     private val selectionGroupsLabel = VisLabel()
     private val selectionDimensionsLabel = VisLabel()
     private val selectionTextsLabel = VisLabel()
@@ -402,6 +403,7 @@ class SketchUiOverlay(
         )
         selectionEdgesLabel.setText("Edges: ${selection.edgeCount}")
         selectionFacesLabel.setText("Faces: ${selection.faceCount}")
+        selectionVoxelsLabel.setText("Voxels: ${selection.voxelCount}")
         selectionGroupsLabel.setText("Objects: ${selection.groupCount}")
         selectionDimensionsLabel.setText("Dimensions: ${selection.dimensionCount}")
         selectionTextsLabel.setText("Texts: ${selection.textCount}")
@@ -531,6 +533,9 @@ class SketchUiOverlay(
             ToolId.CONSTRUCTION_LINE,
             ToolId.POLYLINE,
             ToolId.DOUBLE_LINE,
+            ToolId.VOXEL,
+            ToolId.VOXEL_VOLUME,
+            ToolId.VOXEL_FRAME,
             ToolId.RECTANGLE,
             ToolId.SURFACE_RECTANGLE,
             ToolId.QUAD,
@@ -721,6 +726,7 @@ class SketchUiOverlay(
         content.defaults().pad(4f).left()
         content.add(selectionEdgesLabel).row()
         content.add(selectionFacesLabel).row()
+        content.add(selectionVoxelsLabel).row()
         content.add(selectionGroupsLabel).row()
         content.add(selectionDimensionsLabel).row()
         content.add(selectionTextsLabel).row()
@@ -1594,6 +1600,9 @@ class SketchUiOverlay(
             ToolId.CONSTRUCTION_LINE -> "line"
             ToolId.POLYLINE -> "polyline"
             ToolId.DOUBLE_LINE -> "double_line"
+            ToolId.VOXEL -> "quad"
+            ToolId.VOXEL_VOLUME -> "rectangle"
+            ToolId.VOXEL_FRAME -> "surface_rect"
             ToolId.FACE_OUTLINE -> "line"
             ToolId.LINE_OFFSET -> "offset"
             ToolId.CUT_HOLES -> "cleanup"
@@ -1621,6 +1630,9 @@ class SketchUiOverlay(
             ToolId.CONSTRUCTION_LINE -> Color(0.65f, 0.9f, 0.65f, 1f)
             ToolId.POLYLINE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.DOUBLE_LINE -> Color(0.35f, 0.75f, 0.95f, 1f)
+            ToolId.VOXEL -> Color(0.75f, 0.85f, 0.45f, 1f)
+            ToolId.VOXEL_VOLUME -> Color(0.55f, 0.85f, 0.95f, 1f)
+            ToolId.VOXEL_FRAME -> Color(0.95f, 0.7f, 0.3f, 1f)
             ToolId.FACE_OUTLINE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.LINE_OFFSET -> Color(0.35f, 0.75f, 0.95f, 1f)
             ToolId.CUT_HOLES -> Color(0.85f, 0.55f, 0.35f, 1f)
@@ -1907,6 +1919,7 @@ class SketchUiOverlay(
     data class SelectionInfo(
         val edgeCount: Int,
         val faceCount: Int,
+        val voxelCount: Int,
         val groupCount: Int,
         val dimensionCount: Int,
         val textCount: Int,

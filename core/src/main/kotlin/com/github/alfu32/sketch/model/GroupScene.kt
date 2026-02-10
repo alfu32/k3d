@@ -9,6 +9,7 @@ class GroupScene(
     val defaultFaceColor: Color
 ) {
     data class Axes(val u: Vector3, val v: Vector3, val w: Vector3)
+    enum class PrototypeKind { MESH, VOXEL }
 
     class ObjectPrototype(
         val id: String,
@@ -18,6 +19,9 @@ class GroupScene(
         var definitionAxisV: Vector3,
         var definitionAxisW: Vector3,
         var gluedToSurface: Boolean,
+        var kind: PrototypeKind = PrototypeKind.MESH,
+        var voxelColor: Color = Color(1f, 1f, 1f, 1f),
+        val voxelStore: VoxelStore? = null,
         val lineStore: DraftLineStore,
         val faceStore: DraftFaceStore,
         val dimensionStore: DraftDimensionStore,
@@ -60,6 +64,12 @@ class GroupScene(
         var definitionAxisW: Vector3
             get() = prototype.definitionAxisW
             set(value) { prototype.definitionAxisW = value }
+        val kind: PrototypeKind
+            get() = prototype.kind
+        val voxelStore: VoxelStore?
+            get() = prototype.voxelStore
+        val voxelColor: Color
+            get() = prototype.voxelColor
 
         fun addSketchSegment(startLocal: Vector3, endLocal: Vector3) {
             lineStore.addSegment(startLocal, endLocal, autoCleanup = false)
@@ -254,6 +264,9 @@ class GroupScene(
         definitionAxisV = Vector3(0f, 1f, 0f),
         definitionAxisW = Vector3(0f, 0f, 1f),
         gluedToSurface = false,
+        kind = PrototypeKind.MESH,
+        voxelColor = Color(defaultFaceColor),
+        voxelStore = null,
         lineStore = DraftLineStore(),
         faceStore = DraftFaceStore(defaultFaceColor),
         dimensionStore = DraftDimensionStore(),
@@ -339,11 +352,13 @@ class GroupScene(
         root.faceStore.clearSelection()
         root.dimensionStore.clearSelection()
         root.textStore.clearSelection()
+        root.voxelStore?.clearSelection()
         walkGroups(root) { group ->
             group.lineStore.clearSelection()
             group.faceStore.clearSelection()
             group.dimensionStore.clearSelection()
             group.textStore.clearSelection()
+            group.voxelStore?.clearSelection()
         }
         clearGroupSelection()
     }
@@ -386,6 +401,188 @@ class GroupScene(
         }
         prototypeInstances.remove(id)
         return prototypes.remove(id) != null
+    }
+
+    fun createVoxelGroup(name: String = "Voxel Group", color: Color = defaultFaceColor): GroupNode {
+        val parent = activeGroup
+        val prototype = ObjectPrototype(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            definitionOrigin = Vector3(),
+            definitionAxisU = Vector3(1f, 0f, 0f),
+            definitionAxisV = Vector3(0f, 1f, 0f),
+            definitionAxisW = Vector3(0f, 0f, 1f),
+            gluedToSurface = false,
+            kind = PrototypeKind.VOXEL,
+            voxelColor = Color(color),
+            voxelStore = VoxelStore(),
+            lineStore = DraftLineStore(),
+            faceStore = DraftFaceStore(defaultFaceColor),
+            dimensionStore = DraftDimensionStore(),
+            textStore = DraftTextStore()
+        )
+        registerPrototype(prototype)
+        val group = GroupNode(
+            id = java.util.UUID.randomUUID().toString(),
+            prototype = prototype,
+            instanceOrigin = Vector3(),
+            instanceAxisU = Vector3(1f, 0f, 0f),
+            instanceAxisV = Vector3(0f, 1f, 0f),
+            instanceAxisW = Vector3(0f, 0f, 1f)
+        )
+        group.parent = parent
+        parent.children.add(group)
+        registerInstance(group)
+        applyChangeListener(group)
+        clearGroupSelection()
+        selectedGroups.add(group)
+        notifyChange()
+        return group
+    }
+
+    fun isVoxelGroup(group: GroupNode): Boolean {
+        return group.kind == PrototypeKind.VOXEL && group.voxelStore != null
+    }
+
+    fun voxelColor(group: GroupNode): Color? {
+        if (!isVoxelGroup(group)) {
+            return null
+        }
+        return Color(group.prototype.voxelColor)
+    }
+
+    fun setVoxelColor(group: GroupNode, color: Color, applyToExisting: Boolean = true): Boolean {
+        if (!isVoxelGroup(group)) {
+            return false
+        }
+        val prototype = group.prototype
+        val store = prototype.voxelStore ?: return false
+        var changed = false
+        if (!colorsEqual(prototype.voxelColor, color)) {
+            prototype.voxelColor.set(color)
+            changed = true
+        }
+        if (applyToExisting) {
+            if (store.recolorAll(color) > 0) {
+                changed = true
+            }
+        }
+        if (!changed) {
+            return false
+        }
+        rebuildVoxelGeometry(prototype)
+        notifyChange()
+        return true
+    }
+
+    fun setVoxel(group: GroupNode, x: Int, y: Int, z: Int, color: Color): Boolean {
+        val store = group.voxelStore ?: return false
+        if (!store.set(x, y, z, color)) {
+            return false
+        }
+        rebuildVoxelGeometry(group.prototype)
+        notifyChange()
+        return true
+    }
+
+    fun removeVoxel(group: GroupNode, x: Int, y: Int, z: Int): Boolean {
+        val store = group.voxelStore ?: return false
+        if (!store.remove(x, y, z)) {
+            return false
+        }
+        rebuildVoxelGeometry(group.prototype)
+        notifyChange()
+        return true
+    }
+
+    fun selectedVoxels(group: GroupNode): Set<VoxelStore.Key> {
+        return group.voxelStore?.selected().orEmpty()
+    }
+
+    fun clearVoxelSelection(group: GroupNode): Boolean {
+        val store = group.voxelStore ?: return false
+        if (store.selectedCount() == 0) {
+            return false
+        }
+        store.clearSelection()
+        return true
+    }
+
+    fun addVoxelSelection(group: GroupNode, key: VoxelStore.Key): Boolean {
+        val store = group.voxelStore ?: return false
+        if (!store.addSelection(key)) {
+            return false
+        }
+        return true
+    }
+
+    fun removeVoxelSelection(group: GroupNode, key: VoxelStore.Key): Boolean {
+        val store = group.voxelStore ?: return false
+        if (!store.removeSelection(key)) {
+            return false
+        }
+        return true
+    }
+
+    fun toggleVoxelSelection(group: GroupNode, key: VoxelStore.Key): Boolean {
+        val store = group.voxelStore ?: return false
+        if (!store.toggleSelection(key)) {
+            return false
+        }
+        return true
+    }
+
+    fun replaceVoxelSelection(group: GroupNode, keys: Collection<VoxelStore.Key>): Int {
+        val store = group.voxelStore ?: return 0
+        return store.replaceSelection(keys)
+    }
+
+    fun deleteSelectedVoxels(group: GroupNode): Int {
+        val store = group.voxelStore ?: return 0
+        val removed = store.deleteSelected()
+        if (removed <= 0) {
+            return 0
+        }
+        rebuildVoxelGeometry(group.prototype)
+        notifyChange()
+        return removed
+    }
+
+    fun paintSelectedVoxels(group: GroupNode, color: Color): Int {
+        val store = group.voxelStore ?: return 0
+        val changed = store.recolorSelected(color)
+        if (changed <= 0) {
+            return 0
+        }
+        rebuildVoxelGeometry(group.prototype)
+        notifyChange()
+        return changed
+    }
+
+    fun moveSelectedVoxels(group: GroupNode, dx: Int, dy: Int, dz: Int, copy: Boolean): Int {
+        val store = group.voxelStore ?: return 0
+        val moved = store.moveSelected(dx, dy, dz, copy)
+        if (moved <= 0) {
+            return 0
+        }
+        rebuildVoxelGeometry(group.prototype)
+        notifyChange()
+        return moved
+    }
+
+    fun setVoxels(group: GroupNode, voxels: Collection<Pair<VoxelStore.Key, Color>>): Int {
+        val store = group.voxelStore ?: return 0
+        var changed = 0
+        voxels.forEach { (key, color) ->
+            if (store.set(key.x, key.y, key.z, color)) {
+                changed++
+            }
+        }
+        if (changed > 0) {
+            rebuildVoxelGeometry(group.prototype)
+            notifyChange()
+        }
+        return changed
     }
 
     fun createGroupFromSelection(): GroupNode? {
@@ -441,6 +638,9 @@ class GroupScene(
             definitionAxisV = Vector3(0f, 1f, 0f),
             definitionAxisW = Vector3(0f, 0f, 1f),
             gluedToSurface = false,
+            kind = PrototypeKind.MESH,
+            voxelColor = Color(defaultFaceColor),
+            voxelStore = null,
             lineStore = DraftLineStore(),
             faceStore = DraftFaceStore(defaultFaceColor),
             dimensionStore = DraftDimensionStore(),
@@ -797,6 +997,72 @@ class GroupScene(
         }
     }
 
+    fun rebuildVoxelGeometry(prototype: ObjectPrototype) {
+        if (prototype.kind != PrototypeKind.VOXEL) {
+            return
+        }
+        val voxels = prototype.voxelStore?.all().orEmpty()
+        prototype.lineStore.withChangeSuppressed {
+            prototype.lineStore.clearAll()
+        }
+        prototype.faceStore.withChangeSuppressed {
+            prototype.faceStore.clearAll()
+        }
+        if (voxels.isEmpty()) {
+            prototype.lineStore.notifyExternalChange()
+            prototype.faceStore.notifyExternalChange()
+            return
+        }
+        val occupied = voxels.associateBy { VoxelStore.Key(it.x, it.y, it.z) }
+        val corners = arrayOf(
+            Vector3(0f, 0f, 0f),
+            Vector3(1f, 0f, 0f),
+            Vector3(1f, 1f, 0f),
+            Vector3(0f, 1f, 0f),
+            Vector3(0f, 0f, 1f),
+            Vector3(1f, 0f, 1f),
+            Vector3(1f, 1f, 1f),
+            Vector3(0f, 1f, 1f)
+        )
+        // 6 faces, each defined by corner indices and outward neighbor offset.
+        val faces = arrayOf(
+            FaceDef(intArrayOf(0, 3, 7, 4), -1, 0, 0),
+            FaceDef(intArrayOf(1, 5, 6, 2), 1, 0, 0),
+            FaceDef(intArrayOf(0, 4, 5, 1), 0, -1, 0),
+            FaceDef(intArrayOf(3, 2, 6, 7), 0, 1, 0),
+            FaceDef(intArrayOf(0, 1, 2, 3), 0, 0, -1),
+            FaceDef(intArrayOf(4, 7, 6, 5), 0, 0, 1)
+        )
+        prototype.faceStore.withChangeSuppressed {
+            prototype.lineStore.withChangeSuppressed {
+                voxels.forEach { voxel ->
+                    val base = Vector3(voxel.x.toFloat(), voxel.y.toFloat(), voxel.z.toFloat())
+                    faces.forEach { def ->
+                        val neighborKey = VoxelStore.Key(voxel.x + def.dx, voxel.y + def.dy, voxel.z + def.dz)
+                        if (occupied.containsKey(neighborKey)) {
+                            return@forEach
+                        }
+                        val a = Vector3(corners[def.indices[0]]).add(base)
+                        val b = Vector3(corners[def.indices[1]]).add(base)
+                        val c = Vector3(corners[def.indices[2]]).add(base)
+                        val d = Vector3(corners[def.indices[3]]).add(base)
+                        prototype.faceStore.addTriangle(a, b, c, voxel.color)
+                        prototype.faceStore.addTriangle(a, c, d, voxel.color)
+                        prototype.lineStore.addSegment(a, b, autoCleanup = false)
+                        prototype.lineStore.addSegment(b, c, autoCleanup = false)
+                        prototype.lineStore.addSegment(c, d, autoCleanup = false)
+                        prototype.lineStore.addSegment(d, a, autoCleanup = false)
+                    }
+                }
+            }
+        }
+        prototype.lineStore.cleanupJts()
+        prototype.lineStore.notifyExternalChange()
+        prototype.faceStore.notifyExternalChange()
+    }
+
+    private data class FaceDef(val indices: IntArray, val dx: Int, val dy: Int, val dz: Int)
+
     private fun cloneGroup(group: GroupNode): GroupNode {
         val clone = GroupNode(
             id = java.util.UUID.randomUUID().toString(),
@@ -908,6 +1174,13 @@ class GroupScene(
 
     private fun notifyChange() {
         changeListener?.invoke()
+    }
+
+    private fun colorsEqual(a: Color, b: Color): Boolean {
+        return kotlin.math.abs(a.r - b.r) <= 1e-6f &&
+            kotlin.math.abs(a.g - b.g) <= 1e-6f &&
+            kotlin.math.abs(a.b - b.b) <= 1e-6f &&
+            kotlin.math.abs(a.a - b.a) <= 1e-6f
     }
 
     companion object {

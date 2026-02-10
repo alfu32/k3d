@@ -14,6 +14,7 @@ import com.github.alfu32.sketch.model.DraftFaceStore
 import com.github.alfu32.sketch.model.DraftLineStore
 import com.github.alfu32.sketch.model.DraftTextStore
 import com.github.alfu32.sketch.model.GroupScene
+import com.github.alfu32.sketch.model.VoxelStore
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
@@ -54,6 +55,7 @@ class SelectTool(
         scene.activeGroup().faceStore.clearSelection()
         scene.activeGroup().dimensionStore.clearSelection()
         scene.activeGroup().textStore.clearSelection()
+        scene.clearVoxelSelection(scene.activeGroup())
         scene.clearGroupSelection()
         selectingVolume = false
         volumeStartRaw = null
@@ -110,17 +112,21 @@ class SelectTool(
             return true
         }
         val ray = camera.getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
-        val faceHit = pickFaceWorld(ray)
-        val edgeHit = pickEdgeWorld(ray, Gdx.input.x, Gdx.input.y)
+        val activeGroup = scene.activeGroup()
+        val isVoxelGroup = scene.isVoxelGroup(activeGroup)
+        val voxelHit = if (isVoxelGroup) pickVoxelWorld(ray) else null
+        val faceHit = if (isVoxelGroup) null else pickFaceWorld(ray)
+        val edgeHit = if (isVoxelGroup) null else pickEdgeWorld(ray, Gdx.input.x, Gdx.input.y)
         val dimensionHit = pickDimensionWorld(ray, Gdx.input.x, Gdx.input.y)
         val textHit = pickTextWorld(ray, Gdx.input.x, Gdx.input.y)
         val groupHit = pickGroupWorld(ray, Gdx.input.x, Gdx.input.y)
+        val pickedVoxel = voxelHit != null
         val pickedFace = faceHit != null
         val pickedEdge = edgeHit != null
         val pickedDimension = dimensionHit != null
         val pickedText = textHit != null
         val pickedGroup = groupHit != null
-        if (!pickedFace && !pickedEdge && !pickedGroup && !pickedDimension && !pickedText) {
+        if (!pickedVoxel && !pickedFace && !pickedEdge && !pickedGroup && !pickedDimension && !pickedText) {
             selectingWindow = true
             windowDragActive = false
             windowStartX = Gdx.input.x
@@ -131,6 +137,15 @@ class SelectTool(
             return true
         }
         val clickType = updateClickCount()
+        if (pickedVoxel && isClosest(voxelHit!!.t, faceHit?.t, edgeHit?.t, dimensionHit?.t, textHit?.t, groupHit?.t)) {
+            applyVoxelSelection(voxelHit.key, selectionMode())
+            status.message = if (scene.selectedVoxels(activeGroup).contains(voxelHit.key)) {
+                "Voxel selected."
+            } else {
+                "Voxel deselected."
+            }
+            return true
+        }
         if (clickType == 2 && pickedGroup) {
             val targetGroup = groupHit!!.group
             if (scene.enterGroup(targetGroup)) {
@@ -139,7 +154,7 @@ class SelectTool(
                 return true
             }
         }
-        if (clickType >= 3) {
+        if (!isVoxelGroup && clickType >= 3) {
             clickCount = 0
             if (!pickedFace && !pickedEdge) {
                 return true
@@ -168,7 +183,7 @@ class SelectTool(
             }
             return true
         }
-        if (clickType == 2 && pickedFace) {
+        if (!isVoxelGroup && clickType == 2 && pickedFace) {
             val group = scene.activeGroup().faceStore.collectCoplanarConnected(faceHit!!.triangle)
             val allSelected = group.all { scene.activeGroup().faceStore.isSelected(it) }
             if (allSelected) {
@@ -201,7 +216,7 @@ class SelectTool(
             status.message = "Group toggled."
             return true
         }
-        if (pickedFace && pickedEdge) {
+        if (!isVoxelGroup && pickedFace && pickedEdge) {
             if (faceHit!!.t <= edgeHit!!.t) {
                 scene.activeGroup().faceStore.toggleSelection(faceHit.triangle)
                 status.message = "Face toggled."
@@ -211,12 +226,12 @@ class SelectTool(
             }
             return true
         }
-        if (pickedFace) {
+        if (!isVoxelGroup && pickedFace) {
             scene.activeGroup().faceStore.toggleSelection(faceHit!!.triangle)
             status.message = "Face toggled."
             return true
         }
-        if (pickedEdge) {
+        if (!isVoxelGroup && pickedEdge) {
             scene.activeGroup().lineStore.toggleSelection(edgeHit!!.segment)
             status.message = "Edge toggled."
             return true
@@ -249,14 +264,21 @@ class SelectTool(
                     scene.activeGroup().lineStore.clearSelection()
                     scene.activeGroup().dimensionStore.clearSelection()
                     scene.activeGroup().textStore.clearSelection()
+                    scene.clearVoxelSelection(scene.activeGroup())
                     scene.clearGroupSelection()
                 }
-                val faces = selectFacesInWindow(rect, includeIntersect, mode)
-                val edges = selectEdgesInWindow(rect, includeIntersect, mode)
+                val voxelCount = if (scene.isVoxelGroup(scene.activeGroup())) {
+                    selectVoxelsInWindow(rect, includeIntersect, mode)
+                } else {
+                    0
+                }
+                val faces = if (scene.isVoxelGroup(scene.activeGroup())) 0 else selectFacesInWindow(rect, includeIntersect, mode)
+                val edges = if (scene.isVoxelGroup(scene.activeGroup())) 0 else selectEdgesInWindow(rect, includeIntersect, mode)
                 val dimensions = selectDimensionsInWindow(rect, includeIntersect, mode)
                 val texts = selectTextsInWindow(rect, includeIntersect, mode)
                 val groups = selectGroupsInWindow(rect, includeIntersect, mode)
-                status.message = "Window select | edges $edges faces $faces dims $dimensions texts $texts groups $groups"
+                status.message =
+                    "Window select | voxels $voxelCount edges $edges faces $faces dims $dimensions texts $texts groups $groups"
                 return true
             } else if (pendingVolumeStart != null) {
                 selectingVolume = true
@@ -315,6 +337,12 @@ class SelectTool(
         val t: Float
     )
 
+    private data class VoxelHitWorld(
+        val key: VoxelStore.Key,
+        val point: Vector3,
+        val t: Float
+    )
+
     private data class DimensionHitWorld(
         val dimension: DraftDimensionStore.LinearDimension,
         val point: Vector3,
@@ -337,10 +365,15 @@ class SelectTool(
         val bounds = volumeBounds() ?: return
         val group = scene.activeGroup()
         val localBounds = volumeBoundsLocal(group, bounds.first, bounds.second)
-        val faceCount = group.faceStore.selectInVolume(localBounds.first, localBounds.second, replace = true)
-        val edgeCount = group.lineStore.selectInVolume(localBounds.first, localBounds.second, replace = true)
+        val voxelCount = if (scene.isVoxelGroup(group)) {
+            selectVoxelsInVolume(localBounds.first, localBounds.second, replace = true)
+        } else {
+            0
+        }
+        val faceCount = if (scene.isVoxelGroup(group)) 0 else group.faceStore.selectInVolume(localBounds.first, localBounds.second, replace = true)
+        val edgeCount = if (scene.isVoxelGroup(group)) 0 else group.lineStore.selectInVolume(localBounds.first, localBounds.second, replace = true)
         val groupCount = selectGroupsInVolume(bounds.first, bounds.second)
-        status.message = "Volume select | edges $edgeCount faces $faceCount groups $groupCount"
+        status.message = "Volume select | voxels $voxelCount edges $edgeCount faces $faceCount groups $groupCount"
     }
 
     private fun pickFaceWorld(ray: Ray): FaceHitWorld? {
@@ -350,6 +383,33 @@ class SelectTool(
         val worldPoint = group.toWorld(hit.point)
         val t = Vector3(worldPoint).sub(ray.origin).dot(ray.direction)
         return FaceHitWorld(hit.triangle, worldPoint, t)
+    }
+
+    private fun pickVoxelWorld(ray: Ray): VoxelHitWorld? {
+        val group = scene.activeGroup()
+        val store = group.voxelStore ?: return null
+        val localOrigin = group.toLocal(ray.origin)
+        val localDir = group.vectorToLocal(ray.direction).nor()
+        var best: VoxelHitWorld? = null
+        store.all().forEach { voxel ->
+            val min = Vector3(voxel.x.toFloat(), voxel.y.toFloat(), voxel.z.toFloat())
+            val max = Vector3((voxel.x + 1).toFloat(), (voxel.y + 1).toFloat(), (voxel.z + 1).toFloat())
+            val tLocal = rayAabbIntersectionT(localOrigin, localDir, min, max) ?: return@forEach
+            val localPoint = Vector3(localOrigin).mulAdd(localDir, tLocal)
+            val worldPoint = group.toWorld(localPoint)
+            val worldT = Vector3(worldPoint).sub(ray.origin).dot(ray.direction)
+            if (worldT < 0f) {
+                return@forEach
+            }
+            if (best == null || worldT < best!!.t) {
+                best = VoxelHitWorld(
+                    key = VoxelStore.Key(voxel.x, voxel.y, voxel.z),
+                    point = worldPoint,
+                    t = worldT
+                )
+            }
+        }
+        return best
     }
 
     private fun pickEdgeWorld(ray: Ray, screenX: Int, screenY: Int, maxPixels: Float = 12f): EdgeHitWorld? {
@@ -436,6 +496,133 @@ class SelectTool(
             }
         }
         return best
+    }
+
+    private fun applyVoxelSelection(key: VoxelStore.Key, mode: SelectionMode) {
+        val group = scene.activeGroup()
+        if (!scene.isVoxelGroup(group)) {
+            return
+        }
+        when (mode) {
+            SelectionMode.REPLACE -> {
+                group.faceStore.clearSelection()
+                group.lineStore.clearSelection()
+                group.dimensionStore.clearSelection()
+                group.textStore.clearSelection()
+                scene.clearGroupSelection()
+                scene.replaceVoxelSelection(group, listOf(key))
+            }
+            SelectionMode.ADD -> {
+                scene.addVoxelSelection(group, key)
+            }
+            SelectionMode.REMOVE -> {
+                scene.removeVoxelSelection(group, key)
+            }
+        }
+    }
+
+    private fun selectVoxelsInWindow(rect: WindowRectTopLeft, includeIntersect: Boolean, mode: SelectionMode): Int {
+        val group = scene.activeGroup()
+        val store = group.voxelStore ?: return 0
+        var count = 0
+        val selectedKeys = mutableListOf<VoxelStore.Key>()
+        store.all().forEach { voxel ->
+            val key = VoxelStore.Key(voxel.x, voxel.y, voxel.z)
+            val screenBounds = voxelBoundsToScreen(group, key) ?: return@forEach
+            val matches = if (!includeIntersect) {
+                screenBounds.minX >= rect.minX &&
+                    screenBounds.maxX <= rect.maxX &&
+                    screenBounds.minY >= rect.minY &&
+                    screenBounds.maxY <= rect.maxY
+            } else {
+                rect.minX <= screenBounds.maxX &&
+                    rect.maxX >= screenBounds.minX &&
+                    rect.minY <= screenBounds.maxY &&
+                    rect.maxY >= screenBounds.minY
+            }
+            if (!matches) {
+                return@forEach
+            }
+            when (mode) {
+                SelectionMode.REPLACE -> {
+                    selectedKeys.add(key)
+                }
+                SelectionMode.ADD -> {
+                    if (scene.addVoxelSelection(group, key)) {
+                        count++
+                    }
+                }
+                SelectionMode.REMOVE -> {
+                    if (scene.removeVoxelSelection(group, key)) {
+                        count++
+                    }
+                }
+            }
+        }
+        if (mode == SelectionMode.REPLACE) {
+            count = scene.replaceVoxelSelection(group, selectedKeys)
+        }
+        return count
+    }
+
+    private fun selectVoxelsInVolume(minLocal: Vector3, maxLocal: Vector3, replace: Boolean): Int {
+        val group = scene.activeGroup()
+        val store = group.voxelStore ?: return 0
+        val minX = kotlin.math.floor(kotlin.math.min(minLocal.x, maxLocal.x).toDouble()).toInt()
+        val minY = kotlin.math.floor(kotlin.math.min(minLocal.y, maxLocal.y).toDouble()).toInt()
+        val minZ = kotlin.math.floor(kotlin.math.min(minLocal.z, maxLocal.z).toDouble()).toInt()
+        val maxX = kotlin.math.floor(kotlin.math.max(minLocal.x, maxLocal.x).toDouble()).toInt()
+        val maxY = kotlin.math.floor(kotlin.math.max(minLocal.y, maxLocal.y).toDouble()).toInt()
+        val maxZ = kotlin.math.floor(kotlin.math.max(minLocal.z, maxLocal.z).toDouble()).toInt()
+        val keys = mutableListOf<VoxelStore.Key>()
+        store.all().forEach { voxel ->
+            if (voxel.x in minX..maxX && voxel.y in minY..maxY && voxel.z in minZ..maxZ) {
+                keys.add(VoxelStore.Key(voxel.x, voxel.y, voxel.z))
+            }
+        }
+        if (!replace) {
+            var changed = 0
+            keys.forEach { key ->
+                if (scene.addVoxelSelection(group, key)) {
+                    changed++
+                }
+            }
+            return changed
+        }
+        return scene.replaceVoxelSelection(group, keys)
+    }
+
+    private fun voxelBoundsToScreen(group: GroupScene.GroupNode, key: VoxelStore.Key): ScreenBounds? {
+        val min = Vector3(key.x.toFloat(), key.y.toFloat(), key.z.toFloat())
+        val max = Vector3((key.x + 1).toFloat(), (key.y + 1).toFloat(), (key.z + 1).toFloat())
+        val corners = arrayOf(
+            Vector3(min.x, min.y, min.z),
+            Vector3(max.x, min.y, min.z),
+            Vector3(max.x, min.y, max.z),
+            Vector3(min.x, min.y, max.z),
+            Vector3(min.x, max.y, min.z),
+            Vector3(max.x, max.y, min.z),
+            Vector3(max.x, max.y, max.z),
+            Vector3(min.x, max.y, max.z)
+        )
+        var minX = Float.POSITIVE_INFINITY
+        var minY = Float.POSITIVE_INFINITY
+        var maxX = Float.NEGATIVE_INFINITY
+        var maxY = Float.NEGATIVE_INFINITY
+        corners.forEach { corner ->
+            val world = group.toWorld(corner)
+            val projected = camera.project(world)
+            val x = projected.x
+            val y = Gdx.graphics.height - projected.y
+            minX = kotlin.math.min(minX, x)
+            maxX = kotlin.math.max(maxX, x)
+            minY = kotlin.math.min(minY, y)
+            maxY = kotlin.math.max(maxY, y)
+        }
+        if (minX == Float.POSITIVE_INFINITY) {
+            return null
+        }
+        return ScreenBounds(minX, maxX, minY, maxY)
     }
 
     private fun selectGroupsInWindow(rect: WindowRectTopLeft, includeIntersect: Boolean, mode: SelectionMode): Int {
@@ -556,6 +743,55 @@ class SelectTool(
         val pointOnRay = Vector3(rayOrigin).mulAdd(dir, t)
         val pointOnSeg = Vector3(a).mulAdd(e, s)
         return RaySegmentHit(pointOnSeg, t)
+    }
+
+    private fun rayAabbIntersectionT(origin: Vector3, direction: Vector3, min: Vector3, max: Vector3): Float? {
+        var tMin = Float.NEGATIVE_INFINITY
+        var tMax = Float.POSITIVE_INFINITY
+        for (axis in 0..2) {
+            val o = when (axis) {
+                0 -> origin.x
+                1 -> origin.y
+                else -> origin.z
+            }
+            val d = when (axis) {
+                0 -> direction.x
+                1 -> direction.y
+                else -> direction.z
+            }
+            val mn = when (axis) {
+                0 -> min.x
+                1 -> min.y
+                else -> min.z
+            }
+            val mx = when (axis) {
+                0 -> max.x
+                1 -> max.y
+                else -> max.z
+            }
+            if (kotlin.math.abs(d) <= 1e-6f) {
+                if (o < mn || o > mx) {
+                    return null
+                }
+                continue
+            }
+            var t1 = (mn - o) / d
+            var t2 = (mx - o) / d
+            if (t1 > t2) {
+                val tmp = t1
+                t1 = t2
+                t2 = tmp
+            }
+            tMin = kotlin.math.max(tMin, t1)
+            tMax = kotlin.math.min(tMax, t2)
+            if (tMax < tMin) {
+                return null
+            }
+        }
+        if (tMax < 0f) {
+            return null
+        }
+        return if (tMin >= 0f) tMin else tMax
     }
 
     private fun screenDistance(world: Vector3, screenX: Int, screenY: Int): Float {
