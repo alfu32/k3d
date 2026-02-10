@@ -730,6 +730,8 @@ class GroupScene(
         )
         val parentSnapshots = mutableMapOf<GroupNode, ParentSnapshot>()
         val movedChildren = mutableMapOf<GroupNode, MutableList<GroupNode>>()
+        val lineParentsWithChanges = mutableSetOf<GroupNode>()
+        val faceParentsWithChanges = mutableSetOf<GroupNode>()
         targets.forEach { group ->
             val parent = group.parent ?: return@forEach
             parentSnapshots.getOrPut(parent) {
@@ -744,26 +746,40 @@ class GroupScene(
         var count = 0
         targets.forEach { group ->
             val parent = group.parent ?: return@forEach
-            group.lineStore.getSegments().forEach { seg ->
-                val a = toParentSpace(group, seg.start)
-                val b = toParentSpace(group, seg.end)
-                parent.lineStore.addSegment(a, b, autoCleanup = false)
+            // Transform cached prototype geometry to parent space using a single precomputed matrix.
+            val toParentMatrix = Matrix4(group.instanceMatrix()).mul(group.definitionMatrix())
+            val lines = group.lineStore.getSegments()
+            if (lines.isNotEmpty()) {
+                parent.lineStore.withChangeSuppressed {
+                    lines.forEach { seg ->
+                        val a = transformPoint(toParentMatrix, seg.start)
+                        val b = transformPoint(toParentMatrix, seg.end)
+                        parent.lineStore.addSegment(a, b, autoCleanup = false)
+                    }
+                }
+                lineParentsWithChanges.add(parent)
             }
-            group.faceStore.getTriangles().forEach { tri ->
-                val color = group.faceStore.colorFor(tri)
-                val a = toParentSpace(group, tri.a)
-                val b = toParentSpace(group, tri.b)
-                val c = toParentSpace(group, tri.c)
-                parent.faceStore.addTriangle(a, b, c, color)
+            val faces = group.faceStore.getTriangles()
+            if (faces.isNotEmpty()) {
+                parent.faceStore.withChangeSuppressed {
+                    faces.forEach { tri ->
+                        val color = group.faceStore.colorFor(tri)
+                        val a = transformPoint(toParentMatrix, tri.a)
+                        val b = transformPoint(toParentMatrix, tri.b)
+                        val c = transformPoint(toParentMatrix, tri.c)
+                        parent.faceStore.addTriangle(a, b, c, color)
+                    }
+                }
+                faceParentsWithChanges.add(parent)
             }
             group.dimensionStore.getDimensions().forEach { dimension ->
-                val a = toParentSpace(group, dimension.start)
-                val b = toParentSpace(group, dimension.end)
-                val o = toParentSpace(group, dimension.offset)
+                val a = transformPoint(toParentMatrix, dimension.start)
+                val b = transformPoint(toParentMatrix, dimension.end)
+                val o = transformPoint(toParentMatrix, dimension.offset)
                 parent.dimensionStore.addDimension(a, b, o)
             }
             group.textStore.getTexts().forEach { text ->
-                val position = toParentSpace(group, text.position)
+                val position = transformPoint(toParentMatrix, text.position)
                 parent.textStore.addText(position, text.text)
             }
             group.children.forEach { child ->
@@ -775,6 +791,8 @@ class GroupScene(
             unregisterInstance(group)
             count++
         }
+        lineParentsWithChanges.forEach { parent -> parent.lineStore.notifyExternalChange() }
+        faceParentsWithChanges.forEach { parent -> parent.faceStore.notifyExternalChange() }
         clearGroupSelection()
         parentSnapshots.forEach { (parent, snapshot) ->
             parent.lineStore.clearSelection()
@@ -1046,8 +1064,9 @@ class GroupScene(
                         val b = Vector3(corners[def.indices[1]]).add(base)
                         val c = Vector3(corners[def.indices[2]]).add(base)
                         val d = Vector3(corners[def.indices[3]]).add(base)
-                        prototype.faceStore.addTriangle(a, b, c, voxel.color)
-                        prototype.faceStore.addTriangle(a, c, d, voxel.color)
+                        // Invert winding so cube face normals point outward.
+                        prototype.faceStore.addTriangle(a, c, b, voxel.color)
+                        prototype.faceStore.addTriangle(a, d, c, voxel.color)
                         prototype.lineStore.addSegment(a, b, autoCleanup = false)
                         prototype.lineStore.addSegment(b, c, autoCleanup = false)
                         prototype.lineStore.addSegment(c, d, autoCleanup = false)

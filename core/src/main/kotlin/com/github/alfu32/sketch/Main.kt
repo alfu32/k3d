@@ -42,6 +42,7 @@ import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.model.ModelPersistence
 import com.github.alfu32.sketch.model.ModelCleanup
 import com.github.alfu32.sketch.model.ModelUnit
+import com.github.alfu32.sketch.model.VoxelStore
 import com.github.alfu32.sketch.render.SketchShaderProvider
 import com.github.alfu32.sketch.console.AppFacade
 import com.github.alfu32.sketch.console.ConsoleGroovyRuntime
@@ -100,6 +101,8 @@ import com.kotcrab.vis.ui.widget.file.FileChooser
 import com.kotcrab.vis.ui.widget.file.FileChooserAdapter
 import com.kotcrab.vis.ui.widget.file.FileTypeFilter
 import java.io.File
+import kotlin.math.ceil
+import kotlin.math.floor
 
 /** [com.badlogic.gdx.ApplicationListener] implementation shared by all platforms. */
 class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : ApplicationAdapter() {
@@ -219,9 +222,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 ConstructionLineTool(scene) { toolController.setTool(ToolId.SELECT) },
                 PolylineToolInternal(scene, polylineSettings),
                 DoubleLineToolInternal(scene, polylineSettings),
-                VoxelTool(scene) { toolController.setTool(ToolId.SELECT) },
-                VoxelVolumeTool(scene) { toolController.setTool(ToolId.SELECT) },
-                VoxelFrameTool(scene) { toolController.setTool(ToolId.SELECT) },
+                VoxelTool(scene, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveVoxelGroupForTools),
+                VoxelVolumeTool(scene, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveVoxelGroupForTools),
+                VoxelFrameTool(scene, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveVoxelGroupForTools),
                 FaceOutlineTool(scene),
                 LineOffsetTool(scene),
                 CutHolesTool(scene) { toolController.setTool(ToolId.SELECT) },
@@ -300,6 +303,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::runCleanup,
             ::deleteSelection,
             ::flipSelectedFaces,
+            ::voxelizeSelectedFaces,
             ::selectionInfo,
             ::updateSelectedText,
             ::updateSelectedTextSize,
@@ -444,6 +448,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 priority = 1,
                 execute = {
                     createVoxelGroup()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "edit.voxelize_faces",
+                name = "Edit> Voxelize Faces",
+                description = "Voxelize selected faces into the active voxel model",
+                icon = "edit",
+                category = "Edit",
+                tags = listOf("voxel", "faces", "convert"),
+                priority = 1,
+                execute = {
+                    voxelizeSelectedFaces()
                     com.github.alfu32.sketch.plugin.PluginResult.success()
                 }
             )
@@ -2121,6 +2140,143 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         saveModel()
     }
 
+    private fun ensureActiveVoxelGroupForTools(): GroupScene.GroupNode? {
+        val current = scene.activeGroup()
+        if (scene.isVoxelGroup(current)) {
+            return current
+        }
+        val group = scene.createVoxelGroup(color = statusModel.paintColor)
+        scene.enterGroup(group)
+        statusModel.message = "Voxel group created. Editing voxel group."
+        undoManager.commit("Create Voxel Group")
+        saveModel()
+        return group
+    }
+
+    private data class WorldTriangle(
+        val a: Vector3,
+        val b: Vector3,
+        val c: Vector3
+    )
+
+    private fun voxelizeSelectedFaces() {
+        val sourceGroup = scene.activeGroup()
+        val selectedFaces = sourceGroup.faceStore.getSelected().toList()
+        if (selectedFaces.isEmpty()) {
+            statusModel.message = "Select faces to voxelize."
+            return
+        }
+        val worldTriangles = selectedFaces.map { tri ->
+            WorldTriangle(
+                sourceGroup.toWorld(tri.a),
+                sourceGroup.toWorld(tri.b),
+                sourceGroup.toWorld(tri.c)
+            )
+        }
+        val targetGroup = if (scene.isVoxelGroup(sourceGroup)) {
+            sourceGroup
+        } else {
+            ensureActiveVoxelGroupForTools()
+        } ?: return
+        val color = scene.voxelColor(targetGroup) ?: statusModel.paintColor
+        val keys = linkedSetOf<VoxelStore.Key>()
+        worldTriangles.forEach { tri ->
+            val a = targetGroup.toLocal(tri.a)
+            val b = targetGroup.toLocal(tri.b)
+            val c = targetGroup.toLocal(tri.c)
+            keys.addAll(voxelKeysForTriangle(a, b, c))
+        }
+        if (keys.isEmpty()) {
+            statusModel.message = "Voxelization produced no voxels."
+            return
+        }
+        val changed = scene.setVoxels(targetGroup, keys.map { it to color })
+        if (changed > 0) {
+            statusModel.message = "Voxelized ${selectedFaces.size} face(s) into $changed voxel(s)."
+            undoManager.commit("Voxelize Faces")
+            saveModel()
+        } else {
+            statusModel.message = "Voxelization produced no changes."
+        }
+    }
+
+    private fun voxelKeysForTriangle(a: Vector3, b: Vector3, c: Vector3): Set<VoxelStore.Key> {
+        val result = linkedSetOf<VoxelStore.Key>()
+        val normal = Vector3(b).sub(a).crs(Vector3(c).sub(a))
+        if (normal.len2() <= 1e-8f) {
+            return result
+        }
+        val n = Vector3(normal).nor()
+        val threshold = 0.5f * (kotlin.math.abs(n.x) + kotlin.math.abs(n.y) + kotlin.math.abs(n.z)) + 1e-3f
+        val minX = floor(minOf(a.x, b.x, c.x).toDouble()).toInt() - 1
+        val minY = floor(minOf(a.y, b.y, c.y).toDouble()).toInt() - 1
+        val minZ = floor(minOf(a.z, b.z, c.z).toDouble()).toInt() - 1
+        val maxX = floor(maxOf(a.x, b.x, c.x).toDouble()).toInt() + 1
+        val maxY = floor(maxOf(a.y, b.y, c.y).toDouble()).toInt() + 1
+        val maxZ = floor(maxOf(a.z, b.z, c.z).toDouble()).toInt() + 1
+
+        for (x in minX..maxX) {
+            for (y in minY..maxY) {
+                for (z in minZ..maxZ) {
+                    val center = Vector3(x + 0.5f, y + 0.5f, z + 0.5f)
+                    val signedDistance = Vector3(center).sub(a).dot(n)
+                    if (kotlin.math.abs(signedDistance) > threshold) {
+                        continue
+                    }
+                    val projected = Vector3(center).mulAdd(n, -signedDistance)
+                    if (!pointInsideTriangleProjected(projected, a, b, c, n, 1e-3f)) {
+                        continue
+                    }
+                    result.add(VoxelStore.Key(x, y, z))
+                }
+            }
+        }
+        addTriangleSampleVoxels(a, b, c, result)
+        return result
+    }
+
+    private fun pointInsideTriangleProjected(
+        p: Vector3,
+        a: Vector3,
+        b: Vector3,
+        c: Vector3,
+        normal: Vector3,
+        eps: Float
+    ): Boolean {
+        val s0 = Vector3(b).sub(a).crs(Vector3(p).sub(a)).dot(normal)
+        val s1 = Vector3(c).sub(b).crs(Vector3(p).sub(b)).dot(normal)
+        val s2 = Vector3(a).sub(c).crs(Vector3(p).sub(c)).dot(normal)
+        val sameSignPositive = s0 >= -eps && s1 >= -eps && s2 >= -eps
+        val sameSignNegative = s0 <= eps && s1 <= eps && s2 <= eps
+        return sameSignPositive || sameSignNegative
+    }
+
+    private fun addTriangleSampleVoxels(
+        a: Vector3,
+        b: Vector3,
+        c: Vector3,
+        output: MutableSet<VoxelStore.Key>
+    ) {
+        val step = 0.25f
+        val maxEdge = maxOf(a.dst(b), b.dst(c), c.dst(a))
+        val steps = maxOf(1, ceil((maxEdge / step).toDouble()).toInt())
+        for (i in 0..steps) {
+            for (j in 0..(steps - i)) {
+                val u = i.toFloat() / steps.toFloat()
+                val v = j.toFloat() / steps.toFloat()
+                val w = 1f - u - v
+                val point = Vector3(a).scl(w).mulAdd(b, u).mulAdd(c, v)
+                output.add(
+                    VoxelStore.Key(
+                        floor((point.x + 1e-4f).toDouble()).toInt(),
+                        floor((point.y + 1e-4f).toDouble()).toInt(),
+                        floor((point.z + 1e-4f).toDouble()).toInt()
+                    )
+                )
+            }
+        }
+    }
+
     private fun objectPrototypeSelection() {
         val created = scene.createGroupFromSelection()
         if (created != null) {
@@ -2224,6 +2380,27 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun ungroupSelection() {
+        val targets = scene.selectedGroups().toList()
+        if (targets.isEmpty()) {
+            return
+        }
+        val voxelTargets = targets.count { scene.isVoxelGroup(it) }
+        val cachedLines = targets.filter { scene.isVoxelGroup(it) }.sumOf { it.lineStore.getSegments().size }
+        val cachedFaces = targets.filter { scene.isVoxelGroup(it) }.sumOf { it.faceStore.getTriangles().size }
+        if (voxelTargets > 0) {
+            statusModel.message =
+                "Exploding $voxelTargets voxel group(s)... cached lines $cachedLines faces $cachedFaces"
+            // Defer actual explode one frame so the user sees feedback before heavy geometry transfer.
+            Gdx.app.postRunnable {
+                val count = scene.ungroupSelected()
+                if (count > 0) {
+                    statusModel.message = "Ungrouped $count group(s)."
+                    undoManager.commit("Ungroup")
+                    saveModel()
+                }
+            }
+            return
+        }
         val count = scene.ungroupSelected()
         if (count > 0) {
             statusModel.message = "Ungrouped $count group(s)."

@@ -826,8 +826,9 @@ object ModelPersistence {
                         val b = Vector3(corners[def.indices[1]]).add(base)
                         val c = Vector3(corners[def.indices[2]]).add(base)
                         val d = Vector3(corners[def.indices[3]]).add(base)
-                        prototype.faceStore.addTriangle(a, b, c, voxel.color)
-                        prototype.faceStore.addTriangle(a, c, d, voxel.color)
+                        // Invert winding so cube face normals point outward.
+                        prototype.faceStore.addTriangle(a, c, b, voxel.color)
+                        prototype.faceStore.addTriangle(a, d, c, voxel.color)
                         prototype.lineStore.addSegment(a, b, autoCleanup = false)
                         prototype.lineStore.addSegment(b, c, autoCleanup = false)
                         prototype.lineStore.addSegment(c, d, autoCleanup = false)

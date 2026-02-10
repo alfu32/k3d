@@ -42,6 +42,7 @@ class SketchUiOverlay(
     private val cleanupAction: () -> Unit,
     private val deleteSelectionAction: () -> Unit,
     private val flipFacesAction: () -> Unit,
+    private val voxelizeFacesAction: () -> Unit,
     private val selectionInfoProvider: () -> SelectionInfo,
     private val selectionTextChanged: (String, String) -> Unit,
     private val selectionTextSizeChanged: (String, Float) -> Unit,
@@ -142,7 +143,7 @@ class SketchUiOverlay(
     private var toolbarsPositioned = false
     private val uiPrefs by lazy { Gdx.app.getPreferences("k3d-ui-layout") }
     private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
-    private val toolbarLayoutVersion = 3
+    private val toolbarLayoutVersion = 4
     private val toolbarButtonSize = 32f
     private val iconTextures = mutableListOf<Texture>()
     private val iconDrawables = mutableMapOf<String, TextureRegionDrawable>()
@@ -533,9 +534,6 @@ class SketchUiOverlay(
             ToolId.CONSTRUCTION_LINE,
             ToolId.POLYLINE,
             ToolId.DOUBLE_LINE,
-            ToolId.VOXEL,
-            ToolId.VOXEL_VOLUME,
-            ToolId.VOXEL_FRAME,
             ToolId.RECTANGLE,
             ToolId.SURFACE_RECTANGLE,
             ToolId.QUAD,
@@ -555,6 +553,11 @@ class SketchUiOverlay(
             ToolId.STRETCH,
             ToolId.PAINT
         )
+        val voxelTools = listOf(
+            ToolId.VOXEL,
+            ToolId.VOXEL_VOLUME,
+            ToolId.VOXEL_FRAME
+        )
 
         val construction = buildToolsToolbarWindow(
             title = "Construction",
@@ -568,6 +571,12 @@ class SketchUiOverlay(
             toolIds = modificationTools,
             group = toolGroup
         )
+        val voxel = buildToolsToolbarWindow(
+            title = "Voxel",
+            toolbarId = "builtin_toolbar_voxel",
+            toolIds = voxelTools,
+            group = toolGroup
+        )
         val actions = buildActionsToolbarWindow(
             title = "Actions",
             toolbarId = "builtin_toolbar_actions"
@@ -576,9 +585,10 @@ class SketchUiOverlay(
         builtInToolbars.clear()
         builtInToolbars["builtin_toolbar_construction"] = construction
         builtInToolbars["builtin_toolbar_modification"] = modification
+        builtInToolbars["builtin_toolbar_voxel"] = voxel
         builtInToolbars["builtin_toolbar_actions"] = actions
         toolbarsPositioned = false
-        return listOf(construction, modification, actions)
+        return listOf(construction, modification, voxel, actions)
     }
 
     private fun buildToolsToolbarWindow(
@@ -651,6 +661,13 @@ class SketchUiOverlay(
             deleteSelectionAction()
         }
 
+        val voxelizeButton = createActionButton(
+            label = "Voxelize Faces",
+            icon = iconFor("voxelize", createActionIconDrawable(Color(0.7f, 0.85f, 0.4f, 1f)))
+        ) {
+            voxelizeFacesAction()
+        }
+
         val flipButton = createActionButton(
             label = "Flip Faces",
             icon = iconFor("flip_faces", createActionIconDrawable(Color(0.45f, 0.65f, 0.95f, 1f)))
@@ -675,7 +692,7 @@ class SketchUiOverlay(
         ) {
             togglePluginManager()
         }
-        val buttons = listOf(cleanupButton, colorButton, deleteButton, flipButton, lightingButton, pluginButton)
+        val buttons = listOf(cleanupButton, colorButton, voxelizeButton, deleteButton, flipButton, lightingButton, pluginButton)
         buttons.forEach { button ->
             content.add(button).size(toolbarButtonSize, toolbarButtonSize)
         }
@@ -1228,6 +1245,7 @@ class SketchUiOverlay(
         val orderedBuiltInIds = listOf(
             "builtin_toolbar_construction",
             "builtin_toolbar_modification",
+            "builtin_toolbar_voxel",
             "builtin_toolbar_actions"
         )
         val margin = 12f
@@ -1274,6 +1292,7 @@ class SketchUiOverlay(
         val toolbarIds = listOf(
             "builtin_toolbar_construction",
             "builtin_toolbar_modification",
+            "builtin_toolbar_voxel",
             "builtin_toolbar_actions"
         )
         toolbarIds.forEach { id ->
@@ -1600,9 +1619,9 @@ class SketchUiOverlay(
             ToolId.CONSTRUCTION_LINE -> "line"
             ToolId.POLYLINE -> "polyline"
             ToolId.DOUBLE_LINE -> "double_line"
-            ToolId.VOXEL -> "quad"
-            ToolId.VOXEL_VOLUME -> "rectangle"
-            ToolId.VOXEL_FRAME -> "surface_rect"
+            ToolId.VOXEL -> "voxel"
+            ToolId.VOXEL_VOLUME -> "voxel_volume"
+            ToolId.VOXEL_FRAME -> "voxel_frame"
             ToolId.FACE_OUTLINE -> "line"
             ToolId.LINE_OFFSET -> "offset"
             ToolId.CUT_HOLES -> "cleanup"

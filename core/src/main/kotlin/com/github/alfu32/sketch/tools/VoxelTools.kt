@@ -17,7 +17,8 @@ import kotlin.math.min
 
 class VoxelTool(
     private val scene: GroupScene,
-    private val onSelectTool: () -> Unit
+    private val onSelectTool: () -> Unit,
+    private val ensureVoxelGroup: (() -> GroupScene.GroupNode?)? = null
 ) : Tool {
     override val id: ToolId = ToolId.VOXEL
     override val message: String = "Click to place voxel. Esc selects."
@@ -30,11 +31,7 @@ class VoxelTool(
         if (button != Input.Buttons.LEFT || !valid || world == null) {
             return false
         }
-        val group = scene.activeGroup()
-        if (!scene.isVoxelGroup(group)) {
-            status.message = "Active object is not a voxel group."
-            return true
-        }
+        val group = resolveVoxelGroup(scene, status, ensureVoxelGroup) ?: return true
         val localPoint = group.toLocal(world)
         val localNormal = normal?.let { group.vectorToLocal(it).nor() }
         val key = voxelKey(localPoint, localNormal)
@@ -59,7 +56,8 @@ class VoxelTool(
 
 class VoxelVolumeTool(
     private val scene: GroupScene,
-    private val onSelectTool: () -> Unit
+    private val onSelectTool: () -> Unit,
+    private val ensureVoxelGroup: (() -> GroupScene.GroupNode?)? = null
 ) : Tool {
     override val id: ToolId = ToolId.VOXEL_VOLUME
     override val message: String = "Pick first voxel corner."
@@ -91,11 +89,7 @@ class VoxelVolumeTool(
         if (button != Input.Buttons.LEFT || !valid || world == null) {
             return false
         }
-        val group = scene.activeGroup()
-        if (!scene.isVoxelGroup(group)) {
-            status.message = "Active object is not a voxel group."
-            return true
-        }
+        val group = resolveVoxelGroup(scene, status, ensureVoxelGroup) ?: return true
         val localPoint = group.toLocal(world)
         val localNormal = normal?.let { group.vectorToLocal(it).nor() }
         val key = voxelKey(localPoint, localNormal)
@@ -186,7 +180,8 @@ class VoxelVolumeTool(
 
 class VoxelFrameTool(
     private val scene: GroupScene,
-    private val onSelectTool: () -> Unit
+    private val onSelectTool: () -> Unit,
+    private val ensureVoxelGroup: (() -> GroupScene.GroupNode?)? = null
 ) : Tool {
     override val id: ToolId = ToolId.VOXEL_FRAME
     override val message: String = "Pick first frame corner."
@@ -218,11 +213,7 @@ class VoxelFrameTool(
         if (button != Input.Buttons.LEFT || !valid || world == null) {
             return false
         }
-        val group = scene.activeGroup()
-        if (!scene.isVoxelGroup(group)) {
-            status.message = "Active object is not a voxel group."
-            return true
-        }
+        val group = resolveVoxelGroup(scene, status, ensureVoxelGroup) ?: return true
         val localPoint = group.toLocal(world)
         val localNormal = normal?.let { group.vectorToLocal(it).nor() }
         val key = voxelKey(localPoint, localNormal)
@@ -350,6 +341,24 @@ private fun voxelKey(local: Vector3, normal: Vector3?): VoxelStore.Key {
         }
     }
     return VoxelStore.Key(x, y, z)
+}
+
+private fun resolveVoxelGroup(
+    scene: GroupScene,
+    status: StatusModel,
+    ensureVoxelGroup: (() -> GroupScene.GroupNode?)?
+): GroupScene.GroupNode? {
+    val current = scene.activeGroup()
+    if (scene.isVoxelGroup(current)) {
+        return current
+    }
+    val created = ensureVoxelGroup?.invoke()
+    val resolved = created ?: scene.activeGroup()
+    if (!scene.isVoxelGroup(resolved)) {
+        status.message = "Active object is not a voxel group."
+        return null
+    }
+    return resolved
 }
 
 private fun drawAabb(

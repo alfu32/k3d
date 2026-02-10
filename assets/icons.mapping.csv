@@ -23,7 +23,7 @@ order|name|line|col|start_x|end_x|start_y|end_y
 22|plugins|5|2|32|63|128|159
 23|text|5|3|64|95|128|159
 24|dimension|5|4|96|127|128|159
-25|unused-4|5|5|128|159|128|159
+25|voxelize|5|5|128|159|128|159
 26|stretch|6|1|0|31|160|191
 27|skew|6|2|32|63|160|191
 28|double_line|6|3|64|95|160|191
