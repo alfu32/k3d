@@ -55,7 +55,9 @@ You can also pass a `.k3d` path directly (the launcher converts it into `--file`
 ## UI overview
 
 - Viewport: the 3D drawing surface.
-- Left toolbar: tools and actions.
+- Floating toolbars: **Construction**, **Modification**, **Voxel**, and **Actions**.
+- Toolbars are movable, stay top-aligned by default, and wrap to the next row when the window is too narrow.
+- Tool buttons are icon-only; hold hover briefly to see the popover label.
 - Right panels: selection, object info, objects list, model settings, lighting, plugins.
 - Status bar: current tool, status message, snap info, cursor, and numeric input.
 - Command palette: search and run tools and commands (`Ctrl+Shift+P`).
@@ -92,6 +94,13 @@ Keyboard focus is panel-aware: typing in focused fields stays in UI controls, wh
 
 - Click empty space once to set a first corner.
 - Click a second point to select everything inside that 3D volume.
+
+### Selection in voxel groups
+
+- In a voxel group, selection targets voxels directly (not generated faces/edges).
+- Click toggles voxel selection; Shift/Ctrl and window/volume selection still apply.
+- `Delete` removes selected voxels.
+- Move/Copy works on selected voxels using integer voxel offsets in local voxel space.
 
 ![Screenshot placeholder: Selection modes](images/img_7.png)
 
@@ -164,6 +173,29 @@ Objects let you reuse geometry and isolate edits.
 - `Esc` exits to Select.
 - Input: left-click start, left-click end.
 
+### Voxel
+
+- Places one voxel per click on ground/surface context.
+- If no voxel group is active, K3D auto-creates one and enters voxel edit mode.
+- New voxels use the voxel group color.
+- `Esc` exits to Select.
+- Input: left-click to place.
+
+### Voxel Volume
+
+- Fills a rectangular 3D volume of voxels from two opposite corners.
+- First click sets corner A, second click sets corner B and commits.
+- If no voxel group is active, K3D auto-creates one and enters voxel edit mode.
+- `Enter` clears the current draft; `Esc` exits to Select.
+- Input: left-click corner A, left-click corner B.
+
+### Voxel Frame
+
+- Same two-corner workflow as Voxel Volume, but creates only boundary edge voxels of the box.
+- If no voxel group is active, K3D auto-creates one and enters voxel edit mode.
+- `Enter` clears the current draft; `Esc` exits to Select.
+- Input: left-click corner A, left-click corner B.
+
 ### Rectangle
 
 - Click to set a corner; click to finish the rectangle.
@@ -213,6 +245,7 @@ Objects let you reuse geometry and isolate edits.
 
 - Click a reference point, then click a destination.
 - `Ctrl` toggles copy mode (if enabled, copies instead of moving).
+- In voxel groups, selected voxels move/copy on integer voxel offsets.
 - Input: left-click start, left-click end.
 - Modifiers: Ctrl toggles copy mode; numeric input overrides distance.
 
@@ -242,6 +275,9 @@ Objects let you reuse geometry and isolate edits.
 
 - Click a face to apply the active color.
 - Use the Color action button to pick the active color.
+- In voxel groups:
+  - if voxels are selected, Paint recolors only selected voxels;
+  - if no voxels are selected, Paint applies the color to the whole voxel model.
 - Input: left-click face to paint.
 
 ### Object
@@ -259,9 +295,13 @@ Objects let you reuse geometry and isolate edits.
 - **Delete**: delete current selection.
 - **Flip Faces**: reverse the orientation of selected faces.
 - **Color**: open the paint color picker.
+- **Voxelize Faces**: convert selected mesh faces into voxels.
+  - Works from any mesh context.
+  - If no voxel group is active, K3D creates one and enters it.
+  - Generated voxels use the target voxel-group color.
 - **Lighting**: toggle the Lighting panel.
 - **Plugin Manager**: open the Plugin Manager panel.
-Shortcut notes: `Ctrl+L` runs Cleanup; `Delete` removes selection; flip and color are toolbar-only.
+Shortcut notes: `Ctrl+L` runs Cleanup; `Delete` removes selection; flip/color/voxelize are toolbar/command-palette actions.
 
 ### Selection panel
 
@@ -310,6 +350,11 @@ Input: type a URL/path, click Add; use Download/Reload buttons and enable checkb
 Open with `Ctrl+Shift+P` and search for tools, panels, and view commands. The palette also exposes plugin commands when available.
 Input: type to filter, Enter to run the highlighted command.
 
+Useful voxel commands:
+
+- `Edit> New Voxel Group`: create a voxel group and enter edit mode.
+- `Edit> Voxelize Faces`: voxelize selected faces into a voxel group.
+
 ## Built-in console (dev)
 
 K3D includes a persistent Groovy console for power users. Start it using the launcher command:
@@ -351,6 +396,18 @@ K3D loads Groovy plugins from the plugins folder at startup and via the Plugin M
 - Use the Plugin Manager to add, download, enable/disable, and reload plugins.
 - Plugin tools appear in the toolbar and command palette.
 - For development details, see [`PLUGIN_DEVELOPMENT.md`](PLUGIN_DEVELOPMENT.md).
+
+## Voxel workflow (recommended)
+
+1. Start from mesh geometry or an empty file.
+2. Create a voxel group (`Edit> New Voxel Group`) or just start with a voxel tool (auto-creates group).
+3. Build with:
+   - `Voxel` for single blocks,
+   - `Voxel Volume` for solid box fills,
+   - `Voxel Frame` for box edge structures.
+4. Refine with Select + Move/Copy + Paint at voxel level.
+5. Convert mesh patches with **Voxelize Faces** when needed.
+6. When ready for classic mesh editing, select voxel group(s) and ungroup (`Ctrl+Shift+G`) to explode into static faces/lines.
 
 ## Tips and troubleshooting
 

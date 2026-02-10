@@ -98,6 +98,17 @@ help                                     Show help
 - Specs: [`docs/specification/`](docs/specification/)
 - Detailed roadmap: [`docs/specification/ROADMAP.md`](docs/specification/ROADMAP.md)
 
+## Release notes
+
+- 2.9.0: [`docs/specification/RELEASE_NOTES-2.9.0.md`](docs/specification/RELEASE_NOTES-2.9.0.md)
+- 2.7.5: [`docs/specification/RELEASE_NOTES-2.7.5.md`](docs/specification/RELEASE_NOTES-2.7.5.md)
+- 1.7.10: [`docs/specification/RELEASE_NOTES-1.7.10.md`](docs/specification/RELEASE_NOTES-1.7.10.md)
+- 1.7.9: [`docs/specification/RELEASE_NOTES-1.7.9.md`](docs/specification/RELEASE_NOTES-1.7.9.md)
+- 1.7.8: [`docs/specification/RELEASE_NOTES-1.7.8.md`](docs/specification/RELEASE_NOTES-1.7.8.md)
+- 1.7.3: [`docs/specification/RELEASE_NOTES-1.7.3.md`](docs/specification/RELEASE_NOTES-1.7.3.md)
+- 1.7.1: [`docs/specification/RELEASE_NOTES-1.7.1.md`](docs/specification/RELEASE_NOTES-1.7.1.md)
+- 1.4.3: [`docs/specification/RELEASE_NOTES-1.4.3.md`](docs/specification/RELEASE_NOTES-1.4.3.md)
+
 ## Roadmap (current priorities)
 
 1. M1 - UI foundation

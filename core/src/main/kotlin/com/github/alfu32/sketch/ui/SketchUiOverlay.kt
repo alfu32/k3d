@@ -575,7 +575,13 @@ class SketchUiOverlay(
             title = "Voxel",
             toolbarId = "builtin_toolbar_voxel",
             toolIds = voxelTools,
-            group = toolGroup
+            group = toolGroup,
+            extraButtons = listOf(
+                createActionButton(
+                    label = "Voxelize Faces",
+                    icon = iconFor("voxelize", createActionIconDrawable(Color(0.7f, 0.85f, 0.4f, 1f)))
+                ) { voxelizeFacesAction() }
+            )
         )
         val actions = buildActionsToolbarWindow(
             title = "Actions",
@@ -595,7 +601,8 @@ class SketchUiOverlay(
         title: String,
         toolbarId: String,
         toolIds: List<ToolId>,
-        group: ButtonGroup<VisImageTextButton>
+        group: ButtonGroup<VisImageTextButton>,
+        extraButtons: List<VisImageTextButton> = emptyList()
     ): CollapsibleWindow {
         val window = CollapsibleWindow(title, showCloseButton = false)
         window.isResizable = false
@@ -603,6 +610,9 @@ class SketchUiOverlay(
         content.defaults().pad(2f).left()
         toolIds.forEach { toolId ->
             val button = createToolButton(toolId, group)
+            content.add(button).size(toolbarButtonSize, toolbarButtonSize)
+        }
+        extraButtons.forEach { button ->
             content.add(button).size(toolbarButtonSize, toolbarButtonSize)
         }
         window.add(content).pad(4f).left()
@@ -661,13 +671,6 @@ class SketchUiOverlay(
             deleteSelectionAction()
         }
 
-        val voxelizeButton = createActionButton(
-            label = "Voxelize Faces",
-            icon = iconFor("voxelize", createActionIconDrawable(Color(0.7f, 0.85f, 0.4f, 1f)))
-        ) {
-            voxelizeFacesAction()
-        }
-
         val flipButton = createActionButton(
             label = "Flip Faces",
             icon = iconFor("flip_faces", createActionIconDrawable(Color(0.45f, 0.65f, 0.95f, 1f)))
@@ -692,7 +695,7 @@ class SketchUiOverlay(
         ) {
             togglePluginManager()
         }
-        val buttons = listOf(cleanupButton, colorButton, voxelizeButton, deleteButton, flipButton, lightingButton, pluginButton)
+        val buttons = listOf(cleanupButton, colorButton, deleteButton, flipButton, lightingButton, pluginButton)
         buttons.forEach { button ->
             content.add(button).size(toolbarButtonSize, toolbarButtonSize)
         }
