@@ -707,6 +707,7 @@ class GroupScene(
         minCorner: Vector3,
         maxCorner: Vector3,
         contourPoints: List<Vector3>,
+        walkingPathPoints: List<Vector3>,
         walkingStart: Vector3,
         walkingEnd: Vector3,
         height: Float,
@@ -723,6 +724,7 @@ class GroupScene(
             minCorner = minCorner,
             maxCorner = maxCorner,
             contourPoints = contourPoints,
+            walkingPathPoints = walkingPathPoints,
             walkingStart = walkingStart,
             walkingEnd = walkingEnd,
             height = height.coerceAtLeast(0.05f),
@@ -1849,8 +1851,8 @@ class GroupScene(
                 Vector3(stair.min.x, stair.min.y, stair.max.z)
             )
         }
-        val contourUvRaw = contourPoints.map { point ->
-            val planar = Vector3(point.x, 0f, point.z)
+        val contourPlanar = contourPoints.map { point -> Vector3(point.x, 0f, point.z) }
+        val contourUvRaw = contourPlanar.map { planar ->
             StairUvPoint(planar.dot(walkDir), planar.dot(sideDir))
         }
         val contourUv = dedupeStairPolygon(contourUvRaw)
@@ -1869,23 +1871,27 @@ class GroupScene(
             return
         }
 
-        val run = runLength / steps.toFloat()
         val rise = topHeight / steps.toFloat()
         val slope = topHeight / runLength
-        val treadThickness = (topHeight * 0.1f).coerceAtLeast(0.01f).coerceAtMost((rise * 0.9f).coerceAtLeast(0.01f))
-        val treadOverboard = run * 0.1f
         val contourOrientation = if (stairPolygonArea(contourUv) >= 0f) 1f else -1f
 
         fun supportTopY(u: Float): Float = baseY + (u - uMin) * slope
         fun toWorld(point: StairUvPoint, y: Float): Vector3 = uvPoint(point.u, point.v, y, walkDir, sideDir)
-        fun sideOutward(a: StairUvPoint, b: StairUvPoint, orientation: Float): Vector3 {
+        fun sideOutward(
+            a: StairUvPoint,
+            b: StairUvPoint,
+            orientation: Float,
+            axisU: Vector3,
+            axisV: Vector3,
+            fallback: Vector3
+        ): Vector3 {
             val du = b.u - a.u
             val dv = b.v - a.v
             val outwardU = orientation * dv
             val outwardV = -orientation * du
-            val outward = Vector3(walkDir).scl(outwardU).add(Vector3(sideDir).scl(outwardV))
+            val outward = Vector3(axisU).scl(outwardU).add(Vector3(axisV).scl(outwardV))
             if (outward.len2() <= 1e-8f) {
-                outward.set(sideDir)
+                outward.set(fallback)
             } else {
                 outward.nor()
             }
@@ -1922,20 +1928,51 @@ class GroupScene(
                 p1 = supportTopPoints[next],
                 p2 = supportBottomPoints[next],
                 p3 = supportBottomPoints[i],
-                outward = sideOutward(contourUv[i], contourUv[next], contourOrientation),
+                outward = sideOutward(contourUv[i], contourUv[next], contourOrientation, walkDir, sideDir, sideDir),
                 color = supportColor
             )
         }
 
-        // Filled treads: fixed 10% thickness and 10% overboard (relative to a step run).
+        val walkingPath = sanitizeWalkingPath(
+            if (stair.walkingPath.size >= 2) stair.walkingPath else listOf(stair.walkingStart, stair.walkingEnd)
+        )
+        val totalWalkLength = walkingPathLength(walkingPath)
+        if (totalWalkLength <= 0.01f) {
+            return
+        }
+        val run = totalWalkLength / steps.toFloat()
+        val treadThickness = (topHeight * 0.1f).coerceAtLeast(0.01f).coerceAtMost((rise * 0.9f).coerceAtLeast(0.01f))
+        val treadOverboard = run * 0.1f
+
+        // Filled treads: each tread orientation follows the segmented walking polyline.
         for (index in 0 until steps) {
-            val stepU0 = uMin + run * index - treadOverboard
-            val stepU1 = uMin + run * (index + 1)
+            val startDistance = run * index - treadOverboard
+            val endDistance = run * (index + 1)
+            val startSample = sampleWalkingPath(walkingPath, startDistance) ?: continue
+            val endSample = sampleWalkingPath(walkingPath, endDistance) ?: continue
+            val stepDir = Vector3(endSample.point).sub(startSample.point).also { it.y = 0f }
+            if (stepDir.len2() <= 1e-6f) {
+                stepDir.set(startSample.tangent)
+            } else {
+                stepDir.nor()
+            }
+            val stepSide = Vector3(-stepDir.z, 0f, stepDir.x).nor()
+            val stepU0 = Vector3(startSample.point.x, 0f, startSample.point.z).dot(stepDir)
+            val stepU1 = Vector3(endSample.point.x, 0f, endSample.point.z).dot(stepDir)
+            val clipU0 = min(stepU0, stepU1)
+            val clipU1 = max(stepU0, stepU1)
+            if (clipU1 - clipU0 <= 1e-5f) {
+                continue
+            }
             val stepTop = baseY + rise * (index + 1)
             val stepBottomY = stepTop - treadThickness
+            val stepContourRaw = contourPlanar.map { planar ->
+                StairUvPoint(planar.dot(stepDir), planar.dot(stepSide))
+            }
+            val stepContour = dedupeStairPolygon(stepContourRaw)
             val clipped = clipStairPolygonByU(
-                polygon = clipStairPolygonByU(contourUv, stepU0, keepGreater = true),
-                edgeU = stepU1,
+                polygon = clipStairPolygonByU(stepContour, clipU0, keepGreater = true),
+                edgeU = clipU1,
                 keepGreater = false
             )
             val stepUv = dedupeStairPolygon(clipped)
@@ -1943,8 +1980,8 @@ class GroupScene(
                 continue
             }
             val stepOrientation = if (stairPolygonArea(stepUv) >= 0f) 1f else -1f
-            val treadTop = stepUv.map { point -> toWorld(point, stepTop) }
-            val treadBottom = stepUv.map { point -> toWorld(point, stepBottomY) }
+            val treadTop = stepUv.map { point -> uvPoint(point.u, point.v, stepTop, stepDir, stepSide) }
+            val treadBottom = stepUv.map { point -> uvPoint(point.u, point.v, stepBottomY, stepDir, stepSide) }
             addPolygonTriangulated(
                 faceStore = faceStore,
                 lineStore = lineStore,
@@ -1972,11 +2009,85 @@ class GroupScene(
                     p1 = treadTop[next],
                     p2 = treadBottom[next],
                     p3 = treadBottom[i],
-                    outward = sideOutward(stepUv[i], stepUv[next], stepOrientation),
+                    outward = sideOutward(stepUv[i], stepUv[next], stepOrientation, stepDir, stepSide, stepSide),
                     color = treadColor
                 )
             }
         }
+    }
+
+    private data class StairPathSample(val point: Vector3, val tangent: Vector3)
+
+    private fun sanitizeWalkingPath(points: List<Vector3>, epsilon: Float = 1e-4f): List<Vector3> {
+        if (points.isEmpty()) {
+            return emptyList()
+        }
+        val out = mutableListOf<Vector3>()
+        points.forEach { point ->
+            val planar = Vector3(point.x, 0f, point.z)
+            val prev = out.lastOrNull()
+            if (prev == null || prev.dst2(planar) > epsilon * epsilon) {
+                out.add(planar)
+            }
+        }
+        return out
+    }
+
+    private fun walkingPathLength(points: List<Vector3>): Float {
+        if (points.size < 2) {
+            return 0f
+        }
+        var total = 0f
+        for (i in 0 until points.lastIndex) {
+            total += Vector3(points[i + 1]).sub(points[i]).len()
+        }
+        return total
+    }
+
+    private fun sampleWalkingPath(points: List<Vector3>, distance: Float): StairPathSample? {
+        if (points.size < 2) {
+            return null
+        }
+        val firstDelta = Vector3(points[1]).sub(points[0]).also { it.y = 0f }
+        val firstDir = if (firstDelta.len2() > 1e-8f) firstDelta.nor() else Vector3(1f, 0f, 0f)
+        val totalLength = walkingPathLength(points)
+        if (totalLength <= 1e-6f) {
+            return StairPathSample(Vector3(points.first()), firstDir)
+        }
+        if (distance <= 0f) {
+            val p = Vector3(points.first()).mulAdd(firstDir, distance)
+            return StairPathSample(p, firstDir)
+        }
+        if (distance >= totalLength) {
+            val last = points.last()
+            val prev = points[points.lastIndex - 1]
+            val lastDelta = Vector3(last).sub(prev).also { it.y = 0f }
+            val lastDir = if (lastDelta.len2() > 1e-8f) lastDelta.nor() else Vector3(firstDir)
+            val p = Vector3(last).mulAdd(lastDir, distance - totalLength)
+            return StairPathSample(p, lastDir)
+        }
+        var traversed = 0f
+        for (i in 0 until points.lastIndex) {
+            val a = points[i]
+            val b = points[i + 1]
+            val seg = Vector3(b).sub(a).also { it.y = 0f }
+            val segLength = seg.len()
+            if (segLength <= 1e-8f) {
+                continue
+            }
+            val next = traversed + segLength
+            if (distance <= next) {
+                val t = (distance - traversed) / segLength
+                val point = Vector3(a).mulAdd(seg, t)
+                return StairPathSample(point, seg.scl(1f / segLength))
+            }
+            traversed = next
+        }
+        val last = points.last()
+        val prev = points[points.lastIndex - 1]
+        val lastDelta = Vector3(last).sub(prev).also { it.y = 0f }
+        val lastDir = if (lastDelta.len2() > 1e-8f) lastDelta.nor() else Vector3(firstDir)
+        return StairPathSample(Vector3(last), lastDir)
     }
 
     private data class StairUvPoint(val u: Float, val v: Float)

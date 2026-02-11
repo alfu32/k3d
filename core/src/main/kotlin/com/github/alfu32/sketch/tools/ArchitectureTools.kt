@@ -394,24 +394,24 @@ class ArchitectureStairTool(
         if (button != Input.Buttons.LEFT) {
             return false
         }
-        val group = resolveArchitectureGroup(scene, status, ensureArchitectureGroup) ?: return true
+        val sourceGroup = scene.activeGroup()
         val screenX = Gdx.input.x
         val screenY = Gdx.input.y
         val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
 
         // Prefer single-click source-group polyline picking (one click = one full polyline).
         val groupPolylinePath = if (contourPath == null) {
-            pickGroupPolylineWorld(group, ray, screenX, screenY, requireClosed = true)?.path
+            pickGroupPolylineWorld(ray, screenX, screenY, requireClosed = true)?.path
         } else {
-            pickGroupPolylineWorld(group, ray, screenX, screenY, requireClosed = false)?.path
+            pickGroupPolylineWorld(ray, screenX, screenY, requireClosed = false)?.path
         }
 
-        // Fallback to legacy edge-connected pick inside the active architecture group.
+        // Fallback to legacy edge-connected pick inside the current active group.
         val edgeConnectedPath = run {
-            val edgeHit = pickEdgeWorld(group, ray, screenX, screenY) ?: return@run null
-            val connected = group.lineStore.collectConnected(edgeHit.segment)
+            val edgeHit = pickEdgeWorld(sourceGroup, ray, screenX, screenY) ?: return@run null
+            val connected = sourceGroup.lineStore.collectConnected(edgeHit.segment)
             val localPath = orderedPolyline(connected) ?: return@run null
-            PolylinePath(points = localPath.points.map { group.toWorld(it) }, closed = localPath.closed)
+            PolylinePath(points = localPath.points.map { sourceGroup.toWorld(it) }, closed = localPath.closed)
         }
 
         val path = groupPolylinePath ?: edgeConnectedPath
@@ -436,6 +436,7 @@ class ArchitectureStairTool(
         }
         treadPath = path
 
+        val group = resolveArchitectureGroup(scene, status, ensureArchitectureGroup) ?: return true
         val contour = contourPath ?: return true
         val tread = treadPath ?: return true
         val contourLocal = contour.points.map { group.toLocal(it) }
@@ -473,6 +474,7 @@ class ArchitectureStairTool(
             minCorner = Vector3(minX, minY, minZ),
             maxCorner = Vector3(maxX, maxY, maxZ),
             contourPoints = contourLocal,
+            walkingPathPoints = treadLocal,
             walkingStart = walkStart,
             walkingEnd = walkEnd,
             height = settings.stairHeight,
@@ -599,7 +601,6 @@ class ArchitectureStairTool(
     }
 
     private fun pickGroupPolylineWorld(
-        targetArchitectureGroup: GroupScene.GroupNode,
         ray: Ray,
         screenX: Int,
         screenY: Int,
@@ -608,9 +609,6 @@ class ArchitectureStairTool(
     ): GroupPolylineHitWorld? {
         var best: GroupPolylineHitWorld? = null
         scene.groupsInActiveContext().forEach { candidate ->
-            if (candidate === targetArchitectureGroup) {
-                return@forEach
-            }
             val segments = candidate.lineStore.getSegments()
             if (segments.isEmpty()) {
                 return@forEach
