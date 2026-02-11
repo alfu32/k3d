@@ -396,6 +396,7 @@ object ModelPersistence {
                 architecture.addStair(
                     minCorner = stair.min.toVector3(),
                     maxCorner = stair.max.toVector3(),
+                    contourPoints = stair.contour.map { it.toVector3() },
                     walkingStart = stair.walkingStart.toVector3(),
                     walkingEnd = stair.walkingEnd.toVector3(),
                     height = stair.height,
@@ -477,6 +478,7 @@ object ModelPersistence {
                         id = stair.id,
                         min = Vec3Dto(stair.min),
                         max = Vec3Dto(stair.max),
+                        contour = stair.contour.map { Vec3Dto(it) }.toMutableList(),
                         walkingStart = Vec3Dto(stair.walkingStart),
                         walkingEnd = Vec3Dto(stair.walkingEnd),
                         height = stair.height,
@@ -619,6 +621,7 @@ object ModelPersistence {
         var id: String = ""
         var min: Vec3Dto = Vec3Dto()
         var max: Vec3Dto = Vec3Dto()
+        var contour: MutableList<Vec3Dto> = mutableListOf()
         var walkingStart: Vec3Dto = Vec3Dto()
         var walkingEnd: Vec3Dto = Vec3Dto()
         var height: Float = 2.7f
@@ -631,6 +634,7 @@ object ModelPersistence {
             id: String,
             min: Vec3Dto,
             max: Vec3Dto,
+            contour: MutableList<Vec3Dto>,
             walkingStart: Vec3Dto,
             walkingEnd: Vec3Dto,
             height: Float,
@@ -642,6 +646,7 @@ object ModelPersistence {
             this.id = id
             this.min = min
             this.max = max
+            this.contour = contour
             this.walkingStart = walkingStart
             this.walkingEnd = walkingEnd
             this.height = height

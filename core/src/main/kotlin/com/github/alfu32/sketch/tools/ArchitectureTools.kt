@@ -354,6 +354,7 @@ class ArchitectureStairTool(
     private data class PolylinePath(val points: List<Vector3>, val closed: Boolean)
 
     private data class EdgeHitWorld(val segment: DraftLineStore.Segment, val point: Vector3, val t: Float)
+    private data class GroupPolylineHitWorld(val path: PolylinePath, val t: Float)
 
     private data class Key3(val x: Int, val y: Int, val z: Int)
 
@@ -394,16 +395,28 @@ class ArchitectureStairTool(
             return false
         }
         val group = resolveArchitectureGroup(scene, status, ensureArchitectureGroup) ?: return true
-        val ray = camera.getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
-        val edgeHit = pickEdgeWorld(group, ray, Gdx.input.x, Gdx.input.y)
-        if (edgeHit == null) {
-            status.message = "Pick an existing polyline edge."
-            return true
+        val screenX = Gdx.input.x
+        val screenY = Gdx.input.y
+        val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
+
+        // Prefer single-click source-group polyline picking (one click = one full polyline).
+        val groupPolylinePath = if (contourPath == null) {
+            pickGroupPolylineWorld(group, ray, screenX, screenY, requireClosed = true)?.path
+        } else {
+            pickGroupPolylineWorld(group, ray, screenX, screenY, requireClosed = false)?.path
         }
-        val connected = group.lineStore.collectConnected(edgeHit.segment)
-        val path = orderedPolyline(connected)
+
+        // Fallback to legacy edge-connected pick inside the active architecture group.
+        val edgeConnectedPath = run {
+            val edgeHit = pickEdgeWorld(group, ray, screenX, screenY) ?: return@run null
+            val connected = group.lineStore.collectConnected(edgeHit.segment)
+            val localPath = orderedPolyline(connected) ?: return@run null
+            PolylinePath(points = localPath.points.map { group.toWorld(it) }, closed = localPath.closed)
+        }
+
+        val path = groupPolylinePath ?: edgeConnectedPath
         if (path == null || path.points.size < 2) {
-            status.message = "Polyline is not valid."
+            status.message = "Pick a polyline group (preferred) or an existing polyline edge."
             return true
         }
 
@@ -413,7 +426,7 @@ class ArchitectureStairTool(
                 return true
             }
             contourPath = path
-            status.message = "Pick stair tread line polyline."
+            status.message = "Pick stair tread line polyline/group."
             return true
         }
 
@@ -459,6 +472,7 @@ class ArchitectureStairTool(
             group = group,
             minCorner = Vector3(minX, minY, minZ),
             maxCorner = Vector3(maxX, maxY, maxZ),
+            contourPoints = contourLocal,
             walkingStart = walkStart,
             walkingEnd = walkEnd,
             height = settings.stairHeight,
@@ -582,6 +596,49 @@ class ArchitectureStairTool(
             return PolylinePath(points = ordered.dropLast(1), closed = true)
         }
         return PolylinePath(points = ordered, closed = false)
+    }
+
+    private fun pickGroupPolylineWorld(
+        targetArchitectureGroup: GroupScene.GroupNode,
+        ray: Ray,
+        screenX: Int,
+        screenY: Int,
+        requireClosed: Boolean,
+        maxPixels: Float = 12f
+    ): GroupPolylineHitWorld? {
+        var best: GroupPolylineHitWorld? = null
+        scene.groupsInActiveContext().forEach { candidate ->
+            if (candidate === targetArchitectureGroup) {
+                return@forEach
+            }
+            val segments = candidate.lineStore.getSegments()
+            if (segments.isEmpty()) {
+                return@forEach
+            }
+            val localPath = orderedPolyline(segments) ?: return@forEach
+            if (localPath.closed != requireClosed) {
+                return@forEach
+            }
+
+            var bestT: Float? = null
+            segments.forEach { segment ->
+                val a = candidate.toWorld(segment.start)
+                val b = candidate.toWorld(segment.end)
+                val hit = closestRaySegment(ray.origin, ray.direction, a, b) ?: return@forEach
+                val screenDist = screenDistance(hit.point, screenX, screenY)
+                if (screenDist <= maxPixels) {
+                    if (bestT == null || hit.t < bestT!!) {
+                        bestT = hit.t
+                    }
+                }
+            }
+            val t = bestT ?: return@forEach
+            val worldPath = PolylinePath(points = localPath.points.map { candidate.toWorld(it) }, closed = localPath.closed)
+            if (best == null || t < best!!.t) {
+                best = GroupPolylineHitWorld(worldPath, t)
+            }
+        }
+        return best
     }
 
     private fun pickEdgeWorld(

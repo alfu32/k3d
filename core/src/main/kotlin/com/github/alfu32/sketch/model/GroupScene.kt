@@ -706,6 +706,7 @@ class GroupScene(
         group: GroupNode,
         minCorner: Vector3,
         maxCorner: Vector3,
+        contourPoints: List<Vector3>,
         walkingStart: Vector3,
         walkingEnd: Vector3,
         height: Float,
@@ -721,6 +722,7 @@ class GroupScene(
         store.addStair(
             minCorner = minCorner,
             maxCorner = maxCorner,
+            contourPoints = contourPoints,
             walkingStart = walkingStart,
             walkingEnd = walkingEnd,
             height = height.coerceAtLeast(0.05f),
@@ -1837,68 +1839,318 @@ class GroupScene(
         }
         val sideDir = Vector3(-walkDir.z, 0f, walkDir.x).nor()
 
-        val corners = listOf(
-            Vector3(stair.min.x, 0f, stair.min.z),
-            Vector3(stair.max.x, 0f, stair.min.z),
-            Vector3(stair.max.x, 0f, stair.max.z),
-            Vector3(stair.min.x, 0f, stair.max.z)
-        )
-        var uMin = Float.POSITIVE_INFINITY
-        var uMax = Float.NEGATIVE_INFINITY
-        var vMin = Float.POSITIVE_INFINITY
-        var vMax = Float.NEGATIVE_INFINITY
-        corners.forEach { corner ->
-            val u = corner.dot(walkDir)
-            val v = corner.dot(sideDir)
-            uMin = min(uMin, u)
-            uMax = max(uMax, u)
-            vMin = min(vMin, v)
-            vMax = max(vMax, v)
+        val contourPoints = if (stair.contour.size >= 3) {
+            stair.contour
+        } else {
+            listOf(
+                Vector3(stair.min.x, stair.min.y, stair.min.z),
+                Vector3(stair.max.x, stair.min.y, stair.min.z),
+                Vector3(stair.max.x, stair.min.y, stair.max.z),
+                Vector3(stair.min.x, stair.min.y, stair.max.z)
+            )
         }
-        if (uMax - uMin <= 0.01f || vMax - vMin <= 0.01f) {
+        val contourUvRaw = contourPoints.map { point ->
+            val planar = Vector3(point.x, 0f, point.z)
+            StairUvPoint(planar.dot(walkDir), planar.dot(sideDir))
+        }
+        val contourUv = dedupeStairPolygon(contourUvRaw)
+        if (contourUv.size < 3) {
             return
         }
 
-        val run = (uMax - uMin) / steps.toFloat()
+        var uMin = Float.POSITIVE_INFINITY
+        var uMax = Float.NEGATIVE_INFINITY
+        contourUv.forEach { point ->
+            uMin = min(uMin, point.u)
+            uMax = max(uMax, point.u)
+        }
+        val runLength = uMax - uMin
+        if (runLength <= 0.01f) {
+            return
+        }
+
+        val run = runLength / steps.toFloat()
         val rise = topHeight / steps.toFloat()
+        val slope = topHeight / runLength
+        val treadThickness = (topHeight * 0.1f).coerceAtLeast(0.01f).coerceAtMost((rise * 0.9f).coerceAtLeast(0.01f))
+        val treadOverboard = run * 0.1f
+        val contourOrientation = if (stairPolygonArea(contourUv) >= 0f) 1f else -1f
 
-        // Slanted support body below the treads.
-        val startTopY = baseY
-        val endTopY = baseY + topHeight
-        val supportBottomStartY = startTopY - support
-        val supportBottomEndY = endTopY - support
-        val t00 = uvPoint(uMin, vMin, startTopY, walkDir, sideDir)
-        val t10 = uvPoint(uMax, vMin, endTopY, walkDir, sideDir)
-        val t11 = uvPoint(uMax, vMax, endTopY, walkDir, sideDir)
-        val t01 = uvPoint(uMin, vMax, startTopY, walkDir, sideDir)
-        val b00 = uvPoint(uMin, vMin, supportBottomStartY, walkDir, sideDir)
-        val b10 = uvPoint(uMax, vMin, supportBottomEndY, walkDir, sideDir)
-        val b11 = uvPoint(uMax, vMax, supportBottomEndY, walkDir, sideDir)
-        val b01 = uvPoint(uMin, vMax, supportBottomStartY, walkDir, sideDir)
+        fun supportTopY(u: Float): Float = baseY + (u - uMin) * slope
+        fun toWorld(point: StairUvPoint, y: Float): Vector3 = uvPoint(point.u, point.v, y, walkDir, sideDir)
+        fun sideOutward(a: StairUvPoint, b: StairUvPoint, orientation: Float): Vector3 {
+            val du = b.u - a.u
+            val dv = b.v - a.v
+            val outwardU = orientation * dv
+            val outwardV = -orientation * du
+            val outward = Vector3(walkDir).scl(outwardU).add(Vector3(sideDir).scl(outwardV))
+            if (outward.len2() <= 1e-8f) {
+                outward.set(sideDir)
+            } else {
+                outward.nor()
+            }
+            return outward
+        }
 
-        val topNormal = Vector3(t10).sub(t00).crs(Vector3(t01).sub(t00)).nor()
-        addQuad(faceStore, lineStore, t00, t10, t11, t01, topNormal, supportColor)
-        addQuad(faceStore, lineStore, b01, b11, b10, b00, Vector3(topNormal).scl(-1f), supportColor)
-        addQuad(faceStore, lineStore, t00, b00, b10, t10, Vector3(sideDir).scl(-1f), supportColor)
-        addQuad(faceStore, lineStore, t01, t11, b11, b01, Vector3(sideDir), supportColor)
-        addQuad(faceStore, lineStore, t00, t01, b01, b00, Vector3(walkDir).scl(-1f), supportColor)
-        addQuad(faceStore, lineStore, t10, b10, b11, t11, Vector3(walkDir), supportColor)
+        val supportTopPoints = contourUv.map { point -> toWorld(point, supportTopY(point.u)) }
+        val supportBottomPoints = contourUv.map { point -> toWorld(point, supportTopY(point.u) - support) }
+        val supportTopNormal = Vector3(0f, 1f, 0f).sub(Vector3(walkDir).scl(slope)).nor()
+        addPolygonTriangulated(
+            faceStore = faceStore,
+            lineStore = lineStore,
+            points3d = supportTopPoints,
+            polygonUv = contourUv,
+            outward = supportTopNormal,
+            color = supportColor,
+            emitBoundaryLines = true
+        )
+        addPolygonTriangulated(
+            faceStore = faceStore,
+            lineStore = lineStore,
+            points3d = supportBottomPoints,
+            polygonUv = contourUv,
+            outward = Vector3(supportTopNormal).scl(-1f),
+            color = supportColor,
+            emitBoundaryLines = false
+        )
+        for (i in contourUv.indices) {
+            val next = (i + 1) % contourUv.size
+            addQuad(
+                faceStore = faceStore,
+                lineStore = lineStore,
+                p0 = supportTopPoints[i],
+                p1 = supportTopPoints[next],
+                p2 = supportBottomPoints[next],
+                p3 = supportBottomPoints[i],
+                outward = sideOutward(contourUv[i], contourUv[next], contourOrientation),
+                color = supportColor
+            )
+        }
 
-        // Filled steps: each run interval is a solid prism between consecutive risers.
+        // Filled treads: fixed 10% thickness and 10% overboard (relative to a step run).
         for (index in 0 until steps) {
-            val stepU0 = uMin + run * index
+            val stepU0 = uMin + run * index - treadOverboard
             val stepU1 = uMin + run * (index + 1)
-            val stepBottom = baseY + rise * index
             val stepTop = baseY + rise * (index + 1)
-            val p000 = uvPoint(stepU0, vMin, stepBottom, walkDir, sideDir)
-            val p100 = uvPoint(stepU1, vMin, stepBottom, walkDir, sideDir)
-            val p110 = uvPoint(stepU1, vMax, stepBottom, walkDir, sideDir)
-            val p010 = uvPoint(stepU0, vMax, stepBottom, walkDir, sideDir)
-            val p001 = uvPoint(stepU0, vMin, stepTop, walkDir, sideDir)
-            val p101 = uvPoint(stepU1, vMin, stepTop, walkDir, sideDir)
-            val p111 = uvPoint(stepU1, vMax, stepTop, walkDir, sideDir)
-            val p011 = uvPoint(stepU0, vMax, stepTop, walkDir, sideDir)
-            addBox(faceStore, lineStore, p000, p100, p110, p010, p001, p101, p111, p011, treadColor)
+            val stepBottomY = stepTop - treadThickness
+            val clipped = clipStairPolygonByU(
+                polygon = clipStairPolygonByU(contourUv, stepU0, keepGreater = true),
+                edgeU = stepU1,
+                keepGreater = false
+            )
+            val stepUv = dedupeStairPolygon(clipped)
+            if (stepUv.size < 3) {
+                continue
+            }
+            val stepOrientation = if (stairPolygonArea(stepUv) >= 0f) 1f else -1f
+            val treadTop = stepUv.map { point -> toWorld(point, stepTop) }
+            val treadBottom = stepUv.map { point -> toWorld(point, stepBottomY) }
+            addPolygonTriangulated(
+                faceStore = faceStore,
+                lineStore = lineStore,
+                points3d = treadTop,
+                polygonUv = stepUv,
+                outward = Vector3(0f, 1f, 0f),
+                color = treadColor,
+                emitBoundaryLines = true
+            )
+            addPolygonTriangulated(
+                faceStore = faceStore,
+                lineStore = lineStore,
+                points3d = treadBottom,
+                polygonUv = stepUv,
+                outward = Vector3(0f, -1f, 0f),
+                color = treadColor,
+                emitBoundaryLines = false
+            )
+            for (i in stepUv.indices) {
+                val next = (i + 1) % stepUv.size
+                addQuad(
+                    faceStore = faceStore,
+                    lineStore = lineStore,
+                    p0 = treadTop[i],
+                    p1 = treadTop[next],
+                    p2 = treadBottom[next],
+                    p3 = treadBottom[i],
+                    outward = sideOutward(stepUv[i], stepUv[next], stepOrientation),
+                    color = treadColor
+                )
+            }
+        }
+    }
+
+    private data class StairUvPoint(val u: Float, val v: Float)
+
+    private fun clipStairPolygonByU(
+        polygon: List<StairUvPoint>,
+        edgeU: Float,
+        keepGreater: Boolean,
+        epsilon: Float = 1e-5f
+    ): List<StairUvPoint> {
+        if (polygon.isEmpty()) {
+            return emptyList()
+        }
+        fun inside(point: StairUvPoint): Boolean {
+            return if (keepGreater) point.u >= edgeU - epsilon else point.u <= edgeU + epsilon
+        }
+
+        val out = mutableListOf<StairUvPoint>()
+        for (i in polygon.indices) {
+            val a = polygon[i]
+            val b = polygon[(i + 1) % polygon.size]
+            val inA = inside(a)
+            val inB = inside(b)
+            if (inA) {
+                out.add(a)
+            }
+            if (inA != inB) {
+                val denom = b.u - a.u
+                if (abs(denom) > epsilon) {
+                    val t = ((edgeU - a.u) / denom).coerceIn(0f, 1f)
+                    out.add(StairUvPoint(edgeU, a.v + (b.v - a.v) * t))
+                }
+            }
+        }
+        return out
+    }
+
+    private fun dedupeStairPolygon(polygon: List<StairUvPoint>, epsilon: Float = 1e-5f): List<StairUvPoint> {
+        if (polygon.isEmpty()) {
+            return emptyList()
+        }
+        val result = mutableListOf<StairUvPoint>()
+        polygon.forEach { point ->
+            val prev = result.lastOrNull()
+            if (prev == null || abs(prev.u - point.u) > epsilon || abs(prev.v - point.v) > epsilon) {
+                result.add(point)
+            }
+        }
+        if (result.size >= 2) {
+            val first = result.first()
+            val last = result.last()
+            if (abs(first.u - last.u) <= epsilon && abs(first.v - last.v) <= epsilon) {
+                result.removeAt(result.lastIndex)
+            }
+        }
+        return result
+    }
+
+    private fun stairPolygonArea(polygon: List<StairUvPoint>): Float {
+        if (polygon.size < 3) {
+            return 0f
+        }
+        var area = 0f
+        for (i in polygon.indices) {
+            val a = polygon[i]
+            val b = polygon[(i + 1) % polygon.size]
+            area += a.u * b.v - b.u * a.v
+        }
+        return area * 0.5f
+    }
+
+    private fun triangulateStairPolygon(polygon: List<StairUvPoint>): List<IntArray> {
+        if (polygon.size < 3) {
+            return emptyList()
+        }
+        if (polygon.size == 3) {
+            return listOf(intArrayOf(0, 1, 2))
+        }
+        val isCcw = stairPolygonArea(polygon) >= 0f
+        val remaining = polygon.indices.toMutableList()
+        val triangles = mutableListOf<IntArray>()
+        var guard = 0
+        while (remaining.size > 2 && guard < 2048) {
+            guard++
+            var earFound = false
+            for (i in remaining.indices) {
+                val prevIndex = remaining[(i - 1 + remaining.size) % remaining.size]
+                val currIndex = remaining[i]
+                val nextIndex = remaining[(i + 1) % remaining.size]
+                val a = polygon[prevIndex]
+                val b = polygon[currIndex]
+                val c = polygon[nextIndex]
+                val cross = (b.u - a.u) * (c.v - a.v) - (b.v - a.v) * (c.u - a.u)
+                val convex = if (isCcw) cross > 1e-6f else cross < -1e-6f
+                if (!convex) {
+                    continue
+                }
+                var hasPointInside = false
+                for (testIndex in remaining) {
+                    if (testIndex == prevIndex || testIndex == currIndex || testIndex == nextIndex) {
+                        continue
+                    }
+                    if (pointInStairTriangle(polygon[testIndex], a, b, c)) {
+                        hasPointInside = true
+                        break
+                    }
+                }
+                if (hasPointInside) {
+                    continue
+                }
+                triangles.add(intArrayOf(prevIndex, currIndex, nextIndex))
+                remaining.removeAt(i)
+                earFound = true
+                break
+            }
+            if (!earFound) {
+                break
+            }
+        }
+        if (triangles.isEmpty() && polygon.size >= 3) {
+            for (i in 1 until polygon.lastIndex) {
+                triangles.add(intArrayOf(0, i, i + 1))
+            }
+        }
+        return triangles
+    }
+
+    private fun pointInStairTriangle(
+        p: StairUvPoint,
+        a: StairUvPoint,
+        b: StairUvPoint,
+        c: StairUvPoint
+    ): Boolean {
+        val c1 = cross2d(a, b, p)
+        val c2 = cross2d(b, c, p)
+        val c3 = cross2d(c, a, p)
+        val hasNeg = c1 < -1e-6f || c2 < -1e-6f || c3 < -1e-6f
+        val hasPos = c1 > 1e-6f || c2 > 1e-6f || c3 > 1e-6f
+        return !(hasNeg && hasPos)
+    }
+
+    private fun cross2d(a: StairUvPoint, b: StairUvPoint, c: StairUvPoint): Float {
+        return (b.u - a.u) * (c.v - a.v) - (b.v - a.v) * (c.u - a.u)
+    }
+
+    private fun addPolygonTriangulated(
+        faceStore: DraftFaceStore,
+        lineStore: DraftLineStore,
+        points3d: List<Vector3>,
+        polygonUv: List<StairUvPoint>,
+        outward: Vector3,
+        color: Color,
+        emitBoundaryLines: Boolean
+    ) {
+        if (points3d.size < 3 || polygonUv.size < 3 || points3d.size != polygonUv.size) {
+            return
+        }
+        val triangles = triangulateStairPolygon(polygonUv)
+        triangles.forEach { tri ->
+            val p0 = points3d[tri[0]]
+            val p1 = points3d[tri[1]]
+            val p2 = points3d[tri[2]]
+            val normal = Vector3(p1).sub(p0).crs(Vector3(p2).sub(p0))
+            if (normal.dot(outward) >= 0f) {
+                faceStore.addTriangle(Vector3(p0), Vector3(p1), Vector3(p2), color)
+            } else {
+                faceStore.addTriangle(Vector3(p0), Vector3(p2), Vector3(p1), color)
+            }
+        }
+        if (emitBoundaryLines) {
+            for (i in points3d.indices) {
+                val next = (i + 1) % points3d.size
+                lineStore.addSegment(Vector3(points3d[i]), Vector3(points3d[next]), autoCleanup = false)
+            }
         }
     }
 

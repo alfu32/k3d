@@ -55,6 +55,7 @@ class ArchitectureStore {
         var id: String,
         var min: Vector3,
         var max: Vector3,
+        var contour: MutableList<Vector3>,
         var walkingStart: Vector3,
         var walkingEnd: Vector3,
         var height: Float,
@@ -169,6 +170,7 @@ class ArchitectureStore {
     fun addStair(
         minCorner: Vector3,
         maxCorner: Vector3,
+        contourPoints: List<Vector3>,
         walkingStart: Vector3,
         walkingEnd: Vector3,
         height: Float,
@@ -188,10 +190,21 @@ class ArchitectureStore {
             max(minCorner.y, maxCorner.y),
             max(minCorner.z, maxCorner.z)
         )
+        val contour = if (contourPoints.size >= 3) {
+            contourPoints.map { Vector3(it) }
+        } else {
+            listOf(
+                Vector3(min.x, min.y, min.z),
+                Vector3(max.x, min.y, min.z),
+                Vector3(max.x, min.y, max.z),
+                Vector3(min.x, min.y, max.z)
+            )
+        }
         val stair = Stair(
             id = id,
             min = min,
             max = max,
+            contour = contour.toMutableList(),
             walkingStart = Vector3(walkingStart),
             walkingEnd = Vector3(walkingEnd),
             height = height,

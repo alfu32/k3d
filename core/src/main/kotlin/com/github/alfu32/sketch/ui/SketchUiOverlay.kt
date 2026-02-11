@@ -223,16 +223,21 @@ class SketchUiOverlay(
     private lateinit var architectureWallInclinationField: VisTextField
     private lateinit var architectureWallExteriorColorLabel: VisLabel
     private lateinit var architectureWallExteriorColorField: VisTextField
+    private lateinit var architectureWallExteriorColorButton: VisImageTextButton
     private lateinit var architectureWallInteriorColorLabel: VisLabel
     private lateinit var architectureWallInteriorColorField: VisTextField
+    private lateinit var architectureWallInteriorColorButton: VisImageTextButton
     private lateinit var architectureSlabThicknessLabel: VisLabel
     private lateinit var architectureSlabThicknessField: VisTextField
     private lateinit var architectureSlabTopColorLabel: VisLabel
     private lateinit var architectureSlabTopColorField: VisTextField
+    private lateinit var architectureSlabTopColorButton: VisImageTextButton
     private lateinit var architectureSlabBottomColorLabel: VisLabel
     private lateinit var architectureSlabBottomColorField: VisTextField
+    private lateinit var architectureSlabBottomColorButton: VisImageTextButton
     private lateinit var architectureSlabSideColorLabel: VisLabel
     private lateinit var architectureSlabSideColorField: VisTextField
+    private lateinit var architectureSlabSideColorButton: VisImageTextButton
     private lateinit var architectureStairHeightLabel: VisLabel
     private lateinit var architectureStairHeightField: VisTextField
     private lateinit var architectureStairStepsLabel: VisLabel
@@ -241,14 +246,17 @@ class SketchUiOverlay(
     private lateinit var architectureStairSupportField: VisTextField
     private lateinit var architectureStairTreadColorLabel: VisLabel
     private lateinit var architectureStairTreadColorField: VisTextField
+    private lateinit var architectureStairTreadColorButton: VisImageTextButton
     private lateinit var architectureStairSupportColorLabel: VisLabel
     private lateinit var architectureStairSupportColorField: VisTextField
+    private lateinit var architectureStairSupportColorButton: VisImageTextButton
     private lateinit var architectureFrameDepthLabel: VisLabel
     private lateinit var architectureFrameDepthField: VisTextField
     private lateinit var architectureFrameWidthLabel: VisLabel
     private lateinit var architectureFrameWidthField: VisTextField
     private lateinit var architectureFrameColorLabel: VisLabel
     private lateinit var architectureFrameColorField: VisTextField
+    private lateinit var architectureFrameColorButton: VisImageTextButton
     private lateinit var architectureSettingsContent: VisTable
     private var architecturePanelMode: ArchitectureElementKind? = null
     private var updatingArchitectureFields = false
@@ -1045,7 +1053,7 @@ class SketchUiOverlay(
         val panel = CollapsibleWindow("Architecture Settings")
         architectureSettingsContent = VisTable()
         architectureSettingsContent.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
-        architectureSettingsContent.defaults().pad(4f).left().growX()
+        architectureSettingsContent.defaults().pad(4f).left().top()
         architectureModeLabel = VisLabel()
         architectureWallThicknessLabel = VisLabel("Wall thickness")
         architectureWallThicknessField = VisTextField()
@@ -1055,16 +1063,21 @@ class SketchUiOverlay(
         architectureWallInclinationField = VisTextField()
         architectureWallExteriorColorLabel = VisLabel("Wall exterior color")
         architectureWallExteriorColorField = VisTextField()
+        architectureWallExteriorColorButton = createArchitectureColorButton("Wall Exterior Color", architectureWallExteriorColorField)
         architectureWallInteriorColorLabel = VisLabel("Wall interior color")
         architectureWallInteriorColorField = VisTextField()
+        architectureWallInteriorColorButton = createArchitectureColorButton("Wall Interior Color", architectureWallInteriorColorField)
         architectureSlabThicknessLabel = VisLabel("Slab thickness")
         architectureSlabThicknessField = VisTextField()
         architectureSlabTopColorLabel = VisLabel("Slab top color")
         architectureSlabTopColorField = VisTextField()
+        architectureSlabTopColorButton = createArchitectureColorButton("Slab Top Color", architectureSlabTopColorField)
         architectureSlabBottomColorLabel = VisLabel("Slab bottom color")
         architectureSlabBottomColorField = VisTextField()
+        architectureSlabBottomColorButton = createArchitectureColorButton("Slab Bottom Color", architectureSlabBottomColorField)
         architectureSlabSideColorLabel = VisLabel("Slab side color")
         architectureSlabSideColorField = VisTextField()
+        architectureSlabSideColorButton = createArchitectureColorButton("Slab Side Color", architectureSlabSideColorField)
         architectureStairHeightLabel = VisLabel("Stair height")
         architectureStairHeightField = VisTextField()
         architectureStairStepsLabel = VisLabel("Stair steps")
@@ -1073,14 +1086,17 @@ class SketchUiOverlay(
         architectureStairSupportField = VisTextField()
         architectureStairTreadColorLabel = VisLabel("Stair tread color")
         architectureStairTreadColorField = VisTextField()
+        architectureStairTreadColorButton = createArchitectureColorButton("Stair Tread Color", architectureStairTreadColorField)
         architectureStairSupportColorLabel = VisLabel("Stair support color")
         architectureStairSupportColorField = VisTextField()
+        architectureStairSupportColorButton = createArchitectureColorButton("Stair Support Color", architectureStairSupportColorField)
         architectureFrameDepthLabel = VisLabel("Frame depth")
         architectureFrameDepthField = VisTextField()
         architectureFrameWidthLabel = VisLabel("Frame width")
         architectureFrameWidthField = VisTextField()
         architectureFrameColorLabel = VisLabel("Frame color")
         architectureFrameColorField = VisTextField()
+        architectureFrameColorButton = createArchitectureColorButton("Frame Color", architectureFrameColorField)
 
         panel.add(architectureSettingsContent).growX()
         panel.isVisible = false
@@ -1282,6 +1298,7 @@ class SketchUiOverlay(
             override fun changed(event: ChangeEvent?, actor: Actor?) {
                 if (updatingArchitectureFields) return
                 val color = parseColorField(architectureWallExteriorColorField.text) ?: return
+                updateArchitectureColorButtonSwatch(architectureWallExteriorColorButton, color)
                 val selection = architectureElementProvider()
                 if (selection == null) {
                     architectureSettings.wallExteriorColor.set(color)
@@ -1302,6 +1319,7 @@ class SketchUiOverlay(
             override fun changed(event: ChangeEvent?, actor: Actor?) {
                 if (updatingArchitectureFields) return
                 val color = parseColorField(architectureWallInteriorColorField.text) ?: return
+                updateArchitectureColorButtonSwatch(architectureWallInteriorColorButton, color)
                 val selection = architectureElementProvider()
                 if (selection == null) {
                     architectureSettings.wallInteriorColor.set(color)
@@ -1322,6 +1340,7 @@ class SketchUiOverlay(
             override fun changed(event: ChangeEvent?, actor: Actor?) {
                 if (updatingArchitectureFields) return
                 val color = parseColorField(architectureSlabTopColorField.text) ?: return
+                updateArchitectureColorButtonSwatch(architectureSlabTopColorButton, color)
                 val selection = architectureElementProvider()
                 if (selection == null) {
                     architectureSettings.slabTopColor.set(color)
@@ -1341,6 +1360,7 @@ class SketchUiOverlay(
             override fun changed(event: ChangeEvent?, actor: Actor?) {
                 if (updatingArchitectureFields) return
                 val color = parseColorField(architectureSlabBottomColorField.text) ?: return
+                updateArchitectureColorButtonSwatch(architectureSlabBottomColorButton, color)
                 val selection = architectureElementProvider()
                 if (selection == null) {
                     architectureSettings.slabBottomColor.set(color)
@@ -1360,6 +1380,7 @@ class SketchUiOverlay(
             override fun changed(event: ChangeEvent?, actor: Actor?) {
                 if (updatingArchitectureFields) return
                 val color = parseColorField(architectureSlabSideColorField.text) ?: return
+                updateArchitectureColorButtonSwatch(architectureSlabSideColorButton, color)
                 val selection = architectureElementProvider()
                 if (selection == null) {
                     architectureSettings.slabSideColor.set(color)
@@ -1379,6 +1400,7 @@ class SketchUiOverlay(
             override fun changed(event: ChangeEvent?, actor: Actor?) {
                 if (updatingArchitectureFields) return
                 val color = parseColorField(architectureStairTreadColorField.text) ?: return
+                updateArchitectureColorButtonSwatch(architectureStairTreadColorButton, color)
                 val selection = architectureElementProvider()
                 if (selection == null) {
                     architectureSettings.stairTreadColor.set(color)
@@ -1399,6 +1421,7 @@ class SketchUiOverlay(
             override fun changed(event: ChangeEvent?, actor: Actor?) {
                 if (updatingArchitectureFields) return
                 val color = parseColorField(architectureStairSupportColorField.text) ?: return
+                updateArchitectureColorButtonSwatch(architectureStairSupportColorButton, color)
                 val selection = architectureElementProvider()
                 if (selection == null) {
                     architectureSettings.stairSupportColor.set(color)
@@ -1419,6 +1442,7 @@ class SketchUiOverlay(
             override fun changed(event: ChangeEvent?, actor: Actor?) {
                 if (updatingArchitectureFields) return
                 val color = parseColorField(architectureFrameColorField.text) ?: return
+                updateArchitectureColorButtonSwatch(architectureFrameColorButton, color)
                 val selection = architectureElementProvider()
                 if (selection == null) {
                     architectureSettings.frameColor.set(color)
@@ -1483,61 +1507,190 @@ class SketchUiOverlay(
     private fun rebuildArchitectureSettingsContent(mode: ArchitectureElementKind?) {
         architecturePanelMode = mode
         architectureSettingsContent.clearChildren()
-        architectureSettingsContent.add(architectureModeLabel).left().row()
+        architectureSettingsContent.add(architectureModeLabel).left().colspan(2).growX().row()
+        val entries = mutableListOf<ArchitectureFieldEntry>()
         when (mode) {
             null -> {
-                addArchitectureFieldRow(architectureWallThicknessLabel, architectureWallThicknessField)
-                addArchitectureFieldRow(architectureWallHeightLabel, architectureWallHeightField)
-                addArchitectureFieldRow(architectureWallInclinationLabel, architectureWallInclinationField)
-                addArchitectureFieldRow(architectureWallExteriorColorLabel, architectureWallExteriorColorField)
-                addArchitectureFieldRow(architectureWallInteriorColorLabel, architectureWallInteriorColorField)
-                addArchitectureFieldRow(architectureSlabThicknessLabel, architectureSlabThicknessField)
-                addArchitectureFieldRow(architectureSlabTopColorLabel, architectureSlabTopColorField)
-                addArchitectureFieldRow(architectureSlabBottomColorLabel, architectureSlabBottomColorField)
-                addArchitectureFieldRow(architectureSlabSideColorLabel, architectureSlabSideColorField)
-                addArchitectureFieldRow(architectureStairHeightLabel, architectureStairHeightField)
-                addArchitectureFieldRow(architectureStairStepsLabel, architectureStairStepsField)
-                addArchitectureFieldRow(architectureStairSupportLabel, architectureStairSupportField)
-                addArchitectureFieldRow(architectureStairTreadColorLabel, architectureStairTreadColorField)
-                addArchitectureFieldRow(architectureStairSupportColorLabel, architectureStairSupportColorField)
-                addArchitectureFieldRow(architectureFrameDepthLabel, architectureFrameDepthField)
-                addArchitectureFieldRow(architectureFrameWidthLabel, architectureFrameWidthField)
-                addArchitectureFieldRow(architectureFrameColorLabel, architectureFrameColorField)
+                entries.add(ArchitectureFieldEntry(architectureWallThicknessLabel, architectureWallThicknessField))
+                entries.add(ArchitectureFieldEntry(architectureWallHeightLabel, architectureWallHeightField))
+                entries.add(ArchitectureFieldEntry(architectureWallInclinationLabel, architectureWallInclinationField))
+                entries.add(
+                    ArchitectureFieldEntry(
+                        architectureWallExteriorColorLabel,
+                        architectureWallExteriorColorField,
+                        architectureWallExteriorColorButton
+                    )
+                )
+                entries.add(
+                    ArchitectureFieldEntry(
+                        architectureWallInteriorColorLabel,
+                        architectureWallInteriorColorField,
+                        architectureWallInteriorColorButton
+                    )
+                )
+                entries.add(ArchitectureFieldEntry(architectureSlabThicknessLabel, architectureSlabThicknessField))
+                entries.add(
+                    ArchitectureFieldEntry(
+                        architectureSlabTopColorLabel,
+                        architectureSlabTopColorField,
+                        architectureSlabTopColorButton
+                    )
+                )
+                entries.add(
+                    ArchitectureFieldEntry(
+                        architectureSlabBottomColorLabel,
+                        architectureSlabBottomColorField,
+                        architectureSlabBottomColorButton
+                    )
+                )
+                entries.add(
+                    ArchitectureFieldEntry(
+                        architectureSlabSideColorLabel,
+                        architectureSlabSideColorField,
+                        architectureSlabSideColorButton
+                    )
+                )
+                entries.add(ArchitectureFieldEntry(architectureStairHeightLabel, architectureStairHeightField))
+                entries.add(ArchitectureFieldEntry(architectureStairStepsLabel, architectureStairStepsField))
+                entries.add(ArchitectureFieldEntry(architectureStairSupportLabel, architectureStairSupportField))
+                entries.add(
+                    ArchitectureFieldEntry(
+                        architectureStairTreadColorLabel,
+                        architectureStairTreadColorField,
+                        architectureStairTreadColorButton
+                    )
+                )
+                entries.add(
+                    ArchitectureFieldEntry(
+                        architectureStairSupportColorLabel,
+                        architectureStairSupportColorField,
+                        architectureStairSupportColorButton
+                    )
+                )
+                entries.add(ArchitectureFieldEntry(architectureFrameDepthLabel, architectureFrameDepthField))
+                entries.add(ArchitectureFieldEntry(architectureFrameWidthLabel, architectureFrameWidthField))
+                entries.add(
+                    ArchitectureFieldEntry(
+                        architectureFrameColorLabel,
+                        architectureFrameColorField,
+                        architectureFrameColorButton
+                    )
+                )
             }
             ArchitectureElementKind.WALL -> {
-                addArchitectureFieldRow(architectureWallThicknessLabel, architectureWallThicknessField)
-                addArchitectureFieldRow(architectureWallHeightLabel, architectureWallHeightField)
-                addArchitectureFieldRow(architectureWallInclinationLabel, architectureWallInclinationField)
-                addArchitectureFieldRow(architectureWallExteriorColorLabel, architectureWallExteriorColorField)
-                addArchitectureFieldRow(architectureWallInteriorColorLabel, architectureWallInteriorColorField)
+                entries.add(ArchitectureFieldEntry(architectureWallThicknessLabel, architectureWallThicknessField))
+                entries.add(ArchitectureFieldEntry(architectureWallHeightLabel, architectureWallHeightField))
+                entries.add(ArchitectureFieldEntry(architectureWallInclinationLabel, architectureWallInclinationField))
+                entries.add(
+                    ArchitectureFieldEntry(
+                        architectureWallExteriorColorLabel,
+                        architectureWallExteriorColorField,
+                        architectureWallExteriorColorButton
+                    )
+                )
+                entries.add(
+                    ArchitectureFieldEntry(
+                        architectureWallInteriorColorLabel,
+                        architectureWallInteriorColorField,
+                        architectureWallInteriorColorButton
+                    )
+                )
             }
             ArchitectureElementKind.SLAB -> {
-                addArchitectureFieldRow(architectureSlabThicknessLabel, architectureSlabThicknessField)
-                addArchitectureFieldRow(architectureSlabTopColorLabel, architectureSlabTopColorField)
-                addArchitectureFieldRow(architectureSlabBottomColorLabel, architectureSlabBottomColorField)
-                addArchitectureFieldRow(architectureSlabSideColorLabel, architectureSlabSideColorField)
+                entries.add(ArchitectureFieldEntry(architectureSlabThicknessLabel, architectureSlabThicknessField))
+                entries.add(
+                    ArchitectureFieldEntry(
+                        architectureSlabTopColorLabel,
+                        architectureSlabTopColorField,
+                        architectureSlabTopColorButton
+                    )
+                )
+                entries.add(
+                    ArchitectureFieldEntry(
+                        architectureSlabBottomColorLabel,
+                        architectureSlabBottomColorField,
+                        architectureSlabBottomColorButton
+                    )
+                )
+                entries.add(
+                    ArchitectureFieldEntry(
+                        architectureSlabSideColorLabel,
+                        architectureSlabSideColorField,
+                        architectureSlabSideColorButton
+                    )
+                )
             }
             ArchitectureElementKind.STAIR -> {
-                addArchitectureFieldRow(architectureStairHeightLabel, architectureStairHeightField)
-                addArchitectureFieldRow(architectureStairStepsLabel, architectureStairStepsField)
-                addArchitectureFieldRow(architectureStairSupportLabel, architectureStairSupportField)
-                addArchitectureFieldRow(architectureStairTreadColorLabel, architectureStairTreadColorField)
-                addArchitectureFieldRow(architectureStairSupportColorLabel, architectureStairSupportColorField)
+                entries.add(ArchitectureFieldEntry(architectureStairHeightLabel, architectureStairHeightField))
+                entries.add(ArchitectureFieldEntry(architectureStairStepsLabel, architectureStairStepsField))
+                entries.add(ArchitectureFieldEntry(architectureStairSupportLabel, architectureStairSupportField))
+                entries.add(
+                    ArchitectureFieldEntry(
+                        architectureStairTreadColorLabel,
+                        architectureStairTreadColorField,
+                        architectureStairTreadColorButton
+                    )
+                )
+                entries.add(
+                    ArchitectureFieldEntry(
+                        architectureStairSupportColorLabel,
+                        architectureStairSupportColorField,
+                        architectureStairSupportColorButton
+                    )
+                )
             }
             ArchitectureElementKind.FRAME -> {
-                addArchitectureFieldRow(architectureFrameDepthLabel, architectureFrameDepthField)
-                addArchitectureFieldRow(architectureFrameWidthLabel, architectureFrameWidthField)
-                addArchitectureFieldRow(architectureFrameColorLabel, architectureFrameColorField)
+                entries.add(ArchitectureFieldEntry(architectureFrameDepthLabel, architectureFrameDepthField))
+                entries.add(ArchitectureFieldEntry(architectureFrameWidthLabel, architectureFrameWidthField))
+                entries.add(
+                    ArchitectureFieldEntry(
+                        architectureFrameColorLabel,
+                        architectureFrameColorField,
+                        architectureFrameColorButton
+                    )
+                )
             }
         }
+        addArchitectureFieldGrid(entries)
         if (::architectureSettingsPanel.isInitialized) {
             architectureSettingsPanel.pack()
         }
     }
 
-    private fun addArchitectureFieldRow(label: VisLabel, field: VisTextField) {
-        architectureSettingsContent.add(label).left().padTop(4f).row()
-        architectureSettingsContent.add(field).growX().row()
+    private data class ArchitectureFieldEntry(
+        val label: VisLabel,
+        val field: VisTextField,
+        val colorButton: VisImageTextButton? = null
+    )
+
+    private fun addArchitectureFieldGrid(entries: List<ArchitectureFieldEntry>) {
+        var index = 0
+        while (index < entries.size) {
+            architectureSettingsContent.add(architectureFieldCell(entries[index])).growX().top().padTop(2f)
+            if (index + 1 < entries.size) {
+                architectureSettingsContent.add(architectureFieldCell(entries[index + 1])).growX().top().padTop(2f)
+            } else {
+                architectureSettingsContent.add().growX()
+            }
+            architectureSettingsContent.row()
+            index += 2
+        }
+    }
+
+    private fun architectureFieldCell(entry: ArchitectureFieldEntry): VisTable {
+        val table = VisTable()
+        table.defaults().left().growX()
+        table.add(entry.label).left().row()
+        if (entry.colorButton == null) {
+            table.add(entry.field).growX()
+        } else {
+            val controls = VisTable()
+            controls.defaults().left()
+            controls.add(entry.field).growX().padRight(4f)
+            controls.add(entry.colorButton).size(24f, 24f)
+            table.add(controls).growX()
+        }
+        return table
     }
 
     private fun updateArchitectureSettingsPanel() {
@@ -1634,7 +1787,103 @@ class SketchUiOverlay(
                 }
             }
         }
+        syncArchitectureColorButtonSwatches()
         updatingArchitectureFields = false
+    }
+
+    private fun createArchitectureColorButton(title: String, field: VisTextField): VisImageTextButton {
+        val icon = iconFor("color", createActionIconDrawable(Color(0.8f, 0.8f, 0.8f, 1f)))
+        return VisImageTextButton("", icon).apply {
+            applyWhiteButtonStyle(this)
+            applyIconStyle(this, icon)
+            addListener(object : ClickListener() {
+                override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                    val current = parseColorField(field.text) ?: Color.WHITE
+                    showArchitectureColorPicker(title, current) { picked ->
+                        field.text = formatColorField(picked)
+                        updateArchitectureColorButtonSwatch(this@apply, picked)
+                    }
+                }
+            })
+        }
+    }
+
+    private fun showArchitectureColorPicker(title: String, start: Color, onApply: (Color) -> Unit) {
+        val picker = ColorPicker(title)
+        picker.color = Color(start)
+        picker.setListener(object : ColorPickerListener {
+            override fun changed(color: Color?) {
+                if (color != null) {
+                    onApply(Color(color))
+                }
+            }
+
+            override fun canceled(oldColor: Color?) {
+                if (oldColor != null) {
+                    onApply(Color(oldColor))
+                }
+                picker.remove()
+            }
+
+            override fun reset(oldColor: Color?, newColor: Color?) {
+                if (newColor != null) {
+                    onApply(Color(newColor))
+                }
+            }
+
+            override fun finished(color: Color?) {
+                if (color != null) {
+                    onApply(Color(color))
+                }
+                picker.remove()
+            }
+        })
+        stage.addActor(picker)
+        picker.centerWindow()
+        picker.fadeIn()
+    }
+
+    private fun updateArchitectureColorButtonSwatch(button: VisImageTextButton, color: Color) {
+        if (iconDrawables.containsKey("color")) {
+            button.image?.setColor(color)
+        } else {
+            updateButtonIcon(button, color)
+        }
+    }
+
+    private fun syncArchitectureColorButtonSwatches() {
+        updateArchitectureColorButtonSwatch(
+            architectureWallExteriorColorButton,
+            parseColorField(architectureWallExteriorColorField.text) ?: architectureSettings.wallExteriorColor
+        )
+        updateArchitectureColorButtonSwatch(
+            architectureWallInteriorColorButton,
+            parseColorField(architectureWallInteriorColorField.text) ?: architectureSettings.wallInteriorColor
+        )
+        updateArchitectureColorButtonSwatch(
+            architectureSlabTopColorButton,
+            parseColorField(architectureSlabTopColorField.text) ?: architectureSettings.slabTopColor
+        )
+        updateArchitectureColorButtonSwatch(
+            architectureSlabBottomColorButton,
+            parseColorField(architectureSlabBottomColorField.text) ?: architectureSettings.slabBottomColor
+        )
+        updateArchitectureColorButtonSwatch(
+            architectureSlabSideColorButton,
+            parseColorField(architectureSlabSideColorField.text) ?: architectureSettings.slabSideColor
+        )
+        updateArchitectureColorButtonSwatch(
+            architectureStairTreadColorButton,
+            parseColorField(architectureStairTreadColorField.text) ?: architectureSettings.stairTreadColor
+        )
+        updateArchitectureColorButtonSwatch(
+            architectureStairSupportColorButton,
+            parseColorField(architectureStairSupportColorField.text) ?: architectureSettings.stairSupportColor
+        )
+        updateArchitectureColorButtonSwatch(
+            architectureFrameColorButton,
+            parseColorField(architectureFrameColorField.text) ?: architectureSettings.frameColor
+        )
     }
 
     private fun parseColorField(text: String): Color? {
