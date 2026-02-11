@@ -114,8 +114,10 @@ class SelectTool(
         val ray = camera.getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
         val activeGroup = scene.activeGroup()
         val isVoxelGroup = scene.isVoxelGroup(activeGroup)
+        val isArchitectureGroup = scene.isArchitectureGroup(activeGroup)
+        val allowFaceSelection = !isVoxelGroup && !isArchitectureGroup
         val voxelHit = if (isVoxelGroup) pickVoxelWorld(ray) else null
-        val faceHit = if (isVoxelGroup) null else pickFaceWorld(ray)
+        val faceHit = if (allowFaceSelection) pickFaceWorld(ray) else null
         val edgeHit = if (isVoxelGroup) null else pickEdgeWorld(ray, Gdx.input.x, Gdx.input.y)
         val dimensionHit = pickDimensionWorld(ray, Gdx.input.x, Gdx.input.y)
         val textHit = pickTextWorld(ray, Gdx.input.x, Gdx.input.y)
@@ -154,7 +156,7 @@ class SelectTool(
                 return true
             }
         }
-        if (!isVoxelGroup && clickType >= 3) {
+        if (allowFaceSelection && clickType >= 3) {
             clickCount = 0
             if (!pickedFace && !pickedEdge) {
                 return true
@@ -183,7 +185,7 @@ class SelectTool(
             }
             return true
         }
-        if (!isVoxelGroup && clickType == 2 && pickedFace) {
+        if (allowFaceSelection && clickType == 2 && pickedFace) {
             val group = scene.activeGroup().faceStore.collectCoplanarConnected(faceHit!!.triangle)
             val allSelected = group.all { scene.activeGroup().faceStore.isSelected(it) }
             if (allSelected) {
@@ -216,7 +218,7 @@ class SelectTool(
             status.message = "Group toggled."
             return true
         }
-        if (!isVoxelGroup && pickedFace && pickedEdge) {
+        if (allowFaceSelection && pickedFace && pickedEdge) {
             if (faceHit!!.t <= edgeHit!!.t) {
                 scene.activeGroup().faceStore.toggleSelection(faceHit.triangle)
                 status.message = "Face toggled."
@@ -226,7 +228,7 @@ class SelectTool(
             }
             return true
         }
-        if (!isVoxelGroup && pickedFace) {
+        if (allowFaceSelection && pickedFace) {
             scene.activeGroup().faceStore.toggleSelection(faceHit!!.triangle)
             status.message = "Face toggled."
             return true
@@ -272,7 +274,7 @@ class SelectTool(
                 } else {
                     0
                 }
-                val faces = if (scene.isVoxelGroup(scene.activeGroup())) 0 else selectFacesInWindow(rect, includeIntersect, mode)
+                val faces = if (scene.isVoxelGroup(scene.activeGroup()) || scene.isArchitectureGroup(scene.activeGroup())) 0 else selectFacesInWindow(rect, includeIntersect, mode)
                 val edges = if (scene.isVoxelGroup(scene.activeGroup())) 0 else selectEdgesInWindow(rect, includeIntersect, mode)
                 val dimensions = selectDimensionsInWindow(rect, includeIntersect, mode)
                 val texts = selectTextsInWindow(rect, includeIntersect, mode)

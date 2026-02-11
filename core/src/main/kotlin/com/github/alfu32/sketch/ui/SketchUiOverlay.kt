@@ -32,6 +32,7 @@ import com.kotcrab.vis.ui.widget.color.ColorPickerListener
 import com.github.alfu32.sketch.plugin.PluginHost
 import com.github.alfu32.sketch.plugin.capabilities.PanelPosition
 import com.github.alfu32.sketch.plugin.capabilities.PluginPanel
+import com.github.alfu32.sketch.tools.ArchitectureSettings
 import com.github.alfu32.sketch.tools.PolylineSettings
 import java.util.Locale
 import kotlin.math.abs
@@ -63,7 +64,8 @@ class SketchUiOverlay(
     private val lightingChanged: (LightingSettings) -> Unit,
     private val shadowSettings: ShadowSettings,
     private val shadowChanged: (ShadowSettings) -> Unit,
-    private val polylineSettings: PolylineSettings
+    private val polylineSettings: PolylineSettings,
+    private val architectureSettings: ArchitectureSettings
 ) {
     private open class CollapsibleWindow(
         title: String,
@@ -143,7 +145,7 @@ class SketchUiOverlay(
     private var toolbarsPositioned = false
     private val uiPrefs by lazy { Gdx.app.getPreferences("k3d-ui-layout") }
     private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
-    private val toolbarLayoutVersion = 4
+    private val toolbarLayoutVersion = 5
     private val toolbarButtonSize = 32f
     private val iconTextures = mutableListOf<Texture>()
     private val iconDrawables = mutableMapOf<String, TextureRegionDrawable>()
@@ -189,6 +191,7 @@ class SketchUiOverlay(
     private lateinit var objectsDeleteButton: VisTextButton
     private lateinit var modelSettingsPanel: CollapsibleWindow
     private lateinit var polylineSettingsPanel: CollapsibleWindow
+    private lateinit var architectureSettingsPanel: CollapsibleWindow
     private val unitNameField = VisTextField()
     private val unitSizeField = VisTextField()
     private val gridSpacingField = VisTextField()
@@ -227,6 +230,7 @@ class SketchUiOverlay(
         objectsPanel = buildObjectsPanel()
         modelSettingsPanel = buildModelSettingsPanel()
         polylineSettingsPanel = buildPolylineSettingsPanel()
+        architectureSettingsPanel = buildArchitectureSettingsPanel()
         lightingPanel = buildLightingPanel()
         val mainRow = Table()
         mainRow.add().expand().fill()
@@ -239,6 +243,7 @@ class SketchUiOverlay(
         stage.addActor(objectsPanel)
         stage.addActor(modelSettingsPanel)
         stage.addActor(polylineSettingsPanel)
+        stage.addActor(architectureSettingsPanel)
         lightingPanel?.let { stage.addActor(it) }
         positionPanels()
         needsPanelLayout = true
@@ -500,6 +505,11 @@ class SketchUiOverlay(
         needsPanelLayout = true
     }
 
+    fun showArchitectureSettingsPanel() {
+        architectureSettingsPanel.isVisible = true
+        needsPanelLayout = true
+    }
+
     fun showPluginManager() {
         pluginManagerPanel?.let {
             it.isVisible = true
@@ -560,6 +570,14 @@ class SketchUiOverlay(
             ToolId.VOXEL_VOLUME,
             ToolId.VOXEL_FRAME
         )
+        val architectureTools = listOf(
+            ToolId.ARCH_WALL,
+            ToolId.ARCH_SLAB,
+            ToolId.ARCH_STAIR,
+            ToolId.ARCH_ADD_HOLE,
+            ToolId.ARCH_WINDOW_FRAME,
+            ToolId.ARCH_DOOR_FRAME
+        )
 
         val construction = buildToolsToolbarWindow(
             title = "Construction",
@@ -585,6 +603,12 @@ class SketchUiOverlay(
                 ) { voxelizeFacesAction() }
             )
         )
+        val architecture = buildToolsToolbarWindow(
+            title = "Architecture",
+            toolbarId = "builtin_toolbar_architecture",
+            toolIds = architectureTools,
+            group = toolGroup
+        )
         val actions = buildActionsToolbarWindow(
             title = "Actions",
             toolbarId = "builtin_toolbar_actions"
@@ -593,10 +617,11 @@ class SketchUiOverlay(
         builtInToolbars.clear()
         builtInToolbars["builtin_toolbar_construction"] = construction
         builtInToolbars["builtin_toolbar_modification"] = modification
+        builtInToolbars["builtin_toolbar_architecture"] = architecture
         builtInToolbars["builtin_toolbar_voxel"] = voxel
         builtInToolbars["builtin_toolbar_actions"] = actions
         toolbarsPositioned = false
-        return listOf(construction, modification, voxel, actions)
+        return listOf(construction, modification, architecture, voxel, actions)
     }
 
     private fun buildToolsToolbarWindow(
@@ -954,6 +979,102 @@ class SketchUiOverlay(
         return panel
     }
 
+    private fun buildArchitectureSettingsPanel(): CollapsibleWindow {
+        val panel = CollapsibleWindow("Architecture Settings")
+        val content = VisTable()
+        content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        content.defaults().pad(4f).left().growX()
+
+        val wallThicknessField = VisTextField(String.format(Locale.US, "%.3f", architectureSettings.wallThickness))
+        val wallHeightField = VisTextField(String.format(Locale.US, "%.3f", architectureSettings.wallHeight))
+        val wallInclinationField = VisTextField(String.format(Locale.US, "%.3f", architectureSettings.wallInclinationDeg))
+        val slabThicknessField = VisTextField(String.format(Locale.US, "%.3f", architectureSettings.slabThickness))
+        val stairHeightField = VisTextField(String.format(Locale.US, "%.3f", architectureSettings.stairHeight))
+        val stairStepsField = VisTextField(architectureSettings.stairStepCount.toString())
+        val stairSupportField = VisTextField(String.format(Locale.US, "%.3f", architectureSettings.stairSupportThickness))
+        val frameDepthField = VisTextField(String.format(Locale.US, "%.3f", architectureSettings.frameDepth))
+        val frameWidthField = VisTextField(String.format(Locale.US, "%.3f", architectureSettings.frameWidth))
+
+        content.add(VisLabel("Wall thickness")).left().row()
+        content.add(wallThicknessField).growX().row()
+        content.add(VisLabel("Wall height")).left().padTop(4f).row()
+        content.add(wallHeightField).growX().row()
+        content.add(VisLabel("Wall inclination (deg)")).left().padTop(4f).row()
+        content.add(wallInclinationField).growX().row()
+        content.add(VisLabel("Slab thickness")).left().padTop(4f).row()
+        content.add(slabThicknessField).growX().row()
+        content.add(VisLabel("Stair height")).left().padTop(4f).row()
+        content.add(stairHeightField).growX().row()
+        content.add(VisLabel("Stair steps")).left().padTop(4f).row()
+        content.add(stairStepsField).growX().row()
+        content.add(VisLabel("Stair support thickness")).left().padTop(4f).row()
+        content.add(stairSupportField).growX().row()
+        content.add(VisLabel("Frame depth")).left().padTop(4f).row()
+        content.add(frameDepthField).growX().row()
+        content.add(VisLabel("Frame width")).left().padTop(4f).row()
+        content.add(frameWidthField).growX().row()
+
+        panel.add(content).growX()
+        panel.isVisible = false
+
+        wallThicknessField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                val value = wallThicknessField.text.toFloatOrNull() ?: return
+                architectureSettings.wallThickness = value.coerceAtLeast(0.01f)
+            }
+        })
+        wallHeightField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                val value = wallHeightField.text.toFloatOrNull() ?: return
+                architectureSettings.wallHeight = value.coerceAtLeast(0.05f)
+            }
+        })
+        wallInclinationField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                val value = wallInclinationField.text.toFloatOrNull() ?: return
+                architectureSettings.wallInclinationDeg = value
+            }
+        })
+        slabThicknessField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                val value = slabThicknessField.text.toFloatOrNull() ?: return
+                architectureSettings.slabThickness = value.coerceAtLeast(0.01f)
+            }
+        })
+        stairHeightField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                val value = stairHeightField.text.toFloatOrNull() ?: return
+                architectureSettings.stairHeight = value.coerceAtLeast(0.05f)
+            }
+        })
+        stairStepsField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                val value = stairStepsField.text.toIntOrNull() ?: return
+                architectureSettings.stairStepCount = value.coerceAtLeast(1)
+            }
+        })
+        stairSupportField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                val value = stairSupportField.text.toFloatOrNull() ?: return
+                architectureSettings.stairSupportThickness = value.coerceAtLeast(0.01f)
+            }
+        })
+        frameDepthField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                val value = frameDepthField.text.toFloatOrNull() ?: return
+                architectureSettings.frameDepth = value.coerceAtLeast(0.01f)
+            }
+        })
+        frameWidthField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                val value = frameWidthField.text.toFloatOrNull() ?: return
+                architectureSettings.frameWidth = value.coerceAtLeast(0.01f)
+            }
+        })
+
+        return panel
+    }
+
     private fun updateGroupPanel() {
         val info = groupInfoProvider()
         val wasVisible = groupPanel.isVisible
@@ -1147,6 +1268,7 @@ class SketchUiOverlay(
         panels.add(objectsPanel)
         panels.add(modelSettingsPanel)
         panels.add(polylineSettingsPanel)
+        panels.add(architectureSettingsPanel)
         lightingPanel?.let { panels.add(it) }
         panels.forEach {
             it.invalidateHierarchy()
@@ -1250,6 +1372,7 @@ class SketchUiOverlay(
         val orderedBuiltInIds = listOf(
             "builtin_toolbar_construction",
             "builtin_toolbar_modification",
+            "builtin_toolbar_architecture",
             "builtin_toolbar_voxel",
             "builtin_toolbar_actions"
         )
@@ -1297,6 +1420,7 @@ class SketchUiOverlay(
         val toolbarIds = listOf(
             "builtin_toolbar_construction",
             "builtin_toolbar_modification",
+            "builtin_toolbar_architecture",
             "builtin_toolbar_voxel",
             "builtin_toolbar_actions"
         )
@@ -1627,6 +1751,12 @@ class SketchUiOverlay(
             ToolId.VOXEL -> "voxel"
             ToolId.VOXEL_VOLUME -> "voxel_volume"
             ToolId.VOXEL_FRAME -> "voxel_frame"
+            ToolId.ARCH_WALL -> "line"
+            ToolId.ARCH_SLAB -> "surface_rect"
+            ToolId.ARCH_STAIR -> "push_pull"
+            ToolId.ARCH_ADD_HOLE -> "cleanup"
+            ToolId.ARCH_WINDOW_FRAME -> "rectangle"
+            ToolId.ARCH_DOOR_FRAME -> "rectangle"
             ToolId.FACE_OUTLINE -> "line"
             ToolId.LINE_OFFSET -> "offset"
             ToolId.CUT_HOLES -> "cleanup"
@@ -1659,6 +1789,12 @@ class SketchUiOverlay(
             ToolId.VOXEL -> Color(0.75f, 0.85f, 0.45f, 1f)
             ToolId.VOXEL_VOLUME -> Color(0.55f, 0.85f, 0.95f, 1f)
             ToolId.VOXEL_FRAME -> Color(0.95f, 0.7f, 0.3f, 1f)
+            ToolId.ARCH_WALL -> Color(0.95f, 0.65f, 0.25f, 1f)
+            ToolId.ARCH_SLAB -> Color(0.35f, 0.75f, 0.95f, 1f)
+            ToolId.ARCH_STAIR -> Color(0.75f, 0.55f, 0.95f, 1f)
+            ToolId.ARCH_ADD_HOLE -> Color(0.95f, 0.55f, 0.25f, 1f)
+            ToolId.ARCH_WINDOW_FRAME -> Color(0.35f, 0.8f, 0.95f, 1f)
+            ToolId.ARCH_DOOR_FRAME -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.FACE_OUTLINE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.LINE_OFFSET -> Color(0.35f, 0.75f, 0.95f, 1f)
             ToolId.CUT_HOLES -> Color(0.85f, 0.55f, 0.35f, 1f)

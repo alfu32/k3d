@@ -12,7 +12,7 @@ import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
 object ModelPersistence {
-    private const val VERSION = 10
+    private const val VERSION = 11
 
     fun save(
         file: File,
@@ -248,6 +248,10 @@ object ModelPersistence {
         var kind: String = GroupScene.PrototypeKind.MESH.name
         var voxelColor: ColorDto? = null
         var voxels: MutableList<VoxelDto> = mutableListOf()
+        var architectureWalls: MutableList<ArchitectureWallDto> = mutableListOf()
+        var architectureSlabs: MutableList<ArchitectureSlabDto> = mutableListOf()
+        var architectureStairs: MutableList<ArchitectureStairDto> = mutableListOf()
+        var architectureFrames: MutableList<ArchitectureFrameDto> = mutableListOf()
         var segments: MutableList<SegmentDto> = mutableListOf()
         var faces: MutableList<FaceDto> = mutableListOf()
         var dimensions: MutableList<DimensionDto> = mutableListOf()
@@ -260,6 +264,7 @@ object ModelPersistence {
                 GroupScene.PrototypeKind.MESH
             }
             val voxelStore = if (prototypeKind == GroupScene.PrototypeKind.VOXEL) VoxelStore() else null
+            val architectureStore = if (prototypeKind == GroupScene.PrototypeKind.ARCHITECTURE) ArchitectureStore() else null
             val prototype = GroupScene.ObjectPrototype(
                 id = id.ifBlank { java.util.UUID.randomUUID().toString() },
                 name = name.ifBlank { "Object" },
@@ -271,11 +276,13 @@ object ModelPersistence {
                 kind = prototypeKind,
                 voxelColor = voxelColor?.toColor() ?: Color(defaultColor),
                 voxelStore = voxelStore,
+                architectureStore = architectureStore,
                 lineStore = DraftLineStore(),
                 faceStore = DraftFaceStore(defaultColor),
                 dimensionStore = DraftDimensionStore(),
                 textStore = DraftTextStore()
             )
+            restoreArchitecture(architectureStore)
             applyGeometry(prototype)
             return prototype
         }
@@ -292,16 +299,18 @@ object ModelPersistence {
             } catch (_: IllegalArgumentException) {
                 GroupScene.PrototypeKind.MESH
             }
-            prototype.kind = if (parsedKind == GroupScene.PrototypeKind.VOXEL && prototype.voxelStore == null) {
-                GroupScene.PrototypeKind.MESH
-            } else {
-                parsedKind
+            prototype.kind = when {
+                parsedKind == GroupScene.PrototypeKind.VOXEL && prototype.voxelStore == null -> GroupScene.PrototypeKind.MESH
+                parsedKind == GroupScene.PrototypeKind.ARCHITECTURE && prototype.architectureStore == null -> GroupScene.PrototypeKind.MESH
+                else -> parsedKind
             }
             prototype.voxelColor = voxelColor?.toColor() ?: Color(defaultColor)
             prototype.voxelStore?.clear()
             voxels.forEach { voxel ->
                 prototype.voxelStore?.set(voxel.x, voxel.y, voxel.z, voxel.color.toColor())
             }
+            prototype.architectureStore?.clear()
+            restoreArchitecture(prototype.architectureStore)
             prototype.lineStore.clearAll()
             prototype.faceStore.clearAll()
             prototype.dimensionStore.clearAll()
@@ -347,6 +356,67 @@ object ModelPersistence {
             }
         }
 
+        private fun restoreArchitecture(store: ArchitectureStore?) {
+            val architecture = store ?: return
+            architectureWalls.forEach { wall ->
+                val created = architecture.addWall(
+                    start = wall.start.toVector3(),
+                    end = wall.end.toVector3(),
+                    thickness = wall.thickness,
+                    height = wall.height,
+                    inclinationDeg = wall.inclinationDeg,
+                    id = wall.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                )
+                wall.holes.forEach { hole ->
+                    architecture.addHole(
+                        wallId = created.id,
+                        u0 = hole.u0,
+                        u1 = hole.u1,
+                        v0 = hole.v0,
+                        v1 = hole.v1,
+                        minSize = 0f,
+                        id = hole.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                    )
+                }
+            }
+            architectureSlabs.forEach { slab ->
+                architecture.addSlab(
+                    minCorner = slab.min.toVector3(),
+                    maxCorner = slab.max.toVector3(),
+                    thickness = slab.thickness,
+                    id = slab.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                )
+            }
+            architectureStairs.forEach { stair ->
+                architecture.addStair(
+                    minCorner = stair.min.toVector3(),
+                    maxCorner = stair.max.toVector3(),
+                    walkingStart = stair.walkingStart.toVector3(),
+                    walkingEnd = stair.walkingEnd.toVector3(),
+                    height = stair.height,
+                    stepCount = stair.stepCount,
+                    supportThickness = stair.supportThickness,
+                    id = stair.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                )
+            }
+            architectureFrames.forEach { frame ->
+                val kind = try {
+                    ArchitectureStore.FrameKind.valueOf(frame.kind)
+                } catch (_: IllegalArgumentException) {
+                    ArchitectureStore.FrameKind.WINDOW
+                }
+                architecture.addFrame(
+                    cornerA = frame.cornerA.toVector3(),
+                    cornerB = frame.cornerB.toVector3(),
+                    normal = frame.normal.toVector3(),
+                    depth = frame.depth,
+                    frameWidth = frame.frameWidth,
+                    kind = kind,
+                    id = frame.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                )
+            }
+        }
+
         companion object {
             fun fromPrototype(prototype: GroupScene.ObjectPrototype): ObjectPrototypeDto {
                 val dto = ObjectPrototypeDto()
@@ -361,6 +431,56 @@ object ModelPersistence {
                 dto.voxelColor = ColorDto(prototype.voxelColor)
                 dto.voxels = prototype.voxelStore?.all()?.map { voxel ->
                     VoxelDto(voxel.x, voxel.y, voxel.z, ColorDto(voxel.color))
+                }?.toMutableList() ?: mutableListOf()
+                dto.architectureWalls = prototype.architectureStore?.allWalls()?.map { wall ->
+                    ArchitectureWallDto(
+                        id = wall.id,
+                        start = Vec3Dto(wall.start),
+                        end = Vec3Dto(wall.end),
+                        thickness = wall.thickness,
+                        height = wall.height,
+                        inclinationDeg = wall.inclinationDeg,
+                        holes = wall.holes.map { hole ->
+                            ArchitectureHoleDto(
+                                id = hole.id,
+                                u0 = hole.u0,
+                                u1 = hole.u1,
+                                v0 = hole.v0,
+                                v1 = hole.v1
+                            )
+                        }.toMutableList()
+                    )
+                }?.toMutableList() ?: mutableListOf()
+                dto.architectureSlabs = prototype.architectureStore?.allSlabs()?.map { slab ->
+                    ArchitectureSlabDto(
+                        id = slab.id,
+                        min = Vec3Dto(slab.min),
+                        max = Vec3Dto(slab.max),
+                        thickness = slab.thickness
+                    )
+                }?.toMutableList() ?: mutableListOf()
+                dto.architectureStairs = prototype.architectureStore?.allStairs()?.map { stair ->
+                    ArchitectureStairDto(
+                        id = stair.id,
+                        min = Vec3Dto(stair.min),
+                        max = Vec3Dto(stair.max),
+                        walkingStart = Vec3Dto(stair.walkingStart),
+                        walkingEnd = Vec3Dto(stair.walkingEnd),
+                        height = stair.height,
+                        stepCount = stair.stepCount,
+                        supportThickness = stair.supportThickness
+                    )
+                }?.toMutableList() ?: mutableListOf()
+                dto.architectureFrames = prototype.architectureStore?.allFrames()?.map { frame ->
+                    ArchitectureFrameDto(
+                        id = frame.id,
+                        cornerA = Vec3Dto(frame.cornerA),
+                        cornerB = Vec3Dto(frame.cornerB),
+                        normal = Vec3Dto(frame.normal),
+                        depth = frame.depth,
+                        frameWidth = frame.frameWidth,
+                        kind = frame.kind.name
+                    )
                 }?.toMutableList() ?: mutableListOf()
                 dto.segments = prototype.lineStore.getSegments().map { seg ->
                     SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end))
@@ -398,6 +518,123 @@ object ModelPersistence {
             this.y = y
             this.z = z
             this.color = color
+        }
+    }
+
+    class ArchitectureHoleDto() {
+        var id: String = ""
+        var u0: Float = 0f
+        var u1: Float = 0f
+        var v0: Float = 0f
+        var v1: Float = 0f
+
+        constructor(id: String, u0: Float, u1: Float, v0: Float, v1: Float) : this() {
+            this.id = id
+            this.u0 = u0
+            this.u1 = u1
+            this.v0 = v0
+            this.v1 = v1
+        }
+    }
+
+    class ArchitectureWallDto() {
+        var id: String = ""
+        var start: Vec3Dto = Vec3Dto()
+        var end: Vec3Dto = Vec3Dto()
+        var thickness: Float = 0.2f
+        var height: Float = 2.7f
+        var inclinationDeg: Float = 0f
+        var holes: MutableList<ArchitectureHoleDto> = mutableListOf()
+
+        constructor(
+            id: String,
+            start: Vec3Dto,
+            end: Vec3Dto,
+            thickness: Float,
+            height: Float,
+            inclinationDeg: Float,
+            holes: MutableList<ArchitectureHoleDto>
+        ) : this() {
+            this.id = id
+            this.start = start
+            this.end = end
+            this.thickness = thickness
+            this.height = height
+            this.inclinationDeg = inclinationDeg
+            this.holes = holes
+        }
+    }
+
+    class ArchitectureSlabDto() {
+        var id: String = ""
+        var min: Vec3Dto = Vec3Dto()
+        var max: Vec3Dto = Vec3Dto()
+        var thickness: Float = 0.2f
+
+        constructor(id: String, min: Vec3Dto, max: Vec3Dto, thickness: Float) : this() {
+            this.id = id
+            this.min = min
+            this.max = max
+            this.thickness = thickness
+        }
+    }
+
+    class ArchitectureStairDto() {
+        var id: String = ""
+        var min: Vec3Dto = Vec3Dto()
+        var max: Vec3Dto = Vec3Dto()
+        var walkingStart: Vec3Dto = Vec3Dto()
+        var walkingEnd: Vec3Dto = Vec3Dto()
+        var height: Float = 2.7f
+        var stepCount: Int = 14
+        var supportThickness: Float = 0.2f
+
+        constructor(
+            id: String,
+            min: Vec3Dto,
+            max: Vec3Dto,
+            walkingStart: Vec3Dto,
+            walkingEnd: Vec3Dto,
+            height: Float,
+            stepCount: Int,
+            supportThickness: Float
+        ) : this() {
+            this.id = id
+            this.min = min
+            this.max = max
+            this.walkingStart = walkingStart
+            this.walkingEnd = walkingEnd
+            this.height = height
+            this.stepCount = stepCount
+            this.supportThickness = supportThickness
+        }
+    }
+
+    class ArchitectureFrameDto() {
+        var id: String = ""
+        var cornerA: Vec3Dto = Vec3Dto()
+        var cornerB: Vec3Dto = Vec3Dto()
+        var normal: Vec3Dto = Vec3Dto(Vector3(0f, 1f, 0f))
+        var depth: Float = 0.12f
+        var frameWidth: Float = 0.06f
+        var kind: String = ArchitectureStore.FrameKind.WINDOW.name
+
+        constructor(
+            id: String,
+            cornerA: Vec3Dto,
+            cornerB: Vec3Dto,
+            normal: Vec3Dto,
+            depth: Float,
+            frameWidth: Float,
+            kind: String
+        ) : this() {
+            this.id = id
+            this.cornerA = cornerA
+            this.cornerB = cornerB
+            this.normal = normal
+            this.depth = depth
+            this.frameWidth = frameWidth
+            this.kind = kind
         }
     }
 
@@ -460,6 +697,8 @@ object ModelPersistence {
                 definitionAxisW = Vector3(0f, 0f, 1f),
                 gluedToSurface = false,
                 voxelColor = Color(defaultColor),
+                voxelStore = null,
+                architectureStore = null,
                 lineStore = DraftLineStore(),
                 faceStore = DraftFaceStore(defaultColor),
                 dimensionStore = DraftDimensionStore(),
@@ -558,6 +797,8 @@ object ModelPersistence {
                 definitionAxisW = defAxisW,
                 gluedToSurface = gluedToSurface,
                 voxelColor = Color(defaultColor),
+                voxelStore = null,
+                architectureStore = null,
                 lineStore = DraftLineStore(),
                 faceStore = DraftFaceStore(defaultColor),
                 dimensionStore = DraftDimensionStore(),

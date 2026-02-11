@@ -33,6 +33,12 @@ This is a quick reference for keyboard and mouse shortcuts.
 - `Line`: `Enter` finishes the current chain, `Esc` exits to Select.
 - `Construction Line`: `Enter` clears current segment draft, `Esc` exits to Select.
 - `Polyline` / `Double Line`: `Esc` cancel, `Enter` finalize, `Backspace` remove last segment.
+- `Wall`: `Enter` finishes current wall chain, `Esc` exits to Select.
+- `Slab` / `Stair` / `Add Hole` / `Window Frame` / `Door Frame`: `Enter` resets current draft, `Esc` exits to Select.
+
+## Architecture groups
+- Architecture tools auto-create and enter an architecture group when needed.
+- `Delete` in architecture groups removes selected hole contours (wall holes), not generated wall mesh faces.
 
 ## Objects
 - `Ctrl+O`: Create object prototype from selection.

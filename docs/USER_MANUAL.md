@@ -55,10 +55,10 @@ You can also pass a `.k3d` path directly (the launcher converts it into `--file`
 ## UI overview
 
 - Viewport: the 3D drawing surface.
-- Floating toolbars: **Construction**, **Modification**, **Voxel**, and **Actions**.
+- Floating toolbars: **Construction**, **Modification**, **Architecture**, **Voxel**, and **Actions**.
 - Toolbars are movable, stay top-aligned by default, and wrap to the next row when the window is too narrow.
 - Tool buttons are icon-only; hold hover briefly to see the popover label.
-- Right panels: selection, object info, objects list, model settings, lighting, plugins.
+- Right panels: selection, object info, objects list, model settings, polyline settings, architecture settings, lighting, plugins.
 - Status bar: current tool, status message, snap info, cursor, and numeric input.
 - Command palette: search and run tools and commands (`Ctrl+Shift+P`).
 - Undo/Redo: `Ctrl+Z` / `Ctrl+Y` (or `Ctrl+Shift+Z`).
@@ -195,6 +195,55 @@ Objects let you reuse geometry and isolate edits.
 - If no voxel group is active, K3D auto-creates one and enters voxel edit mode.
 - `Enter` clears the current draft; `Esc` exits to Select.
 - Input: left-click corner A, left-click corner B.
+
+### Wall
+
+- Adds architecture wall segments (thickness, height, inclination from Architecture Settings).
+- First click sets segment start, second click sets end and creates one wall segment.
+- Tool chains by default: each next click continues from the previous endpoint.
+- If no architecture group is active, K3D auto-creates one and enters architecture edit mode.
+- `Enter` finishes the current chain; `Esc` exits to Select.
+
+### Slab
+
+- Creates a rectangular slab from two opposite corners.
+- Slab thickness comes from Architecture Settings.
+- If no architecture group is active, K3D auto-creates one and enters architecture edit mode.
+- `Enter` clears the current draft; `Esc` exits to Select.
+
+### Stair
+
+- Builds a stair object in four picks:
+  1. first contour corner,
+  2. opposite contour corner,
+  3. walking line start,
+  4. walking line end (commit).
+- Stair height, step count, and support thickness come from Architecture Settings.
+- If no architecture group is active, K3D auto-creates one and enters architecture edit mode.
+- `Enter` resets the current draft; `Esc` exits to Select.
+
+### Add Hole
+
+- Cuts a rectangular hole in the nearest compatible wall from two opposite corners.
+- Hole selection/deletion workflow:
+  - selecting and deleting a hole contour removes the hole definition from the wall;
+  - deleting generic generated wall faces/edges is blocked to preserve parametric architecture integrity.
+- If no architecture group is active, K3D auto-creates one and enters architecture edit mode.
+- `Enter` clears the current draft; `Esc` exits to Select.
+
+### Window Frame
+
+- Creates a rectangular window frame from two opposite corners.
+- Frame depth and width come from Architecture Settings.
+- If no architecture group is active, K3D auto-creates one and enters architecture edit mode.
+- `Enter` clears the current draft; `Esc` exits to Select.
+
+### Door Frame
+
+- Creates a rectangular door frame from two opposite corners.
+- Frame depth and width come from Architecture Settings.
+- If no architecture group is active, K3D auto-creates one and enters architecture edit mode.
+- `Enter` clears the current draft; `Esc` exits to Select.
 
 ### Rectangle
 

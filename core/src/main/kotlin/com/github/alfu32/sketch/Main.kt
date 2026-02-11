@@ -66,6 +66,13 @@ import com.github.alfu32.sketch.tools.ConstructionLineTool
 import com.github.alfu32.sketch.tools.CutHolesTool
 import com.github.alfu32.sketch.tools.CutHolesTool2
 import com.github.alfu32.sketch.tools.CutOut3Tool
+import com.github.alfu32.sketch.tools.ArchitectureAddHoleTool
+import com.github.alfu32.sketch.tools.ArchitectureDoorFrameTool
+import com.github.alfu32.sketch.tools.ArchitectureSettings
+import com.github.alfu32.sketch.tools.ArchitectureSlabTool
+import com.github.alfu32.sketch.tools.ArchitectureStairTool
+import com.github.alfu32.sketch.tools.ArchitectureWallTool
+import com.github.alfu32.sketch.tools.ArchitectureWindowFrameTool
 import com.github.alfu32.sketch.tools.MeshIntersectionTool
 import com.github.alfu32.sketch.tools.FaceOutlineTool
 import com.github.alfu32.sketch.tools.LinearDimensionTool
@@ -140,6 +147,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var uiOverlay: SketchUiOverlay
     private lateinit var toolPointer: ToolPointerProcessor
     private val polylineSettings = PolylineSettings()
+    private val architectureSettings = ArchitectureSettings()
     private lateinit var statusModel: StatusModel
     private lateinit var scene: GroupScene
     private lateinit var modelCleanup: ModelCleanup
@@ -227,6 +235,12 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 VoxelTool(scene, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveVoxelGroupForTools),
                 VoxelVolumeTool(scene, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveVoxelGroupForTools),
                 VoxelFrameTool(scene, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveVoxelGroupForTools),
+                ArchitectureWallTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
+                ArchitectureSlabTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
+                ArchitectureStairTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
+                ArchitectureAddHoleTool(scene, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
+                ArchitectureWindowFrameTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
+                ArchitectureDoorFrameTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
                 FaceOutlineTool(scene),
                 LineOffsetTool(scene),
                 CutHolesTool(scene) { toolController.setTool(ToolId.SELECT) },
@@ -328,7 +342,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::applyLightingSettings,
             shadowSettings,
             ::applyShadowSettings,
-            polylineSettings
+            polylineSettings,
+            architectureSettings
         )
 
         // Set up plugin host for UI
@@ -428,6 +443,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         )
         pluginHost.getCommandPalette().registerCommand(
             com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.architecture_settings",
+                name = "View> Architecture Settings",
+                description = "Show architecture settings panel",
+                icon = "view",
+                category = "View",
+                tags = listOf("architecture", "settings", "panel"),
+                priority = 1,
+                execute = {
+                    uiOverlay.showArchitectureSettingsPanel()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
                 id = "view.plugin_manager",
                 name = "View> Plugin Manager",
                 description = "Show plugin manager panel",
@@ -437,6 +467,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 priority = 1,
                 execute = {
                     uiOverlay.showPluginManager()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "edit.new_architecture_group",
+                name = "Edit> New Architecture Group",
+                description = "Create an architecture group and enter edit mode",
+                icon = "edit",
+                category = "Edit",
+                tags = listOf("architecture", "group", "wall", "slab", "stair"),
+                priority = 1,
+                execute = {
+                    createArchitectureGroup()
                     com.github.alfu32.sketch.plugin.PluginResult.success()
                 }
             )
@@ -568,6 +613,12 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ToolId.VOXEL,
             ToolId.VOXEL_VOLUME,
             ToolId.VOXEL_FRAME,
+            ToolId.ARCH_WALL,
+            ToolId.ARCH_SLAB,
+            ToolId.ARCH_STAIR,
+            ToolId.ARCH_ADD_HOLE,
+            ToolId.ARCH_WINDOW_FRAME,
+            ToolId.ARCH_DOOR_FRAME,
             ToolId.RECTANGLE,
             ToolId.SURFACE_RECTANGLE,
             ToolId.QUAD,
@@ -1915,23 +1966,32 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun deleteSelection() {
         val group = scene.activeGroup()
-        val voxelDeletes = if (scene.isVoxelGroup(group)) {
+        val isVoxel = scene.isVoxelGroup(group)
+        val isArchitecture = scene.isArchitectureGroup(group)
+        val voxelDeletes = if (isVoxel) {
             scene.deleteSelectedVoxels(group)
         } else {
             0
         }
-        val edges = if (scene.isVoxelGroup(group)) 0 else activeLineStore().deleteSelected()
-        val faces = if (scene.isVoxelGroup(group)) 0 else activeFaceStore().deleteSelected()
+        val architectureHoleDeletes = if (isArchitecture) {
+            scene.deleteSelectedArchitectureHoleContours(group)
+        } else {
+            0
+        }
+        val edges = if (isVoxel || isArchitecture) 0 else activeLineStore().deleteSelected()
+        val faces = if (isVoxel || isArchitecture) 0 else activeFaceStore().deleteSelected()
         val dimensions = activeDimensionStore().deleteSelected()
         val texts = activeTextStore().deleteSelected()
         val groups = scene.deleteSelectedGroups()
-        if (edges + faces + voxelDeletes + dimensions + texts + groups > 0) {
+        if (edges + faces + voxelDeletes + architectureHoleDeletes + dimensions + texts + groups > 0) {
             statusModel.message =
-                "Deleted | voxels $voxelDeletes edges $edges faces $faces dimensions $dimensions texts $texts groups $groups"
-            if (groups > 0 && edges + faces + voxelDeletes == 0) {
+                "Deleted | voxels $voxelDeletes holes $architectureHoleDeletes edges $edges faces $faces dimensions $dimensions texts $texts groups $groups"
+            if (groups > 0 && edges + faces + voxelDeletes + architectureHoleDeletes == 0) {
                 undoManager.commit("Delete")
                 saveModel()
             }
+        } else if (isArchitecture) {
+            statusModel.message = "Select hole contours to delete holes in architecture groups."
         }
     }
 
@@ -2146,6 +2206,15 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         saveModel()
     }
 
+    private fun createArchitectureGroup() {
+        val group = scene.createArchitectureGroup(color = statusModel.paintColor)
+        scene.enterGroup(group)
+        statusModel.message = "Architecture group created. Editing architecture group."
+        toolController.setTool(ToolId.ARCH_WALL)
+        undoManager.commit("Create Architecture Group")
+        saveModel()
+    }
+
     private fun ensureActiveVoxelGroupForTools(): GroupScene.GroupNode? {
         val current = scene.activeGroup()
         if (scene.isVoxelGroup(current)) {
@@ -2155,6 +2224,19 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         scene.enterGroup(group)
         statusModel.message = "Voxel group created. Editing voxel group."
         undoManager.commit("Create Voxel Group")
+        saveModel()
+        return group
+    }
+
+    private fun ensureActiveArchitectureGroupForTools(): GroupScene.GroupNode? {
+        val current = scene.activeGroup()
+        if (scene.isArchitectureGroup(current)) {
+            return current
+        }
+        val group = scene.createArchitectureGroup(color = statusModel.paintColor)
+        scene.enterGroup(group)
+        statusModel.message = "Architecture group created. Editing architecture group."
+        undoManager.commit("Create Architecture Group")
         saveModel()
         return group
     }
