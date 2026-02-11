@@ -67,10 +67,10 @@ class SketchUiOverlay(
     private val polylineSettings: PolylineSettings,
     private val architectureSettings: ArchitectureSettings,
     private val architectureElementProvider: () -> ArchitectureElementInfo?,
-    private val architectureWallChanged: (String, Float, Float, Float) -> Unit,
-    private val architectureSlabChanged: (String, Float) -> Unit,
-    private val architectureStairChanged: (String, Float, Int, Float) -> Unit,
-    private val architectureFrameChanged: (String, Float, Float) -> Unit
+    private val architectureWallChanged: (String, Float, Float, Float, Color, Color) -> Unit,
+    private val architectureSlabChanged: (String, Float, Color, Color, Color) -> Unit,
+    private val architectureStairChanged: (String, Float, Int, Float, Color, Color) -> Unit,
+    private val architectureFrameChanged: (String, Float, Float, Color) -> Unit
 ) {
     private open class CollapsibleWindow(
         title: String,
@@ -155,12 +155,20 @@ class SketchUiOverlay(
     private val archDefaultWallThicknessKey = "arch_default_wall_thickness"
     private val archDefaultWallHeightKey = "arch_default_wall_height"
     private val archDefaultWallInclinationKey = "arch_default_wall_inclination"
+    private val archDefaultWallExteriorColorKey = "arch_default_wall_exterior_color"
+    private val archDefaultWallInteriorColorKey = "arch_default_wall_interior_color"
     private val archDefaultSlabThicknessKey = "arch_default_slab_thickness"
+    private val archDefaultSlabTopColorKey = "arch_default_slab_top_color"
+    private val archDefaultSlabBottomColorKey = "arch_default_slab_bottom_color"
+    private val archDefaultSlabSideColorKey = "arch_default_slab_side_color"
     private val archDefaultStairHeightKey = "arch_default_stair_height"
     private val archDefaultStairStepsKey = "arch_default_stair_steps"
     private val archDefaultStairSupportKey = "arch_default_stair_support"
+    private val archDefaultStairTreadColorKey = "arch_default_stair_tread_color"
+    private val archDefaultStairSupportColorKey = "arch_default_stair_support_color"
     private val archDefaultFrameDepthKey = "arch_default_frame_depth"
     private val archDefaultFrameWidthKey = "arch_default_frame_width"
+    private val archDefaultFrameColorKey = "arch_default_frame_color"
     private val iconTextures = mutableListOf<Texture>()
     private val iconDrawables = mutableMapOf<String, TextureRegionDrawable>()
     private var iconsTexture: Texture? = null
@@ -213,18 +221,34 @@ class SketchUiOverlay(
     private lateinit var architectureWallHeightField: VisTextField
     private lateinit var architectureWallInclinationLabel: VisLabel
     private lateinit var architectureWallInclinationField: VisTextField
+    private lateinit var architectureWallExteriorColorLabel: VisLabel
+    private lateinit var architectureWallExteriorColorField: VisTextField
+    private lateinit var architectureWallInteriorColorLabel: VisLabel
+    private lateinit var architectureWallInteriorColorField: VisTextField
     private lateinit var architectureSlabThicknessLabel: VisLabel
     private lateinit var architectureSlabThicknessField: VisTextField
+    private lateinit var architectureSlabTopColorLabel: VisLabel
+    private lateinit var architectureSlabTopColorField: VisTextField
+    private lateinit var architectureSlabBottomColorLabel: VisLabel
+    private lateinit var architectureSlabBottomColorField: VisTextField
+    private lateinit var architectureSlabSideColorLabel: VisLabel
+    private lateinit var architectureSlabSideColorField: VisTextField
     private lateinit var architectureStairHeightLabel: VisLabel
     private lateinit var architectureStairHeightField: VisTextField
     private lateinit var architectureStairStepsLabel: VisLabel
     private lateinit var architectureStairStepsField: VisTextField
     private lateinit var architectureStairSupportLabel: VisLabel
     private lateinit var architectureStairSupportField: VisTextField
+    private lateinit var architectureStairTreadColorLabel: VisLabel
+    private lateinit var architectureStairTreadColorField: VisTextField
+    private lateinit var architectureStairSupportColorLabel: VisLabel
+    private lateinit var architectureStairSupportColorField: VisTextField
     private lateinit var architectureFrameDepthLabel: VisLabel
     private lateinit var architectureFrameDepthField: VisTextField
     private lateinit var architectureFrameWidthLabel: VisLabel
     private lateinit var architectureFrameWidthField: VisTextField
+    private lateinit var architectureFrameColorLabel: VisLabel
+    private lateinit var architectureFrameColorField: VisTextField
     private lateinit var architectureSettingsContent: VisTable
     private var architecturePanelMode: ArchitectureElementKind? = null
     private var updatingArchitectureFields = false
@@ -1029,18 +1053,34 @@ class SketchUiOverlay(
         architectureWallHeightField = VisTextField()
         architectureWallInclinationLabel = VisLabel("Wall inclination (deg)")
         architectureWallInclinationField = VisTextField()
+        architectureWallExteriorColorLabel = VisLabel("Wall exterior color")
+        architectureWallExteriorColorField = VisTextField()
+        architectureWallInteriorColorLabel = VisLabel("Wall interior color")
+        architectureWallInteriorColorField = VisTextField()
         architectureSlabThicknessLabel = VisLabel("Slab thickness")
         architectureSlabThicknessField = VisTextField()
+        architectureSlabTopColorLabel = VisLabel("Slab top color")
+        architectureSlabTopColorField = VisTextField()
+        architectureSlabBottomColorLabel = VisLabel("Slab bottom color")
+        architectureSlabBottomColorField = VisTextField()
+        architectureSlabSideColorLabel = VisLabel("Slab side color")
+        architectureSlabSideColorField = VisTextField()
         architectureStairHeightLabel = VisLabel("Stair height")
         architectureStairHeightField = VisTextField()
         architectureStairStepsLabel = VisLabel("Stair steps")
         architectureStairStepsField = VisTextField()
         architectureStairSupportLabel = VisLabel("Stair support thickness")
         architectureStairSupportField = VisTextField()
+        architectureStairTreadColorLabel = VisLabel("Stair tread color")
+        architectureStairTreadColorField = VisTextField()
+        architectureStairSupportColorLabel = VisLabel("Stair support color")
+        architectureStairSupportColorField = VisTextField()
         architectureFrameDepthLabel = VisLabel("Frame depth")
         architectureFrameDepthField = VisTextField()
         architectureFrameWidthLabel = VisLabel("Frame width")
         architectureFrameWidthField = VisTextField()
+        architectureFrameColorLabel = VisLabel("Frame color")
+        architectureFrameColorField = VisTextField()
 
         panel.add(architectureSettingsContent).growX()
         panel.isVisible = false
@@ -1056,7 +1096,14 @@ class SketchUiOverlay(
                     architectureSettings.wallThickness = value
                     saveArchitectureDefaults()
                 } else if (selection.kind == ArchitectureElementKind.WALL) {
-                    architectureWallChanged(selection.id, value, selection.wallHeight ?: 2.7f, selection.wallInclinationDeg ?: 0f)
+                    architectureWallChanged(
+                        selection.id,
+                        value,
+                        selection.wallHeight ?: 2.7f,
+                        selection.wallInclinationDeg ?: 0f,
+                        selection.wallExteriorColor ?: Color(architectureSettings.wallExteriorColor),
+                        selection.wallInteriorColor ?: Color(architectureSettings.wallInteriorColor)
+                    )
                 }
             }
         })
@@ -1071,7 +1118,14 @@ class SketchUiOverlay(
                     architectureSettings.wallHeight = value
                     saveArchitectureDefaults()
                 } else if (selection.kind == ArchitectureElementKind.WALL) {
-                    architectureWallChanged(selection.id, selection.wallThickness ?: 0.2f, value, selection.wallInclinationDeg ?: 0f)
+                    architectureWallChanged(
+                        selection.id,
+                        selection.wallThickness ?: 0.2f,
+                        value,
+                        selection.wallInclinationDeg ?: 0f,
+                        selection.wallExteriorColor ?: Color(architectureSettings.wallExteriorColor),
+                        selection.wallInteriorColor ?: Color(architectureSettings.wallInteriorColor)
+                    )
                 }
             }
         })
@@ -1086,7 +1140,14 @@ class SketchUiOverlay(
                     architectureSettings.wallInclinationDeg = value
                     saveArchitectureDefaults()
                 } else if (selection.kind == ArchitectureElementKind.WALL) {
-                    architectureWallChanged(selection.id, selection.wallThickness ?: 0.2f, selection.wallHeight ?: 2.7f, value)
+                    architectureWallChanged(
+                        selection.id,
+                        selection.wallThickness ?: 0.2f,
+                        selection.wallHeight ?: 2.7f,
+                        value,
+                        selection.wallExteriorColor ?: Color(architectureSettings.wallExteriorColor),
+                        selection.wallInteriorColor ?: Color(architectureSettings.wallInteriorColor)
+                    )
                 }
             }
         })
@@ -1101,7 +1162,13 @@ class SketchUiOverlay(
                     architectureSettings.slabThickness = value
                     saveArchitectureDefaults()
                 } else if (selection.kind == ArchitectureElementKind.SLAB) {
-                    architectureSlabChanged(selection.id, value)
+                    architectureSlabChanged(
+                        selection.id,
+                        value,
+                        selection.slabTopColor ?: Color(architectureSettings.slabTopColor),
+                        selection.slabBottomColor ?: Color(architectureSettings.slabBottomColor),
+                        selection.slabSideColor ?: Color(architectureSettings.slabSideColor)
+                    )
                 }
             }
         })
@@ -1116,7 +1183,14 @@ class SketchUiOverlay(
                     architectureSettings.stairHeight = value
                     saveArchitectureDefaults()
                 } else if (selection.kind == ArchitectureElementKind.STAIR) {
-                    architectureStairChanged(selection.id, value, selection.stairStepCount ?: 14, selection.stairSupportThickness ?: 0.2f)
+                    architectureStairChanged(
+                        selection.id,
+                        value,
+                        selection.stairStepCount ?: 14,
+                        selection.stairSupportThickness ?: 0.2f,
+                        selection.stairTreadColor ?: Color(architectureSettings.stairTreadColor),
+                        selection.stairSupportColor ?: Color(architectureSettings.stairSupportColor)
+                    )
                 }
             }
         })
@@ -1131,7 +1205,14 @@ class SketchUiOverlay(
                     architectureSettings.stairStepCount = value
                     saveArchitectureDefaults()
                 } else if (selection.kind == ArchitectureElementKind.STAIR) {
-                    architectureStairChanged(selection.id, selection.stairHeight ?: 2.7f, value, selection.stairSupportThickness ?: 0.2f)
+                    architectureStairChanged(
+                        selection.id,
+                        selection.stairHeight ?: 2.7f,
+                        value,
+                        selection.stairSupportThickness ?: 0.2f,
+                        selection.stairTreadColor ?: Color(architectureSettings.stairTreadColor),
+                        selection.stairSupportColor ?: Color(architectureSettings.stairSupportColor)
+                    )
                 }
             }
         })
@@ -1146,7 +1227,14 @@ class SketchUiOverlay(
                     architectureSettings.stairSupportThickness = value
                     saveArchitectureDefaults()
                 } else if (selection.kind == ArchitectureElementKind.STAIR) {
-                    architectureStairChanged(selection.id, selection.stairHeight ?: 2.7f, selection.stairStepCount ?: 14, value)
+                    architectureStairChanged(
+                        selection.id,
+                        selection.stairHeight ?: 2.7f,
+                        selection.stairStepCount ?: 14,
+                        value,
+                        selection.stairTreadColor ?: Color(architectureSettings.stairTreadColor),
+                        selection.stairSupportColor ?: Color(architectureSettings.stairSupportColor)
+                    )
                 }
             }
         })
@@ -1161,7 +1249,12 @@ class SketchUiOverlay(
                     architectureSettings.frameDepth = value
                     saveArchitectureDefaults()
                 } else if (selection.kind == ArchitectureElementKind.FRAME) {
-                    architectureFrameChanged(selection.id, value, selection.frameWidth ?: 0.06f)
+                    architectureFrameChanged(
+                        selection.id,
+                        value,
+                        selection.frameWidth ?: 0.06f,
+                        selection.frameColor ?: Color(architectureSettings.frameColor)
+                    )
                 }
             }
         })
@@ -1176,7 +1269,167 @@ class SketchUiOverlay(
                     architectureSettings.frameWidth = value
                     saveArchitectureDefaults()
                 } else if (selection.kind == ArchitectureElementKind.FRAME) {
-                    architectureFrameChanged(selection.id, selection.frameDepth ?: 0.12f, value)
+                    architectureFrameChanged(
+                        selection.id,
+                        selection.frameDepth ?: 0.12f,
+                        value,
+                        selection.frameColor ?: Color(architectureSettings.frameColor)
+                    )
+                }
+            }
+        })
+        architectureWallExteriorColorField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingArchitectureFields) return
+                val color = parseColorField(architectureWallExteriorColorField.text) ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.wallExteriorColor.set(color)
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.WALL) {
+                    architectureWallChanged(
+                        selection.id,
+                        selection.wallThickness ?: architectureSettings.wallThickness,
+                        selection.wallHeight ?: architectureSettings.wallHeight,
+                        selection.wallInclinationDeg ?: architectureSettings.wallInclinationDeg,
+                        color,
+                        selection.wallInteriorColor ?: Color(architectureSettings.wallInteriorColor)
+                    )
+                }
+            }
+        })
+        architectureWallInteriorColorField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingArchitectureFields) return
+                val color = parseColorField(architectureWallInteriorColorField.text) ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.wallInteriorColor.set(color)
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.WALL) {
+                    architectureWallChanged(
+                        selection.id,
+                        selection.wallThickness ?: architectureSettings.wallThickness,
+                        selection.wallHeight ?: architectureSettings.wallHeight,
+                        selection.wallInclinationDeg ?: architectureSettings.wallInclinationDeg,
+                        selection.wallExteriorColor ?: Color(architectureSettings.wallExteriorColor),
+                        color
+                    )
+                }
+            }
+        })
+        architectureSlabTopColorField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingArchitectureFields) return
+                val color = parseColorField(architectureSlabTopColorField.text) ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.slabTopColor.set(color)
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.SLAB) {
+                    architectureSlabChanged(
+                        selection.id,
+                        selection.slabThickness ?: architectureSettings.slabThickness,
+                        color,
+                        selection.slabBottomColor ?: Color(architectureSettings.slabBottomColor),
+                        selection.slabSideColor ?: Color(architectureSettings.slabSideColor)
+                    )
+                }
+            }
+        })
+        architectureSlabBottomColorField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingArchitectureFields) return
+                val color = parseColorField(architectureSlabBottomColorField.text) ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.slabBottomColor.set(color)
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.SLAB) {
+                    architectureSlabChanged(
+                        selection.id,
+                        selection.slabThickness ?: architectureSettings.slabThickness,
+                        selection.slabTopColor ?: Color(architectureSettings.slabTopColor),
+                        color,
+                        selection.slabSideColor ?: Color(architectureSettings.slabSideColor)
+                    )
+                }
+            }
+        })
+        architectureSlabSideColorField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingArchitectureFields) return
+                val color = parseColorField(architectureSlabSideColorField.text) ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.slabSideColor.set(color)
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.SLAB) {
+                    architectureSlabChanged(
+                        selection.id,
+                        selection.slabThickness ?: architectureSettings.slabThickness,
+                        selection.slabTopColor ?: Color(architectureSettings.slabTopColor),
+                        selection.slabBottomColor ?: Color(architectureSettings.slabBottomColor),
+                        color
+                    )
+                }
+            }
+        })
+        architectureStairTreadColorField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingArchitectureFields) return
+                val color = parseColorField(architectureStairTreadColorField.text) ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.stairTreadColor.set(color)
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.STAIR) {
+                    architectureStairChanged(
+                        selection.id,
+                        selection.stairHeight ?: architectureSettings.stairHeight,
+                        selection.stairStepCount ?: architectureSettings.stairStepCount,
+                        selection.stairSupportThickness ?: architectureSettings.stairSupportThickness,
+                        color,
+                        selection.stairSupportColor ?: Color(architectureSettings.stairSupportColor)
+                    )
+                }
+            }
+        })
+        architectureStairSupportColorField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingArchitectureFields) return
+                val color = parseColorField(architectureStairSupportColorField.text) ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.stairSupportColor.set(color)
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.STAIR) {
+                    architectureStairChanged(
+                        selection.id,
+                        selection.stairHeight ?: architectureSettings.stairHeight,
+                        selection.stairStepCount ?: architectureSettings.stairStepCount,
+                        selection.stairSupportThickness ?: architectureSettings.stairSupportThickness,
+                        selection.stairTreadColor ?: Color(architectureSettings.stairTreadColor),
+                        color
+                    )
+                }
+            }
+        })
+        architectureFrameColorField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingArchitectureFields) return
+                val color = parseColorField(architectureFrameColorField.text) ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.frameColor.set(color)
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.FRAME) {
+                    architectureFrameChanged(
+                        selection.id,
+                        selection.frameDepth ?: architectureSettings.frameDepth,
+                        selection.frameWidth ?: architectureSettings.frameWidth,
+                        color
+                    )
                 }
             }
         })
@@ -1190,24 +1443,40 @@ class SketchUiOverlay(
         architectureSettings.wallThickness = uiPrefs.getFloat(archDefaultWallThicknessKey, architectureSettings.wallThickness).coerceAtLeast(0.01f)
         architectureSettings.wallHeight = uiPrefs.getFloat(archDefaultWallHeightKey, architectureSettings.wallHeight).coerceAtLeast(0.05f)
         architectureSettings.wallInclinationDeg = uiPrefs.getFloat(archDefaultWallInclinationKey, architectureSettings.wallInclinationDeg)
+        architectureSettings.wallExteriorColor.set(loadColorPref(archDefaultWallExteriorColorKey, architectureSettings.wallExteriorColor))
+        architectureSettings.wallInteriorColor.set(loadColorPref(archDefaultWallInteriorColorKey, architectureSettings.wallInteriorColor))
         architectureSettings.slabThickness = uiPrefs.getFloat(archDefaultSlabThicknessKey, architectureSettings.slabThickness).coerceAtLeast(0.01f)
+        architectureSettings.slabTopColor.set(loadColorPref(archDefaultSlabTopColorKey, architectureSettings.slabTopColor))
+        architectureSettings.slabBottomColor.set(loadColorPref(archDefaultSlabBottomColorKey, architectureSettings.slabBottomColor))
+        architectureSettings.slabSideColor.set(loadColorPref(archDefaultSlabSideColorKey, architectureSettings.slabSideColor))
         architectureSettings.stairHeight = uiPrefs.getFloat(archDefaultStairHeightKey, architectureSettings.stairHeight).coerceAtLeast(0.05f)
         architectureSettings.stairStepCount = uiPrefs.getInteger(archDefaultStairStepsKey, architectureSettings.stairStepCount).coerceAtLeast(1)
         architectureSettings.stairSupportThickness = uiPrefs.getFloat(archDefaultStairSupportKey, architectureSettings.stairSupportThickness).coerceAtLeast(0.01f)
+        architectureSettings.stairTreadColor.set(loadColorPref(archDefaultStairTreadColorKey, architectureSettings.stairTreadColor))
+        architectureSettings.stairSupportColor.set(loadColorPref(archDefaultStairSupportColorKey, architectureSettings.stairSupportColor))
         architectureSettings.frameDepth = uiPrefs.getFloat(archDefaultFrameDepthKey, architectureSettings.frameDepth).coerceAtLeast(0.01f)
         architectureSettings.frameWidth = uiPrefs.getFloat(archDefaultFrameWidthKey, architectureSettings.frameWidth).coerceAtLeast(0.01f)
+        architectureSettings.frameColor.set(loadColorPref(archDefaultFrameColorKey, architectureSettings.frameColor))
     }
 
     private fun saveArchitectureDefaults() {
         uiPrefs.putFloat(archDefaultWallThicknessKey, architectureSettings.wallThickness)
         uiPrefs.putFloat(archDefaultWallHeightKey, architectureSettings.wallHeight)
         uiPrefs.putFloat(archDefaultWallInclinationKey, architectureSettings.wallInclinationDeg)
+        uiPrefs.putString(archDefaultWallExteriorColorKey, formatColorField(architectureSettings.wallExteriorColor))
+        uiPrefs.putString(archDefaultWallInteriorColorKey, formatColorField(architectureSettings.wallInteriorColor))
         uiPrefs.putFloat(archDefaultSlabThicknessKey, architectureSettings.slabThickness)
+        uiPrefs.putString(archDefaultSlabTopColorKey, formatColorField(architectureSettings.slabTopColor))
+        uiPrefs.putString(archDefaultSlabBottomColorKey, formatColorField(architectureSettings.slabBottomColor))
+        uiPrefs.putString(archDefaultSlabSideColorKey, formatColorField(architectureSettings.slabSideColor))
         uiPrefs.putFloat(archDefaultStairHeightKey, architectureSettings.stairHeight)
         uiPrefs.putInteger(archDefaultStairStepsKey, architectureSettings.stairStepCount)
         uiPrefs.putFloat(archDefaultStairSupportKey, architectureSettings.stairSupportThickness)
+        uiPrefs.putString(archDefaultStairTreadColorKey, formatColorField(architectureSettings.stairTreadColor))
+        uiPrefs.putString(archDefaultStairSupportColorKey, formatColorField(architectureSettings.stairSupportColor))
         uiPrefs.putFloat(archDefaultFrameDepthKey, architectureSettings.frameDepth)
         uiPrefs.putFloat(archDefaultFrameWidthKey, architectureSettings.frameWidth)
+        uiPrefs.putString(archDefaultFrameColorKey, formatColorField(architectureSettings.frameColor))
         uiPrefs.flush()
     }
 
@@ -1220,29 +1489,45 @@ class SketchUiOverlay(
                 addArchitectureFieldRow(architectureWallThicknessLabel, architectureWallThicknessField)
                 addArchitectureFieldRow(architectureWallHeightLabel, architectureWallHeightField)
                 addArchitectureFieldRow(architectureWallInclinationLabel, architectureWallInclinationField)
+                addArchitectureFieldRow(architectureWallExteriorColorLabel, architectureWallExteriorColorField)
+                addArchitectureFieldRow(architectureWallInteriorColorLabel, architectureWallInteriorColorField)
                 addArchitectureFieldRow(architectureSlabThicknessLabel, architectureSlabThicknessField)
+                addArchitectureFieldRow(architectureSlabTopColorLabel, architectureSlabTopColorField)
+                addArchitectureFieldRow(architectureSlabBottomColorLabel, architectureSlabBottomColorField)
+                addArchitectureFieldRow(architectureSlabSideColorLabel, architectureSlabSideColorField)
                 addArchitectureFieldRow(architectureStairHeightLabel, architectureStairHeightField)
                 addArchitectureFieldRow(architectureStairStepsLabel, architectureStairStepsField)
                 addArchitectureFieldRow(architectureStairSupportLabel, architectureStairSupportField)
+                addArchitectureFieldRow(architectureStairTreadColorLabel, architectureStairTreadColorField)
+                addArchitectureFieldRow(architectureStairSupportColorLabel, architectureStairSupportColorField)
                 addArchitectureFieldRow(architectureFrameDepthLabel, architectureFrameDepthField)
                 addArchitectureFieldRow(architectureFrameWidthLabel, architectureFrameWidthField)
+                addArchitectureFieldRow(architectureFrameColorLabel, architectureFrameColorField)
             }
             ArchitectureElementKind.WALL -> {
                 addArchitectureFieldRow(architectureWallThicknessLabel, architectureWallThicknessField)
                 addArchitectureFieldRow(architectureWallHeightLabel, architectureWallHeightField)
                 addArchitectureFieldRow(architectureWallInclinationLabel, architectureWallInclinationField)
+                addArchitectureFieldRow(architectureWallExteriorColorLabel, architectureWallExteriorColorField)
+                addArchitectureFieldRow(architectureWallInteriorColorLabel, architectureWallInteriorColorField)
             }
             ArchitectureElementKind.SLAB -> {
                 addArchitectureFieldRow(architectureSlabThicknessLabel, architectureSlabThicknessField)
+                addArchitectureFieldRow(architectureSlabTopColorLabel, architectureSlabTopColorField)
+                addArchitectureFieldRow(architectureSlabBottomColorLabel, architectureSlabBottomColorField)
+                addArchitectureFieldRow(architectureSlabSideColorLabel, architectureSlabSideColorField)
             }
             ArchitectureElementKind.STAIR -> {
                 addArchitectureFieldRow(architectureStairHeightLabel, architectureStairHeightField)
                 addArchitectureFieldRow(architectureStairStepsLabel, architectureStairStepsField)
                 addArchitectureFieldRow(architectureStairSupportLabel, architectureStairSupportField)
+                addArchitectureFieldRow(architectureStairTreadColorLabel, architectureStairTreadColorField)
+                addArchitectureFieldRow(architectureStairSupportColorLabel, architectureStairSupportColorField)
             }
             ArchitectureElementKind.FRAME -> {
                 addArchitectureFieldRow(architectureFrameDepthLabel, architectureFrameDepthField)
                 addArchitectureFieldRow(architectureFrameWidthLabel, architectureFrameWidthField)
+                addArchitectureFieldRow(architectureFrameColorLabel, architectureFrameColorField)
             }
         }
         if (::architectureSettingsPanel.isInitialized) {
@@ -1285,34 +1570,103 @@ class SketchUiOverlay(
             updateField(architectureWallThicknessField, String.format(Locale.US, "%.3f", architectureSettings.wallThickness))
             updateField(architectureWallHeightField, String.format(Locale.US, "%.3f", architectureSettings.wallHeight))
             updateField(architectureWallInclinationField, String.format(Locale.US, "%.3f", architectureSettings.wallInclinationDeg))
+            updateField(architectureWallExteriorColorField, formatColorField(architectureSettings.wallExteriorColor))
+            updateField(architectureWallInteriorColorField, formatColorField(architectureSettings.wallInteriorColor))
             updateField(architectureSlabThicknessField, String.format(Locale.US, "%.3f", architectureSettings.slabThickness))
+            updateField(architectureSlabTopColorField, formatColorField(architectureSettings.slabTopColor))
+            updateField(architectureSlabBottomColorField, formatColorField(architectureSettings.slabBottomColor))
+            updateField(architectureSlabSideColorField, formatColorField(architectureSettings.slabSideColor))
             updateField(architectureStairHeightField, String.format(Locale.US, "%.3f", architectureSettings.stairHeight))
             updateField(architectureStairStepsField, architectureSettings.stairStepCount.toString())
             updateField(architectureStairSupportField, String.format(Locale.US, "%.3f", architectureSettings.stairSupportThickness))
+            updateField(architectureStairTreadColorField, formatColorField(architectureSettings.stairTreadColor))
+            updateField(architectureStairSupportColorField, formatColorField(architectureSettings.stairSupportColor))
             updateField(architectureFrameDepthField, String.format(Locale.US, "%.3f", architectureSettings.frameDepth))
             updateField(architectureFrameWidthField, String.format(Locale.US, "%.3f", architectureSettings.frameWidth))
+            updateField(architectureFrameColorField, formatColorField(architectureSettings.frameColor))
         } else {
             when (selection.kind) {
                 ArchitectureElementKind.WALL -> {
                     updateField(architectureWallThicknessField, String.format(Locale.US, "%.3f", selection.wallThickness ?: architectureSettings.wallThickness))
                     updateField(architectureWallHeightField, String.format(Locale.US, "%.3f", selection.wallHeight ?: architectureSettings.wallHeight))
                     updateField(architectureWallInclinationField, String.format(Locale.US, "%.3f", selection.wallInclinationDeg ?: architectureSettings.wallInclinationDeg))
+                    updateField(
+                        architectureWallExteriorColorField,
+                        formatColorField(selection.wallExteriorColor ?: architectureSettings.wallExteriorColor)
+                    )
+                    updateField(
+                        architectureWallInteriorColorField,
+                        formatColorField(selection.wallInteriorColor ?: architectureSettings.wallInteriorColor)
+                    )
                 }
                 ArchitectureElementKind.SLAB -> {
                     updateField(architectureSlabThicknessField, String.format(Locale.US, "%.3f", selection.slabThickness ?: architectureSettings.slabThickness))
+                    updateField(
+                        architectureSlabTopColorField,
+                        formatColorField(selection.slabTopColor ?: architectureSettings.slabTopColor)
+                    )
+                    updateField(
+                        architectureSlabBottomColorField,
+                        formatColorField(selection.slabBottomColor ?: architectureSettings.slabBottomColor)
+                    )
+                    updateField(
+                        architectureSlabSideColorField,
+                        formatColorField(selection.slabSideColor ?: architectureSettings.slabSideColor)
+                    )
                 }
                 ArchitectureElementKind.STAIR -> {
                     updateField(architectureStairHeightField, String.format(Locale.US, "%.3f", selection.stairHeight ?: architectureSettings.stairHeight))
                     updateField(architectureStairStepsField, (selection.stairStepCount ?: architectureSettings.stairStepCount).toString())
                     updateField(architectureStairSupportField, String.format(Locale.US, "%.3f", selection.stairSupportThickness ?: architectureSettings.stairSupportThickness))
+                    updateField(
+                        architectureStairTreadColorField,
+                        formatColorField(selection.stairTreadColor ?: architectureSettings.stairTreadColor)
+                    )
+                    updateField(
+                        architectureStairSupportColorField,
+                        formatColorField(selection.stairSupportColor ?: architectureSettings.stairSupportColor)
+                    )
                 }
                 ArchitectureElementKind.FRAME -> {
                     updateField(architectureFrameDepthField, String.format(Locale.US, "%.3f", selection.frameDepth ?: architectureSettings.frameDepth))
                     updateField(architectureFrameWidthField, String.format(Locale.US, "%.3f", selection.frameWidth ?: architectureSettings.frameWidth))
+                    updateField(architectureFrameColorField, formatColorField(selection.frameColor ?: architectureSettings.frameColor))
                 }
             }
         }
         updatingArchitectureFields = false
+    }
+
+    private fun parseColorField(text: String): Color? {
+        val normalized = text.trim().removePrefix("#")
+        if (normalized.length != 6 && normalized.length != 8) {
+            return null
+        }
+        return try {
+            if (normalized.length == 6) {
+                Color.valueOf("${normalized}ff")
+            } else {
+                Color.valueOf(normalized)
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun formatColorField(color: Color): String {
+        return String.format(
+            Locale.US,
+            "%02x%02x%02x%02x",
+            (color.r.coerceIn(0f, 1f) * 255f + 0.5f).toInt(),
+            (color.g.coerceIn(0f, 1f) * 255f + 0.5f).toInt(),
+            (color.b.coerceIn(0f, 1f) * 255f + 0.5f).toInt(),
+            (color.a.coerceIn(0f, 1f) * 255f + 0.5f).toInt()
+        )
+    }
+
+    private fun loadColorPref(key: String, fallback: Color): Color {
+        val raw = uiPrefs.getString(key, "")
+        return parseColorField(raw) ?: Color(fallback)
     }
 
     private fun updateGroupPanel() {
@@ -2350,11 +2704,19 @@ class SketchUiOverlay(
         val wallThickness: Float? = null,
         val wallHeight: Float? = null,
         val wallInclinationDeg: Float? = null,
+        val wallExteriorColor: Color? = null,
+        val wallInteriorColor: Color? = null,
         val slabThickness: Float? = null,
+        val slabTopColor: Color? = null,
+        val slabBottomColor: Color? = null,
+        val slabSideColor: Color? = null,
         val stairHeight: Float? = null,
         val stairStepCount: Int? = null,
         val stairSupportThickness: Float? = null,
+        val stairTreadColor: Color? = null,
+        val stairSupportColor: Color? = null,
         val frameDepth: Float? = null,
-        val frameWidth: Float? = null
+        val frameWidth: Float? = null,
+        val frameColor: Color? = null
     )
 }

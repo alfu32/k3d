@@ -72,7 +72,9 @@ class ArchitectureWallTool(
             end = group.toLocal(world),
             thickness = settings.wallThickness,
             height = settings.wallHeight,
-            inclinationDeg = settings.wallInclinationDeg
+            inclinationDeg = settings.wallInclinationDeg,
+            exteriorColor = settings.wallExteriorColor,
+            interiorColor = settings.wallInteriorColor
         )
         if (created) {
             anchorWorld = Vector3(world)
@@ -175,7 +177,10 @@ class ArchitectureSlabTool(
             group = group,
             minCorner = group.toLocal(first),
             maxCorner = group.toLocal(world),
-            thickness = settings.slabThickness
+            thickness = settings.slabThickness,
+            topColor = settings.slabTopColor,
+            bottomColor = settings.slabBottomColor,
+            sideColor = settings.slabSideColor
         )
         if (created) {
             status.message = "Slab created."
@@ -458,7 +463,9 @@ class ArchitectureStairTool(
             walkingEnd = walkEnd,
             height = settings.stairHeight,
             stepCount = settings.stairStepCount,
-            supportThickness = settings.stairSupportThickness
+            supportThickness = settings.stairSupportThickness,
+            treadColor = settings.stairTreadColor,
+            supportColor = settings.stairSupportColor
         )
         if (created) {
             status.message = "Stair created."
@@ -734,7 +741,8 @@ abstract class ArchitectureFrameTool(
             normal = localNormal,
             depth = settings.frameDepth,
             frameWidth = settings.frameWidth,
-            kind = frameKind
+            kind = frameKind,
+            color = settings.frameColor
         )
         if (created) {
             status.message = "${frameKind.name.lowercase().replaceFirstChar { it.uppercaseChar() }} frame created."

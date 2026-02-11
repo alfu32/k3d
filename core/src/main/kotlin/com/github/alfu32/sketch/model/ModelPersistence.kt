@@ -365,6 +365,8 @@ object ModelPersistence {
                     thickness = wall.thickness,
                     height = wall.height,
                     inclinationDeg = wall.inclinationDeg,
+                    exteriorColor = wall.exteriorColor.toColor(),
+                    interiorColor = wall.interiorColor.toColor(),
                     id = wall.id.ifBlank { java.util.UUID.randomUUID().toString() }
                 )
                 wall.holes.forEach { hole ->
@@ -384,6 +386,9 @@ object ModelPersistence {
                     minCorner = slab.min.toVector3(),
                     maxCorner = slab.max.toVector3(),
                     thickness = slab.thickness,
+                    topColor = slab.topColor.toColor(),
+                    bottomColor = slab.bottomColor.toColor(),
+                    sideColor = slab.sideColor.toColor(),
                     id = slab.id.ifBlank { java.util.UUID.randomUUID().toString() }
                 )
             }
@@ -396,6 +401,8 @@ object ModelPersistence {
                     height = stair.height,
                     stepCount = stair.stepCount,
                     supportThickness = stair.supportThickness,
+                    treadColor = stair.treadColor.toColor(),
+                    supportColor = stair.supportColor.toColor(),
                     id = stair.id.ifBlank { java.util.UUID.randomUUID().toString() }
                 )
             }
@@ -412,6 +419,7 @@ object ModelPersistence {
                     depth = frame.depth,
                     frameWidth = frame.frameWidth,
                     kind = kind,
+                    color = frame.color.toColor(),
                     id = frame.id.ifBlank { java.util.UUID.randomUUID().toString() }
                 )
             }
@@ -440,6 +448,8 @@ object ModelPersistence {
                         thickness = wall.thickness,
                         height = wall.height,
                         inclinationDeg = wall.inclinationDeg,
+                        exteriorColor = ColorDto(wall.exteriorColor),
+                        interiorColor = ColorDto(wall.interiorColor),
                         holes = wall.holes.map { hole ->
                             ArchitectureHoleDto(
                                 id = hole.id,
@@ -456,7 +466,10 @@ object ModelPersistence {
                         id = slab.id,
                         min = Vec3Dto(slab.min),
                         max = Vec3Dto(slab.max),
-                        thickness = slab.thickness
+                        thickness = slab.thickness,
+                        topColor = ColorDto(slab.topColor),
+                        bottomColor = ColorDto(slab.bottomColor),
+                        sideColor = ColorDto(slab.sideColor)
                     )
                 }?.toMutableList() ?: mutableListOf()
                 dto.architectureStairs = prototype.architectureStore?.allStairs()?.map { stair ->
@@ -468,7 +481,9 @@ object ModelPersistence {
                         walkingEnd = Vec3Dto(stair.walkingEnd),
                         height = stair.height,
                         stepCount = stair.stepCount,
-                        supportThickness = stair.supportThickness
+                        supportThickness = stair.supportThickness,
+                        treadColor = ColorDto(stair.treadColor),
+                        supportColor = ColorDto(stair.supportColor)
                     )
                 }?.toMutableList() ?: mutableListOf()
                 dto.architectureFrames = prototype.architectureStore?.allFrames()?.map { frame ->
@@ -479,7 +494,8 @@ object ModelPersistence {
                         normal = Vec3Dto(frame.normal),
                         depth = frame.depth,
                         frameWidth = frame.frameWidth,
-                        kind = frame.kind.name
+                        kind = frame.kind.name,
+                        color = ColorDto(frame.color)
                     )
                 }?.toMutableList() ?: mutableListOf()
                 dto.segments = prototype.lineStore.getSegments().map { seg ->
@@ -544,6 +560,8 @@ object ModelPersistence {
         var thickness: Float = 0.2f
         var height: Float = 2.7f
         var inclinationDeg: Float = 0f
+        var exteriorColor: ColorDto = ColorDto(Color(0.93f, 0.93f, 0.93f, 1f))
+        var interiorColor: ColorDto = ColorDto(Color(0.84f, 0.84f, 0.84f, 1f))
         var holes: MutableList<ArchitectureHoleDto> = mutableListOf()
 
         constructor(
@@ -553,6 +571,8 @@ object ModelPersistence {
             thickness: Float,
             height: Float,
             inclinationDeg: Float,
+            exteriorColor: ColorDto,
+            interiorColor: ColorDto,
             holes: MutableList<ArchitectureHoleDto>
         ) : this() {
             this.id = id
@@ -561,6 +581,8 @@ object ModelPersistence {
             this.thickness = thickness
             this.height = height
             this.inclinationDeg = inclinationDeg
+            this.exteriorColor = exteriorColor
+            this.interiorColor = interiorColor
             this.holes = holes
         }
     }
@@ -570,12 +592,26 @@ object ModelPersistence {
         var min: Vec3Dto = Vec3Dto()
         var max: Vec3Dto = Vec3Dto()
         var thickness: Float = 0.2f
+        var topColor: ColorDto = ColorDto(Color(0.93f, 0.93f, 0.93f, 1f))
+        var bottomColor: ColorDto = ColorDto(Color(0.84f, 0.84f, 0.84f, 1f))
+        var sideColor: ColorDto = ColorDto(Color(0.88f, 0.88f, 0.88f, 1f))
 
-        constructor(id: String, min: Vec3Dto, max: Vec3Dto, thickness: Float) : this() {
+        constructor(
+            id: String,
+            min: Vec3Dto,
+            max: Vec3Dto,
+            thickness: Float,
+            topColor: ColorDto,
+            bottomColor: ColorDto,
+            sideColor: ColorDto
+        ) : this() {
             this.id = id
             this.min = min
             this.max = max
             this.thickness = thickness
+            this.topColor = topColor
+            this.bottomColor = bottomColor
+            this.sideColor = sideColor
         }
     }
 
@@ -588,6 +624,8 @@ object ModelPersistence {
         var height: Float = 2.7f
         var stepCount: Int = 14
         var supportThickness: Float = 0.2f
+        var treadColor: ColorDto = ColorDto(Color(0.93f, 0.93f, 0.93f, 1f))
+        var supportColor: ColorDto = ColorDto(Color(0.82f, 0.82f, 0.82f, 1f))
 
         constructor(
             id: String,
@@ -597,7 +635,9 @@ object ModelPersistence {
             walkingEnd: Vec3Dto,
             height: Float,
             stepCount: Int,
-            supportThickness: Float
+            supportThickness: Float,
+            treadColor: ColorDto,
+            supportColor: ColorDto
         ) : this() {
             this.id = id
             this.min = min
@@ -607,6 +647,8 @@ object ModelPersistence {
             this.height = height
             this.stepCount = stepCount
             this.supportThickness = supportThickness
+            this.treadColor = treadColor
+            this.supportColor = supportColor
         }
     }
 
@@ -618,6 +660,7 @@ object ModelPersistence {
         var depth: Float = 0.12f
         var frameWidth: Float = 0.06f
         var kind: String = ArchitectureStore.FrameKind.WINDOW.name
+        var color: ColorDto = ColorDto(Color(0.90f, 0.90f, 0.90f, 1f))
 
         constructor(
             id: String,
@@ -626,7 +669,8 @@ object ModelPersistence {
             normal: Vec3Dto,
             depth: Float,
             frameWidth: Float,
-            kind: String
+            kind: String,
+            color: ColorDto
         ) : this() {
             this.id = id
             this.cornerA = cornerA
@@ -635,6 +679,7 @@ object ModelPersistence {
             this.depth = depth
             this.frameWidth = frameWidth
             this.kind = kind
+            this.color = color
         }
     }
 

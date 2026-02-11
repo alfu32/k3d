@@ -654,13 +654,23 @@ class GroupScene(
         end: Vector3,
         thickness: Float,
         height: Float,
-        inclinationDeg: Float
+        inclinationDeg: Float,
+        exteriorColor: Color,
+        interiorColor: Color
     ): Boolean {
         val store = group.architectureStore ?: return false
         if (start.dst2(end) <= 1e-6f) {
             return false
         }
-        store.addWall(start, end, thickness.coerceAtLeast(0.01f), height.coerceAtLeast(0.05f), inclinationDeg)
+        store.addWall(
+            start = start,
+            end = end,
+            thickness = thickness.coerceAtLeast(0.01f),
+            height = height.coerceAtLeast(0.05f),
+            inclinationDeg = inclinationDeg,
+            exteriorColor = exteriorColor,
+            interiorColor = interiorColor
+        )
         rebuildArchitectureGeometry(group.prototype)
         notifyChange()
         return true
@@ -670,13 +680,23 @@ class GroupScene(
         group: GroupNode,
         minCorner: Vector3,
         maxCorner: Vector3,
-        thickness: Float
+        thickness: Float,
+        topColor: Color,
+        bottomColor: Color,
+        sideColor: Color
     ): Boolean {
         val store = group.architectureStore ?: return false
         if (minCorner.dst2(maxCorner) <= 1e-6f) {
             return false
         }
-        store.addSlab(minCorner, maxCorner, thickness.coerceAtLeast(0.01f))
+        store.addSlab(
+            minCorner = minCorner,
+            maxCorner = maxCorner,
+            thickness = thickness.coerceAtLeast(0.01f),
+            topColor = topColor,
+            bottomColor = bottomColor,
+            sideColor = sideColor
+        )
         rebuildArchitectureGeometry(group.prototype)
         notifyChange()
         return true
@@ -690,7 +710,9 @@ class GroupScene(
         walkingEnd: Vector3,
         height: Float,
         stepCount: Int,
-        supportThickness: Float
+        supportThickness: Float,
+        treadColor: Color,
+        supportColor: Color
     ): Boolean {
         val store = group.architectureStore ?: return false
         if (minCorner.dst2(maxCorner) <= 1e-6f) {
@@ -703,7 +725,9 @@ class GroupScene(
             walkingEnd = walkingEnd,
             height = height.coerceAtLeast(0.05f),
             stepCount = stepCount.coerceAtLeast(1),
-            supportThickness = supportThickness.coerceAtLeast(0.01f)
+            supportThickness = supportThickness.coerceAtLeast(0.01f),
+            treadColor = treadColor,
+            supportColor = supportColor
         )
         rebuildArchitectureGeometry(group.prototype)
         notifyChange()
@@ -717,7 +741,8 @@ class GroupScene(
         normal: Vector3,
         depth: Float,
         frameWidth: Float,
-        kind: ArchitectureStore.FrameKind
+        kind: ArchitectureStore.FrameKind,
+        color: Color
     ): Boolean {
         val store = group.architectureStore ?: return false
         if (cornerA.dst2(cornerB) <= 1e-6f) {
@@ -730,7 +755,8 @@ class GroupScene(
             normal = safeNormal,
             depth = depth.coerceAtLeast(0.01f),
             frameWidth = frameWidth.coerceAtLeast(0.01f),
-            kind = kind
+            kind = kind,
+            color = color
         )
         rebuildArchitectureGeometry(group.prototype)
         notifyChange()
@@ -742,10 +768,21 @@ class GroupScene(
         id: String,
         thickness: Float,
         height: Float,
-        inclinationDeg: Float
+        inclinationDeg: Float,
+        exteriorColor: Color,
+        interiorColor: Color
     ): Boolean {
         val store = group.architectureStore ?: return false
-        if (!store.updateWall(id, thickness.coerceAtLeast(0.01f), height.coerceAtLeast(0.05f), inclinationDeg)) {
+        if (
+            !store.updateWall(
+                id,
+                thickness.coerceAtLeast(0.01f),
+                height.coerceAtLeast(0.05f),
+                inclinationDeg,
+                exteriorColor,
+                interiorColor
+            )
+        ) {
             return false
         }
         rebuildArchitectureGeometry(group.prototype)
@@ -753,9 +790,16 @@ class GroupScene(
         return true
     }
 
-    fun updateArchitectureSlab(group: GroupNode, id: String, thickness: Float): Boolean {
+    fun updateArchitectureSlab(
+        group: GroupNode,
+        id: String,
+        thickness: Float,
+        topColor: Color,
+        bottomColor: Color,
+        sideColor: Color
+    ): Boolean {
         val store = group.architectureStore ?: return false
-        if (!store.updateSlab(id, thickness.coerceAtLeast(0.01f))) {
+        if (!store.updateSlab(id, thickness.coerceAtLeast(0.01f), topColor, bottomColor, sideColor)) {
             return false
         }
         rebuildArchitectureGeometry(group.prototype)
@@ -768,10 +812,21 @@ class GroupScene(
         id: String,
         height: Float,
         stepCount: Int,
-        supportThickness: Float
+        supportThickness: Float,
+        treadColor: Color,
+        supportColor: Color
     ): Boolean {
         val store = group.architectureStore ?: return false
-        if (!store.updateStair(id, height.coerceAtLeast(0.05f), stepCount.coerceAtLeast(1), supportThickness.coerceAtLeast(0.01f))) {
+        if (
+            !store.updateStair(
+                id,
+                height.coerceAtLeast(0.05f),
+                stepCount.coerceAtLeast(1),
+                supportThickness.coerceAtLeast(0.01f),
+                treadColor,
+                supportColor
+            )
+        ) {
             return false
         }
         rebuildArchitectureGeometry(group.prototype)
@@ -779,9 +834,9 @@ class GroupScene(
         return true
     }
 
-    fun updateArchitectureFrame(group: GroupNode, id: String, depth: Float, frameWidth: Float): Boolean {
+    fun updateArchitectureFrame(group: GroupNode, id: String, depth: Float, frameWidth: Float, color: Color): Boolean {
         val store = group.architectureStore ?: return false
-        if (!store.updateFrame(id, depth.coerceAtLeast(0.01f), frameWidth.coerceAtLeast(0.01f))) {
+        if (!store.updateFrame(id, depth.coerceAtLeast(0.01f), frameWidth.coerceAtLeast(0.01f), color)) {
             return false
         }
         rebuildArchitectureGeometry(group.prototype)
@@ -1338,7 +1393,6 @@ class GroupScene(
         val store = prototype.architectureStore ?: return
         val lineStore = prototype.lineStore
         val faceStore = prototype.faceStore
-        val color = prototype.voxelColor
 
         lineStore.withChangeSuppressed {
             lineStore.clearAll()
@@ -1360,16 +1414,16 @@ class GroupScene(
         faceStore.withChangeSuppressed {
             lineStore.withChangeSuppressed {
                 store.allWalls().forEach { wall ->
-                    appendWallGeometry(faceStore, lineStore, wall, color)
+                    appendWallGeometry(faceStore, lineStore, wall, wall.exteriorColor, wall.interiorColor)
                 }
                 store.allSlabs().forEach { slab ->
-                    appendSlabGeometry(faceStore, lineStore, slab, color)
+                    appendSlabGeometry(faceStore, lineStore, slab, slab.topColor, slab.bottomColor, slab.sideColor)
                 }
                 store.allStairs().forEach { stair ->
-                    appendStairGeometry(faceStore, lineStore, stair, color)
+                    appendStairGeometry(faceStore, lineStore, stair, stair.treadColor, stair.supportColor)
                 }
                 store.allFrames().forEach { frame ->
-                    appendFrameGeometry(faceStore, lineStore, frame, color)
+                    appendFrameGeometry(faceStore, lineStore, frame, frame.color)
                 }
             }
         }
@@ -1640,7 +1694,8 @@ class GroupScene(
         faceStore: DraftFaceStore,
         lineStore: DraftLineStore,
         wall: ArchitectureStore.WallSegment,
-        color: Color
+        exteriorColor: Color,
+        interiorColor: Color
     ) {
         val basis = wallBasis(wall) ?: return
         val holes = wall.holes.map { hole ->
@@ -1699,25 +1754,25 @@ class GroupScene(
                 val ff1 = wallPoint(basis, wall, u1, v0, 1f)
                 val ff2 = wallPoint(basis, wall, u1, v1, 1f)
                 val ff3 = wallPoint(basis, wall, u0, v1, 1f)
-                addQuad(faceStore, lineStore, ff0, ff1, ff2, ff3, basis.normal, color)
+                addQuad(faceStore, lineStore, ff0, ff1, ff2, ff3, basis.normal, exteriorColor)
 
                 val bb0 = wallPoint(basis, wall, u0, v0, -1f)
                 val bb1 = wallPoint(basis, wall, u1, v0, -1f)
                 val bb2 = wallPoint(basis, wall, u1, v1, -1f)
                 val bb3 = wallPoint(basis, wall, u0, v1, -1f)
-                addQuad(faceStore, lineStore, bb3, bb2, bb1, bb0, Vector3(basis.normal).scl(-1f), color)
+                addQuad(faceStore, lineStore, bb3, bb2, bb1, bb0, Vector3(basis.normal).scl(-1f), interiorColor)
 
                 if (!isSolid(i - 1, j)) {
-                    addQuad(faceStore, lineStore, ff0, ff3, bb3, bb0, Vector3(basis.dir).scl(-1f), color)
+                    addQuad(faceStore, lineStore, ff0, ff3, bb3, bb0, Vector3(basis.dir).scl(-1f), exteriorColor)
                 }
                 if (!isSolid(i + 1, j)) {
-                    addQuad(faceStore, lineStore, ff1, bb1, bb2, ff2, Vector3(basis.dir), color)
+                    addQuad(faceStore, lineStore, ff1, bb1, bb2, ff2, Vector3(basis.dir), exteriorColor)
                 }
                 if (!isSolid(i, j - 1)) {
-                    addQuad(faceStore, lineStore, ff0, bb0, bb1, ff1, Vector3(basis.up).scl(-1f), color)
+                    addQuad(faceStore, lineStore, ff0, bb0, bb1, ff1, Vector3(basis.up).scl(-1f), exteriorColor)
                 }
                 if (!isSolid(i, j + 1)) {
-                    addQuad(faceStore, lineStore, ff3, ff2, bb2, bb3, Vector3(basis.up), color)
+                    addQuad(faceStore, lineStore, ff3, ff2, bb2, bb3, Vector3(basis.up), exteriorColor)
                 }
             }
         }
@@ -1734,7 +1789,9 @@ class GroupScene(
         faceStore: DraftFaceStore,
         lineStore: DraftLineStore,
         slab: ArchitectureStore.Slab,
-        color: Color
+        topColor: Color,
+        bottomColor: Color,
+        sideColor: Color
     ) {
         val minX = min(slab.min.x, slab.max.x)
         val maxX = max(slab.min.x, slab.max.x)
@@ -1750,14 +1807,20 @@ class GroupScene(
         val p101 = Vector3(maxX, topY, minZ)
         val p111 = Vector3(maxX, topY, maxZ)
         val p011 = Vector3(minX, topY, maxZ)
-        addBox(faceStore, lineStore, p000, p100, p110, p010, p001, p101, p111, p011, color)
+        addQuad(faceStore, lineStore, p000, p100, p110, p010, Vector3(0f, -1f, 0f), bottomColor)
+        addQuad(faceStore, lineStore, p001, p011, p111, p101, Vector3(0f, 1f, 0f), topColor)
+        addQuad(faceStore, lineStore, p000, p001, p101, p100, Vector3(0f, 0f, -1f), sideColor)
+        addQuad(faceStore, lineStore, p100, p101, p111, p110, Vector3(1f, 0f, 0f), sideColor)
+        addQuad(faceStore, lineStore, p110, p111, p011, p010, Vector3(0f, 0f, 1f), sideColor)
+        addQuad(faceStore, lineStore, p010, p011, p001, p000, Vector3(-1f, 0f, 0f), sideColor)
     }
 
     private fun appendStairGeometry(
         faceStore: DraftFaceStore,
         lineStore: DraftLineStore,
         stair: ArchitectureStore.Stair,
-        color: Color
+        treadColor: Color,
+        supportColor: Color
     ) {
         val baseY = min(stair.min.y, stair.max.y)
         val topHeight = stair.height.coerceAtLeast(0.05f)
@@ -1814,12 +1877,12 @@ class GroupScene(
         val b01 = uvPoint(uMin, vMax, supportBottomStartY, walkDir, sideDir)
 
         val topNormal = Vector3(t10).sub(t00).crs(Vector3(t01).sub(t00)).nor()
-        addQuad(faceStore, lineStore, t00, t10, t11, t01, topNormal, color)
-        addQuad(faceStore, lineStore, b01, b11, b10, b00, Vector3(topNormal).scl(-1f), color)
-        addQuad(faceStore, lineStore, t00, b00, b10, t10, Vector3(sideDir).scl(-1f), color)
-        addQuad(faceStore, lineStore, t01, t11, b11, b01, Vector3(sideDir), color)
-        addQuad(faceStore, lineStore, t00, t01, b01, b00, Vector3(walkDir).scl(-1f), color)
-        addQuad(faceStore, lineStore, t10, b10, b11, t11, Vector3(walkDir), color)
+        addQuad(faceStore, lineStore, t00, t10, t11, t01, topNormal, supportColor)
+        addQuad(faceStore, lineStore, b01, b11, b10, b00, Vector3(topNormal).scl(-1f), supportColor)
+        addQuad(faceStore, lineStore, t00, b00, b10, t10, Vector3(sideDir).scl(-1f), supportColor)
+        addQuad(faceStore, lineStore, t01, t11, b11, b01, Vector3(sideDir), supportColor)
+        addQuad(faceStore, lineStore, t00, t01, b01, b00, Vector3(walkDir).scl(-1f), supportColor)
+        addQuad(faceStore, lineStore, t10, b10, b11, t11, Vector3(walkDir), supportColor)
 
         // Filled steps: each run interval is a solid prism between consecutive risers.
         for (index in 0 until steps) {
@@ -1835,7 +1898,7 @@ class GroupScene(
             val p101 = uvPoint(stepU1, vMin, stepTop, walkDir, sideDir)
             val p111 = uvPoint(stepU1, vMax, stepTop, walkDir, sideDir)
             val p011 = uvPoint(stepU0, vMax, stepTop, walkDir, sideDir)
-            addBox(faceStore, lineStore, p000, p100, p110, p010, p001, p101, p111, p011, color)
+            addBox(faceStore, lineStore, p000, p100, p110, p010, p001, p101, p111, p011, treadColor)
         }
     }
 

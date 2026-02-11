@@ -2204,7 +2204,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                     id = wall.id,
                     wallThickness = wall.thickness,
                     wallHeight = wall.height,
-                    wallInclinationDeg = wall.inclinationDeg
+                    wallInclinationDeg = wall.inclinationDeg,
+                    wallExteriorColor = Color(wall.exteriorColor),
+                    wallInteriorColor = Color(wall.interiorColor)
                 )
             }
             ArchitectureStore.ElementKind.SLAB -> {
@@ -2212,7 +2214,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 SketchUiOverlay.ArchitectureElementInfo(
                     kind = SketchUiOverlay.ArchitectureElementKind.SLAB,
                     id = slab.id,
-                    slabThickness = slab.thickness
+                    slabThickness = slab.thickness,
+                    slabTopColor = Color(slab.topColor),
+                    slabBottomColor = Color(slab.bottomColor),
+                    slabSideColor = Color(slab.sideColor)
                 )
             }
             ArchitectureStore.ElementKind.STAIR -> {
@@ -2222,7 +2227,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                     id = stair.id,
                     stairHeight = stair.height,
                     stairStepCount = stair.stepCount,
-                    stairSupportThickness = stair.supportThickness
+                    stairSupportThickness = stair.supportThickness,
+                    stairTreadColor = Color(stair.treadColor),
+                    stairSupportColor = Color(stair.supportColor)
                 )
             }
             ArchitectureStore.ElementKind.FRAME -> {
@@ -2231,48 +2238,69 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                     kind = SketchUiOverlay.ArchitectureElementKind.FRAME,
                     id = frame.id,
                     frameDepth = frame.depth,
-                    frameWidth = frame.frameWidth
+                    frameWidth = frame.frameWidth,
+                    frameColor = Color(frame.color)
                 )
             }
         }
     }
 
-    private fun updateArchitectureWallParameters(id: String, thickness: Float, height: Float, inclinationDeg: Float) {
+    private fun updateArchitectureWallParameters(
+        id: String,
+        thickness: Float,
+        height: Float,
+        inclinationDeg: Float,
+        exteriorColor: Color,
+        interiorColor: Color
+    ) {
         val group = scene.activeGroup()
         if (!scene.isArchitectureGroup(group)) {
             return
         }
-        if (scene.updateArchitectureWall(group, id, thickness, height, inclinationDeg)) {
+        if (scene.updateArchitectureWall(group, id, thickness, height, inclinationDeg, exteriorColor, interiorColor)) {
             statusModel.message = "Wall parameters updated."
         }
     }
 
-    private fun updateArchitectureSlabParameters(id: String, thickness: Float) {
+    private fun updateArchitectureSlabParameters(
+        id: String,
+        thickness: Float,
+        topColor: Color,
+        bottomColor: Color,
+        sideColor: Color
+    ) {
         val group = scene.activeGroup()
         if (!scene.isArchitectureGroup(group)) {
             return
         }
-        if (scene.updateArchitectureSlab(group, id, thickness)) {
+        if (scene.updateArchitectureSlab(group, id, thickness, topColor, bottomColor, sideColor)) {
             statusModel.message = "Slab parameters updated."
         }
     }
 
-    private fun updateArchitectureStairParameters(id: String, height: Float, stepCount: Int, supportThickness: Float) {
+    private fun updateArchitectureStairParameters(
+        id: String,
+        height: Float,
+        stepCount: Int,
+        supportThickness: Float,
+        treadColor: Color,
+        supportColor: Color
+    ) {
         val group = scene.activeGroup()
         if (!scene.isArchitectureGroup(group)) {
             return
         }
-        if (scene.updateArchitectureStair(group, id, height, stepCount, supportThickness)) {
+        if (scene.updateArchitectureStair(group, id, height, stepCount, supportThickness, treadColor, supportColor)) {
             statusModel.message = "Stair parameters updated."
         }
     }
 
-    private fun updateArchitectureFrameParameters(id: String, depth: Float, frameWidth: Float) {
+    private fun updateArchitectureFrameParameters(id: String, depth: Float, frameWidth: Float, color: Color) {
         val group = scene.activeGroup()
         if (!scene.isArchitectureGroup(group)) {
             return
         }
-        if (scene.updateArchitectureFrame(group, id, depth, frameWidth)) {
+        if (scene.updateArchitectureFrame(group, id, depth, frameWidth, color)) {
             statusModel.message = "Frame parameters updated."
         }
     }
