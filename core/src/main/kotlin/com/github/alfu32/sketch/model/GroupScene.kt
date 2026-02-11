@@ -370,6 +370,7 @@ class GroupScene(
             group.dimensionStore.clearSelection()
             group.textStore.clearSelection()
             group.voxelStore?.clearSelection()
+            group.architectureStore?.clearSelectedElement()
         }
         clearGroupSelection()
     }
@@ -496,6 +497,14 @@ class GroupScene(
 
     fun isArchitectureGroup(group: GroupNode): Boolean {
         return group.kind == PrototypeKind.ARCHITECTURE && group.architectureStore != null
+    }
+
+    fun isWallOnlyArchitectureGroup(group: GroupNode): Boolean {
+        val store = group.architectureStore ?: return false
+        return store.allWalls().isNotEmpty() &&
+            store.allSlabs().isEmpty() &&
+            store.allStairs().isEmpty() &&
+            store.allFrames().isEmpty()
     }
 
     fun voxelColor(group: GroupNode): Color? {
@@ -728,12 +737,132 @@ class GroupScene(
         return true
     }
 
+    fun updateArchitectureWall(
+        group: GroupNode,
+        id: String,
+        thickness: Float,
+        height: Float,
+        inclinationDeg: Float
+    ): Boolean {
+        val store = group.architectureStore ?: return false
+        if (!store.updateWall(id, thickness.coerceAtLeast(0.01f), height.coerceAtLeast(0.05f), inclinationDeg)) {
+            return false
+        }
+        rebuildArchitectureGeometry(group.prototype)
+        notifyChange()
+        return true
+    }
+
+    fun updateArchitectureSlab(group: GroupNode, id: String, thickness: Float): Boolean {
+        val store = group.architectureStore ?: return false
+        if (!store.updateSlab(id, thickness.coerceAtLeast(0.01f))) {
+            return false
+        }
+        rebuildArchitectureGeometry(group.prototype)
+        notifyChange()
+        return true
+    }
+
+    fun updateArchitectureStair(
+        group: GroupNode,
+        id: String,
+        height: Float,
+        stepCount: Int,
+        supportThickness: Float
+    ): Boolean {
+        val store = group.architectureStore ?: return false
+        if (!store.updateStair(id, height.coerceAtLeast(0.05f), stepCount.coerceAtLeast(1), supportThickness.coerceAtLeast(0.01f))) {
+            return false
+        }
+        rebuildArchitectureGeometry(group.prototype)
+        notifyChange()
+        return true
+    }
+
+    fun updateArchitectureFrame(group: GroupNode, id: String, depth: Float, frameWidth: Float): Boolean {
+        val store = group.architectureStore ?: return false
+        if (!store.updateFrame(id, depth.coerceAtLeast(0.01f), frameWidth.coerceAtLeast(0.01f))) {
+            return false
+        }
+        rebuildArchitectureGeometry(group.prototype)
+        notifyChange()
+        return true
+    }
+
+    fun selectedArchitectureElement(group: GroupNode): ArchitectureStore.ElementSelection? {
+        return group.architectureStore?.selectedElement()
+    }
+
+    fun clearArchitectureElementSelection(group: GroupNode): Boolean {
+        val store = group.architectureStore ?: return false
+        if (store.selectedElement() == null) {
+            return false
+        }
+        store.clearSelectedElement()
+        return true
+    }
+
+    fun selectArchitectureElementNearWorldPoint(
+        group: GroupNode,
+        worldPoint: Vector3
+    ): ArchitectureStore.ElementSelection? {
+        val store = group.architectureStore ?: return null
+        val point = group.toLocal(worldPoint)
+        var bestSelection: ArchitectureStore.ElementSelection? = null
+        var bestDist2 = Float.POSITIVE_INFINITY
+
+        store.allWalls().forEach { wall ->
+            val dist2 = architectureWallDistanceSq(wall, point)
+            if (dist2 < bestDist2) {
+                bestDist2 = dist2
+                bestSelection = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.WALL, wall.id)
+            }
+        }
+        store.allSlabs().forEach { slab ->
+            val dist2 = architectureSlabDistanceSq(slab, point)
+            if (dist2 < bestDist2) {
+                bestDist2 = dist2
+                bestSelection = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.SLAB, slab.id)
+            }
+        }
+        store.allStairs().forEach { stair ->
+            val dist2 = architectureStairDistanceSq(stair, point)
+            if (dist2 < bestDist2) {
+                bestDist2 = dist2
+                bestSelection = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.STAIR, stair.id)
+            }
+        }
+        store.allFrames().forEach { frame ->
+            val dist2 = architectureFrameDistanceSq(frame, point)
+            if (dist2 < bestDist2) {
+                bestDist2 = dist2
+                bestSelection = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.FRAME, frame.id)
+            }
+        }
+
+        val selection = bestSelection
+        if (selection == null) {
+            store.clearSelectedElement()
+            return null
+        }
+        store.setSelectedElement(selection.kind, selection.id)
+        return store.selectedElement()
+    }
+
     fun addArchitectureHoleToNearestWall(
         group: GroupNode,
         cornerA: Vector3,
         cornerB: Vector3
     ): Boolean {
         val store = group.architectureStore ?: return false
+        if (
+            store.allWalls().isEmpty() ||
+            store.allSlabs().isNotEmpty() ||
+            store.allStairs().isNotEmpty() ||
+            store.allFrames().isNotEmpty()
+        ) {
+            return false
+        }
         val candidate = findNearestWallHoleCandidate(store, cornerA, cornerB) ?: return false
         val added = store.addHole(
             wallId = candidate.wall.id,
@@ -1283,7 +1412,10 @@ class GroupScene(
             if (u1 - u0 <= 0.05f || v1 - v0 <= 0.05f) {
                 return@forEach
             }
-            val dist = min(abs(pa.z), abs(pb.z))
+            val dist = min(
+                min(abs(pa.z), abs(pa.z - wall.thickness)),
+                min(abs(pb.z), abs(pb.z - wall.thickness))
+            )
             val candidate = HoleCandidate(wall, u0, u1, v0, v1, dist)
             if (best == null || candidate.planeDistance < best!!.planeDistance) {
                 best = candidate
@@ -1366,14 +1498,142 @@ class GroupScene(
         side: Float,
         extra: Float = 0f
     ): Vector3 {
-        val half = wall.thickness * 0.5f + extra
+        val sideOffset = if (side >= 0f) wall.thickness + extra else -extra
         val safeHeight = wall.height.coerceAtLeast(0.0001f)
         val inclinationOffset = tan(wall.inclinationDeg * PI.toFloat() / 180f) * wall.height
         val lean = inclinationOffset * (v / safeHeight)
         return Vector3(basis.start)
             .mulAdd(basis.dir, u)
             .mulAdd(basis.up, v)
-            .mulAdd(basis.normal, side * half + lean)
+            .mulAdd(basis.normal, sideOffset + lean)
+    }
+
+    private data class FrameSelectionBasis(
+        val origin: Vector3,
+        val normal: Vector3,
+        val axisU: Vector3,
+        val axisV: Vector3,
+        val uMin: Float,
+        val uMax: Float,
+        val vMin: Float,
+        val vMax: Float,
+        val nMin: Float,
+        val nMax: Float
+    )
+
+    private fun architectureWallDistanceSq(wall: ArchitectureStore.WallSegment, point: Vector3): Float {
+        val basis = wallBasis(wall) ?: return Float.POSITIVE_INFINITY
+        val projected = projectToWall(basis, point)
+        val safeHeight = wall.height.coerceAtLeast(0.0001f)
+        val vOnWall = projected.y.coerceIn(0f, wall.height)
+        val lean = tan(wall.inclinationDeg * PI.toFloat() / 180f) * vOnWall
+        val n = projected.z - lean
+        val du = rangeDistance(projected.x, 0f, basis.length)
+        val dv = rangeDistance(projected.y, 0f, wall.height)
+        val dn = rangeDistance(n, 0f, wall.thickness)
+        return du * du + dv * dv + dn * dn
+    }
+
+    private fun architectureSlabDistanceSq(slab: ArchitectureStore.Slab, point: Vector3): Float {
+        val minX = min(slab.min.x, slab.max.x)
+        val maxX = max(slab.min.x, slab.max.x)
+        val minZ = min(slab.min.z, slab.max.z)
+        val maxZ = max(slab.min.z, slab.max.z)
+        val baseY = min(slab.min.y, slab.max.y)
+        val topY = baseY + slab.thickness.coerceAtLeast(0.01f)
+        val dx = rangeDistance(point.x, minX, maxX)
+        val dy = rangeDistance(point.y, baseY, topY)
+        val dz = rangeDistance(point.z, minZ, maxZ)
+        return dx * dx + dy * dy + dz * dz
+    }
+
+    private fun architectureStairDistanceSq(stair: ArchitectureStore.Stair, point: Vector3): Float {
+        val minX = min(stair.min.x, stair.max.x)
+        val maxX = max(stair.min.x, stair.max.x)
+        val minZ = min(stair.min.z, stair.max.z)
+        val maxZ = max(stair.min.z, stair.max.z)
+        val baseY = min(stair.min.y, stair.max.y)
+        val maxY = baseY + stair.height.coerceAtLeast(0.05f)
+        val minY = baseY - stair.supportThickness.coerceAtLeast(0.01f)
+        val dx = rangeDistance(point.x, minX, maxX)
+        val dy = rangeDistance(point.y, minY, maxY)
+        val dz = rangeDistance(point.z, minZ, maxZ)
+        return dx * dx + dy * dy + dz * dz
+    }
+
+    private fun architectureFrameDistanceSq(frame: ArchitectureStore.Frame, point: Vector3): Float {
+        val basis = frameSelectionBasis(frame) ?: return Float.POSITIVE_INFINITY
+        val rel = Vector3(point).sub(basis.origin)
+        val u = rel.dot(basis.axisU)
+        val v = rel.dot(basis.axisV)
+        val n = rel.dot(basis.normal)
+        val du = rangeDistance(u, basis.uMin, basis.uMax)
+        val dv = rangeDistance(v, basis.vMin, basis.vMax)
+        val dn = rangeDistance(n, basis.nMin, basis.nMax)
+        return du * du + dv * dv + dn * dn
+    }
+
+    private fun frameSelectionBasis(frame: ArchitectureStore.Frame): FrameSelectionBasis? {
+        val normal = Vector3(frame.normal)
+        if (normal.len2() <= 1e-6f) {
+            normal.set(0f, 1f, 0f)
+        } else {
+            normal.nor()
+        }
+        var axisU = if (abs(normal.y) < 0.9f) {
+            Vector3(0f, 1f, 0f).crs(normal)
+        } else {
+            Vector3(1f, 0f, 0f).crs(normal)
+        }
+        if (axisU.len2() <= 1e-6f) {
+            axisU = Vector3(0f, 0f, 1f).crs(normal)
+        }
+        if (axisU.len2() <= 1e-6f) {
+            return null
+        }
+        axisU.nor()
+        var axisV = Vector3(normal).crs(axisU)
+        if (axisV.len2() <= 1e-6f) {
+            return null
+        }
+        axisV.nor()
+
+        val origin = Vector3(frame.cornerA)
+        val delta = Vector3(frame.cornerB).sub(origin)
+        var uLen = delta.dot(axisU)
+        var vLen = delta.dot(axisV)
+        if (abs(uLen) <= 0.01f || abs(vLen) <= 0.01f) {
+            val diagProjected = Vector3(delta).sub(Vector3(normal).scl(delta.dot(normal)))
+            if (diagProjected.len2() > 1e-6f) {
+                axisU = diagProjected.nor()
+                axisV = Vector3(normal).crs(axisU).nor()
+                uLen = delta.dot(axisU)
+                vLen = delta.dot(axisV)
+            }
+        }
+        if (abs(uLen) <= 0.01f || abs(vLen) <= 0.01f) {
+            return null
+        }
+        return FrameSelectionBasis(
+            origin = origin,
+            normal = normal,
+            axisU = axisU,
+            axisV = axisV,
+            uMin = min(0f, uLen),
+            uMax = max(0f, uLen),
+            vMin = min(0f, vLen),
+            vMax = max(0f, vLen),
+            nMin = 0f,
+            nMax = frame.depth.coerceAtLeast(0.01f)
+        )
+    }
+
+    private fun rangeDistance(value: Float, minValue: Float, maxValue: Float): Float {
+        return when {
+            value < minValue -> minValue - value
+            value > maxValue -> value - maxValue
+            else -> 0f
+        }
     }
 
     private fun appendWallGeometry(
@@ -1538,31 +1798,45 @@ class GroupScene(
 
         val run = (uMax - uMin) / steps.toFloat()
         val rise = topHeight / steps.toFloat()
+
+        // Slanted support body below the treads.
+        val startTopY = baseY
+        val endTopY = baseY + topHeight
+        val supportBottomStartY = startTopY - support
+        val supportBottomEndY = endTopY - support
+        val t00 = uvPoint(uMin, vMin, startTopY, walkDir, sideDir)
+        val t10 = uvPoint(uMax, vMin, endTopY, walkDir, sideDir)
+        val t11 = uvPoint(uMax, vMax, endTopY, walkDir, sideDir)
+        val t01 = uvPoint(uMin, vMax, startTopY, walkDir, sideDir)
+        val b00 = uvPoint(uMin, vMin, supportBottomStartY, walkDir, sideDir)
+        val b10 = uvPoint(uMax, vMin, supportBottomEndY, walkDir, sideDir)
+        val b11 = uvPoint(uMax, vMax, supportBottomEndY, walkDir, sideDir)
+        val b01 = uvPoint(uMin, vMax, supportBottomStartY, walkDir, sideDir)
+
+        val topNormal = Vector3(t10).sub(t00).crs(Vector3(t01).sub(t00)).nor()
+        addQuad(faceStore, lineStore, t00, t10, t11, t01, topNormal, color)
+        addQuad(faceStore, lineStore, b01, b11, b10, b00, Vector3(topNormal).scl(-1f), color)
+        addQuad(faceStore, lineStore, t00, b00, b10, t10, Vector3(sideDir).scl(-1f), color)
+        addQuad(faceStore, lineStore, t01, t11, b11, b01, Vector3(sideDir), color)
+        addQuad(faceStore, lineStore, t00, t01, b01, b00, Vector3(walkDir).scl(-1f), color)
+        addQuad(faceStore, lineStore, t10, b10, b11, t11, Vector3(walkDir), color)
+
+        // Filled steps: each run interval is a solid prism between consecutive risers.
         for (index in 0 until steps) {
             val stepU0 = uMin + run * index
             val stepU1 = uMin + run * (index + 1)
+            val stepBottom = baseY + rise * index
             val stepTop = baseY + rise * (index + 1)
-            val p000 = uvPoint(stepU0, vMin, baseY, walkDir, sideDir)
-            val p100 = uvPoint(stepU1, vMin, baseY, walkDir, sideDir)
-            val p110 = uvPoint(stepU1, vMax, baseY, walkDir, sideDir)
-            val p010 = uvPoint(stepU0, vMax, baseY, walkDir, sideDir)
+            val p000 = uvPoint(stepU0, vMin, stepBottom, walkDir, sideDir)
+            val p100 = uvPoint(stepU1, vMin, stepBottom, walkDir, sideDir)
+            val p110 = uvPoint(stepU1, vMax, stepBottom, walkDir, sideDir)
+            val p010 = uvPoint(stepU0, vMax, stepBottom, walkDir, sideDir)
             val p001 = uvPoint(stepU0, vMin, stepTop, walkDir, sideDir)
             val p101 = uvPoint(stepU1, vMin, stepTop, walkDir, sideDir)
             val p111 = uvPoint(stepU1, vMax, stepTop, walkDir, sideDir)
             val p011 = uvPoint(stepU0, vMax, stepTop, walkDir, sideDir)
             addBox(faceStore, lineStore, p000, p100, p110, p010, p001, p101, p111, p011, color)
         }
-
-        val supportBottom = baseY - support
-        val s000 = uvPoint(uMin, vMin, supportBottom, walkDir, sideDir)
-        val s100 = uvPoint(uMax, vMin, supportBottom, walkDir, sideDir)
-        val s110 = uvPoint(uMax, vMax, supportBottom, walkDir, sideDir)
-        val s010 = uvPoint(uMin, vMax, supportBottom, walkDir, sideDir)
-        val s001 = uvPoint(uMin, vMin, baseY, walkDir, sideDir)
-        val s101 = uvPoint(uMax, vMin, baseY, walkDir, sideDir)
-        val s111 = uvPoint(uMax, vMax, baseY, walkDir, sideDir)
-        val s011 = uvPoint(uMin, vMax, baseY, walkDir, sideDir)
-        addBox(faceStore, lineStore, s000, s100, s110, s010, s001, s101, s111, s011, color)
     }
 
     private fun appendFrameGeometry(
@@ -1577,46 +1851,76 @@ class GroupScene(
         } else {
             normal.nor()
         }
-        val diag = Vector3(frame.cornerB).sub(frame.cornerA)
-        var axisU = Vector3(diag).sub(Vector3(normal).scl(diag.dot(normal)))
+        var axisU = if (abs(normal.y) < 0.9f) {
+            Vector3(0f, 1f, 0f).crs(normal)
+        } else {
+            Vector3(1f, 0f, 0f).crs(normal)
+        }
         if (axisU.len2() <= 1e-6f) {
-            axisU = if (abs(normal.y) < 0.9f) {
-                Vector3(0f, 1f, 0f).crs(normal)
-            } else {
-                Vector3(1f, 0f, 0f).crs(normal)
-            }
+            axisU = Vector3(0f, 0f, 1f).crs(normal)
+        }
+        if (axisU.len2() <= 1e-6f) {
+            return
         }
         axisU.nor()
+
         var axisV = Vector3(normal).crs(axisU)
         if (axisV.len2() <= 1e-6f) {
             return
         }
         axisV.nor()
 
-        val delta = Vector3(frame.cornerB).sub(frame.cornerA)
-        val uLen = delta.dot(axisU)
-        val vLen = delta.dot(axisV)
-        val uVec = Vector3(axisU).scl(uLen)
-        val vVec = Vector3(axisV).scl(vLen)
-        if (uVec.len2() <= 1e-6f || vVec.len2() <= 1e-6f) {
+        val origin = Vector3(frame.cornerA)
+        val delta = Vector3(frame.cornerB).sub(origin)
+        var uLen = delta.dot(axisU)
+        var vLen = delta.dot(axisV)
+
+        // If the initial basis collapses one extent, align U on the rectangle diagonal projection.
+        if (abs(uLen) <= 0.01f || abs(vLen) <= 0.01f) {
+            val diagProjected = Vector3(delta).sub(Vector3(normal).scl(delta.dot(normal)))
+            if (diagProjected.len2() > 1e-6f) {
+                axisU = diagProjected.nor()
+                axisV = Vector3(normal).crs(axisU).nor()
+                uLen = delta.dot(axisU)
+                vLen = delta.dot(axisV)
+            }
+        }
+        if (abs(uLen) <= 0.01f || abs(vLen) <= 0.01f) {
             return
         }
 
-        val minExtent = min(abs(uLen), abs(vLen))
+        val uMin = min(0f, uLen)
+        val uMax = max(0f, uLen)
+        val vMin = min(0f, vLen)
+        val vMax = max(0f, vLen)
+        val minExtent = min(uMax - uMin, vMax - vMin)
         val width = frame.frameWidth.coerceAtLeast(0.01f).coerceAtMost(minExtent * 0.45f)
-        val uInside = Vector3(axisU).scl(if (uLen >= 0f) width else -width)
-        val vInside = Vector3(axisV).scl(if (vLen >= 0f) width else -width)
+        val iuMin = uMin + width
+        val iuMax = uMax - width
+        val ivMin = vMin + width
+        val ivMax = vMax - width
+        if (iuMax - iuMin <= 0.01f || ivMax - ivMin <= 0.01f) {
+            return
+        }
 
-        val a = Vector3(frame.cornerA)
-        val b = Vector3(a).add(uVec)
-        val c = Vector3(b).add(vVec)
-        val d = Vector3(a).add(vVec)
+        fun framePoint(u: Float, v: Float): Vector3 {
+            return Vector3(origin).mulAdd(axisU, u).mulAdd(axisV, v)
+        }
+
+        val a = framePoint(uMin, vMin)
+        val b = framePoint(uMax, vMin)
+        val c = framePoint(uMax, vMax)
+        val d = framePoint(uMin, vMax)
+        val ia = framePoint(iuMin, ivMin)
+        val ib = framePoint(iuMax, ivMin)
+        val ic = framePoint(iuMax, ivMax)
+        val id = framePoint(iuMin, ivMax)
 
         val depth = frame.depth.coerceAtLeast(0.01f)
-        appendPrismFromRect(faceStore, lineStore, a, b, Vector3(b).add(vInside), Vector3(a).add(vInside), normal, depth, color)
-        appendPrismFromRect(faceStore, lineStore, Vector3(d).sub(vInside), Vector3(c).sub(vInside), c, d, normal, depth, color)
-        appendPrismFromRect(faceStore, lineStore, a, Vector3(a).add(uInside), Vector3(d).add(uInside), d, normal, depth, color)
-        appendPrismFromRect(faceStore, lineStore, Vector3(b).sub(uInside), b, c, Vector3(c).sub(uInside), normal, depth, color)
+        appendPrismFromRect(faceStore, lineStore, a, b, ib, ia, normal, depth, color)
+        appendPrismFromRect(faceStore, lineStore, b, c, ic, ib, normal, depth, color)
+        appendPrismFromRect(faceStore, lineStore, id, ic, c, d, normal, depth, color)
+        appendPrismFromRect(faceStore, lineStore, a, ia, id, d, normal, depth, color)
     }
 
     private fun appendPrismFromRect(
@@ -1630,15 +1934,14 @@ class GroupScene(
         depth: Float,
         color: Color
     ) {
-        val half = depth * 0.5f
-        val front0 = Vector3(p0).mulAdd(normal, half)
-        val front1 = Vector3(p1).mulAdd(normal, half)
-        val front2 = Vector3(p2).mulAdd(normal, half)
-        val front3 = Vector3(p3).mulAdd(normal, half)
-        val back0 = Vector3(p0).mulAdd(normal, -half)
-        val back1 = Vector3(p1).mulAdd(normal, -half)
-        val back2 = Vector3(p2).mulAdd(normal, -half)
-        val back3 = Vector3(p3).mulAdd(normal, -half)
+        val front0 = Vector3(p0).mulAdd(normal, depth)
+        val front1 = Vector3(p1).mulAdd(normal, depth)
+        val front2 = Vector3(p2).mulAdd(normal, depth)
+        val front3 = Vector3(p3).mulAdd(normal, depth)
+        val back0 = Vector3(p0)
+        val back1 = Vector3(p1)
+        val back2 = Vector3(p2)
+        val back3 = Vector3(p3)
 
         addQuad(faceStore, lineStore, front0, front1, front2, front3, normal, color)
         addQuad(faceStore, lineStore, back3, back2, back1, back0, Vector3(normal).scl(-1f), color)

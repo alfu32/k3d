@@ -1,16 +1,22 @@
 package com.github.alfu32.sketch.tools
 
+import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
+import com.badlogic.gdx.graphics.Camera
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Vector3
+import com.badlogic.gdx.math.collision.Ray
 import com.github.alfu32.sketch.model.ArchitectureStore
+import com.github.alfu32.sketch.model.DraftLineStore
 import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
 import com.github.alfu32.sketch.ui.ToolMeasurement
 import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 class ArchitectureWallTool(
     private val scene: GroupScene,
@@ -261,7 +267,15 @@ class ArchitectureAddHoleTool(
         if (button != Input.Buttons.LEFT || !valid || world == null) {
             return false
         }
-        val group = resolveArchitectureGroup(scene, status, ensureArchitectureGroup) ?: return true
+        val group = scene.activeGroup()
+        if (!scene.isArchitectureGroup(group)) {
+            status.message = "Enter a wall architecture group to add holes."
+            return true
+        }
+        if (!scene.isWallOnlyArchitectureGroup(group)) {
+            status.message = "Add Hole works only in wall-only architecture groups."
+            return true
+        }
         if (firstCornerWorld == null) {
             firstCornerWorld = Vector3(world)
             firstNormalWorld = normal?.let { Vector3(it).nor() } ?: Vector3(0f, 1f, 0f)
@@ -327,18 +341,24 @@ class ArchitectureAddHoleTool(
 
 class ArchitectureStairTool(
     private val scene: GroupScene,
+    private val camera: Camera,
     private val settings: ArchitectureSettings,
     private val onSelectTool: () -> Unit,
     private val ensureArchitectureGroup: (() -> GroupScene.GroupNode?)? = null
 ) : Tool {
-    override val id: ToolId = ToolId.ARCH_STAIR
-    override val message: String = "Pick first stair contour corner."
+    private data class PolylinePath(val points: List<Vector3>, val closed: Boolean)
 
-    private var contourAWorld: Vector3? = null
-    private var contourBWorld: Vector3? = null
-    private var walkingStartWorld: Vector3? = null
-    private val hover = Vector3()
-    private var hasHover = false
+    private data class EdgeHitWorld(val segment: DraftLineStore.Segment, val point: Vector3, val t: Float)
+
+    private data class Key3(val x: Int, val y: Int, val z: Int)
+
+    override val id: ToolId = ToolId.ARCH_STAIR
+    override val message: String = "Pick closed stair contour polyline."
+
+    private var contourPath: PolylinePath? = null
+    private var treadPath: PolylinePath? = null
+    private val hoverPoint = Vector3()
+    private var hasHoverPoint = false
 
     override fun onEnter(status: StatusModel) {
         clear()
@@ -357,42 +377,85 @@ class ArchitectureStairTool(
 
     override fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
         if (valid && world != null) {
-            hover.set(world)
-            hasHover = true
+            hoverPoint.set(world)
+            hasHoverPoint = true
         } else {
-            hasHover = false
+            hasHoverPoint = false
         }
     }
 
     override fun onPointerDown(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean, button: Int): Boolean {
-        if (button != Input.Buttons.LEFT || !valid || world == null) {
+        if (button != Input.Buttons.LEFT) {
             return false
         }
         val group = resolveArchitectureGroup(scene, status, ensureArchitectureGroup) ?: return true
-        if (contourAWorld == null) {
-            contourAWorld = Vector3(world)
-            status.message = "Pick opposite stair contour corner."
+        val ray = camera.getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
+        val edgeHit = pickEdgeWorld(group, ray, Gdx.input.x, Gdx.input.y)
+        if (edgeHit == null) {
+            status.message = "Pick an existing polyline edge."
             return true
         }
-        if (contourBWorld == null) {
-            contourBWorld = Vector3(world)
-            status.message = "Pick walking line start point."
+        val connected = group.lineStore.collectConnected(edgeHit.segment)
+        val path = orderedPolyline(connected)
+        if (path == null || path.points.size < 2) {
+            status.message = "Polyline is not valid."
             return true
         }
-        if (walkingStartWorld == null) {
-            walkingStartWorld = Vector3(world)
-            status.message = "Pick walking line end point."
+
+        if (contourPath == null) {
+            if (!path.closed || path.points.size < 3) {
+                status.message = "Contour must be a closed polyline."
+                return true
+            }
+            contourPath = path
+            status.message = "Pick stair tread line polyline."
             return true
         }
-        val contourA = contourAWorld ?: return true
-        val contourB = contourBWorld ?: return true
-        val walkingStart = walkingStartWorld ?: return true
+
+        if (path.closed) {
+            status.message = "Tread line must be open."
+            return true
+        }
+        treadPath = path
+
+        val contour = contourPath ?: return true
+        val tread = treadPath ?: return true
+        val contourLocal = contour.points.map { group.toLocal(it) }
+        val treadLocal = tread.points.map { group.toLocal(it) }
+        if (treadLocal.size < 2) {
+            status.message = "Tread line requires at least 2 points."
+            clear()
+            return true
+        }
+        val walkStart = treadLocal.first()
+        val walkEnd = treadLocal.last()
+        if (walkStart.dst2(walkEnd) <= 1e-6f) {
+            status.message = "Tread line is too short."
+            clear()
+            return true
+        }
+
+        var minX = Float.POSITIVE_INFINITY
+        var minY = Float.POSITIVE_INFINITY
+        var minZ = Float.POSITIVE_INFINITY
+        var maxX = Float.NEGATIVE_INFINITY
+        var maxY = Float.NEGATIVE_INFINITY
+        var maxZ = Float.NEGATIVE_INFINITY
+        contourLocal.forEach { point ->
+            minX = kotlin.math.min(minX, point.x)
+            minY = kotlin.math.min(minY, point.y)
+            minZ = kotlin.math.min(minZ, point.z)
+            maxX = kotlin.math.max(maxX, point.x)
+            maxY = kotlin.math.max(maxY, point.y)
+            maxZ = kotlin.math.max(maxZ, point.z)
+        }
+
         val created = scene.addArchitectureStair(
             group = group,
-            minCorner = group.toLocal(contourA),
-            maxCorner = group.toLocal(contourB),
-            walkingStart = group.toLocal(walkingStart),
-            walkingEnd = group.toLocal(world),
+            minCorner = Vector3(minX, minY, minZ),
+            maxCorner = Vector3(maxX, maxY, maxZ),
+            walkingStart = walkStart,
+            walkingEnd = walkEnd,
             height = settings.stairHeight,
             stepCount = settings.stairStepCount,
             supportThickness = settings.stairSupportThickness
@@ -424,39 +487,154 @@ class ArchitectureStairTool(
     }
 
     override fun measurement(status: StatusModel): ToolMeasurement? {
-        if (!hasHover) {
+        if (!hasHoverPoint) {
             return null
         }
-        val start = when {
-            walkingStartWorld != null -> walkingStartWorld
-            contourBWorld != null -> contourBWorld
-            contourAWorld != null -> contourAWorld
-            else -> null
-        } ?: return null
-        return ToolMeasurement(startWorld = Vector3(start), endWorld = Vector3(hover), lineColor = Color(0.75f, 0.55f, 0.95f, 1f))
+        val start = contourPath?.points?.firstOrNull() ?: return null
+        return ToolMeasurement(startWorld = Vector3(start), endWorld = Vector3(hoverPoint), lineColor = Color(0.75f, 0.55f, 0.95f, 1f))
     }
 
     override fun render(renderer: ShapeRenderer) {
-        val contourA = contourAWorld
-        if (contourA != null && contourBWorld == null && hasHover) {
-            drawLoop(renderer, horizontalRectCorners(contourA, hover), Color(0.75f, 0.55f, 0.95f, 1f))
-            return
+        contourPath?.let { contour ->
+            drawLoop(renderer, contour.points, Color(0.75f, 0.55f, 0.95f, 1f))
         }
-        val contourB = contourBWorld
-        if (contourA != null && contourB != null) {
-            drawLoop(renderer, horizontalRectCorners(contourA, contourB), Color(0.75f, 0.55f, 0.95f, 1f))
-        }
-        if (walkingStartWorld != null && hasHover) {
+        treadPath?.let { tread ->
             renderer.color = Color(0.95f, 0.6f, 0.3f, 1f)
-            renderer.line(walkingStartWorld, hover)
+            for (i in 0 until tread.points.lastIndex) {
+                renderer.line(tread.points[i], tread.points[i + 1])
+            }
         }
     }
 
     private fun clear() {
-        contourAWorld = null
-        contourBWorld = null
-        walkingStartWorld = null
-        hasHover = false
+        contourPath = null
+        treadPath = null
+        hasHoverPoint = false
+    }
+
+    private fun orderedPolyline(segments: List<DraftLineStore.Segment>, epsilon: Float = 1e-3f): PolylinePath? {
+        if (segments.isEmpty()) {
+            return null
+        }
+
+        fun keyOf(point: Vector3): Key3 {
+            val scale = 1f / epsilon
+            return Key3(
+                (point.x * scale).roundToInt(),
+                (point.y * scale).roundToInt(),
+                (point.z * scale).roundToInt()
+            )
+        }
+
+        val keyToPoint = linkedMapOf<Key3, Vector3>()
+        val endpoints = segments.map { segment ->
+            val a = keyOf(segment.start)
+            val b = keyOf(segment.end)
+            keyToPoint.putIfAbsent(a, Vector3(segment.start))
+            keyToPoint.putIfAbsent(b, Vector3(segment.end))
+            a to b
+        }
+
+        val adjacency = mutableMapOf<Key3, MutableList<Int>>()
+        endpoints.forEachIndexed { index, (a, b) ->
+            adjacency.getOrPut(a) { mutableListOf() }.add(index)
+            adjacency.getOrPut(b) { mutableListOf() }.add(index)
+        }
+
+        val degreeOne = adjacency.filterValues { it.size == 1 }.keys.toList()
+        val closed = degreeOne.isEmpty() && adjacency.values.all { it.size == 2 }
+        if (!closed && degreeOne.size != 2) {
+            return null
+        }
+
+        val startKey = if (closed) adjacency.keys.first() else degreeOne.first()
+        val visited = mutableSetOf<Int>()
+        val ordered = mutableListOf<Vector3>()
+        var current = startKey
+        ordered.add(Vector3(keyToPoint[current] ?: return null))
+
+        while (visited.size < segments.size) {
+            val nextSegment = adjacency[current]?.firstOrNull { it !in visited } ?: break
+            visited.add(nextSegment)
+            val (a, b) = endpoints[nextSegment]
+            current = if (a == current) b else a
+            ordered.add(Vector3(keyToPoint[current] ?: return null))
+            if (closed && current == startKey) {
+                break
+            }
+        }
+
+        if (visited.size != segments.size) {
+            return null
+        }
+
+        if (closed) {
+            if (ordered.size < 4 || ordered.first().dst2(ordered.last()) > epsilon * epsilon) {
+                return null
+            }
+            return PolylinePath(points = ordered.dropLast(1), closed = true)
+        }
+        return PolylinePath(points = ordered, closed = false)
+    }
+
+    private fun pickEdgeWorld(
+        group: GroupScene.GroupNode,
+        ray: Ray,
+        screenX: Int,
+        screenY: Int,
+        maxPixels: Float = 12f
+    ): EdgeHitWorld? {
+        var best: EdgeHitWorld? = null
+        group.lineStore.getSegments().forEach { segment ->
+            val a = group.toWorld(segment.start)
+            val b = group.toWorld(segment.end)
+            val hit = closestRaySegment(ray.origin, ray.direction, a, b) ?: return@forEach
+            val screenDist = screenDistance(hit.point, screenX, screenY)
+            if (screenDist <= maxPixels) {
+                if (best == null || hit.t < best!!.t) {
+                    best = EdgeHitWorld(segment, hit.point, hit.t)
+                }
+            }
+        }
+        return best
+    }
+
+    private data class RaySegmentHit(val point: Vector3, val t: Float)
+
+    private fun closestRaySegment(rayOrigin: Vector3, rayDir: Vector3, a: Vector3, b: Vector3): RaySegmentHit? {
+        val dir = Vector3(rayDir).nor()
+        val e = Vector3(b).sub(a)
+        val r = Vector3(rayOrigin).sub(a)
+        val aDot = dir.dot(dir)
+        val eDot = e.dot(e)
+        val f = dir.dot(e)
+        val c = dir.dot(r)
+        val g = e.dot(r)
+        val denom = aDot * eDot - f * f
+        var t: Float
+        var s: Float
+        if (kotlin.math.abs(denom) > 1e-6f) {
+            t = (f * g - eDot * c) / denom
+            s = (aDot * g - f * c) / denom
+            s = s.coerceIn(0f, 1f)
+            t = (-c + f * s) / aDot
+        } else {
+            s = (g / eDot).coerceIn(0f, 1f)
+            t = (-c + f * s) / aDot
+        }
+        if (t <= 0f) {
+            t = 0f
+            s = (g / eDot).coerceIn(0f, 1f)
+        }
+        val pointOnSeg = Vector3(a).mulAdd(e, s)
+        return RaySegmentHit(pointOnSeg, t)
+    }
+
+    private fun screenDistance(world: Vector3, screenX: Int, screenY: Int): Float {
+        val projected = camera.project(Vector3(world))
+        val dx = projected.x - screenX
+        val dy = (Gdx.graphics.height - projected.y) - screenY
+        return sqrt(dx * dx + dy * dy)
     }
 }
 
@@ -547,11 +725,12 @@ abstract class ArchitectureFrameTool(
         }
         val first = firstCornerWorld ?: return true
         val worldNormal = firstNormalWorld ?: normal ?: Vector3(0f, 1f, 0f)
+        val secondOnPlane = projectPointToPlane(world, first, worldNormal)
         val localNormal = group.vectorToLocal(worldNormal).nor()
         val created = scene.addArchitectureFrame(
             group = group,
             cornerA = group.toLocal(first),
-            cornerB = group.toLocal(world),
+            cornerB = group.toLocal(secondOnPlane),
             normal = localNormal,
             depth = settings.frameDepth,
             frameWidth = settings.frameWidth,
@@ -596,8 +775,10 @@ abstract class ArchitectureFrameTool(
         if (!hasHover) {
             return
         }
-        val basis = chooseRectangleBasis(first, hover, firstNormalWorld ?: Vector3(0f, 1f, 0f))
-        val corners = rectangleCorners(first, hover, basis)
+        val worldNormal = firstNormalWorld ?: Vector3(0f, 1f, 0f)
+        val basis = planeBasisFromNormal(worldNormal)
+        val hoverOnPlane = projectPointToPlane(hover, first, worldNormal)
+        val corners = rectangleCorners(first, hoverOnPlane, basis)
         drawLoop(renderer, corners, drawColor)
     }
 
@@ -684,4 +865,14 @@ private fun rectangleCorners(start: Vector3, end: Vector3, basis: PlaneBasis): L
     val p2 = Vector3(p1).mulAdd(basis.axisV, v)
     val p3 = Vector3(start).mulAdd(basis.axisV, v)
     return listOf(p0, p1, p2, p3)
+}
+
+private fun projectPointToPlane(point: Vector3, planePoint: Vector3, planeNormal: Vector3): Vector3 {
+    val n = Vector3(planeNormal)
+    if (n.len2() <= 1e-6f) {
+        return Vector3(point)
+    }
+    n.nor()
+    val signed = Vector3(point).sub(planePoint).dot(n)
+    return Vector3(point).mulAdd(n, -signed)
 }

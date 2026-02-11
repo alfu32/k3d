@@ -38,6 +38,7 @@ import com.github.alfu32.sketch.input.CameraScrollForwarder
 import com.github.alfu32.sketch.input.SnapResult
 import com.github.alfu32.sketch.input.Snapper
 import com.github.alfu32.sketch.input.ToolPointerProcessor
+import com.github.alfu32.sketch.model.ArchitectureStore
 import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.model.ModelPersistence
 import com.github.alfu32.sketch.model.ModelCleanup
@@ -61,6 +62,7 @@ import com.github.alfu32.sketch.tui.OutputPane
 import com.github.alfu32.sketch.K3DVersion
 import com.badlogic.gdx.Graphics
 import com.github.alfu32.sketch.plugin.PluginHost
+import com.github.alfu32.sketch.export.IfcExporter
 import com.github.alfu32.sketch.tools.CircleTool
 import com.github.alfu32.sketch.tools.ConstructionLineTool
 import com.github.alfu32.sketch.tools.CutHolesTool
@@ -237,7 +239,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 VoxelFrameTool(scene, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveVoxelGroupForTools),
                 ArchitectureWallTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
                 ArchitectureSlabTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
-                ArchitectureStairTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
+                ArchitectureStairTool(scene, camera, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
                 ArchitectureAddHoleTool(scene, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
                 ArchitectureWindowFrameTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
                 ArchitectureDoorFrameTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
@@ -343,7 +345,12 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             shadowSettings,
             ::applyShadowSettings,
             polylineSettings,
-            architectureSettings
+            architectureSettings,
+            ::architectureSelectionInfo,
+            ::updateArchitectureWallParameters,
+            ::updateArchitectureSlabParameters,
+            ::updateArchitectureStairParameters,
+            ::updateArchitectureFrameParameters
         )
 
         // Set up plugin host for UI
@@ -587,6 +594,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 priority = 1,
                 execute = {
                     showSvgExportDialog()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "export.ifc_model",
+                name = "Export> IFC (Model)",
+                description = "Export model geometry as IFC",
+                icon = "export",
+                category = "Export",
+                tags = listOf("export", "ifc", "model"),
+                priority = 1,
+                execute = {
+                    showIfcExportDialog()
                     com.github.alfu32.sketch.plugin.PluginResult.success()
                 }
             )
@@ -941,12 +963,15 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private fun drawCursor() {
         val snap = lastSnap ?: return
         val hit = snap.world ?: return
-        val size = 0.15f
-        shapeRenderer.color = Color(0.95f, 0.85f, 0.2f, 1f)
+        val size = 0.24f
+        shapeRenderer.color = Color(0.9f, 0.2f, 0.2f, 1f) // X
         shapeRenderer.line(hit.x - size, hit.y, hit.z, hit.x + size, hit.y, hit.z)
+        shapeRenderer.color = Color(0.2f, 0.45f, 0.95f, 1f) // Y
+        shapeRenderer.line(hit.x, hit.y - size, hit.z, hit.x, hit.y + size, hit.z)
+        shapeRenderer.color = Color(0.2f, 0.85f, 0.3f, 1f) // Z
         shapeRenderer.line(hit.x, hit.y, hit.z - size, hit.x, hit.y, hit.z + size)
         if (snap.type != com.github.alfu32.sketch.input.SnapType.NONE) {
-            val snapSize = 0.08f
+            val snapSize = 0.12f
             shapeRenderer.color = Color(1f, 0.95f, 0.6f, 1f)
             shapeRenderer.line(hit.x - snapSize, hit.y, hit.z, hit.x + snapSize, hit.y, hit.z)
             shapeRenderer.line(hit.x, hit.y - snapSize, hit.z, hit.x, hit.y + snapSize, hit.z)
@@ -1070,6 +1095,39 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             }
         })
         uiOverlay.stage.addActor(chooser)
+    }
+
+    private fun showIfcExportDialog() {
+        val chooser = FileChooser(System.getProperty("user.dir"), FileChooser.Mode.SAVE)
+        chooser.getTitleLabel().setText("Export IFC (Model)")
+        chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
+        chooser.setDefaultFileName("model.ifc")
+        val filter = FileTypeFilter(true)
+        filter.addRule("IFC", "ifc")
+        chooser.setFileTypeFilter(filter)
+        chooser.setListener(object : FileChooserAdapter() {
+            override fun selected(files: Array<FileHandle>?) {
+                if (files == null || files.size == 0) {
+                    return
+                }
+                val handle = files.first()
+                val target = if (handle.extension().lowercase() == "ifc") handle.file()
+                else File(handle.file().parentFile, "${handle.file().name}.ifc")
+                exportIfcModel(target)
+            }
+        })
+        uiOverlay.stage.addActor(chooser)
+    }
+
+    private fun exportIfcModel(file: File) {
+        val unitScale = modelUnit.size.coerceAtLeast(1e-6f)
+        try {
+            val report = IfcExporter.export(scene, file, unitScale)
+            statusModel.message = "Exported IFC to ${file.absolutePath} (${report.productCount} products)"
+        } catch (t: Throwable) {
+            statusModel.message = "IFC export failed: ${t.message ?: t.javaClass.simpleName}"
+            t.printStackTrace()
+        }
     }
 
     private fun exportSvgView(file: File) {
@@ -2129,6 +2187,94 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             selectedTextSize = selectedText?.size,
             selectedTextScreen = selectedText?.screenText
         )
+    }
+
+    private fun architectureSelectionInfo(): SketchUiOverlay.ArchitectureElementInfo? {
+        val group = scene.activeGroup()
+        if (!scene.isArchitectureGroup(group)) {
+            return null
+        }
+        val store = group.architectureStore ?: return null
+        val selection = scene.selectedArchitectureElement(group) ?: return null
+        return when (selection.kind) {
+            ArchitectureStore.ElementKind.WALL -> {
+                val wall = store.allWalls().firstOrNull { it.id == selection.id } ?: return null
+                SketchUiOverlay.ArchitectureElementInfo(
+                    kind = SketchUiOverlay.ArchitectureElementKind.WALL,
+                    id = wall.id,
+                    wallThickness = wall.thickness,
+                    wallHeight = wall.height,
+                    wallInclinationDeg = wall.inclinationDeg
+                )
+            }
+            ArchitectureStore.ElementKind.SLAB -> {
+                val slab = store.allSlabs().firstOrNull { it.id == selection.id } ?: return null
+                SketchUiOverlay.ArchitectureElementInfo(
+                    kind = SketchUiOverlay.ArchitectureElementKind.SLAB,
+                    id = slab.id,
+                    slabThickness = slab.thickness
+                )
+            }
+            ArchitectureStore.ElementKind.STAIR -> {
+                val stair = store.allStairs().firstOrNull { it.id == selection.id } ?: return null
+                SketchUiOverlay.ArchitectureElementInfo(
+                    kind = SketchUiOverlay.ArchitectureElementKind.STAIR,
+                    id = stair.id,
+                    stairHeight = stair.height,
+                    stairStepCount = stair.stepCount,
+                    stairSupportThickness = stair.supportThickness
+                )
+            }
+            ArchitectureStore.ElementKind.FRAME -> {
+                val frame = store.allFrames().firstOrNull { it.id == selection.id } ?: return null
+                SketchUiOverlay.ArchitectureElementInfo(
+                    kind = SketchUiOverlay.ArchitectureElementKind.FRAME,
+                    id = frame.id,
+                    frameDepth = frame.depth,
+                    frameWidth = frame.frameWidth
+                )
+            }
+        }
+    }
+
+    private fun updateArchitectureWallParameters(id: String, thickness: Float, height: Float, inclinationDeg: Float) {
+        val group = scene.activeGroup()
+        if (!scene.isArchitectureGroup(group)) {
+            return
+        }
+        if (scene.updateArchitectureWall(group, id, thickness, height, inclinationDeg)) {
+            statusModel.message = "Wall parameters updated."
+        }
+    }
+
+    private fun updateArchitectureSlabParameters(id: String, thickness: Float) {
+        val group = scene.activeGroup()
+        if (!scene.isArchitectureGroup(group)) {
+            return
+        }
+        if (scene.updateArchitectureSlab(group, id, thickness)) {
+            statusModel.message = "Slab parameters updated."
+        }
+    }
+
+    private fun updateArchitectureStairParameters(id: String, height: Float, stepCount: Int, supportThickness: Float) {
+        val group = scene.activeGroup()
+        if (!scene.isArchitectureGroup(group)) {
+            return
+        }
+        if (scene.updateArchitectureStair(group, id, height, stepCount, supportThickness)) {
+            statusModel.message = "Stair parameters updated."
+        }
+    }
+
+    private fun updateArchitectureFrameParameters(id: String, depth: Float, frameWidth: Float) {
+        val group = scene.activeGroup()
+        if (!scene.isArchitectureGroup(group)) {
+            return
+        }
+        if (scene.updateArchitectureFrame(group, id, depth, frameWidth)) {
+            statusModel.message = "Frame parameters updated."
+        }
     }
 
     private fun updateSelectedText(textId: String, value: String) {

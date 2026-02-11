@@ -11,6 +11,15 @@ class ArchitectureStore {
         DOOR
     }
 
+    enum class ElementKind {
+        WALL,
+        SLAB,
+        STAIR,
+        FRAME
+    }
+
+    data class ElementSelection(val kind: ElementKind, val id: String)
+
     data class RectHole(
         var id: String,
         var u0: Float,
@@ -61,6 +70,7 @@ class ArchitectureStore {
     private val slabs = mutableListOf<Slab>()
     private val stairs = mutableListOf<Stair>()
     private val frames = mutableListOf<Frame>()
+    private var selectedElement: ElementSelection? = null
 
     fun allWalls(): List<WallSegment> = walls
 
@@ -69,6 +79,27 @@ class ArchitectureStore {
     fun allStairs(): List<Stair> = stairs
 
     fun allFrames(): List<Frame> = frames
+
+    fun selectedElement(): ElementSelection? = selectedElement
+
+    fun clearSelectedElement() {
+        selectedElement = null
+    }
+
+    fun setSelectedElement(kind: ElementKind, id: String): Boolean {
+        val exists = when (kind) {
+            ElementKind.WALL -> walls.any { it.id == id }
+            ElementKind.SLAB -> slabs.any { it.id == id }
+            ElementKind.STAIR -> stairs.any { it.id == id }
+            ElementKind.FRAME -> frames.any { it.id == id }
+        }
+        if (!exists) {
+            selectedElement = null
+            return false
+        }
+        selectedElement = ElementSelection(kind, id)
+        return true
+    }
 
     fun addWall(
         start: Vector3,
@@ -217,5 +248,35 @@ class ArchitectureStore {
         slabs.clear()
         stairs.clear()
         frames.clear()
+        selectedElement = null
+    }
+
+    fun updateWall(id: String, thickness: Float, height: Float, inclinationDeg: Float): Boolean {
+        val wall = walls.firstOrNull { it.id == id } ?: return false
+        wall.thickness = thickness
+        wall.height = height
+        wall.inclinationDeg = inclinationDeg
+        return true
+    }
+
+    fun updateSlab(id: String, thickness: Float): Boolean {
+        val slab = slabs.firstOrNull { it.id == id } ?: return false
+        slab.thickness = thickness
+        return true
+    }
+
+    fun updateStair(id: String, height: Float, stepCount: Int, supportThickness: Float): Boolean {
+        val stair = stairs.firstOrNull { it.id == id } ?: return false
+        stair.height = height
+        stair.stepCount = stepCount.coerceAtLeast(1)
+        stair.supportThickness = supportThickness
+        return true
+    }
+
+    fun updateFrame(id: String, depth: Float, frameWidth: Float): Boolean {
+        val frame = frames.firstOrNull { it.id == id } ?: return false
+        frame.depth = depth
+        frame.frameWidth = frameWidth
+        return true
     }
 }

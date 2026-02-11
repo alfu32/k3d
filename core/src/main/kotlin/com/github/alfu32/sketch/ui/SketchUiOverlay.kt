@@ -65,7 +65,12 @@ class SketchUiOverlay(
     private val shadowSettings: ShadowSettings,
     private val shadowChanged: (ShadowSettings) -> Unit,
     private val polylineSettings: PolylineSettings,
-    private val architectureSettings: ArchitectureSettings
+    private val architectureSettings: ArchitectureSettings,
+    private val architectureElementProvider: () -> ArchitectureElementInfo?,
+    private val architectureWallChanged: (String, Float, Float, Float) -> Unit,
+    private val architectureSlabChanged: (String, Float) -> Unit,
+    private val architectureStairChanged: (String, Float, Int, Float) -> Unit,
+    private val architectureFrameChanged: (String, Float, Float) -> Unit
 ) {
     private open class CollapsibleWindow(
         title: String,
@@ -147,6 +152,15 @@ class SketchUiOverlay(
     private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
     private val toolbarLayoutVersion = 5
     private val toolbarButtonSize = 32f
+    private val archDefaultWallThicknessKey = "arch_default_wall_thickness"
+    private val archDefaultWallHeightKey = "arch_default_wall_height"
+    private val archDefaultWallInclinationKey = "arch_default_wall_inclination"
+    private val archDefaultSlabThicknessKey = "arch_default_slab_thickness"
+    private val archDefaultStairHeightKey = "arch_default_stair_height"
+    private val archDefaultStairStepsKey = "arch_default_stair_steps"
+    private val archDefaultStairSupportKey = "arch_default_stair_support"
+    private val archDefaultFrameDepthKey = "arch_default_frame_depth"
+    private val archDefaultFrameWidthKey = "arch_default_frame_width"
     private val iconTextures = mutableListOf<Texture>()
     private val iconDrawables = mutableMapOf<String, TextureRegionDrawable>()
     private var iconsTexture: Texture? = null
@@ -192,6 +206,28 @@ class SketchUiOverlay(
     private lateinit var modelSettingsPanel: CollapsibleWindow
     private lateinit var polylineSettingsPanel: CollapsibleWindow
     private lateinit var architectureSettingsPanel: CollapsibleWindow
+    private lateinit var architectureModeLabel: VisLabel
+    private lateinit var architectureWallThicknessLabel: VisLabel
+    private lateinit var architectureWallThicknessField: VisTextField
+    private lateinit var architectureWallHeightLabel: VisLabel
+    private lateinit var architectureWallHeightField: VisTextField
+    private lateinit var architectureWallInclinationLabel: VisLabel
+    private lateinit var architectureWallInclinationField: VisTextField
+    private lateinit var architectureSlabThicknessLabel: VisLabel
+    private lateinit var architectureSlabThicknessField: VisTextField
+    private lateinit var architectureStairHeightLabel: VisLabel
+    private lateinit var architectureStairHeightField: VisTextField
+    private lateinit var architectureStairStepsLabel: VisLabel
+    private lateinit var architectureStairStepsField: VisTextField
+    private lateinit var architectureStairSupportLabel: VisLabel
+    private lateinit var architectureStairSupportField: VisTextField
+    private lateinit var architectureFrameDepthLabel: VisLabel
+    private lateinit var architectureFrameDepthField: VisTextField
+    private lateinit var architectureFrameWidthLabel: VisLabel
+    private lateinit var architectureFrameWidthField: VisTextField
+    private lateinit var architectureSettingsContent: VisTable
+    private var architecturePanelMode: ArchitectureElementKind? = null
+    private var updatingArchitectureFields = false
     private val unitNameField = VisTextField()
     private val unitSizeField = VisTextField()
     private val gridSpacingField = VisTextField()
@@ -219,6 +255,7 @@ class SketchUiOverlay(
     init {
         iconDrawables.putAll(loadIconDrawables())
         migrateBuiltinToolbarPrefs()
+        loadArchitectureDefaults()
         val root = Table()
         root.setFillParent(true)
         stage.addActor(root)
@@ -428,6 +465,7 @@ class SketchUiOverlay(
         updateGroupPanel()
         updateObjectsPanel()
         updateModelSettingsPanel()
+        updateArchitectureSettingsPanel()
         refreshPluginToolbar()
         toolButtons[status.activeTool]?.isChecked = true
         updatePluginToolSelection()
@@ -981,98 +1019,300 @@ class SketchUiOverlay(
 
     private fun buildArchitectureSettingsPanel(): CollapsibleWindow {
         val panel = CollapsibleWindow("Architecture Settings")
-        val content = VisTable()
-        content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
-        content.defaults().pad(4f).left().growX()
+        architectureSettingsContent = VisTable()
+        architectureSettingsContent.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        architectureSettingsContent.defaults().pad(4f).left().growX()
+        architectureModeLabel = VisLabel()
+        architectureWallThicknessLabel = VisLabel("Wall thickness")
+        architectureWallThicknessField = VisTextField()
+        architectureWallHeightLabel = VisLabel("Wall height")
+        architectureWallHeightField = VisTextField()
+        architectureWallInclinationLabel = VisLabel("Wall inclination (deg)")
+        architectureWallInclinationField = VisTextField()
+        architectureSlabThicknessLabel = VisLabel("Slab thickness")
+        architectureSlabThicknessField = VisTextField()
+        architectureStairHeightLabel = VisLabel("Stair height")
+        architectureStairHeightField = VisTextField()
+        architectureStairStepsLabel = VisLabel("Stair steps")
+        architectureStairStepsField = VisTextField()
+        architectureStairSupportLabel = VisLabel("Stair support thickness")
+        architectureStairSupportField = VisTextField()
+        architectureFrameDepthLabel = VisLabel("Frame depth")
+        architectureFrameDepthField = VisTextField()
+        architectureFrameWidthLabel = VisLabel("Frame width")
+        architectureFrameWidthField = VisTextField()
 
-        val wallThicknessField = VisTextField(String.format(Locale.US, "%.3f", architectureSettings.wallThickness))
-        val wallHeightField = VisTextField(String.format(Locale.US, "%.3f", architectureSettings.wallHeight))
-        val wallInclinationField = VisTextField(String.format(Locale.US, "%.3f", architectureSettings.wallInclinationDeg))
-        val slabThicknessField = VisTextField(String.format(Locale.US, "%.3f", architectureSettings.slabThickness))
-        val stairHeightField = VisTextField(String.format(Locale.US, "%.3f", architectureSettings.stairHeight))
-        val stairStepsField = VisTextField(architectureSettings.stairStepCount.toString())
-        val stairSupportField = VisTextField(String.format(Locale.US, "%.3f", architectureSettings.stairSupportThickness))
-        val frameDepthField = VisTextField(String.format(Locale.US, "%.3f", architectureSettings.frameDepth))
-        val frameWidthField = VisTextField(String.format(Locale.US, "%.3f", architectureSettings.frameWidth))
-
-        content.add(VisLabel("Wall thickness")).left().row()
-        content.add(wallThicknessField).growX().row()
-        content.add(VisLabel("Wall height")).left().padTop(4f).row()
-        content.add(wallHeightField).growX().row()
-        content.add(VisLabel("Wall inclination (deg)")).left().padTop(4f).row()
-        content.add(wallInclinationField).growX().row()
-        content.add(VisLabel("Slab thickness")).left().padTop(4f).row()
-        content.add(slabThicknessField).growX().row()
-        content.add(VisLabel("Stair height")).left().padTop(4f).row()
-        content.add(stairHeightField).growX().row()
-        content.add(VisLabel("Stair steps")).left().padTop(4f).row()
-        content.add(stairStepsField).growX().row()
-        content.add(VisLabel("Stair support thickness")).left().padTop(4f).row()
-        content.add(stairSupportField).growX().row()
-        content.add(VisLabel("Frame depth")).left().padTop(4f).row()
-        content.add(frameDepthField).growX().row()
-        content.add(VisLabel("Frame width")).left().padTop(4f).row()
-        content.add(frameWidthField).growX().row()
-
-        panel.add(content).growX()
+        panel.add(architectureSettingsContent).growX()
         panel.isVisible = false
 
-        wallThicknessField.addListener(object : ChangeListener() {
+        architectureWallThicknessField.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: Actor?) {
-                val value = wallThicknessField.text.toFloatOrNull() ?: return
-                architectureSettings.wallThickness = value.coerceAtLeast(0.01f)
+                if (updatingArchitectureFields) {
+                    return
+                }
+                val value = architectureWallThicknessField.text.toFloatOrNull()?.coerceAtLeast(0.01f) ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.wallThickness = value
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.WALL) {
+                    architectureWallChanged(selection.id, value, selection.wallHeight ?: 2.7f, selection.wallInclinationDeg ?: 0f)
+                }
             }
         })
-        wallHeightField.addListener(object : ChangeListener() {
+        architectureWallHeightField.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: Actor?) {
-                val value = wallHeightField.text.toFloatOrNull() ?: return
-                architectureSettings.wallHeight = value.coerceAtLeast(0.05f)
+                if (updatingArchitectureFields) {
+                    return
+                }
+                val value = architectureWallHeightField.text.toFloatOrNull()?.coerceAtLeast(0.05f) ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.wallHeight = value
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.WALL) {
+                    architectureWallChanged(selection.id, selection.wallThickness ?: 0.2f, value, selection.wallInclinationDeg ?: 0f)
+                }
             }
         })
-        wallInclinationField.addListener(object : ChangeListener() {
+        architectureWallInclinationField.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: Actor?) {
-                val value = wallInclinationField.text.toFloatOrNull() ?: return
-                architectureSettings.wallInclinationDeg = value
+                if (updatingArchitectureFields) {
+                    return
+                }
+                val value = architectureWallInclinationField.text.toFloatOrNull() ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.wallInclinationDeg = value
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.WALL) {
+                    architectureWallChanged(selection.id, selection.wallThickness ?: 0.2f, selection.wallHeight ?: 2.7f, value)
+                }
             }
         })
-        slabThicknessField.addListener(object : ChangeListener() {
+        architectureSlabThicknessField.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: Actor?) {
-                val value = slabThicknessField.text.toFloatOrNull() ?: return
-                architectureSettings.slabThickness = value.coerceAtLeast(0.01f)
+                if (updatingArchitectureFields) {
+                    return
+                }
+                val value = architectureSlabThicknessField.text.toFloatOrNull()?.coerceAtLeast(0.01f) ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.slabThickness = value
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.SLAB) {
+                    architectureSlabChanged(selection.id, value)
+                }
             }
         })
-        stairHeightField.addListener(object : ChangeListener() {
+        architectureStairHeightField.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: Actor?) {
-                val value = stairHeightField.text.toFloatOrNull() ?: return
-                architectureSettings.stairHeight = value.coerceAtLeast(0.05f)
+                if (updatingArchitectureFields) {
+                    return
+                }
+                val value = architectureStairHeightField.text.toFloatOrNull()?.coerceAtLeast(0.05f) ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.stairHeight = value
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.STAIR) {
+                    architectureStairChanged(selection.id, value, selection.stairStepCount ?: 14, selection.stairSupportThickness ?: 0.2f)
+                }
             }
         })
-        stairStepsField.addListener(object : ChangeListener() {
+        architectureStairStepsField.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: Actor?) {
-                val value = stairStepsField.text.toIntOrNull() ?: return
-                architectureSettings.stairStepCount = value.coerceAtLeast(1)
+                if (updatingArchitectureFields) {
+                    return
+                }
+                val value = architectureStairStepsField.text.toIntOrNull()?.coerceAtLeast(1) ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.stairStepCount = value
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.STAIR) {
+                    architectureStairChanged(selection.id, selection.stairHeight ?: 2.7f, value, selection.stairSupportThickness ?: 0.2f)
+                }
             }
         })
-        stairSupportField.addListener(object : ChangeListener() {
+        architectureStairSupportField.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: Actor?) {
-                val value = stairSupportField.text.toFloatOrNull() ?: return
-                architectureSettings.stairSupportThickness = value.coerceAtLeast(0.01f)
+                if (updatingArchitectureFields) {
+                    return
+                }
+                val value = architectureStairSupportField.text.toFloatOrNull()?.coerceAtLeast(0.01f) ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.stairSupportThickness = value
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.STAIR) {
+                    architectureStairChanged(selection.id, selection.stairHeight ?: 2.7f, selection.stairStepCount ?: 14, value)
+                }
             }
         })
-        frameDepthField.addListener(object : ChangeListener() {
+        architectureFrameDepthField.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: Actor?) {
-                val value = frameDepthField.text.toFloatOrNull() ?: return
-                architectureSettings.frameDepth = value.coerceAtLeast(0.01f)
+                if (updatingArchitectureFields) {
+                    return
+                }
+                val value = architectureFrameDepthField.text.toFloatOrNull()?.coerceAtLeast(0.01f) ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.frameDepth = value
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.FRAME) {
+                    architectureFrameChanged(selection.id, value, selection.frameWidth ?: 0.06f)
+                }
             }
         })
-        frameWidthField.addListener(object : ChangeListener() {
+        architectureFrameWidthField.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: Actor?) {
-                val value = frameWidthField.text.toFloatOrNull() ?: return
-                architectureSettings.frameWidth = value.coerceAtLeast(0.01f)
+                if (updatingArchitectureFields) {
+                    return
+                }
+                val value = architectureFrameWidthField.text.toFloatOrNull()?.coerceAtLeast(0.01f) ?: return
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.frameWidth = value
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.FRAME) {
+                    architectureFrameChanged(selection.id, selection.frameDepth ?: 0.12f, value)
+                }
             }
         })
 
+        rebuildArchitectureSettingsContent(null)
+        updateArchitectureSettingsPanel()
         return panel
+    }
+
+    private fun loadArchitectureDefaults() {
+        architectureSettings.wallThickness = uiPrefs.getFloat(archDefaultWallThicknessKey, architectureSettings.wallThickness).coerceAtLeast(0.01f)
+        architectureSettings.wallHeight = uiPrefs.getFloat(archDefaultWallHeightKey, architectureSettings.wallHeight).coerceAtLeast(0.05f)
+        architectureSettings.wallInclinationDeg = uiPrefs.getFloat(archDefaultWallInclinationKey, architectureSettings.wallInclinationDeg)
+        architectureSettings.slabThickness = uiPrefs.getFloat(archDefaultSlabThicknessKey, architectureSettings.slabThickness).coerceAtLeast(0.01f)
+        architectureSettings.stairHeight = uiPrefs.getFloat(archDefaultStairHeightKey, architectureSettings.stairHeight).coerceAtLeast(0.05f)
+        architectureSettings.stairStepCount = uiPrefs.getInteger(archDefaultStairStepsKey, architectureSettings.stairStepCount).coerceAtLeast(1)
+        architectureSettings.stairSupportThickness = uiPrefs.getFloat(archDefaultStairSupportKey, architectureSettings.stairSupportThickness).coerceAtLeast(0.01f)
+        architectureSettings.frameDepth = uiPrefs.getFloat(archDefaultFrameDepthKey, architectureSettings.frameDepth).coerceAtLeast(0.01f)
+        architectureSettings.frameWidth = uiPrefs.getFloat(archDefaultFrameWidthKey, architectureSettings.frameWidth).coerceAtLeast(0.01f)
+    }
+
+    private fun saveArchitectureDefaults() {
+        uiPrefs.putFloat(archDefaultWallThicknessKey, architectureSettings.wallThickness)
+        uiPrefs.putFloat(archDefaultWallHeightKey, architectureSettings.wallHeight)
+        uiPrefs.putFloat(archDefaultWallInclinationKey, architectureSettings.wallInclinationDeg)
+        uiPrefs.putFloat(archDefaultSlabThicknessKey, architectureSettings.slabThickness)
+        uiPrefs.putFloat(archDefaultStairHeightKey, architectureSettings.stairHeight)
+        uiPrefs.putInteger(archDefaultStairStepsKey, architectureSettings.stairStepCount)
+        uiPrefs.putFloat(archDefaultStairSupportKey, architectureSettings.stairSupportThickness)
+        uiPrefs.putFloat(archDefaultFrameDepthKey, architectureSettings.frameDepth)
+        uiPrefs.putFloat(archDefaultFrameWidthKey, architectureSettings.frameWidth)
+        uiPrefs.flush()
+    }
+
+    private fun rebuildArchitectureSettingsContent(mode: ArchitectureElementKind?) {
+        architecturePanelMode = mode
+        architectureSettingsContent.clearChildren()
+        architectureSettingsContent.add(architectureModeLabel).left().row()
+        when (mode) {
+            null -> {
+                addArchitectureFieldRow(architectureWallThicknessLabel, architectureWallThicknessField)
+                addArchitectureFieldRow(architectureWallHeightLabel, architectureWallHeightField)
+                addArchitectureFieldRow(architectureWallInclinationLabel, architectureWallInclinationField)
+                addArchitectureFieldRow(architectureSlabThicknessLabel, architectureSlabThicknessField)
+                addArchitectureFieldRow(architectureStairHeightLabel, architectureStairHeightField)
+                addArchitectureFieldRow(architectureStairStepsLabel, architectureStairStepsField)
+                addArchitectureFieldRow(architectureStairSupportLabel, architectureStairSupportField)
+                addArchitectureFieldRow(architectureFrameDepthLabel, architectureFrameDepthField)
+                addArchitectureFieldRow(architectureFrameWidthLabel, architectureFrameWidthField)
+            }
+            ArchitectureElementKind.WALL -> {
+                addArchitectureFieldRow(architectureWallThicknessLabel, architectureWallThicknessField)
+                addArchitectureFieldRow(architectureWallHeightLabel, architectureWallHeightField)
+                addArchitectureFieldRow(architectureWallInclinationLabel, architectureWallInclinationField)
+            }
+            ArchitectureElementKind.SLAB -> {
+                addArchitectureFieldRow(architectureSlabThicknessLabel, architectureSlabThicknessField)
+            }
+            ArchitectureElementKind.STAIR -> {
+                addArchitectureFieldRow(architectureStairHeightLabel, architectureStairHeightField)
+                addArchitectureFieldRow(architectureStairStepsLabel, architectureStairStepsField)
+                addArchitectureFieldRow(architectureStairSupportLabel, architectureStairSupportField)
+            }
+            ArchitectureElementKind.FRAME -> {
+                addArchitectureFieldRow(architectureFrameDepthLabel, architectureFrameDepthField)
+                addArchitectureFieldRow(architectureFrameWidthLabel, architectureFrameWidthField)
+            }
+        }
+        if (::architectureSettingsPanel.isInitialized) {
+            architectureSettingsPanel.pack()
+        }
+    }
+
+    private fun addArchitectureFieldRow(label: VisLabel, field: VisTextField) {
+        architectureSettingsContent.add(label).left().padTop(4f).row()
+        architectureSettingsContent.add(field).growX().row()
+    }
+
+    private fun updateArchitectureSettingsPanel() {
+        if (!::architectureSettingsContent.isInitialized) {
+            return
+        }
+        val selection = architectureElementProvider()
+        if (selection?.kind != architecturePanelMode) {
+            rebuildArchitectureSettingsContent(selection?.kind)
+        }
+        architectureModeLabel.setText(
+            if (selection == null) {
+                "Default construction settings"
+            } else {
+                "Selected ${selection.kind.name.lowercase()} [${selection.id.take(8)}]"
+            }
+        )
+
+        fun updateField(field: VisTextField, text: String) {
+            if (field.hasKeyboardFocus()) {
+                return
+            }
+            if (field.text != text) {
+                field.text = text
+            }
+        }
+
+        updatingArchitectureFields = true
+        if (selection == null) {
+            updateField(architectureWallThicknessField, String.format(Locale.US, "%.3f", architectureSettings.wallThickness))
+            updateField(architectureWallHeightField, String.format(Locale.US, "%.3f", architectureSettings.wallHeight))
+            updateField(architectureWallInclinationField, String.format(Locale.US, "%.3f", architectureSettings.wallInclinationDeg))
+            updateField(architectureSlabThicknessField, String.format(Locale.US, "%.3f", architectureSettings.slabThickness))
+            updateField(architectureStairHeightField, String.format(Locale.US, "%.3f", architectureSettings.stairHeight))
+            updateField(architectureStairStepsField, architectureSettings.stairStepCount.toString())
+            updateField(architectureStairSupportField, String.format(Locale.US, "%.3f", architectureSettings.stairSupportThickness))
+            updateField(architectureFrameDepthField, String.format(Locale.US, "%.3f", architectureSettings.frameDepth))
+            updateField(architectureFrameWidthField, String.format(Locale.US, "%.3f", architectureSettings.frameWidth))
+        } else {
+            when (selection.kind) {
+                ArchitectureElementKind.WALL -> {
+                    updateField(architectureWallThicknessField, String.format(Locale.US, "%.3f", selection.wallThickness ?: architectureSettings.wallThickness))
+                    updateField(architectureWallHeightField, String.format(Locale.US, "%.3f", selection.wallHeight ?: architectureSettings.wallHeight))
+                    updateField(architectureWallInclinationField, String.format(Locale.US, "%.3f", selection.wallInclinationDeg ?: architectureSettings.wallInclinationDeg))
+                }
+                ArchitectureElementKind.SLAB -> {
+                    updateField(architectureSlabThicknessField, String.format(Locale.US, "%.3f", selection.slabThickness ?: architectureSettings.slabThickness))
+                }
+                ArchitectureElementKind.STAIR -> {
+                    updateField(architectureStairHeightField, String.format(Locale.US, "%.3f", selection.stairHeight ?: architectureSettings.stairHeight))
+                    updateField(architectureStairStepsField, (selection.stairStepCount ?: architectureSettings.stairStepCount).toString())
+                    updateField(architectureStairSupportField, String.format(Locale.US, "%.3f", selection.stairSupportThickness ?: architectureSettings.stairSupportThickness))
+                }
+                ArchitectureElementKind.FRAME -> {
+                    updateField(architectureFrameDepthField, String.format(Locale.US, "%.3f", selection.frameDepth ?: architectureSettings.frameDepth))
+                    updateField(architectureFrameWidthField, String.format(Locale.US, "%.3f", selection.frameWidth ?: architectureSettings.frameWidth))
+                }
+            }
+        }
+        updatingArchitectureFields = false
     }
 
     private fun updateGroupPanel() {
@@ -2096,4 +2336,25 @@ class SketchUiOverlay(
     data class GroupInfo(val id: String, val name: String, val glued: Boolean, val editing: Boolean)
 
     data class ObjectPrototypeInfo(val id: String, val name: String, val instanceCount: Int)
+
+    enum class ArchitectureElementKind {
+        WALL,
+        SLAB,
+        STAIR,
+        FRAME
+    }
+
+    data class ArchitectureElementInfo(
+        val kind: ArchitectureElementKind,
+        val id: String,
+        val wallThickness: Float? = null,
+        val wallHeight: Float? = null,
+        val wallInclinationDeg: Float? = null,
+        val slabThickness: Float? = null,
+        val stairHeight: Float? = null,
+        val stairStepCount: Int? = null,
+        val stairSupportThickness: Float? = null,
+        val frameDepth: Float? = null,
+        val frameWidth: Float? = null
+    )
 }

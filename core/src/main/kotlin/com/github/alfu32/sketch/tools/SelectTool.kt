@@ -56,6 +56,7 @@ class SelectTool(
         scene.activeGroup().dimensionStore.clearSelection()
         scene.activeGroup().textStore.clearSelection()
         scene.clearVoxelSelection(scene.activeGroup())
+        scene.clearArchitectureElementSelection(scene.activeGroup())
         scene.clearGroupSelection()
         selectingVolume = false
         volumeStartRaw = null
@@ -117,7 +118,7 @@ class SelectTool(
         val isArchitectureGroup = scene.isArchitectureGroup(activeGroup)
         val allowFaceSelection = !isVoxelGroup && !isArchitectureGroup
         val voxelHit = if (isVoxelGroup) pickVoxelWorld(ray) else null
-        val faceHit = if (allowFaceSelection) pickFaceWorld(ray) else null
+        val faceHit = if (allowFaceSelection || isArchitectureGroup) pickFaceWorld(ray) else null
         val edgeHit = if (isVoxelGroup) null else pickEdgeWorld(ray, Gdx.input.x, Gdx.input.y)
         val dimensionHit = pickDimensionWorld(ray, Gdx.input.x, Gdx.input.y)
         val textHit = pickTextWorld(ray, Gdx.input.x, Gdx.input.y)
@@ -129,6 +130,9 @@ class SelectTool(
         val pickedText = textHit != null
         val pickedGroup = groupHit != null
         if (!pickedVoxel && !pickedFace && !pickedEdge && !pickedGroup && !pickedDimension && !pickedText) {
+            if (isArchitectureGroup) {
+                scene.clearArchitectureElementSelection(activeGroup)
+            }
             selectingWindow = true
             windowDragActive = false
             windowStartX = Gdx.input.x
@@ -233,8 +237,16 @@ class SelectTool(
             status.message = "Face toggled."
             return true
         }
+        if (isArchitectureGroup && pickedFace && (!pickedEdge || faceHit!!.t <= edgeHit!!.t)) {
+            val selection = scene.selectArchitectureElementNearWorldPoint(activeGroup, faceHit.point)
+            status.message = if (selection != null) "Architecture element selected." else "No architecture element selected."
+            return true
+        }
         if (!isVoxelGroup && pickedEdge) {
             scene.activeGroup().lineStore.toggleSelection(edgeHit!!.segment)
+            if (isArchitectureGroup) {
+                scene.selectArchitectureElementNearWorldPoint(activeGroup, edgeHit.point)
+            }
             status.message = "Edge toggled."
             return true
         }
