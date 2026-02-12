@@ -68,6 +68,14 @@ Keyboard focus is panel-aware: typing in focused fields stays in UI controls, wh
 
 ![Screenshot placeholder: Panels](images/img_3.png)
 
+## Architecture tools brief
+
+- Architecture elements are parametric objects stored in architecture groups.
+- Main tools: `Wall`, `Slab`, `Stair`, `Add Hole`, `Window Frame`, `Door Frame`.
+- Architecture defaults and selected-element parameters are edited in the **Architecture Settings** panel.
+- You can edit architecture element parameters by selecting the element/group; entering group edit mode is not required for parameter updates.
+- Wall and stair generation are contour/path driven, with automatic rebuild after parameter changes.
+
 ## Navigation (camera)
 
 - Orbit: right mouse drag.
@@ -335,6 +343,107 @@ Objects let you reuse geometry and isolate edits.
 - Input: left-click to place the selected prototype instance.
 
 ![Screenshot placeholder: Tools toolbar](images/img_11.png)
+
+## Architecture tools (detailed, tool by tool)
+
+### Architecture workflow context
+
+- Architecture tools operate on architecture groups.
+- If a required architecture group is missing, creation tools can auto-create one and continue.
+- The **Architecture Settings** panel shows either default construction values (no architecture element selected) or selected-element values (when exactly one architecture element is selected).
+- Parameter changes trigger a live rebuild of the selected architecture element.
+
+### Wall tool
+
+- Purpose: create multi-segment walls using chained picks.
+- Input flow:
+  - click first wall point,
+  - click end point to create one segment,
+  - continue clicking to chain additional segments.
+- `Enter`: finish current chain and keep Wall tool active.
+- `Esc`: cancel and return to Select.
+- Driven by panel parameters:
+  - wall thickness,
+  - wall height,
+  - wall inclination,
+  - exterior/interior colors.
+- Wall joins are rebuilt in 3D when neighboring segments meet.
+
+### Slab tool
+
+- Purpose: create rectangular slab geometry from two corners.
+- Input flow:
+  - click first slab corner,
+  - click opposite corner to commit.
+- `Enter`: clear current draft.
+- `Esc`: cancel and return to Select.
+- Driven by panel parameters:
+  - slab thickness,
+  - slab top/bottom/side colors.
+
+### Stair tool
+
+- Purpose: create ribbon-style stairs from a contour and a tread path.
+- Input flow:
+  - pick a closed contour polyline (preferred: whole polyline/group pick),
+  - pick an open tread-line polyline.
+- The generator divides the tread path by step count, builds per-step orientation from each local segment, trims each step to contour intersections, and builds tread/support geometry.
+- If side cross-lines meet before contour intersection, the step section collapses to a triangle automatically.
+- Support and backface are generated as a continuous ribbon with special handling at the first/last steps.
+- Rail grid options:
+  - left and right rails can be toggled independently in Architecture Settings,
+  - rails are generated at +1, +2, +3, +4 model units above each step top edge.
+- Driven by panel parameters:
+  - stair height,
+  - stair steps,
+  - support thickness,
+  - left/right rail enable,
+  - tread/support colors.
+
+### Add Hole tool
+
+- Purpose: cut rectangular holes in compatible walls.
+- Input flow:
+  - click first corner on/near wall face,
+  - click opposite corner to commit.
+- If a wall is selected, hole is added to that wall; otherwise nearest compatible wall is used.
+- Tool is restricted to wall-only architecture groups.
+- `Enter`: clear current draft.
+- `Esc`: cancel and return to Select.
+
+### Window Frame tool
+
+- Purpose: create a parametric rectangular window frame.
+- Input flow:
+  - click first frame corner,
+  - click opposite corner to commit.
+- Frame is built on the picked construction plane.
+- Driven by panel parameters:
+  - frame depth,
+  - frame width,
+  - frame color.
+- `Enter`: clear current draft.
+- `Esc`: cancel and return to Select.
+
+### Door Frame tool
+
+- Purpose: create a parametric rectangular door frame.
+- Input flow:
+  - click first frame corner,
+  - click opposite corner to commit.
+- Frame is built on the picked construction plane.
+- Uses the same frame parameters as Window Frame:
+  - frame depth,
+  - frame width,
+  - frame color.
+- `Enter`: clear current draft.
+- `Esc`: cancel and return to Select.
+
+### Editing architecture elements
+
+- Select an architecture element/group, then adjust parameters in **Architecture Settings**.
+- Walls/slabs/stairs/frames update in place when values change.
+- For stairs, rail toggles and colors are also editable post-creation.
 
 ## Actions and panels
 
