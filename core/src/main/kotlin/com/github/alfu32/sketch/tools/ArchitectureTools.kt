@@ -272,13 +272,9 @@ class ArchitectureAddHoleTool(
         if (button != Input.Buttons.LEFT || !valid || world == null) {
             return false
         }
-        val group = scene.activeGroup()
-        if (!scene.isArchitectureGroup(group)) {
-            status.message = "Enter a wall architecture group to add holes."
-            return true
-        }
+        val group = resolveWallTargetGroup(status) ?: return true
         if (!scene.isWallOnlyArchitectureGroup(group)) {
-            status.message = "Add Hole works only in wall-only architecture groups."
+            status.message = "Add Hole works only on wall-only architecture groups."
             return true
         }
         if (firstCornerWorld == null) {
@@ -288,11 +284,16 @@ class ArchitectureAddHoleTool(
             return true
         }
         val first = firstCornerWorld ?: return true
-        val created = scene.addArchitectureHoleToNearestWall(
-            group = group,
-            cornerA = group.toLocal(first),
-            cornerB = group.toLocal(world)
-        )
+        val localA = group.toLocal(first)
+        val localB = group.toLocal(world)
+        val selectedWallId = scene.selectedArchitectureElement(group)
+            ?.takeIf { it.kind == ArchitectureStore.ElementKind.WALL }
+            ?.id
+        val created = if (selectedWallId != null) {
+            scene.addArchitectureHoleToWall(group, selectedWallId, localA, localB)
+        } else {
+            scene.addArchitectureHoleToNearestWall(group, localA, localB)
+        }
         if (created) {
             status.message = "Wall hole added."
         } else {
@@ -341,6 +342,25 @@ class ArchitectureAddHoleTool(
         firstCornerWorld = null
         firstNormalWorld = null
         hasHover = false
+    }
+
+    private fun resolveWallTargetGroup(status: StatusModel): GroupScene.GroupNode? {
+        val active = scene.activeGroup()
+        if (scene.isArchitectureGroup(active) && scene.isWallOnlyArchitectureGroup(active)) {
+            return active
+        }
+        val selected = scene.selectedGroups().filter { scene.isArchitectureGroup(it) && scene.isWallOnlyArchitectureGroup(it) }
+        return when {
+            selected.size == 1 -> selected.first()
+            selected.size > 1 -> {
+                status.message = "Select only one wall group before drawing holes."
+                null
+            }
+            else -> {
+                status.message = "Select a wall group (or enter one) before drawing holes."
+                null
+            }
+        }
     }
 }
 

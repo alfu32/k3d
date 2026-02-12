@@ -9,6 +9,7 @@ import com.badlogic.gdx.utils.TimeUtils
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.collision.Ray
 import com.github.alfu32.sketch.DimensionMath
+import com.github.alfu32.sketch.model.ArchitectureStore
 import com.github.alfu32.sketch.model.DraftDimensionStore
 import com.github.alfu32.sketch.model.DraftFaceStore
 import com.github.alfu32.sketch.model.DraftLineStore
@@ -44,7 +45,23 @@ class SelectTool(
     private var windowEndX = 0
     private var windowEndY = 0
     private var pendingVolumeStart: Vector3? = null
+    private var wallDrag: WallDragState? = null
     private enum class SelectionMode { REPLACE, ADD, REMOVE }
+
+    private data class WallEndpointHit(
+        val wallId: String,
+        val draggingStart: Boolean,
+        val fixedWorld: Vector3,
+        val movingWorld: Vector3
+    )
+
+    private data class WallDragState(
+        val group: GroupScene.GroupNode,
+        val wallId: String,
+        val draggingStart: Boolean,
+        val fixedWorld: Vector3,
+        val movingWorld: Vector3
+    )
 
     override fun onEnter(status: StatusModel) {
         status.message = "Select entities."
@@ -64,10 +81,17 @@ class SelectTool(
         selectingWindow = false
         windowDragActive = false
         pendingVolumeStart = null
+        wallDrag = null
         status.message = "Selection cleared."
     }
 
     override fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
+        wallDrag?.let { drag ->
+            if (valid && world != null) {
+                wallDrag = drag.copy(movingWorld = Vector3(world))
+            }
+            return
+        }
         if (selectingVolume && valid && world != null) {
             volumeEndRaw = Vector3(world)
         }
@@ -116,6 +140,20 @@ class SelectTool(
         val activeGroup = scene.activeGroup()
         val isVoxelGroup = scene.isVoxelGroup(activeGroup)
         val isArchitectureGroup = scene.isArchitectureGroup(activeGroup)
+        if (isArchitectureGroup) {
+            val endpointHit = pickSelectedWallEndpoint(activeGroup, ray, Gdx.input.x, Gdx.input.y)
+            if (endpointHit != null) {
+                wallDrag = WallDragState(
+                    group = activeGroup,
+                    wallId = endpointHit.wallId,
+                    draggingStart = endpointHit.draggingStart,
+                    fixedWorld = Vector3(endpointHit.fixedWorld),
+                    movingWorld = Vector3(endpointHit.movingWorld)
+                )
+                status.message = "Drag wall end and release to update."
+                return true
+            }
+        }
         val allowFaceSelection = !isVoxelGroup && !isArchitectureGroup
         val voxelHit = if (isVoxelGroup) pickVoxelWorld(ray) else null
         val faceHit = if (allowFaceSelection || isArchitectureGroup) pickFaceWorld(ray) else null
@@ -263,6 +301,23 @@ class SelectTool(
         if (button != Input.Buttons.LEFT) {
             return false
         }
+        wallDrag?.let { drag ->
+            val movingWorld = if (valid && world != null) Vector3(world) else Vector3(drag.movingWorld)
+            val (startWorld, endWorld) = if (drag.draggingStart) {
+                movingWorld to drag.fixedWorld
+            } else {
+                drag.fixedWorld to movingWorld
+            }
+            val updated = scene.updateArchitectureWallEndpoints(
+                group = drag.group,
+                id = drag.wallId,
+                start = drag.group.toLocal(startWorld),
+                end = drag.group.toLocal(endWorld)
+            )
+            wallDrag = null
+            status.message = if (updated) "Wall end updated." else "Wall end update failed."
+            return true
+        }
         if (selectingWindow) {
             windowEndX = Gdx.input.x
             windowEndY = Gdx.input.y
@@ -323,6 +378,11 @@ class SelectTool(
     }
 
     override fun render(renderer: ShapeRenderer) {
+        wallDrag?.let { drag ->
+            renderer.color = com.badlogic.gdx.graphics.Color(0.25f, 0.65f, 1f, 1f)
+            renderer.line(drag.fixedWorld, drag.movingWorld)
+            return
+        }
         val bounds = volumeBounds() ?: return
         val start = bounds.first
         val end = bounds.second
@@ -822,6 +882,44 @@ class SelectTool(
             }
         }
         return true
+    }
+
+    private fun pickSelectedWallEndpoint(
+        group: GroupScene.GroupNode,
+        ray: Ray,
+        screenX: Int,
+        screenY: Int,
+        maxPixels: Float = 14f
+    ): WallEndpointHit? {
+        val selection = scene.selectedArchitectureElement(group) ?: return null
+        if (selection.kind != ArchitectureStore.ElementKind.WALL) {
+            return null
+        }
+        val wall = scene.selectedArchitectureWall(group) ?: return null
+        val startWorld = group.toWorld(wall.start)
+        val endWorld = group.toWorld(wall.end)
+        val startDistance = screenDistance(startWorld, screenX, screenY)
+        val endDistance = screenDistance(endWorld, screenX, screenY)
+        if (startDistance > maxPixels && endDistance > maxPixels) {
+            return null
+        }
+        val startT = Vector3(startWorld).sub(ray.origin).dot(ray.direction)
+        val endT = Vector3(endWorld).sub(ray.origin).dot(ray.direction)
+        return if (startDistance <= endDistance) {
+            WallEndpointHit(
+                wallId = wall.id,
+                draggingStart = true,
+                fixedWorld = Vector3(endWorld),
+                movingWorld = if (startT >= 0f) Vector3(startWorld) else Vector3(endWorld)
+            )
+        } else {
+            WallEndpointHit(
+                wallId = wall.id,
+                draggingStart = false,
+                fixedWorld = Vector3(startWorld),
+                movingWorld = if (endT >= 0f) Vector3(endWorld) else Vector3(startWorld)
+            )
+        }
     }
 
     private data class WindowRectTopLeft(

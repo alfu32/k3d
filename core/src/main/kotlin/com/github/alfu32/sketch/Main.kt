@@ -141,6 +141,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var groundRenderable: MeshRenderableProvider
     private val selectedFaceColor = Color(1f, 0f, 0f, 0.3f)
     private val selectedLineColor = Color(1f, 0f, 0f, 1f)
+    private val architectureHoleGuideColor = Color(0.2f, 0.55f, 0.95f, 1f)
     private val selectedEntityBoxColor = Color(0.2f, 0.7f, 0.95f, 1f)
     private val editModeBoxColor = Color(1f, 0.6f, 0.2f, 1f)
     private val selectedLineWidth = 8f
@@ -799,6 +800,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         drawCursor()
         drawSelectionHighlights()
         drawDraftLines()
+        drawArchitectureHoleGuides()
         drawDimensions()
         toolController.render(shapeRenderer)
         drawActiveToolMeasurementLine()
@@ -1582,6 +1584,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             drawLineCross(segment.start, crossSize)
             drawLineCross(segment.end, crossSize)
         }
+        Gdx.gl.glLineWidth(2f)
+    }
+
+    private fun drawArchitectureHoleGuides() {
+        val active = scene.activeGroup()
+        if (!scene.isEditing() || !scene.isArchitectureGroup(active)) {
+            return
+        }
+        val guides = scene.architectureHoleGuideSegmentsWorld(active, includeDiagonals = true)
+        if (guides.isEmpty()) {
+            return
+        }
+        shapeRenderer.color = architectureHoleGuideColor
+        Gdx.gl.glLineWidth(3f)
+        guides.forEach { (a, b) -> shapeRenderer.line(a, b) }
         Gdx.gl.glLineWidth(2f)
     }
 

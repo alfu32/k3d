@@ -93,6 +93,16 @@ class ArchitectureStore {
 
     fun selectedElement(): ElementSelection? = selectedElement
 
+    fun wallById(id: String): WallSegment? = walls.firstOrNull { it.id == id }
+
+    fun selectedWall(): WallSegment? {
+        val selection = selectedElement ?: return null
+        if (selection.kind != ElementKind.WALL) {
+            return null
+        }
+        return wallById(selection.id)
+    }
+
     fun clearSelectedElement() {
         selectedElement = null
     }
@@ -316,6 +326,13 @@ class ArchitectureStore {
         wall.inclinationDeg = inclinationDeg
         wall.exteriorColor.set(exteriorColor)
         wall.interiorColor.set(interiorColor)
+        return true
+    }
+
+    fun updateWallEndpoints(id: String, start: Vector3, end: Vector3): Boolean {
+        val wall = walls.firstOrNull { it.id == id } ?: return false
+        wall.start.set(start)
+        wall.end.set(end)
         return true
     }
 

@@ -852,6 +852,10 @@ class GroupScene(
         return group.architectureStore?.selectedElement()
     }
 
+    fun selectedArchitectureWall(group: GroupNode): ArchitectureStore.WallSegment? {
+        return group.architectureStore?.selectedWall()
+    }
+
     fun clearArchitectureElementSelection(group: GroupNode): Boolean {
         val store = group.architectureStore ?: return false
         if (store.selectedElement() == null) {
@@ -908,6 +912,48 @@ class GroupScene(
         return store.selectedElement()
     }
 
+    fun updateArchitectureWallEndpoints(
+        group: GroupNode,
+        id: String,
+        start: Vector3,
+        end: Vector3
+    ): Boolean {
+        val store = group.architectureStore ?: return false
+        if (start.dst2(end) <= 1e-6f) {
+            return false
+        }
+        if (!store.updateWallEndpoints(id, start, end)) {
+            return false
+        }
+        rebuildArchitectureGeometry(group.prototype)
+        notifyChange()
+        return true
+    }
+
+    fun addArchitectureHoleToWall(
+        group: GroupNode,
+        wallId: String,
+        cornerA: Vector3,
+        cornerB: Vector3
+    ): Boolean {
+        val store = group.architectureStore ?: return false
+        val wall = store.wallById(wallId) ?: return false
+        val candidate = wallHoleCandidate(wall, cornerA, cornerB) ?: return false
+        val added = store.addHole(
+            wallId = wall.id,
+            u0 = candidate.u0,
+            u1 = candidate.u1,
+            v0 = candidate.v0,
+            v1 = candidate.v1
+        ) ?: return false
+        if (added.u1 - added.u0 <= 1e-4f || added.v1 - added.v0 <= 1e-4f) {
+            return false
+        }
+        rebuildArchitectureGeometry(group.prototype)
+        notifyChange()
+        return true
+    }
+
     fun addArchitectureHoleToNearestWall(
         group: GroupNode,
         cornerA: Vector3,
@@ -923,19 +969,21 @@ class GroupScene(
             return false
         }
         val candidate = findNearestWallHoleCandidate(store, cornerA, cornerB) ?: return false
-        val added = store.addHole(
-            wallId = candidate.wall.id,
-            u0 = candidate.u0,
-            u1 = candidate.u1,
-            v0 = candidate.v0,
-            v1 = candidate.v1
-        ) ?: return false
-        if (added.u1 - added.u0 <= 1e-4f || added.v1 - added.v0 <= 1e-4f) {
-            return false
+        return addArchitectureHoleToWall(group, candidate.wall.id, cornerA, cornerB)
+    }
+
+    fun architectureHoleGuideSegmentsWorld(
+        group: GroupNode,
+        includeDiagonals: Boolean = true
+    ): List<Pair<Vector3, Vector3>> {
+        val store = group.architectureStore ?: return emptyList()
+        val guides = mutableListOf<Pair<Vector3, Vector3>>()
+        store.allWalls().forEach { wall ->
+            wall.holes.forEach { hole ->
+                guides.addAll(holeContourSegments(wall, hole, includeDiagonals = includeDiagonals))
+            }
         }
-        rebuildArchitectureGeometry(group.prototype)
-        notifyChange()
-        return true
+        return guides
     }
 
     fun deleteSelectedArchitectureHoleContours(group: GroupNode): Int {
@@ -945,7 +993,7 @@ class GroupScene(
             return 0
         }
         val removed = store.removeHoles { wall, hole ->
-            val contours = holeContourSegments(wall, hole)
+            val contours = holeContourSegments(wall, hole, includeDiagonals = true)
             contours.any { contour ->
                 selected.any { seg ->
                     segmentsApproxEqual(seg.start, seg.end, contour.first, contour.second)
@@ -1460,26 +1508,34 @@ class GroupScene(
     ): HoleCandidate? {
         var best: HoleCandidate? = null
         store.allWalls().forEach { wall ->
-            val basis = wallBasis(wall) ?: return@forEach
-            val pa = projectToWall(basis, cornerA)
-            val pb = projectToWall(basis, cornerB)
-            val u0 = min(pa.x, pb.x).coerceIn(0f, basis.length)
-            val u1 = max(pa.x, pb.x).coerceIn(0f, basis.length)
-            val v0 = min(pa.y, pb.y).coerceAtLeast(0f).coerceAtMost(wall.height)
-            val v1 = max(pa.y, pb.y).coerceAtLeast(0f).coerceAtMost(wall.height)
-            if (u1 - u0 <= 0.05f || v1 - v0 <= 0.05f) {
-                return@forEach
-            }
-            val dist = min(
-                min(abs(pa.z), abs(pa.z - wall.thickness)),
-                min(abs(pb.z), abs(pb.z - wall.thickness))
-            )
-            val candidate = HoleCandidate(wall, u0, u1, v0, v1, dist)
+            val candidate = wallHoleCandidate(wall, cornerA, cornerB) ?: return@forEach
             if (best == null || candidate.planeDistance < best!!.planeDistance) {
                 best = candidate
             }
         }
         return best
+    }
+
+    private fun wallHoleCandidate(
+        wall: ArchitectureStore.WallSegment,
+        cornerA: Vector3,
+        cornerB: Vector3
+    ): HoleCandidate? {
+        val basis = wallBasis(wall) ?: return null
+        val pa = projectToWall(basis, cornerA)
+        val pb = projectToWall(basis, cornerB)
+        val u0 = min(pa.x, pb.x).coerceIn(0f, basis.length)
+        val u1 = max(pa.x, pb.x).coerceIn(0f, basis.length)
+        val v0 = min(pa.y, pb.y).coerceAtLeast(0f).coerceAtMost(wall.height)
+        val v1 = max(pa.y, pb.y).coerceAtLeast(0f).coerceAtMost(wall.height)
+        if (u1 - u0 <= 0.05f || v1 - v0 <= 0.05f) {
+            return null
+        }
+        val dist = min(
+            min(abs(pa.z), abs(pa.z - wall.thickness)),
+            min(abs(pb.z), abs(pb.z - wall.thickness))
+        )
+        return HoleCandidate(wall, u0, u1, v0, v1, dist)
     }
 
     private fun projectToWall(basis: WallBasis, point: Vector3): Vector3 {
@@ -1493,7 +1549,8 @@ class GroupScene(
 
     private fun holeContourSegments(
         wall: ArchitectureStore.WallSegment,
-        hole: ArchitectureStore.RectHole
+        hole: ArchitectureStore.RectHole,
+        includeDiagonals: Boolean = false
     ): List<Pair<Vector3, Vector3>> {
         val basis = wallBasis(wall) ?: return emptyList()
         val eps = 0.0015f
@@ -1501,12 +1558,17 @@ class GroupScene(
         val p1 = wallPoint(basis, wall, hole.u1, hole.v0, 1f, eps)
         val p2 = wallPoint(basis, wall, hole.u1, hole.v1, 1f, eps)
         val p3 = wallPoint(basis, wall, hole.u0, hole.v1, 1f, eps)
-        return listOf(
+        val segments = mutableListOf(
             p0 to p1,
             p1 to p2,
             p2 to p3,
             p3 to p0
         )
+        if (includeDiagonals) {
+            segments.add(p0 to p2)
+            segments.add(p1 to p3)
+        }
+        return segments
     }
 
     private fun segmentsApproxEqual(
@@ -1782,7 +1844,7 @@ class GroupScene(
         }
 
         holes.forEach { hole ->
-            val contours = holeContourSegments(wall, hole)
+            val contours = holeContourSegments(wall, hole, includeDiagonals = true)
             contours.forEach { (a, b) ->
                 lineStore.addSegment(a, b, autoCleanup = false)
             }
