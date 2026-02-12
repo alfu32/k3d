@@ -2377,15 +2377,12 @@ class GroupScene(
             val topLoop = planarTop.map { point -> Vector3(point.x, stepTopY, point.z) }
             addStairStepSolid(faceStore, lineStore, topLoop, stepBottomY, treadColor)
 
-            val stepRelativeHeight = (i + 1f) * stepRise
-            val supportY = stepTopY - (stepRelativeHeight + supportThickness)
             supportSections.add(
                 StairSupportSection(
-                    startRight = startRight,
-                    startLeft = startLeft,
-                    endRight = endRight,
-                    endLeft = endLeft,
-                    supportY = supportY
+                    c0 = Vector3(startRight.x, stepBottomY, startRight.z),
+                    c1 = Vector3(startLeft.x, stepBottomY, startLeft.z),
+                    o0 = Vector3(endRight.x, stepBottomY, endRight.z),
+                    o1 = Vector3(endLeft.x, stepBottomY, endLeft.z)
                 )
             )
         }
@@ -2423,11 +2420,10 @@ class GroupScene(
     }
 
     private data class StairSupportSection(
-        val startRight: StairPlanarPoint,
-        val startLeft: StairPlanarPoint,
-        val endRight: StairPlanarPoint,
-        val endLeft: StairPlanarPoint,
-        val supportY: Float
+        val c0: Vector3,
+        val c1: Vector3,
+        val o0: Vector3,
+        val o1: Vector3
     )
 
     private fun appendStairSupportRibbon(
@@ -2444,51 +2440,105 @@ class GroupScene(
             val current = sections[i]
             when {
                 // First step support backface lies on the ground plane.
-                i == 0 -> addStairSupportPolygon(
-                    faceStore,
-                    lineStore,
-                    listOf(current.endRight, current.endLeft, current.startLeft, current.startRight),
-                    baseY,
-                    supportColor
+                i == 0 -> addStairSupportQuad(
+                    faceStore = faceStore,
+                    lineStore = lineStore,
+                    p0 = Vector3(current.o0.x, baseY, current.o0.z),
+                    p1 = Vector3(current.o1.x, baseY, current.o1.z),
+                    p2 = Vector3(current.c1.x, baseY, current.c1.z),
+                    p3 = Vector3(current.c0.x, baseY, current.c0.z),
+                    color = supportColor
                 )
                 // Second step uses its own support points.
-                i == 1 -> addStairSupportPolygon(
-                    faceStore,
-                    lineStore,
-                    listOf(current.endRight, current.endLeft, current.startLeft, current.startRight),
-                    current.supportY,
-                    supportColor
+                i == 1 -> addStairSupportQuad(
+                    faceStore = faceStore,
+                    lineStore = lineStore,
+                    p0 = current.o0,
+                    p1 = current.o1,
+                    p2 = current.c1,
+                    p3 = current.c0,
+                    color = supportColor
                 )
                 else -> {
                     val previous = sections[i - 1]
                     // Last step backface stays horizontal at previous step support height.
-                    val y = if (i == sections.lastIndex) previous.supportY else current.supportY
-                    addStairSupportPolygon(
-                        faceStore,
-                        lineStore,
-                        listOf(current.endRight, current.endLeft, previous.startLeft, previous.startRight),
-                        y,
-                        supportColor
+                    if (i == sections.lastIndex) {
+                        val y = previous.o0.y
+                        addStairSupportQuad(
+                            faceStore = faceStore,
+                            lineStore = lineStore,
+                            p0 = Vector3(current.o0.x, y, current.o0.z),
+                            p1 = Vector3(current.o1.x, y, current.o1.z),
+                            p2 = Vector3(previous.o1.x, y, previous.o1.z),
+                            p3 = Vector3(previous.o0.x, y, previous.o0.z),
+                            color = supportColor
+                        )
+                    } else {
+                        // Seamless ribbon by reusing previous step end support edge.
+                        addStairSupportQuad(
+                            faceStore = faceStore,
+                            lineStore = lineStore,
+                            p0 = current.o0,
+                            p1 = current.o1,
+                            p2 = previous.o1,
+                            p3 = previous.o0,
+                            color = supportColor
+                        )
+                    }
+                    // Lateral extension triangles to current copied-side support points.
+                    addStairSupportTriangle(
+                        faceStore = faceStore,
+                        lineStore = lineStore,
+                        a = current.o0,
+                        b = previous.o0,
+                        c = current.c0,
+                        color = supportColor
+                    )
+                    addStairSupportTriangle(
+                        faceStore = faceStore,
+                        lineStore = lineStore,
+                        a = current.o1,
+                        b = previous.o1,
+                        c = current.c1,
+                        color = supportColor
                     )
                 }
             }
         }
     }
 
-    private fun addStairSupportPolygon(
+    private fun addStairSupportQuad(
         faceStore: DraftFaceStore,
         lineStore: DraftLineStore,
-        points: List<StairPlanarPoint>,
-        y: Float,
+        p0: Vector3,
+        p1: Vector3,
+        p2: Vector3,
+        p3: Vector3,
         color: Color
     ) {
-        val loop = dedupePlanarLoop(points)
-        if (loop.size < 3) {
+        val normal = Vector3(p1).sub(p0).crs(Vector3(p2).sub(p0))
+        if (normal.len2() <= 1e-8f) {
             return
         }
-        val points3d = loop.map { point -> Vector3(point.x, y, point.z) }
-        val uv = loop.map { point -> StairUvPoint(point.x, point.z) }
-        addPolygonTriangulated(faceStore, lineStore, points3d, uv, Vector3(0f, -1f, 0f), color, emitBoundaryLines = true)
+        addQuad(faceStore, lineStore, p0, p1, p2, p3, normal, color)
+    }
+
+    private fun addStairSupportTriangle(
+        faceStore: DraftFaceStore,
+        lineStore: DraftLineStore,
+        a: Vector3,
+        b: Vector3,
+        c: Vector3,
+        color: Color
+    ) {
+        val normal = Vector3(b).sub(a).crs(Vector3(c).sub(a))
+        if (normal.len2() <= 1e-8f) {
+            return
+        }
+        faceStore.addTriangle(Vector3(a), Vector3(b), Vector3(c), color)
+        lineStore.addSegment(Vector3(a), Vector3(b), autoCleanup = false)
+        lineStore.addSegment(Vector3(b), Vector3(c), autoCleanup = false)
+        lineStore.addSegment(Vector3(c), Vector3(a), autoCleanup = false)
     }
 
     private data class StairPathSample(val point: Vector3, val tangent: Vector3)
