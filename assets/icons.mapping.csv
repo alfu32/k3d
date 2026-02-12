@@ -35,3 +35,9 @@ order|name|line|col|start_x|end_x|start_y|end_y
 34|polyline|6|4|96|127|160|191
 35|plane_section|6|5|128|159|160|191
 36|mesh_intersection|6|6|160|192|160|191
+37|arch_wall|7|1|0|31|192|223
+38|arch_slab|7|2|32|63|192|223
+39|arch_stair|7|3|64|95|192|223
+40|arch_hole|7|4|96|127|192|223
+41|arch_window|7|5|128|159|192|223
+42|arch_door|7|6|160|192|192|223

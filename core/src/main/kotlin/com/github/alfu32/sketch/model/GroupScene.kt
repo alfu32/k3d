@@ -11,6 +11,7 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 import kotlin.math.tan
 
 class GroupScene(
@@ -2271,19 +2272,18 @@ class GroupScene(
         supportColor: Color
     ) {
         val baseY = min(stair.min.y, stair.max.y)
-        val topHeight = stair.height.coerceAtLeast(0.05f)
         val steps = stair.stepCount.coerceAtLeast(1)
-        val support = stair.supportThickness.coerceAtLeast(0.01f)
-
-        val walkDir = Vector3(stair.walkingEnd).sub(stair.walkingStart).also {
-            it.y = 0f
+        val walkingPath = sanitizeWalkingPath(
+            if (stair.walkingPath.size >= 2) stair.walkingPath else listOf(stair.walkingStart, stair.walkingEnd)
+        )
+        val topHeight = stair.height.coerceAtLeast(0.05f)
+        val supportThickness = stair.supportThickness.coerceAtLeast(0.01f)
+        val stepRise = topHeight / (steps + 1f)
+        val treadThickness = (stepRise + supportThickness).coerceAtLeast(0.03f)
+        val totalWalkLength = walkingPathLength(walkingPath)
+        if (walkingPath.size < 2 || totalWalkLength <= 0.01f) {
+            return
         }
-        if (walkDir.len2() <= 1e-6f) {
-            walkDir.set(1f, 0f, 0f)
-        } else {
-            walkDir.nor()
-        }
-        val sideDir = Vector3(-walkDir.z, 0f, walkDir.x).nor()
 
         val contourPoints = if (stair.contour.size >= 3) {
             stair.contour
@@ -2295,172 +2295,382 @@ class GroupScene(
                 Vector3(stair.min.x, stair.min.y, stair.max.z)
             )
         }
-        val contourPlanar = contourPoints.map { point -> Vector3(point.x, 0f, point.z) }
-        val contourUvRaw = contourPlanar.map { planar ->
-            StairUvPoint(planar.dot(walkDir), planar.dot(sideDir))
-        }
-        val contourUv = dedupeStairPolygon(contourUvRaw)
-        if (contourUv.size < 3) {
+        val contour2 = sanitizeContourPlanar(contourPoints)
+        if (contour2.size < 3) {
             return
         }
 
-        var uMin = Float.POSITIVE_INFINITY
-        var uMax = Float.NEGATIVE_INFINITY
-        contourUv.forEach { point ->
-            uMin = min(uMin, point.u)
-            uMax = max(uMax, point.u)
+        val stepLength = totalWalkLength / steps.toFloat()
+        val boundaries = mutableListOf<StairPathSample>()
+        for (i in 0..steps) {
+            val d = (stepLength * i.toFloat()).coerceIn(0f, totalWalkLength)
+            val sample = sampleWalkingPath(walkingPath, d) ?: return
+            boundaries.add(sample)
         }
-        val runLength = uMax - uMin
-        if (runLength <= 0.01f) {
+        if (boundaries.size < steps + 1) {
             return
         }
 
-        val rise = topHeight / steps.toFloat()
-        val slope = topHeight / runLength
-        val contourOrientation = if (stairPolygonArea(contourUv) >= 0f) 1f else -1f
-
-        fun supportTopY(u: Float): Float = baseY + (u - uMin) * slope
-        fun toWorld(point: StairUvPoint, y: Float): Vector3 = uvPoint(point.u, point.v, y, walkDir, sideDir)
-        fun sideOutward(
-            a: StairUvPoint,
-            b: StairUvPoint,
-            orientation: Float,
-            axisU: Vector3,
-            axisV: Vector3,
-            fallback: Vector3
-        ): Vector3 {
-            val du = b.u - a.u
-            val dv = b.v - a.v
-            val outwardU = orientation * dv
-            val outwardV = -orientation * du
-            val outward = Vector3(axisU).scl(outwardU).add(Vector3(axisV).scl(outwardV))
-            if (outward.len2() <= 1e-8f) {
-                outward.set(fallback)
-            } else {
-                outward.nor()
+        val stepDirs = MutableList(steps) { StairPlanarPoint(1f, 0f) }
+        for (i in 0 until steps) {
+            val a = StairPlanarPoint(boundaries[i].point.x, boundaries[i].point.z)
+            val b = StairPlanarPoint(boundaries[i + 1].point.x, boundaries[i + 1].point.z)
+            var d = (b - a).normalized()
+            if (d.lengthSquared() <= 1e-8f) {
+                d = StairPlanarPoint(boundaries[i].tangent.x, boundaries[i].tangent.z).normalized()
             }
-            return outward
-        }
-
-        val supportTopPoints = contourUv.map { point -> toWorld(point, supportTopY(point.u)) }
-        val supportBottomPoints = contourUv.map { point -> toWorld(point, supportTopY(point.u) - support) }
-        val supportTopNormal = Vector3(0f, 1f, 0f).sub(Vector3(walkDir).scl(slope)).nor()
-        addPolygonTriangulated(
-            faceStore = faceStore,
-            lineStore = lineStore,
-            points3d = supportTopPoints,
-            polygonUv = contourUv,
-            outward = supportTopNormal,
-            color = supportColor,
-            emitBoundaryLines = true
-        )
-        addPolygonTriangulated(
-            faceStore = faceStore,
-            lineStore = lineStore,
-            points3d = supportBottomPoints,
-            polygonUv = contourUv,
-            outward = Vector3(supportTopNormal).scl(-1f),
-            color = supportColor,
-            emitBoundaryLines = false
-        )
-        for (i in contourUv.indices) {
-            val next = (i + 1) % contourUv.size
-            addQuad(
-                faceStore = faceStore,
-                lineStore = lineStore,
-                p0 = supportTopPoints[i],
-                p1 = supportTopPoints[next],
-                p2 = supportBottomPoints[next],
-                p3 = supportBottomPoints[i],
-                outward = sideOutward(contourUv[i], contourUv[next], contourOrientation, walkDir, sideDir, sideDir),
-                color = supportColor
-            )
-        }
-
-        val walkingPath = sanitizeWalkingPath(
-            if (stair.walkingPath.size >= 2) stair.walkingPath else listOf(stair.walkingStart, stair.walkingEnd)
-        )
-        val totalWalkLength = walkingPathLength(walkingPath)
-        if (totalWalkLength <= 0.01f) {
-            return
-        }
-        val run = totalWalkLength / steps.toFloat()
-        val treadThickness = (topHeight * 0.1f).coerceAtLeast(0.01f).coerceAtMost((rise * 0.9f).coerceAtLeast(0.01f))
-        val treadOverboard = run * 0.1f
-
-        // Filled treads: each tread orientation follows the segmented walking polyline.
-        for (index in 0 until steps) {
-            val startDistance = run * index - treadOverboard
-            val endDistance = run * (index + 1)
-            val startSample = sampleWalkingPath(walkingPath, startDistance) ?: continue
-            val endSample = sampleWalkingPath(walkingPath, endDistance) ?: continue
-            val stepDir = Vector3(endSample.point).sub(startSample.point).also { it.y = 0f }
-            if (stepDir.len2() <= 1e-6f) {
-                stepDir.set(startSample.tangent)
-            } else {
-                stepDir.nor()
+            if (d.lengthSquared() <= 1e-8f) {
+                d = StairPlanarPoint(1f, 0f)
             }
-            val stepSide = Vector3(-stepDir.z, 0f, stepDir.x).nor()
-            val stepU0 = Vector3(startSample.point.x, 0f, startSample.point.z).dot(stepDir)
-            val stepU1 = Vector3(endSample.point.x, 0f, endSample.point.z).dot(stepDir)
-            val clipU0 = min(stepU0, stepU1)
-            val clipU1 = max(stepU0, stepU1)
-            if (clipU1 - clipU0 <= 1e-5f) {
+            stepDirs[i] = d
+        }
+
+        val startPoint = StairPlanarPoint(boundaries.first().point.x, boundaries.first().point.z)
+        val startLineDir = contourEdgeDirectionAtPoint(contour2, startPoint, epsilon = 1e-2f)
+            ?: stepDirs.first().perpendicular().normalized()
+        val crossLines = mutableListOf<StairCrossLine>()
+        val supportSections = mutableListOf<StairSupportSection>()
+        for (i in 0..steps) {
+            val point = StairPlanarPoint(boundaries[i].point.x, boundaries[i].point.z)
+            val dir = if (i == 0) {
+                startLineDir
+            } else {
+                stepDirs[i - 1].perpendicular().normalized()
+            }
+            crossLines.add(StairCrossLine(point = point, dir = dir))
+        }
+
+        for (i in 0 until steps) {
+            val startLine = crossLines[i]
+            val endLine = crossLines[i + 1]
+            val startHits = lineIntersectionsWithContour(startLine, contour2)
+            val endHits = lineIntersectionsWithContour(endLine, contour2)
+            val startPair = pickCrossSectionPair(startHits) ?: continue
+            val endPair = pickCrossSectionPair(endHits) ?: continue
+
+            val side = stepDirs[i].perpendicular().normalized()
+            var (startRight, startLeft) = orderPairBySide(startPair, startLine.point, side)
+            var (endRight, endLeft) = orderPairBySide(endPair, endLine.point, side)
+
+            val sideIntersection = intersectCrossLines(startLine, endLine)
+            if (sideIntersection != null) {
+                val collapseRight = isBeforeContourHit(startLine.point, startRight, sideIntersection) &&
+                    isBeforeContourHit(endLine.point, endRight, sideIntersection)
+                if (collapseRight) {
+                    startRight = sideIntersection
+                    endRight = sideIntersection
+                }
+                val collapseLeft = isBeforeContourHit(startLine.point, startLeft, sideIntersection) &&
+                    isBeforeContourHit(endLine.point, endLeft, sideIntersection)
+                if (collapseLeft) {
+                    startLeft = sideIntersection
+                    endLeft = sideIntersection
+                }
+            }
+
+            val stepTopY = baseY + (i + 1f) * stepRise
+            val stepBottomY = stepTopY - treadThickness
+            val planarTop = dedupePlanarLoop(listOf(startRight, endRight, endLeft, startLeft))
+            if (planarTop.size < 3) {
                 continue
             }
-            val stepTop = baseY + rise * (index + 1)
-            val stepBottomY = stepTop - treadThickness
-            val stepContourRaw = contourPlanar.map { planar ->
-                StairUvPoint(planar.dot(stepDir), planar.dot(stepSide))
-            }
-            val stepContour = dedupeStairPolygon(stepContourRaw)
-            val clipped = clipStairPolygonByU(
-                polygon = clipStairPolygonByU(stepContour, clipU0, keepGreater = true),
-                edgeU = clipU1,
-                keepGreater = false
-            )
-            val stepUv = dedupeStairPolygon(clipped)
-            if (stepUv.size < 3) {
-                continue
-            }
-            val stepOrientation = if (stairPolygonArea(stepUv) >= 0f) 1f else -1f
-            val treadTop = stepUv.map { point -> uvPoint(point.u, point.v, stepTop, stepDir, stepSide) }
-            val treadBottom = stepUv.map { point -> uvPoint(point.u, point.v, stepBottomY, stepDir, stepSide) }
-            addPolygonTriangulated(
-                faceStore = faceStore,
-                lineStore = lineStore,
-                points3d = treadTop,
-                polygonUv = stepUv,
-                outward = Vector3(0f, 1f, 0f),
-                color = treadColor,
-                emitBoundaryLines = true
-            )
-            addPolygonTriangulated(
-                faceStore = faceStore,
-                lineStore = lineStore,
-                points3d = treadBottom,
-                polygonUv = stepUv,
-                outward = Vector3(0f, -1f, 0f),
-                color = treadColor,
-                emitBoundaryLines = false
-            )
-            for (i in stepUv.indices) {
-                val next = (i + 1) % stepUv.size
-                addQuad(
-                    faceStore = faceStore,
-                    lineStore = lineStore,
-                    p0 = treadTop[i],
-                    p1 = treadTop[next],
-                    p2 = treadBottom[next],
-                    p3 = treadBottom[i],
-                    outward = sideOutward(stepUv[i], stepUv[next], stepOrientation, stepDir, stepSide, stepSide),
-                    color = treadColor
+            val topLoop = planarTop.map { point -> Vector3(point.x, stepTopY, point.z) }
+            addStairStepSolid(faceStore, lineStore, topLoop, stepBottomY, treadColor)
+
+            val stepRelativeHeight = (i + 1f) * stepRise
+            val supportY = stepTopY - (stepRelativeHeight + supportThickness)
+            supportSections.add(
+                StairSupportSection(
+                    startRight = startRight,
+                    startLeft = startLeft,
+                    endRight = endRight,
+                    endLeft = endLeft,
+                    supportY = supportY
                 )
+            )
+        }
+        appendStairSupportRibbon(faceStore, lineStore, supportSections, baseY, supportColor)
+    }
+
+    private fun addStairStepSolid(
+        faceStore: DraftFaceStore,
+        lineStore: DraftLineStore,
+        topLoop: List<Vector3>,
+        stepBottomY: Float,
+        color: Color
+    ) {
+        if (topLoop.size < 3) {
+            return
+        }
+        val bottomLoop = topLoop.map { point -> Vector3(point.x, stepBottomY, point.z) }
+        val uv = topLoop.map { point -> StairUvPoint(point.x, point.z) }
+        addPolygonTriangulated(faceStore, lineStore, topLoop, uv, Vector3(0f, 1f, 0f), color, emitBoundaryLines = true)
+        addPolygonTriangulated(faceStore, lineStore, bottomLoop, uv, Vector3(0f, -1f, 0f), color, emitBoundaryLines = true)
+
+        for (i in topLoop.indices) {
+            val next = (i + 1) % topLoop.size
+            val t0 = topLoop[i]
+            val t1 = topLoop[next]
+            val b0 = bottomLoop[i]
+            val b1 = bottomLoop[next]
+            if (t0.dst2(t1) <= 1e-8f) {
+                continue
+            }
+            // Vertical face normals intentionally flipped compared to the previous implementation.
+            val outward = Vector3(t1).sub(t0).crs(Vector3(0f, 1f, 0f)).scl(-1f)
+            addQuad(faceStore, lineStore, t0, b0, b1, t1, outward, color)
+        }
+    }
+
+    private data class StairSupportSection(
+        val startRight: StairPlanarPoint,
+        val startLeft: StairPlanarPoint,
+        val endRight: StairPlanarPoint,
+        val endLeft: StairPlanarPoint,
+        val supportY: Float
+    )
+
+    private fun appendStairSupportRibbon(
+        faceStore: DraftFaceStore,
+        lineStore: DraftLineStore,
+        sections: List<StairSupportSection>,
+        baseY: Float,
+        supportColor: Color
+    ) {
+        if (sections.isEmpty()) {
+            return
+        }
+        for (i in sections.indices) {
+            val current = sections[i]
+            when {
+                // First step support backface lies on the ground plane.
+                i == 0 -> addStairSupportPolygon(
+                    faceStore,
+                    lineStore,
+                    listOf(current.endRight, current.endLeft, current.startLeft, current.startRight),
+                    baseY,
+                    supportColor
+                )
+                // Second step uses its own support points.
+                i == 1 -> addStairSupportPolygon(
+                    faceStore,
+                    lineStore,
+                    listOf(current.endRight, current.endLeft, current.startLeft, current.startRight),
+                    current.supportY,
+                    supportColor
+                )
+                else -> {
+                    val previous = sections[i - 1]
+                    // Last step backface stays horizontal at previous step support height.
+                    val y = if (i == sections.lastIndex) previous.supportY else current.supportY
+                    addStairSupportPolygon(
+                        faceStore,
+                        lineStore,
+                        listOf(current.endRight, current.endLeft, previous.startLeft, previous.startRight),
+                        y,
+                        supportColor
+                    )
+                }
             }
         }
     }
 
+    private fun addStairSupportPolygon(
+        faceStore: DraftFaceStore,
+        lineStore: DraftLineStore,
+        points: List<StairPlanarPoint>,
+        y: Float,
+        color: Color
+    ) {
+        val loop = dedupePlanarLoop(points)
+        if (loop.size < 3) {
+            return
+        }
+        val points3d = loop.map { point -> Vector3(point.x, y, point.z) }
+        val uv = loop.map { point -> StairUvPoint(point.x, point.z) }
+        addPolygonTriangulated(faceStore, lineStore, points3d, uv, Vector3(0f, -1f, 0f), color, emitBoundaryLines = true)
+    }
+
     private data class StairPathSample(val point: Vector3, val tangent: Vector3)
+    private data class StairPlanarPoint(val x: Float, val z: Float) {
+        operator fun minus(other: StairPlanarPoint): StairPlanarPoint = StairPlanarPoint(x - other.x, z - other.z)
+        operator fun plus(other: StairPlanarPoint): StairPlanarPoint = StairPlanarPoint(x + other.x, z + other.z)
+        operator fun times(scale: Float): StairPlanarPoint = StairPlanarPoint(x * scale, z * scale)
+        fun dot(other: StairPlanarPoint): Float = x * other.x + z * other.z
+        fun cross(other: StairPlanarPoint): Float = x * other.z - z * other.x
+        fun lengthSquared(): Float = x * x + z * z
+        fun normalized(): StairPlanarPoint {
+            val len2 = lengthSquared()
+            if (len2 <= 1e-12f) return StairPlanarPoint(0f, 0f)
+            val inv = 1f / kotlin.math.sqrt(len2)
+            return StairPlanarPoint(x * inv, z * inv)
+        }
+        fun perpendicular(): StairPlanarPoint = StairPlanarPoint(-z, x)
+    }
+    private data class StairCrossLine(val point: StairPlanarPoint, val dir: StairPlanarPoint)
+    private data class StairLineIntersection(val point: StairPlanarPoint, val t: Float)
+
+    private fun sanitizeContourPlanar(points: List<Vector3>, epsilon: Float = 1e-4f): List<StairPlanarPoint> {
+        val out = mutableListOf<StairPlanarPoint>()
+        points.forEach { point ->
+            val planar = StairPlanarPoint(point.x, point.z)
+            val prev = out.lastOrNull()
+            if (prev == null || (planar - prev).lengthSquared() > epsilon * epsilon) {
+                out.add(planar)
+            }
+        }
+        if (out.size >= 2) {
+            val first = out.first()
+            val last = out.last()
+            if ((first - last).lengthSquared() <= epsilon * epsilon) {
+                out.removeAt(out.lastIndex)
+            }
+        }
+        return out
+    }
+
+    private fun contourEdgeDirectionAtPoint(
+        contour: List<StairPlanarPoint>,
+        point: StairPlanarPoint,
+        epsilon: Float
+    ): StairPlanarPoint? {
+        if (contour.size < 2) {
+            return null
+        }
+        var bestDir: StairPlanarPoint? = null
+        var bestDist2 = Float.POSITIVE_INFINITY
+        for (i in contour.indices) {
+            val a = contour[i]
+            val b = contour[(i + 1) % contour.size]
+            val ab = b - a
+            val abLen2 = ab.lengthSquared()
+            if (abLen2 <= 1e-10f) {
+                continue
+            }
+            val t = ((point - a).dot(ab) / abLen2).coerceIn(0f, 1f)
+            val proj = a + ab * t
+            val dist2 = (point - proj).lengthSquared()
+            if (dist2 <= epsilon * epsilon && dist2 < bestDist2) {
+                bestDist2 = dist2
+                bestDir = ab.normalized()
+            }
+        }
+        return bestDir
+    }
+
+    private fun lineIntersectionsWithContour(
+        line: StairCrossLine,
+        contour: List<StairPlanarPoint>,
+        epsilon: Float = 1e-5f
+    ): List<StairLineIntersection> {
+        if (contour.size < 2 || line.dir.lengthSquared() <= 1e-10f) {
+            return emptyList()
+        }
+        val hits = mutableListOf<StairLineIntersection>()
+        for (i in contour.indices) {
+            val a = contour[i]
+            val b = contour[(i + 1) % contour.size]
+            val edge = b - a
+            val denom = line.dir.cross(edge)
+            if (abs(denom) <= epsilon) {
+                continue
+            }
+            val ap = a - line.point
+            val t = ap.cross(edge) / denom
+            val u = ap.cross(line.dir) / denom
+            if (u < -epsilon || u > 1f + epsilon) {
+                continue
+            }
+            val point = line.point + line.dir * t
+            if (hits.any { (it.point - point).lengthSquared() <= epsilon * epsilon }) {
+                continue
+            }
+            hits.add(StairLineIntersection(point = point, t = t))
+        }
+        return hits
+    }
+
+    private fun pickCrossSectionPair(hits: List<StairLineIntersection>): Pair<StairPlanarPoint, StairPlanarPoint>? {
+        if (hits.size < 2) {
+            return null
+        }
+        val neg = hits.filter { it.t <= 0f }.maxByOrNull { it.t }
+        val pos = hits.filter { it.t >= 0f }.minByOrNull { it.t }
+        if (neg != null && pos != null) {
+            return neg.point to pos.point
+        }
+        val sorted = hits.sortedBy { it.t }
+        return sorted.first().point to sorted.last().point
+    }
+
+    private fun orderPairBySide(
+        pair: Pair<StairPlanarPoint, StairPlanarPoint>,
+        center: StairPlanarPoint,
+        side: StairPlanarPoint
+    ): Pair<StairPlanarPoint, StairPlanarPoint> {
+        val scoreA = (pair.first - center).dot(side)
+        val scoreB = (pair.second - center).dot(side)
+        return if (scoreA <= scoreB) {
+            pair.first to pair.second
+        } else {
+            pair.second to pair.first
+        }
+    }
+
+    private fun intersectCrossLines(
+        a: StairCrossLine,
+        b: StairCrossLine,
+        epsilon: Float = 1e-6f
+    ): StairPlanarPoint? {
+        val denom = a.dir.cross(b.dir)
+        if (abs(denom) <= epsilon) {
+            return null
+        }
+        val delta = b.point - a.point
+        val t = delta.cross(b.dir) / denom
+        return a.point + a.dir * t
+    }
+
+    private fun isBeforeContourHit(
+        origin: StairPlanarPoint,
+        contourHit: StairPlanarPoint,
+        candidate: StairPlanarPoint,
+        epsilon: Float = 1e-5f
+    ): Boolean {
+        val edge = contourHit - origin
+        val edgeLen2 = edge.lengthSquared()
+        if (edgeLen2 <= epsilon * epsilon) {
+            return false
+        }
+        val toCandidate = candidate - origin
+        val t = toCandidate.dot(edge) / edgeLen2
+        if (t <= epsilon || t >= 1f - epsilon) {
+            return false
+        }
+        val lineError = abs(toCandidate.cross(edge))
+        val tolerance = epsilon * sqrt(edgeLen2)
+        return lineError <= tolerance
+    }
+
+    private fun dedupePlanarLoop(
+        points: List<StairPlanarPoint>,
+        epsilon: Float = 1e-5f
+    ): List<StairPlanarPoint> {
+        if (points.isEmpty()) {
+            return emptyList()
+        }
+        val out = mutableListOf<StairPlanarPoint>()
+        points.forEach { point ->
+            val prev = out.lastOrNull()
+            if (prev == null || (point - prev).lengthSquared() > epsilon * epsilon) {
+                out.add(point)
+            }
+        }
+        if (out.size >= 2 && (out.first() - out.last()).lengthSquared() <= epsilon * epsilon) {
+            out.removeAt(out.lastIndex)
+        }
+        return out
+    }
 
     private fun sanitizeWalkingPath(points: List<Vector3>, epsilon: Float = 1e-4f): List<Vector3> {
         if (points.isEmpty()) {
