@@ -732,6 +732,8 @@ class GroupScene(
         height: Float,
         stepCount: Int,
         supportThickness: Float,
+        railLeftEnabled: Boolean,
+        railRightEnabled: Boolean,
         treadColor: Color,
         supportColor: Color
     ): Boolean {
@@ -749,6 +751,8 @@ class GroupScene(
             height = height.coerceAtLeast(0.05f),
             stepCount = stepCount.coerceAtLeast(1),
             supportThickness = supportThickness.coerceAtLeast(0.01f),
+            railLeftEnabled = railLeftEnabled,
+            railRightEnabled = railRightEnabled,
             treadColor = treadColor,
             supportColor = supportColor
         )
@@ -836,6 +840,8 @@ class GroupScene(
         height: Float,
         stepCount: Int,
         supportThickness: Float,
+        railLeftEnabled: Boolean,
+        railRightEnabled: Boolean,
         treadColor: Color,
         supportColor: Color
     ): Boolean {
@@ -846,6 +852,8 @@ class GroupScene(
                 height.coerceAtLeast(0.05f),
                 stepCount.coerceAtLeast(1),
                 supportThickness.coerceAtLeast(0.01f),
+                railLeftEnabled,
+                railRightEnabled,
                 treadColor,
                 supportColor
             )
@@ -2376,6 +2384,17 @@ class GroupScene(
             }
             val topLoop = planarTop.map { point -> Vector3(point.x, stepTopY, point.z) }
             addStairStepSolid(faceStore, lineStore, topLoop, stepBottomY, treadColor)
+            addStairRailGrid(
+                lineStore = lineStore,
+                startRight = startRight,
+                endRight = endRight,
+                startLeft = startLeft,
+                endLeft = endLeft,
+                stepTopY = stepTopY,
+                stepBottomY = stepBottomY,
+                leftEnabled = stair.railLeftEnabled,
+                rightEnabled = stair.railRightEnabled
+            )
 
             supportSections.add(
                 StairSupportSection(
@@ -2387,6 +2406,43 @@ class GroupScene(
             )
         }
         appendStairSupportRibbon(faceStore, lineStore, supportSections, baseY, supportColor)
+    }
+
+    private fun addStairRailGrid(
+        lineStore: DraftLineStore,
+        startRight: StairPlanarPoint,
+        endRight: StairPlanarPoint,
+        startLeft: StairPlanarPoint,
+        endLeft: StairPlanarPoint,
+        stepTopY: Float,
+        stepBottomY: Float,
+        leftEnabled: Boolean,
+        rightEnabled: Boolean
+    ) {
+        if (!leftEnabled && !rightEnabled) {
+            return
+        }
+        val offsets = floatArrayOf(1f, 2f, 3f, 4f)
+        offsets.forEach { offset ->
+            val y = stepTopY - offset
+            if (y <= stepBottomY + 1e-4f) {
+                return@forEach
+            }
+            if (rightEnabled) {
+                val rr0 = Vector3(startRight.x, y, startRight.z)
+                val rr1 = Vector3(endRight.x, y, endRight.z)
+                if (rr0.dst2(rr1) > 1e-8f) {
+                    lineStore.addSegment(rr0, rr1, autoCleanup = false)
+                }
+            }
+            if (leftEnabled) {
+                val ll0 = Vector3(startLeft.x, y, startLeft.z)
+                val ll1 = Vector3(endLeft.x, y, endLeft.z)
+                if (ll0.dst2(ll1) > 1e-8f) {
+                    lineStore.addSegment(ll0, ll1, autoCleanup = false)
+                }
+            }
+        }
     }
 
     private fun addStairStepSolid(
@@ -2469,8 +2525,8 @@ class GroupScene(
                             lineStore = lineStore,
                             p0 = Vector3(current.o0.x, y, current.o0.z),
                             p1 = Vector3(current.o1.x, y, current.o1.z),
-                            p2 = Vector3(previous.o1.x, y, previous.o1.z),
-                            p3 = Vector3(previous.o0.x, y, previous.o0.z),
+                            p2 = Vector3(current.c1.x, y, current.c1.z),
+                            p3 = Vector3(current.c0.x, y, current.c0.z),
                             color = supportColor
                         )
                     } else {
@@ -2490,8 +2546,8 @@ class GroupScene(
                         faceStore = faceStore,
                         lineStore = lineStore,
                         a = current.o0,
-                        b = previous.o0,
-                        c = current.c0,
+                        b = current.c0,
+                        c = previous.o0,
                         color = supportColor
                     )
                     addStairSupportTriangle(
