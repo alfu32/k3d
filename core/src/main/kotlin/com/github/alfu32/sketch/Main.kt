@@ -801,6 +801,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         drawSelectionHighlights()
         drawDraftLines()
         drawArchitectureHoleGuides()
+        drawArchitectureWallEndpointHitAreas()
         drawDimensions()
         toolController.render(shapeRenderer)
         drawActiveToolMeasurementLine()
@@ -1599,6 +1600,35 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         shapeRenderer.color = architectureHoleGuideColor
         Gdx.gl.glLineWidth(3f)
         guides.forEach { (a, b) -> shapeRenderer.line(a, b) }
+        Gdx.gl.glLineWidth(2f)
+    }
+
+    private fun drawArchitectureWallEndpointHitAreas() {
+        val active = scene.activeGroup()
+        if (!scene.isEditing() || !scene.isArchitectureGroup(active)) {
+            return
+        }
+        val markers = scene.architectureWallEndpointHandleMarkersWorld(active)
+        if (markers.isEmpty()) {
+            return
+        }
+        shapeRenderer.color = architectureHoleGuideColor
+        Gdx.gl.glLineWidth(3f)
+        markers.forEach { marker ->
+            val half = marker.halfSize
+            val y = marker.center.y + 0.01f
+            val c = marker.center
+            val p0 = Vector3(c.x - half, y, c.z - half)
+            val p1 = Vector3(c.x + half, y, c.z - half)
+            val p2 = Vector3(c.x + half, y, c.z + half)
+            val p3 = Vector3(c.x - half, y, c.z + half)
+            shapeRenderer.line(p0, p1)
+            shapeRenderer.line(p1, p2)
+            shapeRenderer.line(p2, p3)
+            shapeRenderer.line(p3, p0)
+            shapeRenderer.line(p0, p2)
+            shapeRenderer.line(p1, p3)
+        }
         Gdx.gl.glLineWidth(2f)
     }
 

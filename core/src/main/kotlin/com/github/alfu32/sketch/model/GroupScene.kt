@@ -29,6 +29,12 @@ class GroupScene(
         val kind: HoleHandleKind,
         val world: Vector3
     )
+    data class WallEndpointHandleMarker(
+        val wallId: String,
+        val draggingStart: Boolean,
+        val center: Vector3,
+        val halfSize: Float
+    )
 
     class ObjectPrototype(
         val id: String,
@@ -1037,6 +1043,34 @@ class GroupScene(
         return handles
     }
 
+    fun architectureWallEndpointHandleMarkersWorld(
+        group: GroupNode,
+        wallId: String? = null
+    ): List<WallEndpointHandleMarker> {
+        val store = group.architectureStore ?: return emptyList()
+        val targetWall = when {
+            wallId != null -> store.wallById(wallId)
+            else -> store.selectedWall()
+        } ?: return emptyList()
+        val startWorld = group.toWorld(targetWall.start)
+        val endWorld = group.toWorld(targetWall.end)
+        val halfSize = max(0.2f, targetWall.thickness * 0.65f)
+        return listOf(
+            WallEndpointHandleMarker(
+                wallId = targetWall.id,
+                draggingStart = true,
+                center = Vector3(startWorld),
+                halfSize = halfSize
+            ),
+            WallEndpointHandleMarker(
+                wallId = targetWall.id,
+                draggingStart = false,
+                center = Vector3(endWorld),
+                halfSize = halfSize
+            )
+        )
+    }
+
     fun updateArchitectureHoleByHandle(
         group: GroupNode,
         wallId: String,
@@ -1621,8 +1655,16 @@ class GroupScene(
     )
 
     private data class WallJoinShift(
-        val startOuterAlongDir: Float = 0f,
-        val endOuterAlongDir: Float = 0f
+        val startInnerAlongDirBottom: Float = 0f,
+        val startInnerAlongDirTop: Float = 0f,
+        val endInnerAlongDirBottom: Float = 0f,
+        val endInnerAlongDirTop: Float = 0f,
+        val startOuterAlongDirBottom: Float = 0f,
+        val startOuterAlongDirTop: Float = 0f,
+        val endOuterAlongDirBottom: Float = 0f,
+        val endOuterAlongDirTop: Float = 0f,
+        val startJoined: Boolean = false,
+        val endJoined: Boolean = false
     )
 
     private data class HoleCandidate(
@@ -1785,10 +1827,16 @@ class GroupScene(
                 .add(WallEndpointRef(wall, atStart = false, point = end, basis = basis))
         }
 
-        val startShift = mutableMapOf<String, Float>()
-        val endShift = mutableMapOf<String, Float>()
-        val parameterEps = 1e-3f
-        val miterLimitFactor = 4f
+        val startShiftInnerBottom = mutableMapOf<String, Float>()
+        val startShiftInnerTop = mutableMapOf<String, Float>()
+        val endShiftInnerBottom = mutableMapOf<String, Float>()
+        val endShiftInnerTop = mutableMapOf<String, Float>()
+        val startShiftBottom = mutableMapOf<String, Float>()
+        val startShiftTop = mutableMapOf<String, Float>()
+        val endShiftBottom = mutableMapOf<String, Float>()
+        val endShiftTop = mutableMapOf<String, Float>()
+        val startJoined = mutableSetOf<String>()
+        val endJoined = mutableSetOf<String>()
 
         refsByKey.values.forEach { refs ->
             if (refs.size != 2) {
@@ -1796,53 +1844,89 @@ class GroupScene(
             }
             val a = refs[0]
             val b = refs[1]
-            if (!compatibleWallJoin(a.wall, b.wall, parameterEps)) {
+            if (a.wall.id == b.wall.id) {
                 return@forEach
             }
 
             val dirA = if (a.atStart) Vector3(a.basis.dir).scl(-1f) else Vector3(a.basis.dir)
             val dirB = if (b.atStart) Vector3(b.basis.dir).scl(-1f) else Vector3(b.basis.dir)
-            val baseA = Vector3(a.point).mulAdd(a.basis.normal, a.wall.thickness)
-            val baseB = Vector3(b.point).mulAdd(b.basis.normal, b.wall.thickness)
-            val (tA, tB) = intersectLinesXZ(baseA, dirA, baseB, dirB) ?: return@forEach
-            if (tA < 0f || tB < 0f) {
-                return@forEach
+            val leanA = tan(a.wall.inclinationDeg * PI.toFloat() / 180f) * a.wall.height
+            val leanB = tan(b.wall.inclinationDeg * PI.toFloat() / 180f) * b.wall.height
+
+            val baseInnerA = Vector3(a.point)
+            val baseInnerB = Vector3(b.point)
+            val topInnerA = Vector3(baseInnerA).mulAdd(
+                a.basis.normal,
+                leanA
+            )
+            val topInnerB = Vector3(baseInnerB).mulAdd(
+                b.basis.normal,
+                leanB
+            )
+            val baseOuterA = Vector3(baseInnerA).mulAdd(a.basis.normal, a.wall.thickness)
+            val baseOuterB = Vector3(baseInnerB).mulAdd(b.basis.normal, b.wall.thickness)
+            val topOuterA = Vector3(baseOuterA).mulAdd(a.basis.normal, leanA)
+            val topOuterB = Vector3(baseOuterB).mulAdd(b.basis.normal, leanB)
+
+            fun solveAlong(
+                lineA: Vector3,
+                lineB: Vector3
+            ): Pair<Float, Float> {
+                val hit = intersectLinesXZ(lineA, dirA, lineB, dirB) ?: return 0f to 0f
+                val aParam = if (hit.first.isFinite()) hit.first else 0f
+                val bParam = if (hit.second.isFinite()) hit.second else 0f
+                val alongA = if (a.atStart) -aParam else aParam
+                val alongB = if (b.atStart) -bParam else bParam
+                return alongA to alongB
             }
 
-            val limitedA = tA.coerceIn(0f, a.wall.thickness.coerceAtLeast(0.01f) * miterLimitFactor)
-            val limitedB = tB.coerceIn(0f, b.wall.thickness.coerceAtLeast(0.01f) * miterLimitFactor)
-            val alongA = if (a.atStart) -limitedA else limitedA
-            val alongB = if (b.atStart) -limitedB else limitedB
+            val (alongAInnerBottom, alongBInnerBottom) = solveAlong(baseInnerA, baseInnerB)
+            val (alongAInnerTop, alongBInnerTop) = solveAlong(topInnerA, topInnerB)
+            val (alongAOuterBottom, alongBOuterBottom) = solveAlong(baseOuterA, baseOuterB)
+            val (alongAOuterTop, alongBOuterTop) = solveAlong(topOuterA, topOuterB)
 
             if (a.atStart) {
-                startShift[a.wall.id] = alongA
+                startShiftInnerBottom[a.wall.id] = alongAInnerBottom
+                startShiftInnerTop[a.wall.id] = alongAInnerTop
+                startShiftBottom[a.wall.id] = alongAOuterBottom
+                startShiftTop[a.wall.id] = alongAOuterTop
+                startJoined.add(a.wall.id)
             } else {
-                endShift[a.wall.id] = alongA
+                endShiftInnerBottom[a.wall.id] = alongAInnerBottom
+                endShiftInnerTop[a.wall.id] = alongAInnerTop
+                endShiftBottom[a.wall.id] = alongAOuterBottom
+                endShiftTop[a.wall.id] = alongAOuterTop
+                endJoined.add(a.wall.id)
             }
             if (b.atStart) {
-                startShift[b.wall.id] = alongB
+                startShiftInnerBottom[b.wall.id] = alongBInnerBottom
+                startShiftInnerTop[b.wall.id] = alongBInnerTop
+                startShiftBottom[b.wall.id] = alongBOuterBottom
+                startShiftTop[b.wall.id] = alongBOuterTop
+                startJoined.add(b.wall.id)
             } else {
-                endShift[b.wall.id] = alongB
+                endShiftInnerBottom[b.wall.id] = alongBInnerBottom
+                endShiftInnerTop[b.wall.id] = alongBInnerTop
+                endShiftBottom[b.wall.id] = alongBOuterBottom
+                endShiftTop[b.wall.id] = alongBOuterTop
+                endJoined.add(b.wall.id)
             }
         }
 
         return basisById.keys.associateWith { id ->
             WallJoinShift(
-                startOuterAlongDir = startShift[id] ?: 0f,
-                endOuterAlongDir = endShift[id] ?: 0f
+                startInnerAlongDirBottom = startShiftInnerBottom[id] ?: 0f,
+                startInnerAlongDirTop = startShiftInnerTop[id] ?: (startShiftInnerBottom[id] ?: 0f),
+                endInnerAlongDirBottom = endShiftInnerBottom[id] ?: 0f,
+                endInnerAlongDirTop = endShiftInnerTop[id] ?: (endShiftInnerBottom[id] ?: 0f),
+                startOuterAlongDirBottom = startShiftBottom[id] ?: 0f,
+                startOuterAlongDirTop = startShiftTop[id] ?: (startShiftBottom[id] ?: 0f),
+                endOuterAlongDirBottom = endShiftBottom[id] ?: 0f,
+                endOuterAlongDirTop = endShiftTop[id] ?: (endShiftBottom[id] ?: 0f),
+                startJoined = startJoined.contains(id),
+                endJoined = endJoined.contains(id)
             )
         }
-    }
-
-    private fun compatibleWallJoin(
-        a: ArchitectureStore.WallSegment,
-        b: ArchitectureStore.WallSegment,
-        eps: Float
-    ): Boolean {
-        if (abs(a.thickness - b.thickness) > eps) return false
-        if (abs(a.height - b.height) > eps) return false
-        if (abs(a.inclinationDeg - b.inclinationDeg) > eps) return false
-        return true
     }
 
     private fun intersectLinesXZ(
@@ -2017,15 +2101,6 @@ class GroupScene(
         joinShift: WallJoinShift
     ) {
         val basis = wallBasis(wall) ?: return
-        fun wallJoinPoint(u: Float, v: Float, side: Float): Vector3 {
-            val point = wallPoint(basis, wall, u, v, side)
-            if (side < 0f || basis.length <= 1e-6f) {
-                return point
-            }
-            val t = (u / basis.length).coerceIn(0f, 1f)
-            val alongDir = joinShift.startOuterAlongDir * (1f - t) + joinShift.endOuterAlongDir * t
-            return point.mulAdd(basis.dir, alongDir)
-        }
         val holes = wall.holes.map { hole ->
             val u0 = min(hole.u0, hole.u1).coerceIn(0.01f, basis.length - 0.01f)
             val u1 = max(hole.u0, hole.u1).coerceIn(0.01f, basis.length - 0.01f)
@@ -2033,6 +2108,49 @@ class GroupScene(
             val v1 = max(hole.v0, hole.v1).coerceIn(0.01f, wall.height - 0.01f)
             ArchitectureStore.RectHole(hole.id, u0, u1, v0, v1)
         }.filter { it.u1 - it.u0 > 0.02f && it.v1 - it.v0 > 0.02f }
+
+        fun wallJoinPoint(u: Float, v: Float, side: Float): Vector3 {
+            val point = wallPoint(basis, wall, u, v, side)
+            if (basis.length <= 1e-6f) {
+                return point
+            }
+            val safeHeight = wall.height.coerceAtLeast(1e-6f)
+            val tV = (v / safeHeight).coerceIn(0f, 1f)
+            val startAlong = if (side >= 0f) {
+                joinShift.startOuterAlongDirBottom * (1f - tV) + joinShift.startOuterAlongDirTop * tV
+            } else {
+                joinShift.startInnerAlongDirBottom * (1f - tV) + joinShift.startInnerAlongDirTop * tV
+            }
+            val endAlong = if (side >= 0f) {
+                joinShift.endOuterAlongDirBottom * (1f - tV) + joinShift.endOuterAlongDirTop * tV
+            } else {
+                joinShift.endInnerAlongDirBottom * (1f - tV) + joinShift.endInnerAlongDirTop * tV
+            }
+            val edgeEps = 1e-4f
+            val alongDir = when {
+                u <= edgeEps -> startAlong
+                u >= basis.length - edgeEps -> endAlong
+                else -> 0f
+            }
+            return point.mulAdd(basis.dir, alongDir)
+        }
+
+        fun onHoleBoundary(u: Float, v: Float, epsilon: Float = 1e-4f): Boolean {
+            return holes.any { hole ->
+                val withinU = u >= hole.u0 - epsilon && u <= hole.u1 + epsilon
+                val withinV = v >= hole.v0 - epsilon && v <= hole.v1 + epsilon
+                (withinV && (abs(u - hole.u0) <= epsilon || abs(u - hole.u1) <= epsilon)) ||
+                    (withinU && (abs(v - hole.v0) <= epsilon || abs(v - hole.v1) <= epsilon))
+            }
+        }
+
+        fun outerPoint(u: Float, v: Float): Vector3 {
+            return if (onHoleBoundary(u, v)) {
+                wallPoint(basis, wall, u, v, 1f)
+            } else {
+                wallJoinPoint(u, v, 1f)
+            }
+        }
 
         val uCuts = mutableListOf(0f, basis.length)
         val vCuts = mutableListOf(0f, wall.height)
@@ -2078,22 +2196,24 @@ class GroupScene(
                 val v0 = sortedV[j]
                 val v1 = sortedV[j + 1]
 
-                val ff0 = wallJoinPoint(u0, v0, 1f)
-                val ff1 = wallJoinPoint(u1, v0, 1f)
-                val ff2 = wallJoinPoint(u1, v1, 1f)
-                val ff3 = wallJoinPoint(u0, v1, 1f)
+                val ff0 = outerPoint(u0, v0)
+                val ff1 = outerPoint(u1, v0)
+                val ff2 = outerPoint(u1, v1)
+                val ff3 = outerPoint(u0, v1)
                 addQuad(faceStore, lineStore, ff0, ff1, ff2, ff3, basis.normal, exteriorColor)
 
-                val bb0 = wallPoint(basis, wall, u0, v0, -1f)
-                val bb1 = wallPoint(basis, wall, u1, v0, -1f)
-                val bb2 = wallPoint(basis, wall, u1, v1, -1f)
-                val bb3 = wallPoint(basis, wall, u0, v1, -1f)
+                val bb0 = wallJoinPoint(u0, v0, -1f)
+                val bb1 = wallJoinPoint(u1, v0, -1f)
+                val bb2 = wallJoinPoint(u1, v1, -1f)
+                val bb3 = wallJoinPoint(u0, v1, -1f)
                 addQuad(faceStore, lineStore, bb3, bb2, bb1, bb0, Vector3(basis.normal).scl(-1f), interiorColor)
 
-                if (!isSolid(i - 1, j)) {
+                val isStartBoundary = i == 0
+                val isEndBoundary = i == sortedU.lastIndex - 1
+                if (!isSolid(i - 1, j) && !(isStartBoundary && joinShift.startJoined)) {
                     addQuad(faceStore, lineStore, ff0, ff3, bb3, bb0, Vector3(basis.dir).scl(-1f), exteriorColor)
                 }
-                if (!isSolid(i + 1, j)) {
+                if (!isSolid(i + 1, j) && !(isEndBoundary && joinShift.endJoined)) {
                     addQuad(faceStore, lineStore, ff1, bb1, bb2, ff2, Vector3(basis.dir), exteriorColor)
                 }
                 if (!isSolid(i, j - 1)) {

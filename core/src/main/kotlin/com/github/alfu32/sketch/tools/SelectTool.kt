@@ -177,7 +177,7 @@ class SelectTool(
                 status.message = "Drag hole marker and release to update hole."
                 return true
             }
-            val endpointHit = pickSelectedWallEndpoint(activeGroup, ray, Gdx.input.x, Gdx.input.y)
+            val endpointHit = pickSelectedWallEndpoint(activeGroup, ray)
             if (endpointHit != null) {
                 wallDrag = WallDragState(
                     group = activeGroup,
@@ -978,10 +978,7 @@ class SelectTool(
 
     private fun pickSelectedWallEndpoint(
         group: GroupScene.GroupNode,
-        ray: Ray,
-        screenX: Int,
-        screenY: Int,
-        maxPixels: Float = 14f
+        ray: Ray
     ): WallEndpointHit? {
         val selection = scene.selectedArchitectureElement(group) ?: return null
         if (selection.kind != ArchitectureStore.ElementKind.WALL) {
@@ -990,28 +987,49 @@ class SelectTool(
         val wall = scene.selectedArchitectureWall(group) ?: return null
         val startWorld = group.toWorld(wall.start)
         val endWorld = group.toWorld(wall.end)
-        val startDistance = screenDistance(startWorld, screenX, screenY)
-        val endDistance = screenDistance(endWorld, screenX, screenY)
-        if (startDistance > maxPixels && endDistance > maxPixels) {
-            return null
+        val markers = scene.architectureWallEndpointHandleMarkersWorld(group, wallId = wall.id)
+        var bestDraggingStart: Boolean? = null
+        var bestT = Float.POSITIVE_INFINITY
+        markers.forEach { marker ->
+            val t = rayPlaneIntersectionT(ray, marker.center.y) ?: return@forEach
+            if (t < 0f || t >= bestT) {
+                return@forEach
+            }
+            val hit = Vector3(ray.origin).mulAdd(ray.direction, t)
+            if (kotlin.math.abs(hit.x - marker.center.x) <= marker.halfSize &&
+                kotlin.math.abs(hit.z - marker.center.z) <= marker.halfSize
+            ) {
+                bestDraggingStart = marker.draggingStart
+                bestT = t
+            }
         }
-        val startT = Vector3(startWorld).sub(ray.origin).dot(ray.direction)
-        val endT = Vector3(endWorld).sub(ray.origin).dot(ray.direction)
-        return if (startDistance <= endDistance) {
+        return when (bestDraggingStart) {
+            true -> {
             WallEndpointHit(
                 wallId = wall.id,
                 draggingStart = true,
                 fixedWorld = Vector3(endWorld),
-                movingWorld = if (startT >= 0f) Vector3(startWorld) else Vector3(endWorld)
+                movingWorld = Vector3(startWorld)
             )
-        } else {
+            }
+            false -> {
             WallEndpointHit(
                 wallId = wall.id,
                 draggingStart = false,
                 fixedWorld = Vector3(startWorld),
-                movingWorld = if (endT >= 0f) Vector3(endWorld) else Vector3(startWorld)
+                movingWorld = Vector3(endWorld)
             )
+            }
+            else -> null
         }
+    }
+
+    private fun rayPlaneIntersectionT(ray: Ray, y: Float): Float? {
+        val dirY = ray.direction.y
+        if (kotlin.math.abs(dirY) <= 1e-6f) {
+            return null
+        }
+        return (y - ray.origin.y) / dirY
     }
 
     private data class WindowRectTopLeft(
