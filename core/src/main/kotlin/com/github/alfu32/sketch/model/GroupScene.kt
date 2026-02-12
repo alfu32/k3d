@@ -2391,7 +2391,6 @@ class GroupScene(
                 startLeft = startLeft,
                 endLeft = endLeft,
                 stepTopY = stepTopY,
-                stepBottomY = stepBottomY,
                 leftEnabled = stair.railLeftEnabled,
                 rightEnabled = stair.railRightEnabled
             )
@@ -2415,7 +2414,6 @@ class GroupScene(
         startLeft: StairPlanarPoint,
         endLeft: StairPlanarPoint,
         stepTopY: Float,
-        stepBottomY: Float,
         leftEnabled: Boolean,
         rightEnabled: Boolean
     ) {
@@ -2424,10 +2422,7 @@ class GroupScene(
         }
         val offsets = floatArrayOf(1f, 2f, 3f, 4f)
         offsets.forEach { offset ->
-            val y = stepTopY - offset
-            if (y <= stepBottomY + 1e-4f) {
-                return@forEach
-            }
+            val y = stepTopY + offset
             if (rightEnabled) {
                 val rr0 = Vector3(startRight.x, y, startRight.z)
                 val rr1 = Vector3(endRight.x, y, endRight.z)
@@ -2529,6 +2524,13 @@ class GroupScene(
                             p3 = Vector3(current.c0.x, y, current.c0.z),
                             color = supportColor
                         )
+                        addLastStepSupportSkirt(
+                            faceStore = faceStore,
+                            lineStore = lineStore,
+                            section = current,
+                            bottomY = y,
+                            color = supportColor
+                        )
                     } else {
                         // Seamless ribbon by reusing previous step end support edge.
                         addStairSupportQuad(
@@ -2561,6 +2563,39 @@ class GroupScene(
                     }
                 }
             }
+        }
+    }
+
+    private fun addLastStepSupportSkirt(
+        faceStore: DraftFaceStore,
+        lineStore: DraftLineStore,
+        section: StairSupportSection,
+        bottomY: Float,
+        color: Color
+    ) {
+        val topLoop = listOf(section.c0, section.c1, section.o1, section.o0)
+        val bottomLoop = topLoop.map { point -> Vector3(point.x, bottomY, point.z) }
+        for (i in topLoop.indices) {
+            val next = (i + 1) % topLoop.size
+            val t0 = topLoop[i]
+            val t1 = topLoop[next]
+            val b0 = bottomLoop[i]
+            val b1 = bottomLoop[next]
+            if (t0.dst2(t1) <= 1e-8f) {
+                continue
+            }
+            if (abs(t0.y - b0.y) <= 1e-5f && abs(t1.y - b1.y) <= 1e-5f) {
+                continue
+            }
+            addStairSupportQuad(
+                faceStore = faceStore,
+                lineStore = lineStore,
+                p0 = t0,
+                p1 = b0,
+                p2 = b1,
+                p3 = t1,
+                color = color
+            )
         }
     }
 
