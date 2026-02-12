@@ -403,6 +403,8 @@ object ModelPersistence {
                     height = stair.height,
                     stepCount = stair.stepCount,
                     supportThickness = stair.supportThickness,
+                    railLeftEnabled = stair.railLeft,
+                    railRightEnabled = stair.railRight,
                     treadColor = stair.treadColor.toColor(),
                     supportColor = stair.supportColor.toColor(),
                     id = stair.id.ifBlank { java.util.UUID.randomUUID().toString() }
@@ -486,6 +488,8 @@ object ModelPersistence {
                         height = stair.height,
                         stepCount = stair.stepCount,
                         supportThickness = stair.supportThickness,
+                        railLeft = stair.railLeftEnabled,
+                        railRight = stair.railRightEnabled,
                         treadColor = ColorDto(stair.treadColor),
                         supportColor = ColorDto(stair.supportColor)
                     )
@@ -630,6 +634,8 @@ object ModelPersistence {
         var height: Float = 2.7f
         var stepCount: Int = 14
         var supportThickness: Float = 0.2f
+        var railLeft: Boolean = true
+        var railRight: Boolean = true
         var treadColor: ColorDto = ColorDto(Color(0.93f, 0.93f, 0.93f, 1f))
         var supportColor: ColorDto = ColorDto(Color(0.82f, 0.82f, 0.82f, 1f))
 
@@ -644,6 +650,8 @@ object ModelPersistence {
             height: Float,
             stepCount: Int,
             supportThickness: Float,
+            railLeft: Boolean,
+            railRight: Boolean,
             treadColor: ColorDto,
             supportColor: ColorDto
         ) : this() {
@@ -657,6 +665,8 @@ object ModelPersistence {
             this.height = height
             this.stepCount = stepCount
             this.supportThickness = supportThickness
+            this.railLeft = railLeft
+            this.railRight = railRight
             this.treadColor = treadColor
             this.supportColor = supportColor
         }

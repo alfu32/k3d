@@ -62,6 +62,8 @@ class ArchitectureStore {
         var height: Float,
         var stepCount: Int,
         var supportThickness: Float,
+        var railLeftEnabled: Boolean,
+        var railRightEnabled: Boolean,
         var treadColor: Color,
         var supportColor: Color
     )
@@ -188,6 +190,8 @@ class ArchitectureStore {
         height: Float,
         stepCount: Int,
         supportThickness: Float,
+        railLeftEnabled: Boolean = true,
+        railRightEnabled: Boolean = true,
         treadColor: Color = Color(0.93f, 0.93f, 0.93f, 1f),
         supportColor: Color = Color(0.82f, 0.82f, 0.82f, 1f),
         id: String = UUID.randomUUID().toString()
@@ -228,6 +232,8 @@ class ArchitectureStore {
             height = height,
             stepCount = stepCount.coerceAtLeast(1),
             supportThickness = supportThickness,
+            railLeftEnabled = railLeftEnabled,
+            railRightEnabled = railRightEnabled,
             treadColor = Color(treadColor),
             supportColor = Color(supportColor)
         )
@@ -381,6 +387,8 @@ class ArchitectureStore {
         height: Float,
         stepCount: Int,
         supportThickness: Float,
+        railLeftEnabled: Boolean,
+        railRightEnabled: Boolean,
         treadColor: Color,
         supportColor: Color
     ): Boolean {
@@ -388,6 +396,8 @@ class ArchitectureStore {
         stair.height = height
         stair.stepCount = stepCount.coerceAtLeast(1)
         stair.supportThickness = supportThickness
+        stair.railLeftEnabled = railLeftEnabled
+        stair.railRightEnabled = railRightEnabled
         stair.treadColor.set(treadColor)
         stair.supportColor.set(supportColor)
         return true

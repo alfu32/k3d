@@ -2540,24 +2540,25 @@ class GroupScene(
                             p3 = previous.o0,
                             color = supportColor
                         )
+                        // Lateral extension triangles to current copied-side support points.
+                        // Winding is flipped so outward normals match the expected side orientation.
+                        addStairSupportTriangle(
+                            faceStore = faceStore,
+                            lineStore = lineStore,
+                            a = current.o0,
+                            b = previous.o0,
+                            c = current.c0,
+                            color = supportColor
+                        )
+                        addStairSupportTriangle(
+                            faceStore = faceStore,
+                            lineStore = lineStore,
+                            a = current.o1,
+                            b = current.c1,
+                            c = previous.o1,
+                            color = supportColor
+                        )
                     }
-                    // Lateral extension triangles to current copied-side support points.
-                    addStairSupportTriangle(
-                        faceStore = faceStore,
-                        lineStore = lineStore,
-                        a = current.o0,
-                        b = current.c0,
-                        c = previous.o0,
-                        color = supportColor
-                    )
-                    addStairSupportTriangle(
-                        faceStore = faceStore,
-                        lineStore = lineStore,
-                        a = current.o1,
-                        b = previous.o1,
-                        c = current.c1,
-                        color = supportColor
-                    )
                 }
             }
         }

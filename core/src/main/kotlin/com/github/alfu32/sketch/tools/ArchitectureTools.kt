@@ -501,6 +501,8 @@ class ArchitectureStairTool(
             height = settings.stairHeight,
             stepCount = settings.stairStepCount,
             supportThickness = settings.stairSupportThickness,
+            railLeftEnabled = settings.stairRailLeftEnabled,
+            railRightEnabled = settings.stairRailRightEnabled,
             treadColor = settings.stairTreadColor,
             supportColor = settings.stairSupportColor
         )

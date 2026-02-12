@@ -69,7 +69,7 @@ class SketchUiOverlay(
     private val architectureElementProvider: () -> ArchitectureElementInfo?,
     private val architectureWallChanged: (String, Float, Float, Float, Color, Color) -> Unit,
     private val architectureSlabChanged: (String, Float, Color, Color, Color) -> Unit,
-    private val architectureStairChanged: (String, Float, Int, Float, Color, Color) -> Unit,
+    private val architectureStairChanged: (String, Float, Int, Float, Boolean, Boolean, Color, Color) -> Unit,
     private val architectureFrameChanged: (String, Float, Float, Color) -> Unit
 ) {
     private open class CollapsibleWindow(
@@ -164,6 +164,8 @@ class SketchUiOverlay(
     private val archDefaultStairHeightKey = "arch_default_stair_height"
     private val archDefaultStairStepsKey = "arch_default_stair_steps"
     private val archDefaultStairSupportKey = "arch_default_stair_support"
+    private val archDefaultStairRailLeftKey = "arch_default_stair_rail_left"
+    private val archDefaultStairRailRightKey = "arch_default_stair_rail_right"
     private val archDefaultStairTreadColorKey = "arch_default_stair_tread_color"
     private val archDefaultStairSupportColorKey = "arch_default_stair_support_color"
     private val archDefaultFrameDepthKey = "arch_default_frame_depth"
@@ -244,6 +246,10 @@ class SketchUiOverlay(
     private lateinit var architectureStairStepsField: VisTextField
     private lateinit var architectureStairSupportLabel: VisLabel
     private lateinit var architectureStairSupportField: VisTextField
+    private lateinit var architectureStairLeftRailLabel: VisLabel
+    private lateinit var architectureStairLeftRailCheck: VisCheckBox
+    private lateinit var architectureStairRightRailLabel: VisLabel
+    private lateinit var architectureStairRightRailCheck: VisCheckBox
     private lateinit var architectureStairTreadColorLabel: VisLabel
     private lateinit var architectureStairTreadColorField: VisTextField
     private lateinit var architectureStairTreadColorButton: VisImageTextButton
@@ -1084,6 +1090,10 @@ class SketchUiOverlay(
         architectureStairStepsField = VisTextField()
         architectureStairSupportLabel = VisLabel("Stair support thickness")
         architectureStairSupportField = VisTextField()
+        architectureStairLeftRailLabel = VisLabel("Stair left rail grid")
+        architectureStairLeftRailCheck = VisCheckBox("Enabled")
+        architectureStairRightRailLabel = VisLabel("Stair right rail grid")
+        architectureStairRightRailCheck = VisCheckBox("Enabled")
         architectureStairTreadColorLabel = VisLabel("Stair tread color")
         architectureStairTreadColorField = VisTextField()
         architectureStairTreadColorButton = createArchitectureColorButton("Stair Tread Color", architectureStairTreadColorField)
@@ -1204,6 +1214,8 @@ class SketchUiOverlay(
                         value,
                         selection.stairStepCount ?: 14,
                         selection.stairSupportThickness ?: 0.2f,
+                        selection.stairRailLeftEnabled ?: architectureSettings.stairRailLeftEnabled,
+                        selection.stairRailRightEnabled ?: architectureSettings.stairRailRightEnabled,
                         selection.stairTreadColor ?: Color(architectureSettings.stairTreadColor),
                         selection.stairSupportColor ?: Color(architectureSettings.stairSupportColor)
                     )
@@ -1226,6 +1238,8 @@ class SketchUiOverlay(
                         selection.stairHeight ?: 2.7f,
                         value,
                         selection.stairSupportThickness ?: 0.2f,
+                        selection.stairRailLeftEnabled ?: architectureSettings.stairRailLeftEnabled,
+                        selection.stairRailRightEnabled ?: architectureSettings.stairRailRightEnabled,
                         selection.stairTreadColor ?: Color(architectureSettings.stairTreadColor),
                         selection.stairSupportColor ?: Color(architectureSettings.stairSupportColor)
                     )
@@ -1247,6 +1261,56 @@ class SketchUiOverlay(
                         selection.id,
                         selection.stairHeight ?: 2.7f,
                         selection.stairStepCount ?: 14,
+                        value,
+                        selection.stairRailLeftEnabled ?: architectureSettings.stairRailLeftEnabled,
+                        selection.stairRailRightEnabled ?: architectureSettings.stairRailRightEnabled,
+                        selection.stairTreadColor ?: Color(architectureSettings.stairTreadColor),
+                        selection.stairSupportColor ?: Color(architectureSettings.stairSupportColor)
+                    )
+                }
+            }
+        })
+        architectureStairLeftRailCheck.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingArchitectureFields) {
+                    return
+                }
+                val value = architectureStairLeftRailCheck.isChecked
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.stairRailLeftEnabled = value
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.STAIR) {
+                    architectureStairChanged(
+                        selection.id,
+                        selection.stairHeight ?: architectureSettings.stairHeight,
+                        selection.stairStepCount ?: architectureSettings.stairStepCount,
+                        selection.stairSupportThickness ?: architectureSettings.stairSupportThickness,
+                        value,
+                        selection.stairRailRightEnabled ?: architectureSettings.stairRailRightEnabled,
+                        selection.stairTreadColor ?: Color(architectureSettings.stairTreadColor),
+                        selection.stairSupportColor ?: Color(architectureSettings.stairSupportColor)
+                    )
+                }
+            }
+        })
+        architectureStairRightRailCheck.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingArchitectureFields) {
+                    return
+                }
+                val value = architectureStairRightRailCheck.isChecked
+                val selection = architectureElementProvider()
+                if (selection == null) {
+                    architectureSettings.stairRailRightEnabled = value
+                    saveArchitectureDefaults()
+                } else if (selection.kind == ArchitectureElementKind.STAIR) {
+                    architectureStairChanged(
+                        selection.id,
+                        selection.stairHeight ?: architectureSettings.stairHeight,
+                        selection.stairStepCount ?: architectureSettings.stairStepCount,
+                        selection.stairSupportThickness ?: architectureSettings.stairSupportThickness,
+                        selection.stairRailLeftEnabled ?: architectureSettings.stairRailLeftEnabled,
                         value,
                         selection.stairTreadColor ?: Color(architectureSettings.stairTreadColor),
                         selection.stairSupportColor ?: Color(architectureSettings.stairSupportColor)
@@ -1411,6 +1475,8 @@ class SketchUiOverlay(
                         selection.stairHeight ?: architectureSettings.stairHeight,
                         selection.stairStepCount ?: architectureSettings.stairStepCount,
                         selection.stairSupportThickness ?: architectureSettings.stairSupportThickness,
+                        selection.stairRailLeftEnabled ?: architectureSettings.stairRailLeftEnabled,
+                        selection.stairRailRightEnabled ?: architectureSettings.stairRailRightEnabled,
                         color,
                         selection.stairSupportColor ?: Color(architectureSettings.stairSupportColor)
                     )
@@ -1432,6 +1498,8 @@ class SketchUiOverlay(
                         selection.stairHeight ?: architectureSettings.stairHeight,
                         selection.stairStepCount ?: architectureSettings.stairStepCount,
                         selection.stairSupportThickness ?: architectureSettings.stairSupportThickness,
+                        selection.stairRailLeftEnabled ?: architectureSettings.stairRailLeftEnabled,
+                        selection.stairRailRightEnabled ?: architectureSettings.stairRailRightEnabled,
                         selection.stairTreadColor ?: Color(architectureSettings.stairTreadColor),
                         color
                     )
@@ -1476,6 +1544,8 @@ class SketchUiOverlay(
         architectureSettings.stairHeight = uiPrefs.getFloat(archDefaultStairHeightKey, architectureSettings.stairHeight).coerceAtLeast(0.05f)
         architectureSettings.stairStepCount = uiPrefs.getInteger(archDefaultStairStepsKey, architectureSettings.stairStepCount).coerceAtLeast(1)
         architectureSettings.stairSupportThickness = uiPrefs.getFloat(archDefaultStairSupportKey, architectureSettings.stairSupportThickness).coerceAtLeast(0.01f)
+        architectureSettings.stairRailLeftEnabled = uiPrefs.getBoolean(archDefaultStairRailLeftKey, architectureSettings.stairRailLeftEnabled)
+        architectureSettings.stairRailRightEnabled = uiPrefs.getBoolean(archDefaultStairRailRightKey, architectureSettings.stairRailRightEnabled)
         architectureSettings.stairTreadColor.set(loadColorPref(archDefaultStairTreadColorKey, architectureSettings.stairTreadColor))
         architectureSettings.stairSupportColor.set(loadColorPref(archDefaultStairSupportColorKey, architectureSettings.stairSupportColor))
         architectureSettings.frameDepth = uiPrefs.getFloat(archDefaultFrameDepthKey, architectureSettings.frameDepth).coerceAtLeast(0.01f)
@@ -1496,6 +1566,8 @@ class SketchUiOverlay(
         uiPrefs.putFloat(archDefaultStairHeightKey, architectureSettings.stairHeight)
         uiPrefs.putInteger(archDefaultStairStepsKey, architectureSettings.stairStepCount)
         uiPrefs.putFloat(archDefaultStairSupportKey, architectureSettings.stairSupportThickness)
+        uiPrefs.putBoolean(archDefaultStairRailLeftKey, architectureSettings.stairRailLeftEnabled)
+        uiPrefs.putBoolean(archDefaultStairRailRightKey, architectureSettings.stairRailRightEnabled)
         uiPrefs.putString(archDefaultStairTreadColorKey, formatColorField(architectureSettings.stairTreadColor))
         uiPrefs.putString(archDefaultStairSupportColorKey, formatColorField(architectureSettings.stairSupportColor))
         uiPrefs.putFloat(archDefaultFrameDepthKey, architectureSettings.frameDepth)
@@ -1553,6 +1625,8 @@ class SketchUiOverlay(
                 entries.add(ArchitectureFieldEntry(architectureStairHeightLabel, architectureStairHeightField))
                 entries.add(ArchitectureFieldEntry(architectureStairStepsLabel, architectureStairStepsField))
                 entries.add(ArchitectureFieldEntry(architectureStairSupportLabel, architectureStairSupportField))
+                entries.add(ArchitectureFieldEntry(architectureStairLeftRailLabel, checkBox = architectureStairLeftRailCheck))
+                entries.add(ArchitectureFieldEntry(architectureStairRightRailLabel, checkBox = architectureStairRightRailCheck))
                 entries.add(
                     ArchitectureFieldEntry(
                         architectureStairTreadColorLabel,
@@ -1624,6 +1698,8 @@ class SketchUiOverlay(
                 entries.add(ArchitectureFieldEntry(architectureStairHeightLabel, architectureStairHeightField))
                 entries.add(ArchitectureFieldEntry(architectureStairStepsLabel, architectureStairStepsField))
                 entries.add(ArchitectureFieldEntry(architectureStairSupportLabel, architectureStairSupportField))
+                entries.add(ArchitectureFieldEntry(architectureStairLeftRailLabel, checkBox = architectureStairLeftRailCheck))
+                entries.add(ArchitectureFieldEntry(architectureStairRightRailLabel, checkBox = architectureStairRightRailCheck))
                 entries.add(
                     ArchitectureFieldEntry(
                         architectureStairTreadColorLabel,
@@ -1659,8 +1735,9 @@ class SketchUiOverlay(
 
     private data class ArchitectureFieldEntry(
         val label: VisLabel,
-        val field: VisTextField,
-        val colorButton: VisImageTextButton? = null
+        val field: VisTextField? = null,
+        val colorButton: VisImageTextButton? = null,
+        val checkBox: VisCheckBox? = null
     )
 
     private fun addArchitectureFieldGrid(entries: List<ArchitectureFieldEntry>) {
@@ -1681,14 +1758,16 @@ class SketchUiOverlay(
         val table = VisTable()
         table.defaults().left().growX()
         table.add(entry.label).left().row()
-        if (entry.colorButton == null) {
-            table.add(entry.field).growX()
-        } else {
+        when {
+            entry.checkBox != null -> table.add(entry.checkBox).left()
+            entry.colorButton == null -> table.add(requireNotNull(entry.field)).growX()
+            else -> {
             val controls = VisTable()
             controls.defaults().left()
-            controls.add(entry.field).growX().padRight(4f)
+            controls.add(requireNotNull(entry.field)).growX().padRight(4f)
             controls.add(entry.colorButton).size(24f, 24f)
             table.add(controls).growX()
+            }
         }
         return table
     }
@@ -1732,6 +1811,8 @@ class SketchUiOverlay(
             updateField(architectureStairHeightField, String.format(Locale.US, "%.3f", architectureSettings.stairHeight))
             updateField(architectureStairStepsField, architectureSettings.stairStepCount.toString())
             updateField(architectureStairSupportField, String.format(Locale.US, "%.3f", architectureSettings.stairSupportThickness))
+            architectureStairLeftRailCheck.isChecked = architectureSettings.stairRailLeftEnabled
+            architectureStairRightRailCheck.isChecked = architectureSettings.stairRailRightEnabled
             updateField(architectureStairTreadColorField, formatColorField(architectureSettings.stairTreadColor))
             updateField(architectureStairSupportColorField, formatColorField(architectureSettings.stairSupportColor))
             updateField(architectureFrameDepthField, String.format(Locale.US, "%.3f", architectureSettings.frameDepth))
@@ -1771,6 +1852,8 @@ class SketchUiOverlay(
                     updateField(architectureStairHeightField, String.format(Locale.US, "%.3f", selection.stairHeight ?: architectureSettings.stairHeight))
                     updateField(architectureStairStepsField, (selection.stairStepCount ?: architectureSettings.stairStepCount).toString())
                     updateField(architectureStairSupportField, String.format(Locale.US, "%.3f", selection.stairSupportThickness ?: architectureSettings.stairSupportThickness))
+                    architectureStairLeftRailCheck.isChecked = selection.stairRailLeftEnabled ?: architectureSettings.stairRailLeftEnabled
+                    architectureStairRightRailCheck.isChecked = selection.stairRailRightEnabled ?: architectureSettings.stairRailRightEnabled
                     updateField(
                         architectureStairTreadColorField,
                         formatColorField(selection.stairTreadColor ?: architectureSettings.stairTreadColor)
@@ -2962,6 +3045,8 @@ class SketchUiOverlay(
         val stairHeight: Float? = null,
         val stairStepCount: Int? = null,
         val stairSupportThickness: Float? = null,
+        val stairRailLeftEnabled: Boolean? = null,
+        val stairRailRightEnabled: Boolean? = null,
         val stairTreadColor: Color? = null,
         val stairSupportColor: Color? = null,
         val frameDepth: Float? = null,

@@ -2237,12 +2237,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun architectureSelectionInfo(): SketchUiOverlay.ArchitectureElementInfo? {
-        val group = scene.activeGroup()
-        if (!scene.isArchitectureGroup(group)) {
-            return null
-        }
+        val group = architecturePanelTargetGroup() ?: return null
         val store = group.architectureStore ?: return null
-        val selection = scene.selectedArchitectureElement(group) ?: return null
+        val selection = architecturePanelSelection(store) ?: return null
         return when (selection.kind) {
             ArchitectureStore.ElementKind.WALL -> {
                 val wall = store.allWalls().firstOrNull { it.id == selection.id } ?: return null
@@ -2275,6 +2272,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                     stairHeight = stair.height,
                     stairStepCount = stair.stepCount,
                     stairSupportThickness = stair.supportThickness,
+                    stairRailLeftEnabled = stair.railLeftEnabled,
+                    stairRailRightEnabled = stair.railRightEnabled,
                     stairTreadColor = Color(stair.treadColor),
                     stairSupportColor = Color(stair.supportColor)
                 )
@@ -2292,6 +2291,37 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
     }
 
+    private fun architecturePanelTargetGroup(): GroupScene.GroupNode? {
+        val active = scene.activeGroup()
+        if (scene.isArchitectureGroup(active)) {
+            return active
+        }
+        val selected = scene.selectedGroups().toList()
+        if (selected.size != 1) {
+            return null
+        }
+        val candidate = selected.first()
+        return if (scene.isArchitectureGroup(candidate)) candidate else null
+    }
+
+    private fun architecturePanelSelection(store: ArchitectureStore): ArchitectureStore.ElementSelection? {
+        store.selectedElement()?.let { return it }
+        val candidates = mutableListOf<ArchitectureStore.ElementSelection>()
+        if (store.allWalls().size == 1) {
+            candidates.add(ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.WALL, store.allWalls().first().id))
+        }
+        if (store.allSlabs().size == 1) {
+            candidates.add(ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.SLAB, store.allSlabs().first().id))
+        }
+        if (store.allStairs().size == 1) {
+            candidates.add(ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.STAIR, store.allStairs().first().id))
+        }
+        if (store.allFrames().size == 1) {
+            candidates.add(ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.FRAME, store.allFrames().first().id))
+        }
+        return if (candidates.size == 1) candidates.first() else null
+    }
+
     private fun updateArchitectureWallParameters(
         id: String,
         thickness: Float,
@@ -2300,10 +2330,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         exteriorColor: Color,
         interiorColor: Color
     ) {
-        val group = scene.activeGroup()
-        if (!scene.isArchitectureGroup(group)) {
-            return
-        }
+        val group = architecturePanelTargetGroup() ?: return
         if (scene.updateArchitectureWall(group, id, thickness, height, inclinationDeg, exteriorColor, interiorColor)) {
             statusModel.message = "Wall parameters updated."
         }
@@ -2316,10 +2343,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         bottomColor: Color,
         sideColor: Color
     ) {
-        val group = scene.activeGroup()
-        if (!scene.isArchitectureGroup(group)) {
-            return
-        }
+        val group = architecturePanelTargetGroup() ?: return
         if (scene.updateArchitectureSlab(group, id, thickness, topColor, bottomColor, sideColor)) {
             statusModel.message = "Slab parameters updated."
         }
@@ -2330,23 +2354,31 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         height: Float,
         stepCount: Int,
         supportThickness: Float,
+        railLeftEnabled: Boolean,
+        railRightEnabled: Boolean,
         treadColor: Color,
         supportColor: Color
     ) {
-        val group = scene.activeGroup()
-        if (!scene.isArchitectureGroup(group)) {
-            return
-        }
-        if (scene.updateArchitectureStair(group, id, height, stepCount, supportThickness, treadColor, supportColor)) {
+        val group = architecturePanelTargetGroup() ?: return
+        if (
+            scene.updateArchitectureStair(
+                group,
+                id,
+                height,
+                stepCount,
+                supportThickness,
+                railLeftEnabled,
+                railRightEnabled,
+                treadColor,
+                supportColor
+            )
+        ) {
             statusModel.message = "Stair parameters updated."
         }
     }
 
     private fun updateArchitectureFrameParameters(id: String, depth: Float, frameWidth: Float, color: Color) {
-        val group = scene.activeGroup()
-        if (!scene.isArchitectureGroup(group)) {
-            return
-        }
+        val group = architecturePanelTargetGroup() ?: return
         if (scene.updateArchitectureFrame(group, id, depth, frameWidth, color)) {
             statusModel.message = "Frame parameters updated."
         }

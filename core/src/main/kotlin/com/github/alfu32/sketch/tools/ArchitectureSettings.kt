@@ -15,6 +15,8 @@ data class ArchitectureSettings(
     var stairHeight: Float = 2.7f,
     var stairStepCount: Int = 14,
     var stairSupportThickness: Float = 0.2f,
+    var stairRailLeftEnabled: Boolean = true,
+    var stairRailRightEnabled: Boolean = true,
     var stairTreadColor: Color = Color(0.93f, 0.93f, 0.93f, 1f),
     var stairSupportColor: Color = Color(0.82f, 0.82f, 0.82f, 1f),
     var frameDepth: Float = 0.12f,
