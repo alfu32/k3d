@@ -352,6 +352,7 @@ class ArchitectureStairTool(
     private val ensureArchitectureGroup: (() -> GroupScene.GroupNode?)? = null
 ) : Tool {
     private data class PolylinePath(val points: List<Vector3>, val closed: Boolean)
+    private data class PolylineComponent(val path: PolylinePath, val segments: List<DraftLineStore.Segment>)
 
     private data class EdgeHitWorld(val segment: DraftLineStore.Segment, val point: Vector3, val t: Float)
     private data class GroupPolylineHitWorld(val path: PolylinePath, val t: Float)
@@ -608,35 +609,109 @@ class ArchitectureStairTool(
         maxPixels: Float = 12f
     ): GroupPolylineHitWorld? {
         var best: GroupPolylineHitWorld? = null
-        scene.groupsInActiveContext().forEach { candidate ->
-            val segments = candidate.lineStore.getSegments()
-            if (segments.isEmpty()) {
+        candidateGroupsForStairPick().forEach { candidate ->
+            val polylines = polylineComponents(candidate)
+            if (polylines.isEmpty()) {
                 return@forEach
             }
-            val localPath = orderedPolyline(segments) ?: return@forEach
-            if (localPath.closed != requireClosed) {
-                return@forEach
-            }
-
-            var bestT: Float? = null
-            segments.forEach { segment ->
-                val a = candidate.toWorld(segment.start)
-                val b = candidate.toWorld(segment.end)
-                val hit = closestRaySegment(ray.origin, ray.direction, a, b) ?: return@forEach
-                val screenDist = screenDistance(hit.point, screenX, screenY)
-                if (screenDist <= maxPixels) {
-                    if (bestT == null || hit.t < bestT!!) {
-                        bestT = hit.t
+            polylines.forEach { component ->
+                if (component.path.closed != requireClosed) {
+                    return@forEach
+                }
+                var bestT: Float? = null
+                component.segments.forEach { segment ->
+                    val a = candidate.toWorld(segment.start)
+                    val b = candidate.toWorld(segment.end)
+                    val hit = closestRaySegment(ray.origin, ray.direction, a, b) ?: return@forEach
+                    val screenDist = screenDistance(hit.point, screenX, screenY)
+                    if (screenDist <= maxPixels) {
+                        if (bestT == null || hit.t < bestT!!) {
+                            bestT = hit.t
+                        }
                     }
                 }
-            }
-            val t = bestT ?: return@forEach
-            val worldPath = PolylinePath(points = localPath.points.map { candidate.toWorld(it) }, closed = localPath.closed)
-            if (best == null || t < best!!.t) {
-                best = GroupPolylineHitWorld(worldPath, t)
+                val t = bestT ?: return@forEach
+                val worldPath = PolylinePath(
+                    points = component.path.points.map { candidate.toWorld(it) },
+                    closed = component.path.closed
+                )
+                if (best == null || t < best!!.t) {
+                    best = GroupPolylineHitWorld(worldPath, t)
+                }
             }
         }
         return best
+    }
+
+    private fun candidateGroupsForStairPick(): List<GroupScene.GroupNode> {
+        val activeParent = scene.activeGroup()
+        val inContext = scene.groupsInActiveContext()
+        if (inContext.isEmpty()) {
+            return emptyList()
+        }
+        val selected = scene.selectedGroups()
+            .filter { it.parent == activeParent && inContext.contains(it) }
+        if (selected.isEmpty()) {
+            return inContext
+        }
+        val remainder = inContext.filterNot { selected.contains(it) }
+        return selected + remainder
+    }
+
+    private fun polylineComponents(group: GroupScene.GroupNode, epsilon: Float = 1e-3f): List<PolylineComponent> {
+        val segments = group.lineStore.getSegments()
+        if (segments.isEmpty()) {
+            return emptyList()
+        }
+        fun keyOf(point: Vector3): Key3 {
+            val scale = 1f / epsilon
+            return Key3(
+                (point.x * scale).roundToInt(),
+                (point.y * scale).roundToInt(),
+                (point.z * scale).roundToInt()
+            )
+        }
+
+        val segmentEndpointKeys = segments.map { keyOf(it.start) to keyOf(it.end) }
+        val endpointToSegments = mutableMapOf<Key3, MutableList<Int>>()
+        segmentEndpointKeys.forEachIndexed { index, (a, b) ->
+            endpointToSegments.getOrPut(a) { mutableListOf() }.add(index)
+            endpointToSegments.getOrPut(b) { mutableListOf() }.add(index)
+        }
+
+        val visited = BooleanArray(segments.size)
+        val components = mutableListOf<PolylineComponent>()
+        val queue = ArrayDeque<Int>()
+        for (startIndex in segments.indices) {
+            if (visited[startIndex]) {
+                continue
+            }
+            val componentIndices = mutableListOf<Int>()
+            queue.clear()
+            queue.addLast(startIndex)
+            visited[startIndex] = true
+            while (queue.isNotEmpty()) {
+                val current = queue.removeFirst()
+                componentIndices.add(current)
+                val (a, b) = segmentEndpointKeys[current]
+                (endpointToSegments[a] ?: emptyList()).forEach { neighbor ->
+                    if (!visited[neighbor]) {
+                        visited[neighbor] = true
+                        queue.addLast(neighbor)
+                    }
+                }
+                (endpointToSegments[b] ?: emptyList()).forEach { neighbor ->
+                    if (!visited[neighbor]) {
+                        visited[neighbor] = true
+                        queue.addLast(neighbor)
+                    }
+                }
+            }
+            val componentSegments = componentIndices.map { segments[it] }
+            val ordered = orderedPolyline(componentSegments, epsilon) ?: continue
+            components.add(PolylineComponent(path = ordered, segments = componentSegments))
+        }
+        return components
     }
 
     private fun pickEdgeWorld(
