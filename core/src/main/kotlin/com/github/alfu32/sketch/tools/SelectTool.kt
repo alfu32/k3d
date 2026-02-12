@@ -45,8 +45,25 @@ class SelectTool(
     private var windowEndX = 0
     private var windowEndY = 0
     private var pendingVolumeStart: Vector3? = null
+    private var holeDrag: HoleDragState? = null
     private var wallDrag: WallDragState? = null
     private enum class SelectionMode { REPLACE, ADD, REMOVE }
+
+    private data class HoleHandleHit(
+        val wallId: String,
+        val holeId: String,
+        val kind: GroupScene.HoleHandleKind,
+        val point: Vector3,
+        val t: Float
+    )
+
+    private data class HoleDragState(
+        val group: GroupScene.GroupNode,
+        val wallId: String,
+        val holeId: String,
+        val kind: GroupScene.HoleHandleKind,
+        val movingWorld: Vector3
+    )
 
     private data class WallEndpointHit(
         val wallId: String,
@@ -81,11 +98,18 @@ class SelectTool(
         selectingWindow = false
         windowDragActive = false
         pendingVolumeStart = null
+        holeDrag = null
         wallDrag = null
         status.message = "Selection cleared."
     }
 
     override fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
+        holeDrag?.let { drag ->
+            if (valid && world != null) {
+                holeDrag = drag.copy(movingWorld = Vector3(world))
+            }
+            return
+        }
         wallDrag?.let { drag ->
             if (valid && world != null) {
                 wallDrag = drag.copy(movingWorld = Vector3(world))
@@ -141,6 +165,18 @@ class SelectTool(
         val isVoxelGroup = scene.isVoxelGroup(activeGroup)
         val isArchitectureGroup = scene.isArchitectureGroup(activeGroup)
         if (isArchitectureGroup) {
+            val holeHit = pickArchitectureHoleHandle(activeGroup, ray, Gdx.input.x, Gdx.input.y)
+            if (holeHit != null) {
+                holeDrag = HoleDragState(
+                    group = activeGroup,
+                    wallId = holeHit.wallId,
+                    holeId = holeHit.holeId,
+                    kind = holeHit.kind,
+                    movingWorld = Vector3(holeHit.point)
+                )
+                status.message = "Drag hole marker and release to update hole."
+                return true
+            }
             val endpointHit = pickSelectedWallEndpoint(activeGroup, ray, Gdx.input.x, Gdx.input.y)
             if (endpointHit != null) {
                 wallDrag = WallDragState(
@@ -301,6 +337,19 @@ class SelectTool(
         if (button != Input.Buttons.LEFT) {
             return false
         }
+        holeDrag?.let { drag ->
+            val movingWorld = if (valid && world != null) Vector3(world) else Vector3(drag.movingWorld)
+            val updated = scene.updateArchitectureHoleByHandle(
+                group = drag.group,
+                wallId = drag.wallId,
+                holeId = drag.holeId,
+                handleKind = drag.kind,
+                targetWorld = movingWorld
+            )
+            holeDrag = null
+            status.message = if (updated) "Hole updated." else "Hole update failed."
+            return true
+        }
         wallDrag?.let { drag ->
             val movingWorld = if (valid && world != null) Vector3(world) else Vector3(drag.movingWorld)
             val (startWorld, endWorld) = if (drag.draggingStart) {
@@ -378,6 +427,15 @@ class SelectTool(
     }
 
     override fun render(renderer: ShapeRenderer) {
+        holeDrag?.let { drag ->
+            renderer.color = com.badlogic.gdx.graphics.Color(0.2f, 0.55f, 0.95f, 1f)
+            val p = drag.movingWorld
+            val size = 0.15f
+            renderer.line(p.x - size, p.y, p.z, p.x + size, p.y, p.z)
+            renderer.line(p.x, p.y - size, p.z, p.x, p.y + size, p.z)
+            renderer.line(p.x, p.y, p.z - size, p.x, p.y, p.z + size)
+            return
+        }
         wallDrag?.let { drag ->
             renderer.color = com.badlogic.gdx.graphics.Color(0.25f, 0.65f, 1f, 1f)
             renderer.line(drag.fixedWorld, drag.movingWorld)
@@ -882,6 +940,40 @@ class SelectTool(
             }
         }
         return true
+    }
+
+    private fun pickArchitectureHoleHandle(
+        group: GroupScene.GroupNode,
+        ray: Ray,
+        screenX: Int,
+        screenY: Int,
+        maxPixels: Float = 14f
+    ): HoleHandleHit? {
+        val selectedWallId = scene.selectedArchitectureElement(group)
+            ?.takeIf { it.kind == ArchitectureStore.ElementKind.WALL }
+            ?.id
+        val markers = scene.architectureHoleHandleMarkersWorld(group, wallId = selectedWallId)
+        var best: HoleHandleHit? = null
+        markers.forEach { marker ->
+            val dist = screenDistance(marker.world, screenX, screenY)
+            if (dist > maxPixels) {
+                return@forEach
+            }
+            val t = Vector3(marker.world).sub(ray.origin).dot(ray.direction)
+            if (t < 0f) {
+                return@forEach
+            }
+            if (best == null || t < best!!.t) {
+                best = HoleHandleHit(
+                    wallId = marker.wallId,
+                    holeId = marker.holeId,
+                    kind = marker.kind,
+                    point = Vector3(marker.world),
+                    t = t
+                )
+            }
+        }
+        return best
     }
 
     private fun pickSelectedWallEndpoint(

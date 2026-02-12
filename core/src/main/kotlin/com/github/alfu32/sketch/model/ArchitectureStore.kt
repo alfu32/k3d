@@ -294,6 +294,31 @@ class ArchitectureStore {
         return wall.holes.size != before
     }
 
+    fun updateHole(
+        wallId: String,
+        holeId: String,
+        u0: Float,
+        u1: Float,
+        v0: Float,
+        v1: Float,
+        minSize: Float = 0.05f
+    ): Boolean {
+        val wall = walls.firstOrNull { it.id == wallId } ?: return false
+        val hole = wall.holes.firstOrNull { it.id == holeId } ?: return false
+        val nextU0 = min(u0, u1)
+        val nextU1 = max(u0, u1)
+        val nextV0 = min(v0, v1)
+        val nextV1 = max(v0, v1)
+        if (nextU1 - nextU0 < minSize || nextV1 - nextV0 < minSize) {
+            return false
+        }
+        hole.u0 = nextU0
+        hole.u1 = nextU1
+        hole.v0 = nextV0
+        hole.v1 = nextV1
+        return true
+    }
+
     fun removeHoles(predicate: (wall: WallSegment, hole: RectHole) -> Boolean): Int {
         var removed = 0
         walls.forEach { wall ->

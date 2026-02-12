@@ -17,6 +17,17 @@ class GroupScene(
 ) {
     data class Axes(val u: Vector3, val v: Vector3, val w: Vector3)
     enum class PrototypeKind { MESH, VOXEL, ARCHITECTURE }
+    enum class HoleHandleKind {
+        CORNER_0, CORNER_1, CORNER_2, CORNER_3,
+        EDGE_0, EDGE_1, EDGE_2, EDGE_3,
+        CENTER
+    }
+    data class HoleHandleMarker(
+        val wallId: String,
+        val holeId: String,
+        val kind: HoleHandleKind,
+        val world: Vector3
+    )
 
     class ObjectPrototype(
         val id: String,
@@ -984,6 +995,114 @@ class GroupScene(
             }
         }
         return guides
+    }
+
+    fun architectureHoleHandleMarkersWorld(
+        group: GroupNode,
+        wallId: String? = null
+    ): List<HoleHandleMarker> {
+        val store = group.architectureStore ?: return emptyList()
+        val handles = mutableListOf<HoleHandleMarker>()
+        store.allWalls().forEach { wall ->
+            if (wallId != null && wall.id != wallId) {
+                return@forEach
+            }
+            val basis = wallBasis(wall) ?: return@forEach
+            wall.holes.forEach { hole ->
+                val p0 = wallPoint(basis, wall, hole.u0, hole.v0, 1f, 0.002f)
+                val p1 = wallPoint(basis, wall, hole.u1, hole.v0, 1f, 0.002f)
+                val p2 = wallPoint(basis, wall, hole.u1, hole.v1, 1f, 0.002f)
+                val p3 = wallPoint(basis, wall, hole.u0, hole.v1, 1f, 0.002f)
+                val e0 = Vector3(p0).lerp(p1, 0.5f)
+                val e1 = Vector3(p1).lerp(p2, 0.5f)
+                val e2 = Vector3(p2).lerp(p3, 0.5f)
+                val e3 = Vector3(p3).lerp(p0, 0.5f)
+                val center = Vector3(
+                    (p0.x + p1.x + p2.x + p3.x) * 0.25f,
+                    (p0.y + p1.y + p2.y + p3.y) * 0.25f,
+                    (p0.z + p1.z + p2.z + p3.z) * 0.25f
+                )
+                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.CORNER_0, p0))
+                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.CORNER_1, p1))
+                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.CORNER_2, p2))
+                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.CORNER_3, p3))
+                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.EDGE_0, e0))
+                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.EDGE_1, e1))
+                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.EDGE_2, e2))
+                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.EDGE_3, e3))
+                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.CENTER, center))
+            }
+        }
+        return handles
+    }
+
+    fun updateArchitectureHoleByHandle(
+        group: GroupNode,
+        wallId: String,
+        holeId: String,
+        handleKind: HoleHandleKind,
+        targetWorld: Vector3
+    ): Boolean {
+        val store = group.architectureStore ?: return false
+        val wall = store.wallById(wallId) ?: return false
+        val hole = wall.holes.firstOrNull { it.id == holeId } ?: return false
+        val basis = wallBasis(wall) ?: return false
+        val projected = projectToWall(basis, targetWorld)
+
+        var u0 = hole.u0
+        var u1 = hole.u1
+        var v0 = hole.v0
+        var v1 = hole.v1
+
+        when (handleKind) {
+            HoleHandleKind.CENTER -> {
+                val width = (hole.u1 - hole.u0).coerceAtLeast(0.05f)
+                val height = (hole.v1 - hole.v0).coerceAtLeast(0.05f)
+                val safeWidth = width.coerceAtMost((basis.length - 0.02f).coerceAtLeast(0.05f))
+                val safeHeight = height.coerceAtMost((wall.height - 0.02f).coerceAtLeast(0.05f))
+                val centerU = projected.x.coerceIn(safeWidth * 0.5f, basis.length - safeWidth * 0.5f)
+                val centerV = projected.y.coerceIn(safeHeight * 0.5f, wall.height - safeHeight * 0.5f)
+                u0 = centerU - safeWidth * 0.5f
+                u1 = centerU + safeWidth * 0.5f
+                v0 = centerV - safeHeight * 0.5f
+                v1 = centerV + safeHeight * 0.5f
+            }
+            HoleHandleKind.CORNER_0 -> {
+                u0 = projected.x.coerceIn(0f, basis.length)
+                v0 = projected.y.coerceIn(0f, wall.height)
+            }
+            HoleHandleKind.CORNER_1 -> {
+                u1 = projected.x.coerceIn(0f, basis.length)
+                v0 = projected.y.coerceIn(0f, wall.height)
+            }
+            HoleHandleKind.CORNER_2 -> {
+                u1 = projected.x.coerceIn(0f, basis.length)
+                v1 = projected.y.coerceIn(0f, wall.height)
+            }
+            HoleHandleKind.CORNER_3 -> {
+                u0 = projected.x.coerceIn(0f, basis.length)
+                v1 = projected.y.coerceIn(0f, wall.height)
+            }
+            HoleHandleKind.EDGE_0 -> {
+                v0 = projected.y.coerceIn(0f, wall.height)
+            }
+            HoleHandleKind.EDGE_1 -> {
+                u1 = projected.x.coerceIn(0f, basis.length)
+            }
+            HoleHandleKind.EDGE_2 -> {
+                v1 = projected.y.coerceIn(0f, wall.height)
+            }
+            HoleHandleKind.EDGE_3 -> {
+                u0 = projected.x.coerceIn(0f, basis.length)
+            }
+        }
+
+        if (!store.updateHole(wallId, holeId, u0, u1, v0, v1)) {
+            return false
+        }
+        rebuildArchitectureGeometry(group.prototype)
+        notifyChange()
+        return true
     }
 
     fun deleteSelectedArchitectureHoleContours(group: GroupNode): Int {
