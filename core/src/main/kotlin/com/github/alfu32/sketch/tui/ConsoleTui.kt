@@ -9,6 +9,12 @@ import java.lang.management.ManagementFactory
 import java.util.Locale
 import kotlin.math.ln
 
+data class ConsoleExecutionResult(
+    val success: Boolean,
+    val message: String,
+    val outputLines: List<String> = emptyList()
+)
+
 class ConsoleTui(
     private val runtime: ConsoleGroovyRuntime,
     private val terminal: TerminalController,
@@ -88,6 +94,39 @@ class ConsoleTui(
     }
 
     fun needsRender(): Boolean = dirty
+
+    @Synchronized
+    fun executeForMcp(source: String): ConsoleExecutionResult {
+        val script = source.trim()
+        if (script.isBlank()) {
+            return ConsoleExecutionResult(success = false, message = "Empty command.")
+        }
+        val startIndex = outputPane.lineCount()
+        return try {
+            val handledMeta = handleMetaCommand(script)
+            val value = if (!handledMeta) runtime.shell.evaluate(script) else null
+            if (!handledMeta) {
+                outputPane.append(value?.toString() ?: "null")
+            }
+            val lines = outputPane.linesSince(startIndex)
+            val message = lines.lastOrNull() ?: if (handledMeta) "OK" else (value?.toString() ?: "null")
+            val success = !message.startsWith("Unknown command:", ignoreCase = true)
+            ConsoleExecutionResult(success = success, message = message, outputLines = lines)
+        } catch (ex: Exception) {
+            val message = if (isIncompleteInput(ex)) {
+                "Incomplete input."
+            } else {
+                ex.message ?: ex.javaClass.simpleName
+            }
+            if (!isIncompleteInput(ex)) {
+                val writer = StringWriter()
+                ex.printStackTrace(java.io.PrintWriter(writer))
+                outputPane.append(writer.toString().trimEnd())
+            }
+            val lines = outputPane.linesSince(startIndex)
+            ConsoleExecutionResult(success = false, message = message, outputLines = lines)
+        }
+    }
 
     private fun handleKey(event: InputEvent.Key) {
         val key = event.keyCode
@@ -256,6 +295,10 @@ class ConsoleTui(
                       GET  /scene/commands
                       GET  /scene/command?id=<commandId>
                       POST /scene/command   body: {"id":"<commandId>"} or plain command id text
+                      GET  /scene/console?cmd=<command text>
+                      POST /scene/console   body: {"cmd":"<command text>"} or plain command text
+                      GET  /scene/pointer?action=down|move|up&screenX=<x>&screenY=<y>
+                      POST /scene/pointer   body: {"action":"down|move|up", "screenX":0, "screenY":0} (worldX/worldY/worldZ also supported)
 
                     Agent setup (HTTP MCP):
                       1) Start K3D.

@@ -64,7 +64,11 @@ import com.github.alfu32.sketch.console.TerminalController
 import com.github.alfu32.sketch.console.UnitFacade
 import com.github.alfu32.sketch.console.SaveFacade
 import com.github.alfu32.sketch.mcp.McpHttpServer
+import com.github.alfu32.sketch.mcp.McpConsoleResult
+import com.github.alfu32.sketch.mcp.McpPointerEventRequest
+import com.github.alfu32.sketch.mcp.McpPointerEventResult
 import com.github.alfu32.sketch.mcp.StdoutTap
+import com.github.alfu32.sketch.tui.ConsoleExecutionResult
 import com.github.alfu32.sketch.tui.ConsoleTui
 import com.github.alfu32.sketch.tui.HistoryManager
 import com.github.alfu32.sketch.tui.OutputPane
@@ -213,6 +217,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private enum class OrthoView { TOP, BOTTOM, LEFT, RIGHT, FRONT, BACK }
     private var consoleThread: ConsoleThread? = null
     private var consoleRuntime: ConsoleGroovyRuntime? = null
+    private var mcpConsoleRuntime: ConsoleGroovyRuntime? = null
+    private var mcpConsoleTui: ConsoleTui? = null
     private var consoleTerminal: TerminalController? = null
     private lateinit var undoManager: com.github.alfu32.sketch.model.UndoRedoManager
     private var restoringSnapshot = false
@@ -1073,7 +1079,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             initialPort = mcpPort,
             stdoutTap = stdoutTap,
             listCommands = ::listPaletteCommandsForMcp,
-            executeCommand = ::executePaletteCommandForMcp
+            executeCommand = ::executePaletteCommandForMcp,
+            executeConsoleCommand = ::executeConsoleCommandForMcp,
+            dispatchPointerEvent = ::dispatchPointerEventForMcp
         )
         val message = mcpServer.start()
         mcpPort = mcpServer.port()
@@ -1162,6 +1170,208 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             )
         }
         return result.get() ?: com.github.alfu32.sketch.plugin.PluginResult.failure("Command produced no result.")
+    }
+
+    private fun executeConsoleCommandForMcp(source: String): McpConsoleResult {
+        val command = source.trim()
+        if (command.isBlank()) {
+            return McpConsoleResult(success = false, message = "Empty command.")
+        }
+        val latch = CountDownLatch(1)
+        val result = AtomicReference<ConsoleExecutionResult?>()
+        val error = AtomicReference<Throwable?>()
+        Gdx.app.postRunnable {
+            try {
+                val tui = ensureMcpConsoleTui()
+                result.set(tui.executeForMcp(command))
+            } catch (t: Throwable) {
+                error.set(t)
+            } finally {
+                latch.countDown()
+            }
+        }
+        val ok = latch.await(30, TimeUnit.SECONDS)
+        if (!ok) {
+            return McpConsoleResult(success = false, message = "Console command timed out.")
+        }
+        val thrown = error.get()
+        if (thrown != null) {
+            return McpConsoleResult(
+                success = false,
+                message = "Console command crashed: ${thrown.message ?: thrown.javaClass.simpleName}"
+            )
+        }
+        val execResult = result.get() ?: return McpConsoleResult(
+            success = false,
+            message = "Console command produced no result."
+        )
+        return McpConsoleResult(
+            success = execResult.success,
+            message = execResult.message,
+            outputLines = execResult.outputLines
+        )
+    }
+
+    private fun ensureMcpConsoleTui(): ConsoleTui {
+        mcpConsoleTui?.let { return it }
+        val outputPane = OutputPane()
+        val history = HistoryManager(ConsolePaths.historyFile())
+        val runtime = buildConsoleRuntime(outputPane)
+        val tui = ConsoleTui(runtime, TerminalController(), outputPane, history, {}, {})
+        mcpConsoleRuntime = runtime
+        mcpConsoleTui = tui
+        return tui
+    }
+
+    private fun dispatchPointerEventForMcp(request: McpPointerEventRequest): McpPointerEventResult {
+        val latch = CountDownLatch(1)
+        val result = AtomicReference<McpPointerEventResult?>()
+        val error = AtomicReference<Throwable?>()
+        Gdx.app.postRunnable {
+            try {
+                result.set(dispatchPointerEventOnRenderThread(request))
+            } catch (t: Throwable) {
+                error.set(t)
+            } finally {
+                latch.countDown()
+            }
+        }
+        val ok = latch.await(5, TimeUnit.SECONDS)
+        if (!ok) {
+            return McpPointerEventResult(
+                success = false,
+                handled = false,
+                message = "Pointer event timed out.",
+                action = request.action,
+                pointer = request.pointer,
+                button = request.button
+            )
+        }
+        val thrown = error.get()
+        if (thrown != null) {
+            return McpPointerEventResult(
+                success = false,
+                handled = false,
+                message = "Pointer event crashed: ${thrown.message ?: thrown.javaClass.simpleName}",
+                action = request.action,
+                pointer = request.pointer,
+                button = request.button
+            )
+        }
+        return result.get() ?: McpPointerEventResult(
+            success = false,
+            handled = false,
+            message = "Pointer event produced no result.",
+            action = request.action,
+            pointer = request.pointer,
+            button = request.button
+        )
+    }
+
+    private fun dispatchPointerEventOnRenderThread(request: McpPointerEventRequest): McpPointerEventResult {
+        val action = request.action.lowercase()
+        val hasScreen = request.screenX != null && request.screenY != null
+        val hasWorld = request.worldX != null && request.worldY != null && request.worldZ != null
+        if (!hasScreen && !hasWorld) {
+            return McpPointerEventResult(
+                success = false,
+                handled = false,
+                message = "Provide screenX/screenY and/or worldX/worldY/worldZ.",
+                action = action,
+                pointer = request.pointer,
+                button = request.button
+            )
+        }
+        if (action != "down" && action != "move" && action != "up") {
+            return McpPointerEventResult(
+                success = false,
+                handled = false,
+                message = "Unsupported action: ${request.action}",
+                action = action,
+                pointer = request.pointer,
+                button = request.button
+            )
+        }
+
+        val pointer = request.pointer.coerceAtLeast(0)
+        val button = request.button
+        var screenX = request.screenX
+        var screenY = request.screenY
+        val world = if (hasWorld) {
+            Vector3(request.worldX!!, request.worldY!!, request.worldZ!!)
+        } else {
+            null
+        }
+        val explicitNormal = if (
+            request.normalX != null &&
+            request.normalY != null &&
+            request.normalZ != null
+        ) {
+            Vector3(request.normalX, request.normalY, request.normalZ).nor()
+        } else {
+            null
+        }
+
+        var eventWorld: Vector3? = world?.cpy()
+        var eventNormal: Vector3? = explicitNormal?.cpy()
+        var eventValid = request.valid ?: hasWorld
+        val pureScreenEvent = hasScreen && !hasWorld && explicitNormal == null && request.valid == null
+        if (hasScreen) {
+            val snap = snapper.compute(screenX!!, screenY!!)
+            if (!hasWorld) {
+                eventWorld = snap.world?.let { Vector3(it) }
+                eventValid = snap.valid
+            }
+            if (eventNormal == null) {
+                eventNormal = snap.normal?.let { Vector3(it) }
+            }
+        }
+        if (eventNormal == null && eventWorld != null) {
+            eventNormal = Vector3(0f, 1f, 0f)
+        }
+        if (!hasScreen && eventWorld != null) {
+            val projected = activeCamera.project(Vector3(eventWorld))
+            screenX = projected.x.toInt()
+            screenY = (Gdx.graphics.height - projected.y).toInt()
+        }
+
+        val handled = if (pureScreenEvent && hasScreen) {
+            when (action) {
+                "down" -> toolPointer.touchDown(screenX!!, screenY!!, pointer, button)
+                "up" -> toolPointer.touchUp(screenX!!, screenY!!, pointer, button)
+                else -> {
+                    toolPointer.touchDragged(screenX!!, screenY!!, pointer)
+                    true
+                }
+            }
+        } else {
+            when (action) {
+                "down" -> toolController.pointerDown(eventWorld, eventNormal, eventValid, button)
+                "up" -> toolController.pointerUp(eventWorld, eventNormal, eventValid, button)
+                else -> {
+                    toolController.pointerMoved(eventWorld, eventNormal, eventValid)
+                    true
+                }
+            }
+        }
+
+        return McpPointerEventResult(
+            success = true,
+            handled = handled,
+            message = "Pointer $action dispatched.",
+            action = action,
+            pointer = pointer,
+            button = button,
+            screenX = screenX,
+            screenY = screenY,
+            worldX = eventWorld?.x,
+            worldY = eventWorld?.y,
+            worldZ = eventWorld?.z,
+            normalX = eventNormal?.x,
+            normalY = eventNormal?.y,
+            normalZ = eventNormal?.z,
+            valid = eventValid
+        )
     }
 
     private fun walkSupportHeightAt(worldX: Float, worldZ: Float, currentY: Float): Float {
@@ -1609,11 +1819,14 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val directory = modelFile.parentFile ?: File(".")
         val outFile = File(directory, fileName)
         var pixmap: Pixmap? = null
+        var pngWriter: PixmapIO.PNG? = null
         return try {
             val width = Gdx.graphics.backBufferWidth.coerceAtLeast(1)
             val height = Gdx.graphics.backBufferHeight.coerceAtLeast(1)
             pixmap = ScreenUtils.getFrameBufferPixmap(0, 0, width, height)
-            PixmapIO.writePNG(FileHandle(outFile), pixmap)
+            pngWriter = PixmapIO.PNG((width * height * 1.5f).toInt().coerceAtLeast(1024))
+            pngWriter?.setFlipY(true)
+            pngWriter?.write(FileHandle(outFile), pixmap)
             val success = "Screenshot saved: ${outFile.absolutePath}"
             statusModel.message = success
             println(success)
@@ -1624,6 +1837,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             println(failure)
             null
         } finally {
+            pngWriter?.dispose()
             pixmap?.dispose()
         }
     }
@@ -1950,6 +2164,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
         val outputPane = OutputPane()
         val history = HistoryManager(ConsolePaths.historyFile())
+        val runtime = buildConsoleRuntime(outputPane)
+        val terminal = TerminalController()
+        val tui = ConsoleTui(runtime, terminal, outputPane, history, ::openTerminal) {
+            consoleThread?.shutdown()
+        }
+        consoleRuntime = runtime
+        consoleTerminal = terminal
+        consoleThread = ConsoleThread(runtime, tui, terminal).apply { start() }
+    }
+
+    private fun shouldStartConsole(): Boolean {
+        return System.getProperty("k3d.devConsole") == "true"
+    }
+
+    private fun buildConsoleRuntime(outputPane: OutputPane): ConsoleGroovyRuntime {
         val consoleUtils = ConsoleUtils(outputPane)
         val appFacade = AppFacade(Gdx.app)
         val selectionFacade = SelectionFacade(scene)
@@ -1968,7 +2197,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             applyShadowSettings(shadowSettings)
             uiOverlay.refreshLightingControls()
         }
-        val runtime = ConsoleGroovyRuntime(
+        return ConsoleGroovyRuntime(
             appFacade,
             scene,
             selectionFacade,
@@ -1988,17 +2217,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 "version" to K3DVersion()
             )
         )
-        val terminal = TerminalController()
-        val tui = ConsoleTui(runtime, terminal, outputPane, history, ::openTerminal) {
-            consoleThread?.shutdown()
-        }
-        consoleRuntime = runtime
-        consoleTerminal = terminal
-        consoleThread = ConsoleThread(runtime, tui, terminal).apply { start() }
-    }
-
-    private fun shouldStartConsole(): Boolean {
-        return System.getProperty("k3d.devConsole") == "true"
     }
 
     private fun setSaveName(file: java.io.File) {

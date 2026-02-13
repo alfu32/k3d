@@ -48,4 +48,18 @@ class OutputPane(
 
     @Synchronized
     fun isScrolledUp(): Boolean = scrollOffset > 0
+
+    @Synchronized
+    fun lineCount(): Int = lines.size
+
+    @Synchronized
+    fun linesSince(startIndex: Int): List<String> {
+        if (startIndex < 0) {
+            return lines.toList()
+        }
+        if (startIndex >= lines.size) {
+            return emptyList()
+        }
+        return lines.subList(startIndex, lines.size).toList()
+    }
 }
