@@ -60,6 +60,8 @@ class SketchUiOverlay(
     private val gridSpacingChanged: (Float) -> Unit,
     private val snapEpsilonProvider: () -> Float,
     private val snapEpsilonChanged: (Float) -> Unit,
+    private val walkthroughTuningProvider: () -> WalkthroughTuning,
+    private val walkthroughTuningChanged: (WalkthroughTuning) -> Unit,
     private val lightingSettings: LightingSettings,
     private val lightingChanged: (LightingSettings) -> Unit,
     private val shadowSettings: ShadowSettings,
@@ -143,6 +145,7 @@ class SketchUiOverlay(
     private val pluginToolByWidget = mutableMapOf<VisImageTextButton, String>()
     private val pluginToolbars = mutableMapOf<String, CollapsibleWindow>()
     private val cameraModeButtons = mutableMapOf<CameraMode, VisTextButton>()
+    private val cameraModeLabels = mutableMapOf<CameraMode, String>()
     private var updatingCameraModeButtons = false
     private val pluginPanels = mutableMapOf<String, CollapsibleWindow>()
     private val pluginPanelPositions = mutableMapOf<String, PanelPosition>()
@@ -276,11 +279,17 @@ class SketchUiOverlay(
     private val snapEpsilonMin = 2f
     private val snapEpsilonMax = 48f
     private val snapEpsilonSlider = VisSlider(snapEpsilonMin, snapEpsilonMax, 1f, false)
+    private val walkthroughJumpField = VisTextField()
+    private val walkthroughGravityField = VisTextField()
+    private val walkthroughHeightAdjustField = VisTextField()
     private var updatingModelSettingsFields = false
     private var lastUnitName = ""
     private var lastUnitSize = -1f
     private var lastGridSpacing = -1f
     private var lastSnapEpsilon = -1f
+    private var lastWalkJump = -1f
+    private var lastWalkGravity = -1f
+    private var lastWalkHeightAdjust = -1f
     private val lightingRefreshers = mutableListOf<() -> Unit>()
     private lateinit var selectionPanel: CollapsibleWindow
     private var needsPanelLayout = true
@@ -527,7 +536,10 @@ class SketchUiOverlay(
         updatingCameraModeButtons = true
         val mode = cameraModeProvider()
         cameraModeButtons.forEach { (cameraMode, button) ->
-            button.isChecked = cameraMode == mode
+            val active = cameraMode == mode
+            button.isChecked = active
+            val label = cameraModeLabels[cameraMode] ?: cameraMode.displayName
+            button.setText(if (active) "• $label" else label)
         }
         updatingCameraModeButtons = false
     }
@@ -840,10 +852,11 @@ class SketchUiOverlay(
 
         val group = ButtonGroup<VisTextButton>().apply {
             setMaxCheckCount(1)
-            setMinCheckCount(1)
-            setUncheckLast(false)
+            setMinCheckCount(0)
+            setUncheckLast(true)
         }
         cameraModeButtons.clear()
+        cameraModeLabels.clear()
         listOf(
             CameraMode.ORBIT to "Orbit",
             CameraMode.WALKTHROUGH to "Walk",
@@ -856,9 +869,11 @@ class SketchUiOverlay(
                         return
                     }
                     cameraModeChanged(mode)
+                    syncCameraModeButtons()
                 }
             })
             cameraModeButtons[mode] = button
+            cameraModeLabels[mode] = label
             group.add(button)
             content.add(button).height(toolbarButtonSize).minWidth(54f)
         }
@@ -1029,6 +1044,12 @@ class SketchUiOverlay(
         content.add(gridSpacingField).growX().row()
         content.add(VisLabel("Snap radius")).left().padTop(6f).row()
         content.add(snapEpsilonSlider).growX().row()
+        content.add(VisLabel("Walk jump velocity")).left().padTop(6f).row()
+        content.add(walkthroughJumpField).growX().row()
+        content.add(VisLabel("Walk gravity")).left().padTop(4f).row()
+        content.add(walkthroughGravityField).growX().row()
+        content.add(VisLabel("Walk height adjust speed")).left().padTop(4f).row()
+        content.add(walkthroughHeightAdjustField).growX().row()
         panel.add(content).growX()
         panel.isVisible = false
 
@@ -1073,6 +1094,21 @@ class SketchUiOverlay(
                     return
                 }
                 snapEpsilonChanged(snapEpsilonSlider.value)
+            }
+        })
+        walkthroughJumpField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                applyWalkthroughTuningFromFields()
+            }
+        })
+        walkthroughGravityField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                applyWalkthroughTuningFromFields()
+            }
+        })
+        walkthroughHeightAdjustField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                applyWalkthroughTuningFromFields()
             }
         })
         return panel
@@ -2129,9 +2165,13 @@ class SketchUiOverlay(
         val unit = modelUnitProvider()
         val snapEpsilon = snapEpsilonProvider()
         val gridSpacing = gridSpacingProvider()
+        val walk = walkthroughTuningProvider()
         val unitName = unit.name
         val unitSize = unit.size
-        if (unitName != lastUnitName || unitSize != lastUnitSize || gridSpacing != lastGridSpacing || snapEpsilon != lastSnapEpsilon) {
+        if (
+            unitName != lastUnitName || unitSize != lastUnitSize || gridSpacing != lastGridSpacing || snapEpsilon != lastSnapEpsilon ||
+            walk.jumpVelocity != lastWalkJump || walk.gravity != lastWalkGravity || walk.heightAdjustSpeed != lastWalkHeightAdjust
+        ) {
             updatingModelSettingsFields = true
             if (unitName != lastUnitName || !unitNameField.hasKeyboardFocus()) {
                 unitNameField.text = unitName
@@ -2144,13 +2184,47 @@ class SketchUiOverlay(
             if (gridText != gridSpacingField.text || !gridSpacingField.hasKeyboardFocus()) {
                 gridSpacingField.text = gridText
             }
+            val walkJumpText = String.format(Locale.US, "%.3f", walk.jumpVelocity)
+            if (walkJumpText != walkthroughJumpField.text || !walkthroughJumpField.hasKeyboardFocus()) {
+                walkthroughJumpField.text = walkJumpText
+            }
+            val walkGravityText = String.format(Locale.US, "%.3f", walk.gravity)
+            if (walkGravityText != walkthroughGravityField.text || !walkthroughGravityField.hasKeyboardFocus()) {
+                walkthroughGravityField.text = walkGravityText
+            }
+            val walkHeightText = String.format(Locale.US, "%.3f", walk.heightAdjustSpeed)
+            if (walkHeightText != walkthroughHeightAdjustField.text || !walkthroughHeightAdjustField.hasKeyboardFocus()) {
+                walkthroughHeightAdjustField.text = walkHeightText
+            }
             snapEpsilonSlider.value = snapEpsilon.coerceIn(snapEpsilonMin, snapEpsilonMax)
             updatingModelSettingsFields = false
             lastUnitName = unitName
             lastUnitSize = unitSize
             lastGridSpacing = gridSpacing
             lastSnapEpsilon = snapEpsilon
+            lastWalkJump = walk.jumpVelocity
+            lastWalkGravity = walk.gravity
+            lastWalkHeightAdjust = walk.heightAdjustSpeed
         }
+    }
+
+    private fun applyWalkthroughTuningFromFields() {
+        if (updatingModelSettingsFields) {
+            return
+        }
+        val jump = walkthroughJumpField.text.toFloatOrNull() ?: return
+        val gravity = walkthroughGravityField.text.toFloatOrNull() ?: return
+        val adjust = walkthroughHeightAdjustField.text.toFloatOrNull() ?: return
+        if (jump <= 0f || gravity <= 0f || adjust <= 0f) {
+            return
+        }
+        walkthroughTuningChanged(
+            WalkthroughTuning(
+                jumpVelocity = jump,
+                gravity = gravity,
+                heightAdjustSpeed = adjust
+            )
+        )
     }
 
     private fun selectedObjectPrototype(): ObjectPrototypeInfo? {

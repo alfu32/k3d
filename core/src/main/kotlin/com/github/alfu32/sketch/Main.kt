@@ -9,6 +9,7 @@ import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.Mesh
 import com.badlogic.gdx.graphics.Camera
 import com.badlogic.gdx.graphics.OrthographicCamera
+import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.PerspectiveCamera
 import com.badlogic.gdx.graphics.VertexAttribute
 import com.badlogic.gdx.graphics.VertexAttributes
@@ -22,11 +23,11 @@ import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute
 import com.badlogic.gdx.graphics.g3d.attributes.IntAttribute
 import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight
 import com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight
-import com.badlogic.gdx.graphics.g3d.utils.FirstPersonCameraController
 import com.badlogic.gdx.graphics.g3d.utils.DepthShaderProvider
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.GlyphLayout
+import com.badlogic.gdx.graphics.PixmapIO
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.math.Quaternion
 import com.badlogic.gdx.math.Matrix4
@@ -34,6 +35,7 @@ import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.files.FileHandle
 import com.badlogic.gdx.InputAdapter
 import com.badlogic.gdx.InputProcessor
+import com.badlogic.gdx.utils.ScreenUtils
 import com.badlogic.gdx.utils.Array
 import com.badlogic.gdx.utils.Pool
 import com.github.alfu32.sketch.input.GuideManager
@@ -112,11 +114,14 @@ import com.github.alfu32.sketch.ui.ToolController
 import com.github.alfu32.sketch.ui.ToolId
 import com.github.alfu32.sketch.ui.ToolInputProcessor
 import com.github.alfu32.sketch.ui.PluginToolAdapter
+import com.github.alfu32.sketch.ui.WalkthroughTuning
 import com.kotcrab.vis.ui.VisUI
 import com.kotcrab.vis.ui.widget.file.FileChooser
 import com.kotcrab.vis.ui.widget.file.FileChooserAdapter
 import com.kotcrab.vis.ui.widget.file.FileTypeFilter
 import java.io.File
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import kotlin.math.ceil
 import kotlin.math.floor
 
@@ -127,7 +132,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var orthoCamera: OrthographicCamera
     private lateinit var activeCamera: Camera
     private lateinit var orbitCameraController: ShiftCameraController
-    private lateinit var walkCameraController: FirstPersonCameraController
+    private lateinit var walkCameraController: WalkthroughCameraController
     private lateinit var orthoCameraController: OrthographicCameraController
     private var activeCameraMode: CameraMode = CameraMode.ORBIT
     private var activeCameraInputProcessor: InputProcessor = InputAdapter()
@@ -194,6 +199,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var installDir: java.io.File
     private lateinit var objectPlaceTool: ObjectPlaceTool
     private val cameraTarget = Vector3(0f, 0f, 0f)
+    private val screenshotTimestampFormatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
     private val orthoDistance = 250f
     private enum class OrthoView { TOP, BOTTOM, LEFT, RIGHT, FRONT, BACK }
     private var consoleThread: ConsoleThread? = null
@@ -238,7 +244,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
         orbitCameraController.target.set(cameraTarget)
 
-        walkCameraController = FirstPersonCameraController(walkCamera)
+        walkCameraController = WalkthroughCameraController(
+            walkCamera,
+            this::walkSupportHeightAt,
+            eyeHeight = 6f
+        )
         orthoCameraController = OrthographicCameraController(orthoCamera, cameraTarget)
         setCameraMode(CameraMode.ORBIT)
         installDir = resolveInstallDir()
@@ -376,6 +386,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::setGridSpacing,
             { snapEpsilon },
             ::setSnapEpsilon,
+            ::walkthroughTuningInfo,
+            ::updateWalkthroughTuning,
             lightingSettings,
             ::applyLightingSettings,
             shadowSettings,
@@ -689,6 +701,25 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         )
         pluginHost.getCommandPalette().registerCommand(
             com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "export.screenshot",
+                name = "Export> Screenshot",
+                description = "Save a screenshot named after the current file with timestamp",
+                icon = "export",
+                category = "Export",
+                tags = listOf("export", "screenshot", "printscreen", "png"),
+                priority = 1,
+                execute = {
+                    val saved = saveScreenshotWithCurrentFileName()
+                    if (saved != null) {
+                        com.github.alfu32.sketch.plugin.PluginResult.success()
+                    } else {
+                        com.github.alfu32.sketch.plugin.PluginResult.failure(statusModel.message)
+                    }
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
                 id = "export.ifc_model",
                 name = "Export> IFC (Model)",
                 description = "Export model geometry as IFC",
@@ -846,6 +877,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
             CameraMode.WALKTHROUGH -> {
                 copyPoseToPerspective(activeCameraOrNull(), walkCamera, keepTarget = false)
+                walkCameraController.syncFromCamera()
                 activeCamera = walkCamera
                 activeCameraInputProcessor = walkCameraController
             }
@@ -1008,6 +1040,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             }
 
             CameraMode.WALKTHROUGH -> {
+                walkCameraController.syncFromCamera()
                 activeCamera = walkCamera
                 activeCameraInputProcessor = walkCameraController
             }
@@ -1022,6 +1055,34 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         if (::snapper.isInitialized) {
             snapper.setCamera(activeCamera)
         }
+    }
+
+    private fun walkSupportHeightAt(worldX: Float, worldZ: Float, currentY: Float): Float {
+        val rayOrigin = Vector3(worldX, currentY + 0.25f, worldZ)
+        val rayDir = Vector3(0f, -1f, 0f)
+        var bestY: Float? = null
+
+        fun testGroup(group: GroupScene.GroupNode) {
+            val localRay = com.badlogic.gdx.math.collision.Ray(
+                group.toLocal(rayOrigin),
+                group.vectorToLocal(rayDir).nor()
+            )
+            val hit = group.faceStore.pickTriangle(localRay) ?: return
+            val worldHit = group.toWorld(hit.point)
+            if (worldHit.y <= rayOrigin.y + 1e-3f) {
+                bestY = if (bestY == null) {
+                    worldHit.y
+                } else {
+                    kotlin.math.max(bestY!!, worldHit.y)
+                }
+            }
+        }
+
+        testGroup(scene.root)
+        scene.walkGroups(scene.root) { group ->
+            testGroup(group)
+        }
+        return bestY ?: 0f
     }
 
     private fun pickPanPoint(screenX: Int, screenY: Int): Vector3? {
@@ -1422,6 +1483,38 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         } catch (t: Throwable) {
             statusModel.message = "IFC export failed: ${t.message ?: t.javaClass.simpleName}"
             t.printStackTrace()
+        }
+    }
+
+    private fun saveScreenshotWithCurrentFileName(): File? {
+        if (!::modelFile.isInitialized) {
+            val failure = "Screenshot failed: current model file is not initialized."
+            statusModel.message = failure
+            println(failure)
+            return null
+        }
+        val baseName = modelFile.nameWithoutExtension.ifBlank { "k3d" }
+        val timestamp = LocalDateTime.now().format(screenshotTimestampFormatter)
+        val fileName = "${baseName}_${timestamp}.png"
+        val directory = modelFile.parentFile ?: File(".")
+        val outFile = File(directory, fileName)
+        var pixmap: Pixmap? = null
+        return try {
+            val width = Gdx.graphics.backBufferWidth.coerceAtLeast(1)
+            val height = Gdx.graphics.backBufferHeight.coerceAtLeast(1)
+            pixmap = ScreenUtils.getFrameBufferPixmap(0, 0, width, height)
+            PixmapIO.writePNG(FileHandle(outFile), pixmap)
+            val success = "Screenshot saved: ${outFile.absolutePath}"
+            statusModel.message = success
+            println(success)
+            outFile
+        } catch (t: Throwable) {
+            val failure = "Screenshot failed: ${t.message ?: t.javaClass.simpleName}"
+            statusModel.message = failure
+            println(failure)
+            null
+        } finally {
+            pixmap?.dispose()
         }
     }
 
@@ -3028,6 +3121,24 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun setGridSpacing(value: Float) {
         applyGridSpacing(value, true)
+    }
+
+    private fun walkthroughTuningInfo(): WalkthroughTuning {
+        return WalkthroughTuning(
+            jumpVelocity = walkCameraController.jumpVelocity,
+            gravity = walkCameraController.gravity,
+            heightAdjustSpeed = walkCameraController.heightAdjustSpeed
+        )
+    }
+
+    private fun updateWalkthroughTuning(tuning: WalkthroughTuning) {
+        val jump = tuning.jumpVelocity.coerceAtLeast(0.1f)
+        val gravity = tuning.gravity.coerceAtLeast(0.1f)
+        val adjust = tuning.heightAdjustSpeed.coerceAtLeast(0.1f)
+        walkCameraController.jumpVelocity = jump
+        walkCameraController.gravity = gravity
+        walkCameraController.heightAdjustSpeed = adjust
+        statusModel.message = "Walkthrough tuning updated."
     }
 
     private fun ungroupSelection() {
