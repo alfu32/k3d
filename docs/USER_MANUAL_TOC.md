@@ -1,6 +1,15 @@
 # K3D User Manual and Tutorial TOC (Draft)
 
+Author: Codex (GPT-5)
+Date: February 13, 2026
+
 This TOC is based on a code and MCP scan done on February 13, 2026.
+
+## Chapter Build Status
+- Completed: [Chapter 05 - Interaction Fundamentals](chapters/CH05_INTERACTION_FUNDAMENTALS.md)
+- Completed: [Chapter 06 - Toolbar and Button Reference](chapters/CH06_TOOLBAR_BUTTON_REFERENCE.md)
+- Completed: [Chapter 09 - Commands Reference](chapters/CH09_COMMANDS_REFERENCE.md)
+- Pending: Chapters 01, 02, 03, 04, 07, 08, 10, 11, 12, 13
 
 ## 1. Introduction
 1.1 Purpose and audience
