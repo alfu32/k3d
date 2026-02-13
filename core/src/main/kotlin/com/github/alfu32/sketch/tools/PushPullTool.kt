@@ -13,7 +13,7 @@ import com.github.alfu32.sketch.ui.ToolId
 
 class PushPullTool(
     private val scene: GroupScene,
-    private val camera: com.badlogic.gdx.graphics.Camera
+    private val cameraProvider: () -> com.badlogic.gdx.graphics.Camera
 ) : Tool {
     override val id: ToolId = ToolId.PUSH_PULL
     override val message: String = "Click face to start push/pull."
@@ -57,7 +57,7 @@ class PushPullTool(
         }
         val group = scene.activeGroup()
         if (anchorPointLocal == null) {
-            val ray = camera.getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
+            val ray = cameraProvider().getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
             val localRay = toLocalRay(group, ray)
             val hit = group.faceStore.pickTriangle(localRay) ?: return false
             val faceNormal = facingNormal(hit.normal, localRay.direction)

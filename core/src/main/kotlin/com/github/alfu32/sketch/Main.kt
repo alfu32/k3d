@@ -7,6 +7,8 @@ import com.badlogic.gdx.InputMultiplexer
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.Mesh
+import com.badlogic.gdx.graphics.Camera
+import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.graphics.PerspectiveCamera
 import com.badlogic.gdx.graphics.VertexAttribute
 import com.badlogic.gdx.graphics.VertexAttributes
@@ -20,7 +22,7 @@ import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute
 import com.badlogic.gdx.graphics.g3d.attributes.IntAttribute
 import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight
 import com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight
-import com.badlogic.gdx.graphics.g3d.utils.CameraInputController
+import com.badlogic.gdx.graphics.g3d.utils.FirstPersonCameraController
 import com.badlogic.gdx.graphics.g3d.utils.DepthShaderProvider
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.graphics.g2d.BitmapFont
@@ -30,6 +32,8 @@ import com.badlogic.gdx.math.Quaternion
 import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.files.FileHandle
+import com.badlogic.gdx.InputAdapter
+import com.badlogic.gdx.InputProcessor
 import com.badlogic.gdx.utils.Array
 import com.badlogic.gdx.utils.Pool
 import com.github.alfu32.sketch.input.GuideManager
@@ -101,6 +105,7 @@ import com.github.alfu32.sketch.tools.VoxelTool
 import com.github.alfu32.sketch.tools.VoxelVolumeTool
 import com.github.alfu32.sketch.ui.SketchUiOverlay
 import com.github.alfu32.sketch.ui.LightingSettings
+import com.github.alfu32.sketch.ui.CameraMode
 import com.github.alfu32.sketch.ui.ShadowSettings
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.ToolController
@@ -118,7 +123,14 @@ import kotlin.math.floor
 /** [com.badlogic.gdx.ApplicationListener] implementation shared by all platforms. */
 class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : ApplicationAdapter() {
     private lateinit var camera: PerspectiveCamera
-    private lateinit var cameraController: CameraInputController
+    private lateinit var walkCamera: PerspectiveCamera
+    private lateinit var orthoCamera: OrthographicCamera
+    private lateinit var activeCamera: Camera
+    private lateinit var orbitCameraController: ShiftCameraController
+    private lateinit var walkCameraController: FirstPersonCameraController
+    private lateinit var orthoCameraController: OrthographicCameraController
+    private var activeCameraMode: CameraMode = CameraMode.ORBIT
+    private var activeCameraInputProcessor: InputProcessor = InputAdapter()
     private lateinit var shapeRenderer: ShapeRenderer
     private lateinit var spriteBatch: SpriteBatch
     private lateinit var textFont: BitmapFont
@@ -182,6 +194,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var installDir: java.io.File
     private lateinit var objectPlaceTool: ObjectPlaceTool
     private val cameraTarget = Vector3(0f, 0f, 0f)
+    private val orthoDistance = 250f
+    private enum class OrthoView { TOP, BOTTOM, LEFT, RIGHT, FRONT, BACK }
     private var consoleThread: ConsoleThread? = null
     private var consoleRuntime: ConsoleGroovyRuntime? = null
     private var consoleTerminal: TerminalController? = null
@@ -201,11 +215,32 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             update()
         }
 
-        cameraController = ShiftCameraController(camera, this::pickPanPoint).apply {
+        walkCamera = PerspectiveCamera(67f, Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat()).apply {
+            position.set(camera.position)
+            direction.set(camera.direction)
+            up.set(camera.up)
+            near = 0.1f
+            far = 500f
+            update()
+        }
+
+        orthoCamera = OrthographicCamera().apply {
+            near = -2000f
+            far = 2000f
+            zoom = 1f
+        }
+        configureOrthoViewport(Gdx.graphics.width, Gdx.graphics.height)
+        alignOrthographicView(OrthoView.TOP)
+
+        orbitCameraController = ShiftCameraController(camera, this::pickPanPoint).apply {
             rotateButton = Input.Buttons.RIGHT
             translateButton = Input.Buttons.RIGHT
         }
-        cameraController.target.set(cameraTarget)
+        orbitCameraController.target.set(cameraTarget)
+
+        walkCameraController = FirstPersonCameraController(walkCamera)
+        orthoCameraController = OrthographicCameraController(orthoCamera, cameraTarget)
+        setCameraMode(CameraMode.ORBIT)
         installDir = resolveInstallDir()
         statusModel = StatusModel(
             activeTool = ToolId.SELECT,
@@ -215,7 +250,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         scene = GroupScene(Color(0.8f, 0.8f, 0.8f, 1f))
         modelCleanup = ModelCleanup(scene)
         guideManager = GuideManager()
-        snapper = Snapper(camera, scene, guideManager, gridSpacing, snapEpsilon)
+        snapper = Snapper(activeCamera, scene, guideManager, gridSpacing, snapEpsilon)
         objectPlaceTool = ObjectPlaceTool(
             scene,
             { instance ->
@@ -230,7 +265,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         toolController = ToolController(
             statusModel,
             listOf(
-                SelectTool(scene, camera),
+                SelectTool(scene) { activeCamera },
                 LineTool(scene) { toolController.setTool(ToolId.SELECT) },
                 ConstructionLineTool(scene) { toolController.setTool(ToolId.SELECT) },
                 PolylineToolInternal(scene, polylineSettings),
@@ -240,7 +275,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 VoxelFrameTool(scene, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveVoxelGroupForTools),
                 ArchitectureWallTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
                 ArchitectureSlabTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
-                ArchitectureStairTool(scene, camera, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
+                ArchitectureStairTool(scene, { activeCamera }, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
                 ArchitectureAddHoleTool(scene, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
                 ArchitectureWindowFrameTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
                 ArchitectureDoorFrameTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
@@ -256,13 +291,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 QuadTool(scene),
                 CircleTool(scene),
                 LinearDimensionTool(scene),
-                TextTool(scene, camera),
-                PushPullTool(scene, camera),
+                TextTool(scene) { activeCamera },
+                PushPullTool(scene) { activeCamera },
                 MoveTool(scene),
                 RotateTool(scene),
                 ScaleTool(scene),
                 StretchTool(scene),
-                PaintTool(scene, camera) { statusModel.paintColor.cpy() },
+                PaintTool(scene, { activeCamera }) { statusModel.paintColor.cpy() },
                 objectPlaceTool
             )
         )
@@ -304,7 +339,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             scene,
             statusModel,
             camera,
-            { cameraTarget },
+            { orbitCameraController.target },
             lightingSettings,
             shadowSettings,
             { toolController.activeToolId() },
@@ -351,7 +386,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::updateArchitectureWallParameters,
             ::updateArchitectureSlabParameters,
             ::updateArchitectureStairParameters,
-            ::updateArchitectureFrameParameters
+            ::updateArchitectureFrameParameters,
+            { activeCameraMode },
+            ::setCameraMode
         )
 
         // Set up plugin host for UI
@@ -586,6 +623,57 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         )
         pluginHost.getCommandPalette().registerCommand(
             com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.camera.orbit",
+                name = "View> Camera Orbit",
+                description = "Switch to perspective orbit camera",
+                icon = "view",
+                category = "View",
+                tags = listOf("camera", "orbit", "perspective"),
+                priority = 1,
+                execute = {
+                    setCameraMode(CameraMode.ORBIT)
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.camera.walkthrough",
+                name = "View> Camera Walkthrough",
+                description = "Switch to perspective walkthrough camera",
+                icon = "view",
+                category = "View",
+                tags = listOf("camera", "walkthrough", "perspective"),
+                priority = 1,
+                execute = {
+                    setCameraMode(CameraMode.WALKTHROUGH)
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.camera.orthographic",
+                name = "View> Camera Orthographic",
+                description = "Switch to orthographic camera",
+                icon = "view",
+                category = "View",
+                tags = listOf("camera", "orthographic"),
+                priority = 1,
+                execute = {
+                    setCameraMode(CameraMode.ORTHOGRAPHIC)
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        registerOrthographicViewCommand("view.ortho.top", "View> Ortho Top", "Switch to orthographic top view", OrthoView.TOP)
+        registerOrthographicViewCommand("view.ortho.bottom", "View> Ortho Bottom", "Switch to orthographic bottom view", OrthoView.BOTTOM)
+        registerOrthographicViewCommand("view.ortho.left", "View> Ortho Left", "Switch to orthographic left view", OrthoView.LEFT)
+        registerOrthographicViewCommand("view.ortho.right", "View> Ortho Right", "Switch to orthographic right view", OrthoView.RIGHT)
+        registerOrthographicViewCommand("view.ortho.front", "View> Ortho Front", "Switch to orthographic front view", OrthoView.FRONT)
+        registerOrthographicViewCommand("view.ortho.back", "View> Ortho Back", "Switch to orthographic back view", OrthoView.BACK)
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
                 id = "export.svg_view",
                 name = "Export> SVG (View)",
                 description = "Export current view as SVG",
@@ -701,8 +789,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 return uiOverlay.isUiCapturingInputByPointer()
             }
         }
-        val cameraScrollForwarder = CameraScrollForwarder(cameraController)
-        val cameraEventRouter = CameraEventRouter(cameraController)
+        val cameraScrollForwarder = CameraScrollForwarder { activeCameraInputProcessor }
+        val cameraEventRouter = CameraEventRouter { activeCameraInputProcessor }
         Gdx.input.inputProcessor = InputMultiplexer(
             cameraScrollForwarder,
             uiOverlay.stage,
@@ -733,6 +821,209 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         startConsoleIfRequested()
     }
 
+    private fun configureOrthoViewport(width: Int, height: Int) {
+        val safeHeight = height.coerceAtLeast(1)
+        val aspect = width.coerceAtLeast(1).toFloat() / safeHeight.toFloat()
+        val worldHeight = 22f
+        orthoCamera.viewportHeight = worldHeight
+        orthoCamera.viewportWidth = worldHeight * aspect
+    }
+
+    private fun setCameraMode(mode: CameraMode) {
+        if (!::camera.isInitialized || !::walkCamera.isInitialized || !::orthoCamera.isInitialized) {
+            return
+        }
+        if (activeCameraMode == mode && ::activeCamera.isInitialized) {
+            return
+        }
+        when (mode) {
+            CameraMode.ORBIT -> {
+                copyPoseToPerspective(activeCameraOrNull(), camera, keepTarget = true)
+                orbitCameraController.target.set(cameraTarget)
+                activeCamera = camera
+                activeCameraInputProcessor = orbitCameraController
+            }
+
+            CameraMode.WALKTHROUGH -> {
+                copyPoseToPerspective(activeCameraOrNull(), walkCamera, keepTarget = false)
+                activeCamera = walkCamera
+                activeCameraInputProcessor = walkCameraController
+            }
+
+            CameraMode.ORTHOGRAPHIC -> {
+                updateTargetFromPerspective(activeCameraOrNull())
+                activeCamera = orthoCamera
+                activeCameraInputProcessor = orthoCameraController
+                orthoCamera.position.set(cameraTarget).sub(Vector3(orthoCamera.direction).nor().scl(orthoDistance))
+                orthoCamera.update()
+            }
+        }
+        activeCameraMode = mode
+        if (::snapper.isInitialized) {
+            snapper.setCamera(activeCamera)
+        }
+    }
+
+    private fun updateActiveCamera(deltaTime: Float) {
+        when (activeCameraMode) {
+            CameraMode.ORBIT -> {
+                orbitCameraController.update()
+                cameraTarget.set(orbitCameraController.target)
+                camera.up.set(0f, 1f, 0f)
+                camera.lookAt(cameraTarget)
+                camera.update()
+            }
+
+            CameraMode.WALKTHROUGH -> {
+                walkCameraController.update(deltaTime)
+                cameraTarget.set(walkCamera.position).mulAdd(walkCamera.direction, 8f)
+                walkCamera.update()
+            }
+
+            CameraMode.ORTHOGRAPHIC -> {
+                orthoCameraController.update()
+                orthoCamera.update()
+            }
+        }
+    }
+
+    private fun activeCameraOrNull(): Camera? {
+        return if (::activeCamera.isInitialized) activeCamera else null
+    }
+
+    private fun updateTargetFromPerspective(source: Camera?) {
+        val perspective = source as? PerspectiveCamera ?: return
+        if (perspective === camera) {
+            return
+        }
+        cameraTarget.set(perspective.position).mulAdd(perspective.direction, 8f)
+    }
+
+    private fun copyPoseToPerspective(source: Camera?, target: PerspectiveCamera, keepTarget: Boolean) {
+        when (source) {
+            is PerspectiveCamera -> {
+                target.position.set(source.position)
+                target.direction.set(source.direction).nor()
+                target.up.set(source.up).nor()
+                if (keepTarget) {
+                    cameraTarget.set(source.position).mulAdd(source.direction, 8f)
+                }
+            }
+
+            is OrthographicCamera -> {
+                val dir = Vector3(source.direction).nor()
+                if (dir.len2() <= 1e-8f) {
+                    dir.set(0f, -1f, 0f)
+                }
+                target.position.set(cameraTarget).sub(dir.scl(12f))
+                target.up.set(source.up).nor()
+                target.lookAt(cameraTarget)
+            }
+
+            else -> {
+                target.lookAt(cameraTarget)
+            }
+        }
+        target.update()
+    }
+
+    private fun setOrthographicView(view: OrthoView) {
+        setCameraMode(CameraMode.ORTHOGRAPHIC)
+        alignOrthographicView(view)
+        statusModel.message = "Orthographic ${view.name.lowercase()} view."
+    }
+
+    private fun alignOrthographicView(view: OrthoView) {
+        val direction = Vector3()
+        val up = Vector3()
+        when (view) {
+            OrthoView.TOP -> {
+                direction.set(0f, -1f, 0f)
+                up.set(0f, 0f, -1f)
+            }
+
+            OrthoView.BOTTOM -> {
+                direction.set(0f, 1f, 0f)
+                up.set(0f, 0f, 1f)
+            }
+
+            OrthoView.LEFT -> {
+                direction.set(1f, 0f, 0f)
+                up.set(0f, 1f, 0f)
+            }
+
+            OrthoView.RIGHT -> {
+                direction.set(-1f, 0f, 0f)
+                up.set(0f, 1f, 0f)
+            }
+
+            OrthoView.FRONT -> {
+                direction.set(0f, 0f, -1f)
+                up.set(0f, 1f, 0f)
+            }
+
+            OrthoView.BACK -> {
+                direction.set(0f, 0f, 1f)
+                up.set(0f, 1f, 0f)
+            }
+        }
+        orthoCamera.direction.set(direction).nor()
+        orthoCamera.up.set(up).nor()
+        orthoCamera.position.set(cameraTarget).sub(direction.scl(orthoDistance))
+        orthoCamera.update()
+    }
+
+    private fun registerOrthographicViewCommand(
+        id: String,
+        name: String,
+        description: String,
+        view: OrthoView
+    ) {
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = id,
+                name = name,
+                description = description,
+                icon = "view",
+                category = "View",
+                tags = listOf("camera", "orthographic", view.name.lowercase()),
+                priority = 1,
+                execute = {
+                    setOrthographicView(view)
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+    }
+
+    private fun syncCameraModesAfterOrbitStateChange() {
+        if (!::walkCamera.isInitialized || !::orthoCamera.isInitialized) {
+            return
+        }
+        copyPoseToPerspective(camera, walkCamera, keepTarget = false)
+        when (activeCameraMode) {
+            CameraMode.ORBIT -> {
+                activeCamera = camera
+                activeCameraInputProcessor = orbitCameraController
+            }
+
+            CameraMode.WALKTHROUGH -> {
+                activeCamera = walkCamera
+                activeCameraInputProcessor = walkCameraController
+            }
+
+            CameraMode.ORTHOGRAPHIC -> {
+                orthoCamera.position.set(cameraTarget).sub(Vector3(orthoCamera.direction).nor().scl(orthoDistance))
+                orthoCamera.update()
+                activeCamera = orthoCamera
+                activeCameraInputProcessor = orthoCameraController
+            }
+        }
+        if (::snapper.isInitialized) {
+            snapper.setCamera(activeCamera)
+        }
+    }
+
     private fun pickPanPoint(screenX: Int, screenY: Int): Vector3? {
         val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
         val group = scene.activeGroup()
@@ -756,11 +1047,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     override fun render() {
-        cameraController.update()
-        cameraTarget.set(cameraController.target)
-        camera.up.set(0f, 1f, 0f)
-        camera.lookAt(cameraTarget)
-        camera.update()
+        updateActiveCamera(Gdx.graphics.deltaTime)
         handleGlobalDistanceShortcut()
         updateCursorStatus()
         undoManager.update()
@@ -768,7 +1055,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         toolController.update(Gdx.graphics.deltaTime)
 
         updateFaceMesh()
-        shadowLight.update(camera)
+        shadowLight.update(activeCamera)
         renderShadowPass()
 
         Gdx.gl.glViewport(0, 0, Gdx.graphics.width, Gdx.graphics.height)
@@ -778,12 +1065,12 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
 
         Gdx.gl.glLineWidth(2f)
-        shapeRenderer.projectionMatrix = camera.combined
+        shapeRenderer.projectionMatrix = activeCamera.combined
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         drawGrid(20, gridSpacing)
         shapeRenderer.end()
 
-        modelBatch.begin(camera)
+        modelBatch.begin(activeCamera)
         modelBatch.render(faceBackRenderable, environment)
         modelBatch.render(faceFrontRenderable, environment)
         modelBatch.render(groundRenderable, environment)
@@ -859,6 +1146,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         camera.viewportWidth = width.toFloat()
         camera.viewportHeight = height.toFloat()
         camera.update()
+        walkCamera.viewportWidth = width.toFloat()
+        walkCamera.viewportHeight = height.toFloat()
+        walkCamera.update()
+        configureOrthoViewport(width, height)
+        orthoCamera.update()
         uiOverlay.resize(width, height)
         updateWindowTitle()
     }
@@ -1134,9 +1426,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun exportSvgView(file: File) {
+        val viewCamera = activeCamera
         val width = Gdx.graphics.width.toFloat()
         val height = Gdx.graphics.height.toFloat()
-        val view = Matrix4(camera.view)
+        val view = Matrix4(viewCamera.view)
         val sb = StringBuilder()
         sb.append("""<svg xmlns="http://www.w3.org/2000/svg" width="$width" height="$height" viewBox="0 0 $width $height">""")
         sb.append("\n")
@@ -1149,7 +1442,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
         fun project(world: Vector3): Vector3? {
             val v = Vector3(world)
-            camera.project(v, 0f, 0f, width, height)
+            viewCamera.project(v, 0f, 0f, width, height)
             if (!v.x.isFinite() || !v.y.isFinite() || !v.z.isFinite()) {
                 return null
             }
@@ -1459,7 +1752,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val selectionFacade = SelectionFacade(scene)
         val unitFacade = UnitFacade({ modelUnit }, ::updateModelUnit)
         val saveFacade = SaveFacade({ modelFile }, ::setSaveName)
-        val cameraFacade = CameraFacade(camera, cameraTarget) { camera.update() }
+        val cameraFacade = CameraFacade(camera, orbitCameraController.target) { camera.update() }
         val lightingFacade = LightingFacade(lightingSettings, shadowSettings) {
             applyLightingSettings(lightingSettings)
             applyShadowSettings(shadowSettings)
@@ -1700,7 +1993,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
         spriteBatch.end()
 
-        spriteBatch.projectionMatrix = camera.combined
+        spriteBatch.projectionMatrix = activeCamera.combined
         textTransform.idt()
         spriteBatch.transformMatrix = textTransform
         spriteBatch.begin()
@@ -1728,9 +2021,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val scale = 1.2f
         val offsetAmount = textWorldSize(lineStart, textFont.lineHeight * scale * 0.35f)
         val textPos = Vector3(mid).mulAdd(offsetDir, offsetAmount)
-        val screenPos = camera.project(textPos)
-        val screenA = camera.project(Vector3(lineStart))
-        val screenB = camera.project(Vector3(lineEnd))
+        val viewCamera = activeCamera
+        val screenPos = viewCamera.project(textPos)
+        val screenA = viewCamera.project(Vector3(lineStart))
+        val screenB = viewCamera.project(Vector3(lineEnd))
         val angleRad = kotlin.math.atan2(screenB.y - screenA.y, screenB.x - screenA.x)
         val angleDeg = Math.toDegrees(angleRad.toDouble()).toFloat()
         val color = if (selected) selectedLineColor else Color(0.1f, 0.1f, 0.1f, 1f)
@@ -1755,8 +2049,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         if (start.dst2(end) <= 1e-8f) {
             return
         }
-        val screenA = camera.project(Vector3(start))
-        val screenB = camera.project(Vector3(end))
+        val viewCamera = activeCamera
+        val screenA = viewCamera.project(Vector3(start))
+        val screenB = viewCamera.project(Vector3(end))
         val dx = screenB.x - screenA.x
         val dy = screenB.y - screenA.y
         val screenLen = kotlin.math.sqrt(dx * dx + dy * dy)
@@ -1816,7 +2111,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun drawWorldTextScreen(text: String, position: Vector3, size: Float, selected: Boolean) {
-        val screenPos = camera.project(Vector3(position))
+        val screenPos = activeCamera.project(Vector3(position))
         val color = if (selected) selectedLineColor else Color(0.1f, 0.1f, 0.1f, 1f)
         drawTextScaled(text, screenPos.x, screenPos.y, size * 10f, color)
     }
@@ -1884,9 +2179,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             u.scl(-1f)
             v.scl(-1f)
         }
-        val screenOrigin = camera.project(Vector3(position))
-        val screenU = camera.project(Vector3(position).add(u))
-        val screenV = camera.project(Vector3(position).add(v))
+        val viewCamera = activeCamera
+        val screenOrigin = viewCamera.project(Vector3(position))
+        val screenU = viewCamera.project(Vector3(position).add(u))
+        val screenV = viewCamera.project(Vector3(position).add(v))
         val ux = screenU.x - screenOrigin.x
         val vy = screenV.y - screenOrigin.y
         if (ux < 0f || vy < 0f) {
@@ -1922,13 +2218,25 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun worldPerPixelAt(worldPoint: Vector3): Float {
-        val toPoint = Vector3(worldPoint).sub(camera.position)
-        val depth = toPoint.dot(camera.direction)
-        if (depth <= 0f) {
-            return 0.01f
+        val viewCamera = activeCamera
+        return when (viewCamera) {
+            is PerspectiveCamera -> {
+                val toPoint = Vector3(worldPoint).sub(viewCamera.position)
+                val depth = toPoint.dot(viewCamera.direction)
+                if (depth <= 0f) {
+                    return 0.01f
+                }
+                val viewportHeight = 2f * depth * kotlin.math.tan(Math.toRadians(viewCamera.fieldOfView.toDouble() / 2.0)).toFloat()
+                viewportHeight / Gdx.graphics.height
+            }
+
+            is OrthographicCamera -> {
+                val pixels = Gdx.graphics.height.coerceAtLeast(1).toFloat()
+                (viewCamera.viewportHeight * viewCamera.zoom) / pixels
+            }
+
+            else -> 0.01f
         }
-        val viewportHeight = 2f * depth * kotlin.math.tan(Math.toRadians(camera.fieldOfView.toDouble() / 2.0)).toFloat()
-        return viewportHeight / Gdx.graphics.height
     }
 
     private fun formatMeasurement(value: Float, unitName: String): String {
@@ -1992,7 +2300,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         return ModelPersistence.snapshot(
             scene,
             camera,
-            cameraTarget,
+            orbitCameraController.target,
             lightingSettings,
             shadowSettings,
             modelUnit,
@@ -2020,7 +2328,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             scene.applyChangeListenerToAll()
             applyLightingSettings(lightingSettings)
             applyShadowSettings(shadowSettings)
-            cameraController.target.set(cameraTarget)
+            orbitCameraController.target.set(cameraTarget)
+            syncCameraModesAfterOrbitStateChange()
         } finally {
             restoringSnapshot = false
         }
@@ -2114,7 +2423,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             modelFile,
             scene,
             camera,
-            cameraTarget,
+            orbitCameraController.target,
             lightingSettings,
             shadowSettings,
             modelUnit,
@@ -2153,7 +2462,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                     modelFile,
                     scene,
                     camera,
-                    cameraTarget,
+                    orbitCameraController.target,
                     lightingSettings,
                     shadowSettings,
                     modelUnit,
@@ -2162,7 +2471,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                     undoManager.exportHistory()
                 )
             }
-            cameraController.target.set(cameraTarget)
+            orbitCameraController.target.set(cameraTarget)
+            syncCameraModesAfterOrbitStateChange()
             statusModel.message = "Loaded ${modelFile.name}"
         } else {
             undoManager.reset("Created")

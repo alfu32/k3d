@@ -70,7 +70,9 @@ class SketchUiOverlay(
     private val architectureWallChanged: (String, Float, Float, Float, Color, Color) -> Unit,
     private val architectureSlabChanged: (String, Float, Color, Color, Color) -> Unit,
     private val architectureStairChanged: (String, Float, Int, Float, Boolean, Boolean, Color, Color) -> Unit,
-    private val architectureFrameChanged: (String, Float, Float, Color) -> Unit
+    private val architectureFrameChanged: (String, Float, Float, Color) -> Unit,
+    private val cameraModeProvider: () -> CameraMode,
+    private val cameraModeChanged: (CameraMode) -> Unit
 ) {
     private open class CollapsibleWindow(
         title: String,
@@ -140,6 +142,8 @@ class SketchUiOverlay(
     private val pluginToolButtons = mutableMapOf<String, VisImageTextButton>()
     private val pluginToolByWidget = mutableMapOf<VisImageTextButton, String>()
     private val pluginToolbars = mutableMapOf<String, CollapsibleWindow>()
+    private val cameraModeButtons = mutableMapOf<CameraMode, VisTextButton>()
+    private var updatingCameraModeButtons = false
     private val pluginPanels = mutableMapOf<String, CollapsibleWindow>()
     private val pluginPanelPositions = mutableMapOf<String, PanelPosition>()
     private var hoverPopoverWindow: CollapsibleWindow? = null
@@ -150,7 +154,7 @@ class SketchUiOverlay(
     private var toolbarsPositioned = false
     private val uiPrefs by lazy { Gdx.app.getPreferences("k3d-ui-layout") }
     private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
-    private val toolbarLayoutVersion = 5
+    private val toolbarLayoutVersion = 6
     private val toolbarButtonSize = 32f
     private val archDefaultWallThicknessKey = "arch_default_wall_thickness"
     private val archDefaultWallHeightKey = "arch_default_wall_height"
@@ -509,10 +513,23 @@ class SketchUiOverlay(
         updatePluginToolSelection()
         updatePaintColorButton()
         updateButtonLabels()
+        syncCameraModeButtons()
     }
 
     fun refreshLightingControls() {
         lightingRefreshers.forEach { it.invoke() }
+    }
+
+    private fun syncCameraModeButtons() {
+        if (cameraModeButtons.isEmpty()) {
+            return
+        }
+        updatingCameraModeButtons = true
+        val mode = cameraModeProvider()
+        cameraModeButtons.forEach { (cameraMode, button) ->
+            button.isChecked = cameraMode == mode
+        }
+        updatingCameraModeButtons = false
     }
 
     fun act(delta: Float) {
@@ -689,6 +706,10 @@ class SketchUiOverlay(
             title = "Actions",
             toolbarId = "builtin_toolbar_actions"
         )
+        val camera = buildCameraToolbarWindow(
+            title = "Camera",
+            toolbarId = "builtin_toolbar_camera"
+        )
 
         builtInToolbars.clear()
         builtInToolbars["builtin_toolbar_construction"] = construction
@@ -696,8 +717,9 @@ class SketchUiOverlay(
         builtInToolbars["builtin_toolbar_architecture"] = architecture
         builtInToolbars["builtin_toolbar_voxel"] = voxel
         builtInToolbars["builtin_toolbar_actions"] = actions
+        builtInToolbars["builtin_toolbar_camera"] = camera
         toolbarsPositioned = false
-        return listOf(construction, modification, architecture, voxel, actions)
+        return listOf(construction, modification, architecture, voxel, actions, camera)
     }
 
     private fun buildToolsToolbarWindow(
@@ -802,6 +824,45 @@ class SketchUiOverlay(
         buttons.forEach { button ->
             content.add(button).size(toolbarButtonSize, toolbarButtonSize)
         }
+
+        window.add(content).pad(4f).left()
+        window.pack()
+        window.setSize(window.prefWidth, window.prefHeight)
+        attachToolbarPersistence(window, toolbarId)
+        return window
+    }
+
+    private fun buildCameraToolbarWindow(title: String, toolbarId: String): CollapsibleWindow {
+        val window = CollapsibleWindow(title, showCloseButton = false)
+        window.isResizable = false
+        val content = VisTable()
+        content.defaults().pad(2f).left()
+
+        val group = ButtonGroup<VisTextButton>().apply {
+            setMaxCheckCount(1)
+            setMinCheckCount(1)
+            setUncheckLast(false)
+        }
+        cameraModeButtons.clear()
+        listOf(
+            CameraMode.ORBIT to "Orbit",
+            CameraMode.WALKTHROUGH to "Walk",
+            CameraMode.ORTHOGRAPHIC to "Ortho"
+        ).forEach { (mode, label) ->
+            val button = VisTextButton(label, "toggle")
+            button.addListener(object : ClickListener() {
+                override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                    if (updatingCameraModeButtons) {
+                        return
+                    }
+                    cameraModeChanged(mode)
+                }
+            })
+            cameraModeButtons[mode] = button
+            group.add(button)
+            content.add(button).height(toolbarButtonSize).minWidth(54f)
+        }
+        syncCameraModeButtons()
 
         window.add(content).pad(4f).left()
         window.pack()
@@ -2300,7 +2361,8 @@ class SketchUiOverlay(
             "builtin_toolbar_modification",
             "builtin_toolbar_architecture",
             "builtin_toolbar_voxel",
-            "builtin_toolbar_actions"
+            "builtin_toolbar_actions",
+            "builtin_toolbar_camera"
         )
         val margin = 12f
         val gapX = 8f
@@ -2348,7 +2410,8 @@ class SketchUiOverlay(
             "builtin_toolbar_modification",
             "builtin_toolbar_architecture",
             "builtin_toolbar_voxel",
-            "builtin_toolbar_actions"
+            "builtin_toolbar_actions",
+            "builtin_toolbar_camera"
         )
         toolbarIds.forEach { id ->
             uiPrefs.remove("$id.x")

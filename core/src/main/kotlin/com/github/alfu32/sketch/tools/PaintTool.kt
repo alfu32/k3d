@@ -11,7 +11,7 @@ import com.github.alfu32.sketch.ui.ToolId
 
 class PaintTool(
     private val scene: GroupScene,
-    private val camera: Camera,
+    private val cameraProvider: () -> Camera,
     private val colorProvider: () -> Color
 ) : Tool {
     override val id: ToolId = ToolId.PAINT
@@ -62,7 +62,7 @@ class PaintTool(
             }
             return true
         }
-        val ray = camera.getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
+        val ray = cameraProvider().getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
         val localRay = com.badlogic.gdx.math.collision.Ray(
             group.toLocal(ray.origin),
             group.vectorToLocal(ray.direction).nor()

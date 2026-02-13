@@ -22,7 +22,7 @@ import com.github.alfu32.sketch.ui.ToolId
 
 class SelectTool(
     private val scene: GroupScene,
-    private val camera: Camera
+    private val cameraProvider: () -> Camera
 ) : Tool {
     data class WindowRect(val x: Float, val y: Float, val width: Float, val height: Float, val dashed: Boolean)
 
@@ -160,7 +160,7 @@ class SelectTool(
             pendingVolumeStart = null
             return true
         }
-        val ray = camera.getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
+        val ray = cameraProvider().getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
         val activeGroup = scene.activeGroup()
         val isVoxelGroup = scene.isVoxelGroup(activeGroup)
         val isArchitectureGroup = scene.isArchitectureGroup(activeGroup)
@@ -743,7 +743,7 @@ class SelectTool(
         var maxY = Float.NEGATIVE_INFINITY
         corners.forEach { corner ->
             val world = group.toWorld(corner)
-            val projected = camera.project(world)
+            val projected = cameraProvider().project(world)
             val x = projected.x
             val y = Gdx.graphics.height - projected.y
             minX = kotlin.math.min(minX, x)
@@ -825,7 +825,7 @@ class SelectTool(
         var maxX = Float.NEGATIVE_INFINITY
         var maxY = Float.NEGATIVE_INFINITY
         corners.forEach { corner ->
-            val projected = camera.project(Vector3(corner))
+            val projected = cameraProvider().project(Vector3(corner))
             val x = projected.x
             val y = Gdx.graphics.height - projected.y
             minX = kotlin.math.min(minX, x)
@@ -927,7 +927,7 @@ class SelectTool(
     }
 
     private fun screenDistance(world: Vector3, screenX: Int, screenY: Int): Float {
-        val projected = camera.project(Vector3(world))
+        val projected = cameraProvider().project(Vector3(world))
         val dx = projected.x - screenX
         val dy = (Gdx.graphics.height - projected.y) - screenY
         return kotlin.math.sqrt(dx * dx + dy * dy)
@@ -1173,7 +1173,7 @@ class SelectTool(
     }
 
     private fun projectWorldToScreen(world: Vector3): Vector3 {
-        val projected = camera.project(Vector3(world))
+        val projected = cameraProvider().project(Vector3(world))
         projected.y = Gdx.graphics.height - projected.y
         return projected
     }

@@ -10,7 +10,7 @@ import kotlin.math.round
 import kotlin.math.sqrt
 
 class Snapper(
-    private val camera: Camera,
+    private var camera: Camera,
     private val scene: GroupScene,
     private val guideManager: GuideManager,
     initialGridSpacing: Float = 1f,
@@ -23,6 +23,10 @@ class Snapper(
         set(value) {
             field = value.coerceAtLeast(1e-4f)
         }
+
+    fun setCamera(camera: Camera) {
+        this.camera = camera
+    }
 
     fun compute(screenX: Int, screenY: Int): SnapResult {
         val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())

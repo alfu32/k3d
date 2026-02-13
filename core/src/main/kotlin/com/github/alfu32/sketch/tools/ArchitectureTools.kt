@@ -366,7 +366,7 @@ class ArchitectureAddHoleTool(
 
 class ArchitectureStairTool(
     private val scene: GroupScene,
-    private val camera: Camera,
+    private val cameraProvider: () -> Camera,
     private val settings: ArchitectureSettings,
     private val onSelectTool: () -> Unit,
     private val ensureArchitectureGroup: (() -> GroupScene.GroupNode?)? = null
@@ -418,7 +418,7 @@ class ArchitectureStairTool(
         val sourceGroup = scene.activeGroup()
         val screenX = Gdx.input.x
         val screenY = Gdx.input.y
-        val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
+        val ray = cameraProvider().getPickRay(screenX.toFloat(), screenY.toFloat())
 
         // Prefer single-click source-group polyline picking (one click = one full polyline).
         val groupPolylinePath = if (contourPath == null) {
@@ -790,7 +790,7 @@ class ArchitectureStairTool(
     }
 
     private fun screenDistance(world: Vector3, screenX: Int, screenY: Int): Float {
-        val projected = camera.project(Vector3(world))
+        val projected = cameraProvider().project(Vector3(world))
         val dx = projected.x - screenX
         val dy = (Gdx.graphics.height - projected.y) - screenY
         return sqrt(dx * dx + dy * dy)

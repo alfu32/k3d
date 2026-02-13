@@ -10,7 +10,7 @@ import com.github.alfu32.sketch.ui.ToolId
 
 class TextTool(
     private val scene: GroupScene,
-    private val camera: Camera
+    private val cameraProvider: () -> Camera
 ) : Tool {
     override val id: ToolId = ToolId.TEXT
     override val message: String = "Click to place text."
@@ -48,7 +48,7 @@ class TextTool(
         }
         axis.mulAdd(normal, -axis.dot(normal))
         if (axis.len2() < 1e-6f) {
-            axis.set(camera.direction).crs(normal)
+            axis.set(cameraProvider().direction).crs(normal)
         }
         return axis.nor()
     }
