@@ -1,12 +1,12 @@
-# Release Notes 2.10.5
+# Release Notes 2.10.6
 
 ## Scope
 
-These notes cover changes from `2.9.2` to `2.10.5` (inclusive of all `2.10.x` releases).
+These notes cover changes from `2.9.2` to `2.10.6` (inclusive of all `2.10.x` releases).
 
 - Start tag: `2.9.2` (`6f763d8`)
-- End tag: `2.10.5` (`036d304`)
-- Commit span: 15 commits (`2.9.2..2.10.5`)
+- End tag: `2.10.6` (`036d304`)
+- Commit span: 15 commits (`2.9.2..2.10.6`)
 
 ## Highlights
 
@@ -65,7 +65,7 @@ These notes cover changes from `2.9.2` to `2.10.5` (inclusive of all `2.10.x` re
   - improved interaction behavior in wall editing flows,
   - further join/selection integration updates.
 
-### 2.10.5
+### 2.10.6
 
 - Stair-tool refinements:
   - improved step/support generation behavior,
