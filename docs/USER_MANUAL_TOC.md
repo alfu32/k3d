@@ -6,11 +6,21 @@ Date: February 13, 2026
 This TOC is based on a code and MCP scan done on February 13, 2026.
 
 ## Chapter Build Status
+- Completed: [Chapter 01 - Introduction](chapters/CH01_INTRODUCTION.md)
+- Completed: [Chapter 02 - Install and Launch](chapters/CH02_INSTALL_AND_LAUNCH.md)
+- Completed: [Chapter 03 - Files, Save, and Recovery](chapters/CH03_FILES_SAVE_AND_RECOVERY.md)
+- Completed: [Chapter 04 - UI Overview](chapters/CH04_UI_OVERVIEW.md)
 - Completed: [Chapter 05 - Interaction Fundamentals](chapters/CH05_INTERACTION_FUNDAMENTALS.md)
 - Completed: [Chapter 06 - Toolbar and Button Reference](chapters/CH06_TOOLBAR_BUTTON_REFERENCE.md)
+- Completed: [Chapter 07 - Tools Reference](chapters/CH07_TOOLS_REFERENCE.md)
+- Completed: [Chapter 08 - Panels Reference](chapters/CH08_PANELS_REFERENCE.md)
 - Completed: [Chapter 09 - Commands Reference](chapters/CH09_COMMANDS_REFERENCE.md)
+- Completed: [Chapter 10 - Tutorials](chapters/CH10_TUTORIALS.md)
+- Completed: [Chapter 11 - Plugin Workflow](chapters/CH11_PLUGIN_WORKFLOW.md)
+- Completed: [Chapter 12 - Troubleshooting and FAQ](chapters/CH12_TROUBLESHOOTING_AND_FAQ.md)
+- Completed: [Chapter 13 - Appendices](chapters/CH13_APPENDICES.md)
 - Completed: [MCP Regression Suite (for replayable tutorial/test automation)](automation/MCP_REGRESSION_SUITE.md)
-- Pending: Chapters 01, 02, 03, 04, 07, 08, 10, 11, 12, 13
+- Pending: None in current TOC scope
 
 ## 1. Introduction
 1.1 Purpose and audience
