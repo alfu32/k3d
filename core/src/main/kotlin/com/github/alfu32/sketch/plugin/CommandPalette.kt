@@ -68,6 +68,8 @@ class CommandPalette {
         }
     }
 
+    fun allCommands(): List<PaletteCommand> = commands.toList().sortedBy { it.name.lowercase() }
+
     fun isVisible(): Boolean = isVisible
 }
 

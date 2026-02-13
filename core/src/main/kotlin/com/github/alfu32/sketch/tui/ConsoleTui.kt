@@ -181,6 +181,9 @@ class ConsoleTui(
 
     private fun handleMetaCommand(source: String): Boolean {
         val trimmed = source.trim()
+        if (handleMcpAlias(trimmed)) {
+            return true
+        }
         if (!trimmed.startsWith(":") || trimmed.contains('\n')) {
             return false
         }
@@ -223,6 +226,65 @@ class ConsoleTui(
                 return handleMetaCommandWithArgs(trimmed)
             }
         }
+    }
+
+    private fun handleMcpAlias(trimmed: String): Boolean {
+        if (!trimmed.lowercase().startsWith("mcp:") || trimmed.contains('\n')) {
+            return false
+        }
+        val mcp = runtime.binding.variables["mcp"] as? com.github.alfu32.sketch.console.McpFacade
+        if (mcp == null) {
+            outputPane.append("MCP control is not available.")
+            return true
+        }
+        val tail = trimmed.substringAfter(":", "").trim()
+        when {
+            tail.equals("help", ignoreCase = true) || tail.equals("?", ignoreCase = true) -> {
+                outputPane.append(
+                    """
+                    MCP alias commands:
+                      mcp: help
+                      mcp: start
+                      mcp: stop
+                      mcp: status
+                      mcp: port
+                      mcp: port <1..65535>
+
+                    MCP HTTP endpoints (localhost only):
+                      GET  /mcp/status
+                      GET  /scene/listCommands
+                      GET  /scene/commands
+                      GET  /scene/command?id=<commandId>
+                      POST /scene/command   body: {"id":"<commandId>"} or plain command id text
+
+                    Agent setup (HTTP MCP):
+                      1) Start K3D.
+                      2) Run: mcp: status (or mcp: start if not running).
+                      3) Keep K3D running. The MCP HTTP endpoint is already served at
+                         http://127.0.0.1:<port> (no extra "expose" step needed).
+                      4) In your coding agent MCP config, add a server entry named "k3d"
+                         with base URL http://127.0.0.1:<port>.
+                      5) Verify by listing commands and executing:
+                         - /scene/listCommands
+                         - /scene/command?id=export.screenshot
+                    """.trimIndent()
+                )
+            }
+            tail.equals("start", ignoreCase = true) -> outputPane.append(mcp.start())
+            tail.equals("stop", ignoreCase = true) -> outputPane.append(mcp.stop())
+            tail.equals("status", ignoreCase = true) -> outputPane.append(mcp.status())
+            tail.equals("port", ignoreCase = true) -> outputPane.append("MCP HTTP port: ${mcp.port()}")
+            tail.lowercase().startsWith("port ") -> {
+                val value = tail.substringAfter(" ", "").trim().toIntOrNull()
+                if (value == null) {
+                    outputPane.append("Usage: mcp: port <1..65535>")
+                } else {
+                    outputPane.append(mcp.port(value))
+                }
+            }
+            else -> outputPane.append("Usage: mcp: help | start | stop | status | port | port <1..65535>")
+        }
+        return true
     }
 
     private fun handleMetaCommandWithArgs(trimmed: String): Boolean {
@@ -377,6 +439,7 @@ class ConsoleTui(
                   :line / :l x,z[,y] .. Draw polyline
                   :poly / :polyline / :pl x,z[,y] ..  Draw closed poly + fill
                   :circle / :c cx,cz[,y],r  Draw circle
+                  mcp: help|start|stop|status|port|port <n>  Manage MCP HTTP server
 
             Basic access to the application object model:
                 (use app.run { ... } for mutating the model):

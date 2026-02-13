@@ -58,10 +58,13 @@ import com.github.alfu32.sketch.console.ConsolePaths
 import com.github.alfu32.sketch.console.ConsoleThread
 import com.github.alfu32.sketch.console.ConsoleUtils
 import com.github.alfu32.sketch.console.LightingFacade
+import com.github.alfu32.sketch.console.McpFacade
 import com.github.alfu32.sketch.console.SelectionFacade
 import com.github.alfu32.sketch.console.TerminalController
 import com.github.alfu32.sketch.console.UnitFacade
 import com.github.alfu32.sketch.console.SaveFacade
+import com.github.alfu32.sketch.mcp.McpHttpServer
+import com.github.alfu32.sketch.mcp.StdoutTap
 import com.github.alfu32.sketch.tui.ConsoleTui
 import com.github.alfu32.sketch.tui.HistoryManager
 import com.github.alfu32.sketch.tui.OutputPane
@@ -122,6 +125,9 @@ import com.kotcrab.vis.ui.widget.file.FileTypeFilter
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.ceil
 import kotlin.math.floor
 
@@ -200,6 +206,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var objectPlaceTool: ObjectPlaceTool
     private val cameraTarget = Vector3(0f, 0f, 0f)
     private val screenshotTimestampFormatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
+    private var mcpPort = 8765
+    private lateinit var stdoutTap: StdoutTap
+    private lateinit var mcpServer: McpHttpServer
     private val orthoDistance = 250f
     private enum class OrthoView { TOP, BOTTOM, LEFT, RIGHT, FRONT, BACK }
     private var consoleThread: ConsoleThread? = null
@@ -209,6 +218,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private var restoringSnapshot = false
 
     override fun create() {
+        stdoutTap = StdoutTap.install()
         if (!VisUI.isLoaded()) {
             VisUI.load()
         }
@@ -849,6 +859,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         uiOverlay.refreshPluginPanels()
         setupMeshes()
         setupRenderables()
+        setupMcpServer()
         startConsoleIfRequested()
     }
 
@@ -1057,6 +1068,102 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
     }
 
+    private fun setupMcpServer() {
+        mcpServer = McpHttpServer(
+            initialPort = mcpPort,
+            stdoutTap = stdoutTap,
+            listCommands = ::listPaletteCommandsForMcp,
+            executeCommand = ::executePaletteCommandForMcp
+        )
+        val message = mcpServer.start()
+        mcpPort = mcpServer.port()
+        statusModel.message = message
+        println(message)
+    }
+
+    private fun startMcpServer(): String {
+        if (!::mcpServer.isInitialized) {
+            return "MCP HTTP server is not initialized."
+        }
+        val message = mcpServer.start()
+        mcpPort = mcpServer.port()
+        return message
+    }
+
+    private fun stopMcpServer(): String {
+        if (!::mcpServer.isInitialized) {
+            return "MCP HTTP server is not initialized."
+        }
+        return mcpServer.stop()
+    }
+
+    private fun mcpServerStatus(): String {
+        if (!::mcpServer.isInitialized) {
+            return "MCP HTTP server is not initialized."
+        }
+        return mcpServer.status()
+    }
+
+    private fun mcpServerPort(): Int {
+        return if (::mcpServer.isInitialized) mcpServer.port() else mcpPort
+    }
+
+    private fun setMcpServerPort(port: Int): String {
+        if (!::mcpServer.isInitialized) {
+            mcpPort = port.coerceIn(1, 65535)
+            return "MCP HTTP server port set to $mcpPort (server not initialized)."
+        }
+        val message = mcpServer.setPort(port)
+        mcpPort = mcpServer.port()
+        return message
+    }
+
+    private fun listPaletteCommandsForMcp(): List<com.github.alfu32.sketch.plugin.PaletteCommand> {
+        if (!::pluginHost.isInitialized) {
+            return emptyList()
+        }
+        val latch = CountDownLatch(1)
+        val result = AtomicReference<List<com.github.alfu32.sketch.plugin.PaletteCommand>>(emptyList())
+        Gdx.app.postRunnable {
+            try {
+                result.set(pluginHost.getCommandPalette().allCommands())
+            } finally {
+                latch.countDown()
+            }
+        }
+        val ok = latch.await(3, TimeUnit.SECONDS)
+        return if (ok) result.get() else emptyList()
+    }
+
+    private fun executePaletteCommandForMcp(commandId: String): com.github.alfu32.sketch.plugin.PluginResult {
+        if (!::pluginHost.isInitialized) {
+            return com.github.alfu32.sketch.plugin.PluginResult.failure("Plugin host not initialized.")
+        }
+        val latch = CountDownLatch(1)
+        val result = AtomicReference<com.github.alfu32.sketch.plugin.PluginResult?>()
+        val error = AtomicReference<Throwable?>()
+        Gdx.app.postRunnable {
+            try {
+                result.set(pluginHost.getCommandPalette().executeCommand(commandId))
+            } catch (t: Throwable) {
+                error.set(t)
+            } finally {
+                latch.countDown()
+            }
+        }
+        val ok = latch.await(20, TimeUnit.SECONDS)
+        if (!ok) {
+            return com.github.alfu32.sketch.plugin.PluginResult.failure("Command timed out: $commandId")
+        }
+        val thrown = error.get()
+        if (thrown != null) {
+            return com.github.alfu32.sketch.plugin.PluginResult.failure(
+                "Command crashed: ${thrown.message ?: thrown.javaClass.simpleName}"
+            )
+        }
+        return result.get() ?: com.github.alfu32.sketch.plugin.PluginResult.failure("Command produced no result.")
+    }
+
     private fun walkSupportHeightAt(worldX: Float, worldZ: Float, currentY: Float): Float {
         val rayOrigin = Vector3(worldX, currentY + 0.25f, worldZ)
         val rayDir = Vector3(0f, -1f, 0f)
@@ -1224,6 +1331,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
         if (::pluginHost.isInitialized) {
             pluginHost.dispatchClose()
+        }
+        if (::mcpServer.isInitialized) {
+            mcpServer.stop()
         }
         consoleThread?.shutdown()
         try {
@@ -1846,6 +1956,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val unitFacade = UnitFacade({ modelUnit }, ::updateModelUnit)
         val saveFacade = SaveFacade({ modelFile }, ::setSaveName)
         val cameraFacade = CameraFacade(camera, orbitCameraController.target) { camera.update() }
+        val mcpFacade = McpFacade(
+            startFn = ::startMcpServer,
+            stopFn = ::stopMcpServer,
+            statusFn = ::mcpServerStatus,
+            portFn = ::mcpServerPort,
+            setPortFn = ::setMcpServerPort
+        )
         val lightingFacade = LightingFacade(lightingSettings, shadowSettings) {
             applyLightingSettings(lightingSettings)
             applyShadowSettings(shadowSettings)
@@ -1867,6 +1984,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 "status" to statusModel,
                 "unit" to unitFacade,
                 "save" to saveFacade,
+                "mcp" to mcpFacade,
                 "version" to K3DVersion()
             )
         )
