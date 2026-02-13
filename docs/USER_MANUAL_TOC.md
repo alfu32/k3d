@@ -9,6 +9,7 @@ This TOC is based on a code and MCP scan done on February 13, 2026.
 - Completed: [Chapter 05 - Interaction Fundamentals](chapters/CH05_INTERACTION_FUNDAMENTALS.md)
 - Completed: [Chapter 06 - Toolbar and Button Reference](chapters/CH06_TOOLBAR_BUTTON_REFERENCE.md)
 - Completed: [Chapter 09 - Commands Reference](chapters/CH09_COMMANDS_REFERENCE.md)
+- Completed: [MCP Regression Suite (for replayable tutorial/test automation)](automation/MCP_REGRESSION_SUITE.md)
 - Pending: Chapters 01, 02, 03, 04, 07, 08, 10, 11, 12, 13
 
 ## 1. Introduction

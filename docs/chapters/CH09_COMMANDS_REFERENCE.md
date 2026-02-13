@@ -6,15 +6,30 @@ Date: February 13, 2026
 ## Goal
 Document command usage patterns and verify command outcomes with practical MCP-driven examples.
 
+## Capture Policy
+- Perspective camera is used for final screenshots.
+- Camera command examples may invoke orthographic commands internally, then return to perspective before capture.
+
 ## Chapter Cleanup
 Before this chapter, scene state was reset:
 
 ```groovy
 app.run {
+  while (scene.exitGroup()) {}
   scene.resetScene()
+  def rp = scene.rootPrototype()
+  rp.lineStore.clearAll()
+  rp.faceStore.clearAll()
+  rp.dimensionStore.clearAll()
+  rp.textStore.clearAll()
+  scene.root.children.clear()
+  scene.clearAllSelections()
   save.set("examples/mcp.demo.k3d")
-  cameraCtl.setPosition(14f, 12f, 14f)
+  cameraCtl.setPosition(18f, 14f, 18f)
   cameraCtl.setTarget(0f, 0f, 0f)
+  camera.up.set(0f, 1f, 0f)
+  camera.lookAt(0f, 0f, 0f)
+  camera.update()
 }
 ```
 
@@ -46,6 +61,7 @@ Commands:
 ### 5) Camera command execution
 - `view.camera.orthographic`
 - `view.ortho.front`
+- `view.camera.orbit`
 
 ![Step 5 - Camera commands](../images/ch09_05_camera_commands.png)
 

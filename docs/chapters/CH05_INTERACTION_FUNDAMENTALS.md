@@ -6,15 +6,31 @@ Date: February 13, 2026
 ## Goal
 Document core interaction behavior with practical examples captured through MCP operations on `examples/mcp.demo.k3d`.
 
+## Capture Policy
+- Screenshots use **perspective orbit camera** for user-facing clarity.
+- Up axis is **Y** (`0,1,0`), depth axis is **Z**.
+
 ## Chapter Cleanup
-Before this chapter, scene state was reset:
+Before this chapter, scene state is reset with `edit.reset_scene_for_capture` when available.
+Fallback script for older runtimes:
 
 ```groovy
 app.run {
+  while (scene.exitGroup()) {}
   scene.resetScene()
+  def rp = scene.rootPrototype()
+  rp.lineStore.clearAll()
+  rp.faceStore.clearAll()
+  rp.dimensionStore.clearAll()
+  rp.textStore.clearAll()
+  scene.root.children.clear()
+  scene.clearAllSelections()
   save.set("examples/mcp.demo.k3d")
-  cameraCtl.setPosition(14f, 12f, 14f)
+  cameraCtl.setPosition(18f, 14f, 18f)
   cameraCtl.setTarget(0f, 0f, 0f)
+  camera.up.set(0f, 1f, 0f)
+  camera.lookAt(0f, 0f, 0f)
+  camera.update()
 }
 ```
 
@@ -64,6 +80,16 @@ app.run {
 
 ![Step 7 - Window selection](../images/ch05_07_window_selection.png)
 
+### 8) Volume-selection preview pass
+- First corner click near `(-10,0,-6)`
+- Move toward `(10,6,6)` then confirm
+- Equivalent user interaction:
+  - click empty space for corner A
+  - move pointer to preview volume
+  - click corner B to commit
+
+![Step 8 - Volume cube preview](../images/ch05_08_volume_cube_preview.png)
+
 ## Keyboard Interaction Matrix (From Source)
 Source: `core/src/main/kotlin/com/github/alfu32/sketch/ui/ToolInputProcessor.kt` and camera controllers.
 
@@ -88,3 +114,7 @@ Source: `core/src/main/kotlin/com/github/alfu32/sketch/ui/ToolInputProcessor.kt`
 
 ## Note About MCP Coverage
 Current MCP endpoints include pointer and command execution, but no dedicated keyboard-event endpoint. Keyboard interactions in this chapter are documented from implementation and mapped to practical visual outcomes.
+
+## Runtime Compatibility Note
+- On runtimes before the `SelectTool` MCP drag fix, window/volume preview overlays may not render even if selection results are applied.
+- On runtimes before the `SketchUiOverlay` capture-mode patch, the Object panel can reappear during capture frames.

@@ -297,6 +297,7 @@ class SketchUiOverlay(
     private var commandPaletteUI: CommandPaletteUI? = null
     private var pluginHost: PluginHost? = null
     private var pluginPanelsPositioned = false
+    private var automationHidePanels = false
     private var distancePopup: CollapsibleWindow? = null
     private var distanceField: VisTextField? = null
     private var distanceChangeHandler: ((String) -> Unit)? = null
@@ -624,6 +625,24 @@ class SketchUiOverlay(
 
     fun showCommandPalette() {
         commandPaletteUI?.show()
+    }
+
+    fun setAutomationHidePanels(enabled: Boolean) {
+        automationHidePanels = enabled
+        if (enabled) {
+            selectionPanel.isVisible = false
+            groupPanel.isVisible = false
+            objectsPanel.isVisible = false
+            modelSettingsPanel.isVisible = false
+            polylineSettingsPanel.isVisible = false
+            architectureSettingsPanel.isVisible = false
+            lightingPanel?.isVisible = false
+            pluginManagerPanel?.isVisible = false
+            pluginPanels.values.forEach { panel -> panel.isVisible = false }
+            commandPaletteUI?.hide()
+            clearUiFocus()
+        }
+        needsPanelLayout = true
     }
 
     fun refreshPluginPanels() {
@@ -2099,6 +2118,12 @@ class SketchUiOverlay(
     }
 
     private fun updateGroupPanel() {
+        if (automationHidePanels) {
+            groupPanel.isVisible = false
+            groupNameField.isDisabled = true
+            groupGlueCheck.isDisabled = true
+            return
+        }
         val info = groupInfoProvider()
         val wasVisible = groupPanel.isVisible
         groupPanel.isVisible = true
@@ -2348,6 +2373,14 @@ class SketchUiOverlay(
     }
 
     private fun positionPluginPanels() {
+        if (automationHidePanels) {
+            pluginManagerPanel?.isVisible = false
+            commandPaletteUI?.hide()
+            pluginPanels.values.forEach { panel ->
+                panel.isVisible = false
+            }
+            return
+        }
         val width = if (stage.viewport.screenWidth > 0) stage.viewport.screenWidth.toFloat() else Gdx.graphics.width.toFloat()
         val height = if (stage.viewport.screenHeight > 0) stage.viewport.screenHeight.toFloat() else Gdx.graphics.height.toFloat()
         pluginManagerPanel?.let { panel ->

@@ -40,6 +40,7 @@ class SelectTool(
     private var selectingVolume = false
     private var selectingWindow = false
     private var windowDragActive = false
+    private var windowPointerDown = false
     private var windowStartX = 0
     private var windowStartY = 0
     private var windowEndX = 0
@@ -97,6 +98,7 @@ class SelectTool(
         volumeEndRaw = null
         selectingWindow = false
         windowDragActive = false
+        windowPointerDown = false
         pendingVolumeStart = null
         holeDrag = null
         wallDrag = null
@@ -119,7 +121,7 @@ class SelectTool(
         if (selectingVolume && valid && world != null) {
             volumeEndRaw = Vector3(world)
         }
-        if (selectingWindow && Gdx.input.isButtonPressed(Input.Buttons.LEFT)) {
+        if (selectingWindow && windowPointerDown) {
             windowEndX = Gdx.input.x
             windowEndY = Gdx.input.y
             val dx = windowEndX - windowStartX
@@ -140,6 +142,7 @@ class SelectTool(
         if (button != Input.Buttons.LEFT) {
             return false
         }
+        windowPointerDown = true
         if (selectingVolume) {
             if (valid && world != null) {
                 volumeEndRaw = Vector3(world)
@@ -337,6 +340,7 @@ class SelectTool(
         if (button != Input.Buttons.LEFT) {
             return false
         }
+        windowPointerDown = false
         holeDrag?.let { drag ->
             val movingWorld = if (valid && world != null) Vector3(world) else Vector3(drag.movingWorld)
             val updated = scene.updateArchitectureHoleByHandle(

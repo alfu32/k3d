@@ -694,6 +694,36 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 }
             )
         )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.capture_ui_minimal",
+                name = "View> Capture UI Minimal",
+                description = "Hide floating panels and palette for cleaner screenshots",
+                icon = "view",
+                category = "View",
+                tags = listOf("capture", "screenshot", "ui", "panels"),
+                priority = 1,
+                execute = {
+                    uiOverlay.setAutomationHidePanels(true)
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.capture_ui_restore",
+                name = "View> Capture UI Restore",
+                description = "Restore normal floating panel behavior after capture mode",
+                icon = "view",
+                category = "View",
+                tags = listOf("capture", "screenshot", "ui", "panels"),
+                priority = 1,
+                execute = {
+                    uiOverlay.setAutomationHidePanels(false)
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
         registerOrthographicViewCommand("view.ortho.top", "View> Ortho Top", "Switch to orthographic top view", OrthoView.TOP)
         registerOrthographicViewCommand("view.ortho.bottom", "View> Ortho Bottom", "Switch to orthographic bottom view", OrthoView.BOTTOM)
         registerOrthographicViewCommand("view.ortho.left", "View> Ortho Left", "Switch to orthographic left view", OrthoView.LEFT)
@@ -760,6 +790,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 priority = 1,
                 execute = {
                     cutRectHole()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "edit.reset_scene_for_capture",
+                name = "Edit> Reset Scene For Capture",
+                description = "Reset scene and set perspective Y-up overview camera for screenshot automation",
+                icon = "edit",
+                category = "Edit",
+                tags = listOf("reset", "scene", "capture", "screenshot", "perspective"),
+                priority = 1,
+                execute = {
+                    resetSceneForCapture()
                     com.github.alfu32.sketch.plugin.PluginResult.success()
                 }
             )
@@ -2805,6 +2850,31 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private fun clearSelection() {
         scene.clearAllSelections()
         statusModel.message = "Selection cleared."
+    }
+
+    private fun resetSceneForCapture() {
+        while (scene.exitGroup()) {
+            // Return to root before clearing stores and prototype content.
+        }
+        scene.resetScene()
+        val rootPrototype = scene.rootPrototype()
+        rootPrototype.lineStore.clearAll()
+        rootPrototype.faceStore.clearAll()
+        rootPrototype.dimensionStore.clearAll()
+        rootPrototype.textStore.clearAll()
+        scene.root.children.clear()
+        scene.clearAllSelections()
+        guideManager.clear()
+        toolController.resetToDefault()
+        toolController.cancelActiveTool()
+        setCameraMode(CameraMode.ORBIT)
+        orbitCameraController.target.set(0f, 0f, 0f)
+        camera.position.set(18f, 14f, 18f)
+        camera.up.set(0f, 1f, 0f)
+        camera.lookAt(orbitCameraController.target)
+        camera.update()
+        uiOverlay.setAutomationHidePanels(true)
+        statusModel.message = "Scene reset for capture (perspective, Y-up)."
     }
 
     private fun deleteSelection() {

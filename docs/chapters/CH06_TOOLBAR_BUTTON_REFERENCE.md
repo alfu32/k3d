@@ -6,15 +6,30 @@ Date: February 13, 2026
 ## Goal
 Map toolbar buttons to practical operations and show visible outcomes for each operation.
 
+## Capture Policy
+- Perspective camera is used for all chapter screenshots.
+- Camera-command steps may switch modes internally, then return to perspective for capture.
+
 ## Chapter Cleanup
 Before this chapter, scene state was reset:
 
 ```groovy
 app.run {
+  while (scene.exitGroup()) {}
   scene.resetScene()
+  def rp = scene.rootPrototype()
+  rp.lineStore.clearAll()
+  rp.faceStore.clearAll()
+  rp.dimensionStore.clearAll()
+  rp.textStore.clearAll()
+  scene.root.children.clear()
+  scene.clearAllSelections()
   save.set("examples/mcp.demo.k3d")
-  cameraCtl.setPosition(14f, 12f, 14f)
+  cameraCtl.setPosition(18f, 14f, 18f)
   cameraCtl.setTarget(0f, 0f, 0f)
+  camera.up.set(0f, 1f, 0f)
+  camera.lookAt(0f, 0f, 0f)
+  camera.update()
 }
 ```
 
@@ -46,8 +61,9 @@ app.run {
 
 ![Step 5 - Camera Walk](../images/ch06_05_camera_walk.png)
 
-### 6) Camera toolbar: Ortho + Top
-- Commands: `view.camera.orthographic`, `view.ortho.top`
+### 6) Camera toolbar: mode command round-trip
+- Commands: `view.camera.orthographic`, `view.ortho.top`, `view.camera.orbit`
+- Capture is taken after returning to perspective view
 
 ![Step 6 - Camera Ortho Top](../images/ch06_06_camera_ortho_top.png)
 

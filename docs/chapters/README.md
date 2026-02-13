@@ -7,6 +7,7 @@ Date: February 13, 2026
 - [Chapter 05 - Interaction Fundamentals](CH05_INTERACTION_FUNDAMENTALS.md)
 - [Chapter 06 - Toolbar and Button Reference](CH06_TOOLBAR_BUTTON_REFERENCE.md)
 - [Chapter 09 - Commands Reference](CH09_COMMANDS_REFERENCE.md)
+- [Automation - MCP Regression Suite](../automation/MCP_REGRESSION_SUITE.md)
 
 ## Next chapters in queue
 - Chapter 01: Introduction
