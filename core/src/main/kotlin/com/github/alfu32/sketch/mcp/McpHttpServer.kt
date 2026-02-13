@@ -18,7 +18,8 @@ class McpHttpServer(
     private val listCommands: () -> List<PaletteCommand>,
     private val executeCommand: (String) -> PluginResult,
     private val executeConsoleCommand: (String) -> McpConsoleResult,
-    private val dispatchPointerEvent: (McpPointerEventRequest) -> McpPointerEventResult
+    private val dispatchPointerEvent: (McpPointerEventRequest) -> McpPointerEventResult,
+    private val contractProvider: () -> String
 ) {
     @Volatile
     private var server: HttpServer? = null
@@ -40,6 +41,7 @@ class McpHttpServer(
                 http.createContext("/scene/meta") { exchange -> handleExecuteConsole(exchange) }
                 http.createContext("/scene/pointer") { exchange -> handlePointerEvent(exchange) }
                 http.createContext("/mcp/status") { exchange -> handleStatus(exchange) }
+                http.createContext("/mcp/contract") { exchange -> handleContract(exchange) }
                 http.executor = Executors.newCachedThreadPool { runnable ->
                     Thread(runnable, "k3d-mcp-http").apply { isDaemon = true }
                 }
@@ -99,6 +101,23 @@ class McpHttpServer(
             200,
             """{"success":true,"running":$running,"port":$port,"message":"${jsonEscape(status())}"}"""
         )
+    }
+
+    private fun handleContract(exchange: HttpExchange) {
+        if (exchange.requestMethod != "GET") {
+            exchange.respondJson(405, """{"success":false,"message":"Method not allowed"}""")
+            return
+        }
+        val payload = try {
+            contractProvider()
+        } catch (t: Throwable) {
+            null
+        }
+        if (payload.isNullOrBlank()) {
+            exchange.respondJson(500, """{"success":false,"message":"Contract payload unavailable"}""")
+            return
+        }
+        exchange.respondJson(200, payload)
     }
 
     private fun handleListCommands(exchange: HttpExchange) {

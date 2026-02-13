@@ -291,6 +291,7 @@ class ConsoleTui(
 
                     MCP HTTP endpoints (localhost only):
                       GET  /mcp/status
+                      GET  /mcp/contract
                       GET  /scene/listCommands
                       GET  /scene/commands
                       GET  /scene/command?id=<commandId>
@@ -308,6 +309,7 @@ class ConsoleTui(
                       4) In your coding agent MCP config, add a server entry named "k3d"
                          with base URL http://127.0.0.1:<port>.
                       5) Verify by listing commands and executing:
+                         - /mcp/contract
                          - /scene/listCommands
                          - /scene/command?id=export.screenshot
                     """.trimIndent()

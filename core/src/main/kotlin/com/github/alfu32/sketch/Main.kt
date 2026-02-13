@@ -1126,7 +1126,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             listCommands = ::listPaletteCommandsForMcp,
             executeCommand = ::executePaletteCommandForMcp,
             executeConsoleCommand = ::executeConsoleCommandForMcp,
-            dispatchPointerEvent = ::dispatchPointerEventForMcp
+            dispatchPointerEvent = ::dispatchPointerEventForMcp,
+            contractProvider = ::buildMcpContractForMcp
         )
         val message = mcpServer.start()
         mcpPort = mcpServer.port()
@@ -1169,6 +1170,304 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val message = mcpServer.setPort(port)
         mcpPort = mcpServer.port()
         return message
+    }
+
+    private fun buildMcpContractForMcp(): String {
+        val version = K3DVersion()
+        val commands = listPaletteCommandsForMcp()
+            .sortedBy { it.id }
+            .map { command ->
+                linkedMapOf<String, Any?>(
+                    "id" to command.id,
+                    "name" to command.name,
+                    "category" to command.category,
+                    "description" to command.description,
+                    "icon" to command.icon,
+                    "priority" to command.priority,
+                    "tags" to command.tags
+                )
+            }
+        val payload = linkedMapOf<String, Any?>(
+            "success" to true,
+            "contractVersion" to "1.0.0",
+            "name" to "k3d-mcp-contract",
+            "generatedAt" to LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+            "transport" to linkedMapOf(
+                "protocol" to "http",
+                "host" to "127.0.0.1",
+                "port" to mcpServerPort()
+            ),
+            "engine" to linkedMapOf(
+                "buildVersion" to version.buildVersion,
+                "buildGitTag" to version.buildGitTag,
+                "buildGitCommit" to version.buildGitCommit,
+                "buildGitBranch" to version.buildGitBranch,
+                "buildDate" to version.buildDate
+            ),
+            "endpoints" to listOf(
+                linkedMapOf(
+                    "path" to "/mcp/status",
+                    "methods" to listOf("GET"),
+                    "summary" to "MCP HTTP status and port.",
+                    "responseShape" to linkedMapOf(
+                        "success" to "boolean",
+                        "running" to "boolean",
+                        "port" to "number",
+                        "message" to "string"
+                    )
+                ),
+                linkedMapOf(
+                    "path" to "/mcp/contract",
+                    "methods" to listOf("GET"),
+                    "summary" to "Self-describing MCP contract for agents and plugin developers."
+                ),
+                linkedMapOf(
+                    "path" to "/scene/listCommands",
+                    "aliases" to listOf("/scene/commands"),
+                    "methods" to listOf("GET"),
+                    "summary" to "List executable command IDs (built-in + plugin)."
+                ),
+                linkedMapOf(
+                    "path" to "/scene/command",
+                    "methods" to listOf("GET", "POST"),
+                    "summary" to "Execute a command by ID.",
+                    "requestShape" to linkedMapOf(
+                        "query" to linkedMapOf("id" to "string"),
+                        "postJson" to linkedMapOf("id" to "string"),
+                        "postText" to "command id as plain text"
+                    ),
+                    "responseShape" to linkedMapOf(
+                        "success" to "boolean",
+                        "commandId" to "string",
+                        "message" to "string",
+                        "durationMs" to "number",
+                        "stdout" to "string",
+                        "stdoutLines" to "string[]"
+                    )
+                ),
+                linkedMapOf(
+                    "path" to "/scene/console",
+                    "aliases" to listOf("/scene/meta"),
+                    "methods" to listOf("GET", "POST"),
+                    "summary" to "Execute Groovy console script/command.",
+                    "requestShape" to linkedMapOf(
+                        "query" to linkedMapOf("cmd|command|script" to "string"),
+                        "postJson" to linkedMapOf("cmd|command|script" to "string"),
+                        "postText" to "groovy source as plain text"
+                    ),
+                    "responseShape" to linkedMapOf(
+                        "success" to "boolean",
+                        "command" to "string",
+                        "message" to "string",
+                        "durationMs" to "number",
+                        "outputLines" to "string[]",
+                        "stdout" to "string",
+                        "stdoutLines" to "string[]"
+                    )
+                ),
+                linkedMapOf(
+                    "path" to "/scene/pointer",
+                    "methods" to listOf("GET", "POST"),
+                    "summary" to "Dispatch pointer events in screen or world coordinates.",
+                    "requestShape" to linkedMapOf(
+                        "action" to "down|move|up",
+                        "pointer" to "number (default 0)",
+                        "button" to "left|right|middle|lmb|rmb|mmb|0|1|2 (default left)",
+                        "requiredOneOf" to listOf(
+                            listOf("screenX", "screenY"),
+                            listOf("worldX", "worldY", "worldZ")
+                        ),
+                        "optional" to listOf("normalX", "normalY", "normalZ", "valid")
+                    ),
+                    "responseShape" to linkedMapOf(
+                        "success" to "boolean",
+                        "handled" to "boolean",
+                        "action" to "string",
+                        "pointer" to "number",
+                        "button" to "number",
+                        "screenX" to "number|null",
+                        "screenY" to "number|null",
+                        "worldX" to "number|null",
+                        "worldY" to "number|null",
+                        "worldZ" to "number|null",
+                        "normalX" to "number|null",
+                        "normalY" to "number|null",
+                        "normalZ" to "number|null",
+                        "valid" to "boolean",
+                        "message" to "string",
+                        "durationMs" to "number"
+                    )
+                )
+            ),
+            "errors" to linkedMapOf(
+                "400" to "Invalid payload / missing required fields",
+                "405" to "Method not allowed",
+                "500" to "Execution or runtime failure"
+            ),
+            "executionBoundary" to linkedMapOf(
+                "mutationBoundary" to "Use app.run { ... } for thread-safe deferred mutation from Groovy.",
+                "consoleThreadingNote" to "MCP /scene/console executes on the render thread; nested app.run schedules async work.",
+                "pointerTimeoutMs" to 5000,
+                "commandTimeoutMs" to 20000,
+                "consoleTimeoutMs" to 30000
+            ),
+            "groovyBindings" to listOf(
+                linkedMapOf(
+                    "name" to "app",
+                    "type" to "AppFacade",
+                    "members" to listOf("run(block)", "exit()")
+                ),
+                linkedMapOf(
+                    "name" to "scene",
+                    "type" to "GroupScene",
+                    "highValueMembers" to listOf(
+                        "activeGroup()",
+                        "enterGroup(group)",
+                        "exitGroup()",
+                        "clearAllSelections()",
+                        "selectedGroups()",
+                        "resetScene()",
+                        "rootPrototype()",
+                        "createVoxelGroup()",
+                        "createArchitectureGroup()"
+                    )
+                ),
+                linkedMapOf(
+                    "name" to "selection",
+                    "type" to "SelectionFacade",
+                    "members" to listOf("clear()", "groups()", "faces()", "edges()", "dimensions()", "texts()")
+                ),
+                linkedMapOf(
+                    "name" to "console",
+                    "type" to "ConsoleUtils",
+                    "members" to listOf("log(...)", "dir(obj)", "type(obj)", "exception(ex)")
+                ),
+                linkedMapOf(
+                    "name" to "cameraCtl",
+                    "type" to "CameraFacade",
+                    "members" to listOf(
+                        "position()",
+                        "target()",
+                        "setPosition(x,y,z)",
+                        "setTarget(x,y,z)",
+                        "lookAt(x,y,z)"
+                    )
+                ),
+                linkedMapOf(
+                    "name" to "unit",
+                    "type" to "UnitFacade",
+                    "members" to listOf("name()", "size()", "set(name,size)", "setName(name)", "setSize(size)")
+                ),
+                linkedMapOf(
+                    "name" to "save",
+                    "type" to "SaveFacade",
+                    "members" to listOf("path()", "name()", "set(path)")
+                ),
+                linkedMapOf(
+                    "name" to "lightingCtl",
+                    "type" to "LightingFacade",
+                    "members" to listOf("lighting()", "shadow()", "apply()")
+                ),
+                linkedMapOf(
+                    "name" to "status",
+                    "type" to "StatusModel",
+                    "highValueFields" to listOf("message", "paintColor", "activeTool", "cursorWorld", "cursorSnapLabel")
+                ),
+                linkedMapOf("name" to "pluginHost", "type" to "PluginHost"),
+                linkedMapOf("name" to "camera", "type" to "PerspectiveCamera"),
+                linkedMapOf("name" to "cameraTarget", "type" to "Vector3"),
+                linkedMapOf("name" to "lighting", "type" to "LightingSettings"),
+                linkedMapOf("name" to "shadow", "type" to "ShadowSettings"),
+                linkedMapOf("name" to "mcp", "type" to "McpFacade"),
+                linkedMapOf("name" to "version", "type" to "K3DVersion")
+            ),
+            "bindingDiscovery" to linkedMapOf(
+                "listBindings" to "GET /scene/console?cmd=:list",
+                "listBindingMembers" to "GET /scene/console?cmd=:list <bindingName>"
+            ),
+            "nonBoundGlobals" to listOf(
+                "guideManager",
+                "toolController"
+            ),
+            "commandCatalog" to linkedMapOf(
+                "source" to "/scene/listCommands",
+                "count" to commands.size,
+                "commands" to commands
+            ),
+            "businessUseCases" to listOf(
+                linkedMapOf(
+                    "id" to "coding_agent_plugin_development",
+                    "title" to "Coding agent developing a plugin",
+                    "flow" to listOf(
+                        "GET /mcp/contract",
+                        "GET /scene/listCommands",
+                        "Use /scene/console to inspect bindings and pluginHost API",
+                        "Register plugin commands/tools under plugin namespace",
+                        "Execute new commands through /scene/command"
+                    )
+                ),
+                linkedMapOf(
+                    "id" to "designer_agent_modeling",
+                    "title" to "Designer agent generating app.run scripts to model geometry",
+                    "flow" to listOf(
+                        "GET /mcp/contract",
+                        "Switch camera: /scene/command?id=view.camera.orbit",
+                        "Use Y-up world coordinates in /scene/pointer or /scene/console app.run",
+                        "Capture progress with /scene/command?id=export.screenshot"
+                    )
+                ),
+                linkedMapOf(
+                    "id" to "plugin_developer",
+                    "title" to "Plugin developer creating plugins/tools/commands/entities",
+                    "flow" to listOf(
+                        "Consult plugin contract via groovy bindings and pluginHost in contract",
+                        "Implement Plugin + capability interfaces",
+                        "Return PluginResult with explicit PluginChange objects"
+                    )
+                ),
+                linkedMapOf(
+                    "id" to "test_automation",
+                    "title" to "Test automation",
+                    "flow" to listOf(
+                        "GET /mcp/status for readiness",
+                        "GET /scene/listCommands and assert required IDs",
+                        "Reset deterministic scene using command or app.run script",
+                        "Replay pointer/command steps",
+                        "Capture and compare screenshots or assert console/model outputs"
+                    )
+                )
+            )
+        )
+        return toMcpJson(payload)
+    }
+
+    private fun toMcpJson(value: Any?): String {
+        return when (value) {
+            null -> "null"
+            is String -> "\"${escapeMcpJsonString(value)}\""
+            is Number, is Boolean -> value.toString()
+            is Map<*, *> -> value.entries.joinToString(prefix = "{", postfix = "}") { (k, v) ->
+                "\"${escapeMcpJsonString(k.toString())}\":${toMcpJson(v)}"
+            }
+            is Iterable<*> -> value.joinToString(prefix = "[", postfix = "]") { toMcpJson(it) }
+            is Array<*> -> value.joinToString(prefix = "[", postfix = "]") { toMcpJson(it) }
+            else -> "\"${escapeMcpJsonString(value.toString())}\""
+        }
+    }
+
+    private fun escapeMcpJsonString(value: String): String {
+        val out = StringBuilder(value.length + 16)
+        value.forEach { ch ->
+            when (ch) {
+                '\\' -> out.append("\\\\")
+                '"' -> out.append("\\\"")
+                '\n' -> out.append("\\n")
+                '\r' -> out.append("\\r")
+                '\t' -> out.append("\\t")
+                else -> out.append(ch)
+            }
+        }
+        return out.toString()
     }
 
     private fun listPaletteCommandsForMcp(): List<com.github.alfu32.sketch.plugin.PaletteCommand> {
