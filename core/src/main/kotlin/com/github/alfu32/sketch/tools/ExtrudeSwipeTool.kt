@@ -11,11 +11,14 @@ import com.github.alfu32.sketch.ui.ToolId
 import com.github.alfu32.sketch.ui.ToolMeasurement
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.sin
 
 class ExtrudeSwipeTool(
-    private val scene: GroupScene
+    private val scene: GroupScene,
+    private val settings: PolylineSettings,
+    private val onSelectTool: () -> Unit
 ) : Tool {
     override val id: ToolId = ToolId.EXTRUDE_SWIPE
     override val message: String = "Select one or more lines, then click to draw swipe path."
@@ -26,6 +29,9 @@ class ExtrudeSwipeTool(
     private val pathLocal = mutableListOf<Vector3>()
     private val hoverLocal = Vector3()
     private var hasHover = false
+    private var arcMode = ArcMode.LINE
+    private var arcCenterLocal: Vector3? = null
+    private var arcPass1Local: Vector3? = null
 
     private val epsilon = 1e-4f
     private val epsilonSq = epsilon * epsilon
@@ -36,7 +42,7 @@ class ExtrudeSwipeTool(
         status.message = if (sourceSegments.isEmpty()) {
             message
         } else {
-            "Click to start swipe path. Enter creates faces."
+            "Click to start swipe path. A/C/L arc modes. Enter creates faces. Esc selects."
         }
     }
 
@@ -72,20 +78,74 @@ class ExtrudeSwipeTool(
         }
 
         val local = scene.activeGroup().toLocal(world)
-        if (pathLocal.isNotEmpty() && pathLocal.last().dst2(local) <= epsilonSq) {
+        if (pathLocal.isEmpty()) {
+            pathLocal.add(Vector3(local))
+            status.message = "Click next path point. A/C/L arc modes. Enter creates faces."
             return true
         }
-        pathLocal.add(Vector3(local))
-        status.message = if (pathLocal.size < 2) {
-            "Click next path point. Enter creates faces."
-        } else {
-            "Click to continue path. Enter creates faces."
+        if (pathLocal.last().dst2(local) <= epsilonSq) {
+            return true
+        }
+
+        when (arcMode) {
+            ArcMode.CENTER -> {
+                if (arcCenterLocal == null) {
+                    arcCenterLocal = Vector3(local)
+                    status.message = "Pick arc end point. Enter creates faces."
+                } else {
+                    val arcPoints = arcPointsFromCenter(pathLocal.last(), local, arcCenterLocal!!)
+                    appendArcPoints(arcPoints)
+                    arcCenterLocal = null
+                    status.message = "Click to continue path. A/C/L arc modes. Enter creates faces."
+                }
+            }
+
+            ArcMode.THREE -> {
+                if (arcPass1Local == null) {
+                    arcPass1Local = Vector3(local)
+                    status.message = "Pick arc end point. Enter creates faces."
+                } else {
+                    val arcPoints = arcPointsThrough(pathLocal.last(), arcPass1Local!!, local)
+                    appendArcPoints(arcPoints)
+                    arcPass1Local = null
+                    status.message = "Click to continue path. A/C/L arc modes. Enter creates faces."
+                }
+            }
+
+            ArcMode.LINE -> {
+                pathLocal.add(Vector3(local))
+                status.message = "Click to continue path. A/C/L arc modes. Enter creates faces."
+            }
         }
         return true
     }
 
     override fun onKeyDown(status: StatusModel, keycode: Int): Boolean {
         return when (keycode) {
+            Input.Keys.A -> {
+                arcMode = ArcMode.THREE
+                arcCenterLocal = null
+                arcPass1Local = null
+                status.message = "Arc mode (through point). Pick mid then end."
+                true
+            }
+
+            Input.Keys.C -> {
+                arcMode = ArcMode.CENTER
+                arcCenterLocal = null
+                arcPass1Local = null
+                status.message = "Arc mode (center). Pick center then end."
+                true
+            }
+
+            Input.Keys.L -> {
+                arcMode = ArcMode.LINE
+                arcCenterLocal = null
+                arcPass1Local = null
+                status.message = "Line mode."
+                true
+            }
+
             Input.Keys.ENTER -> {
                 if (sourceSegments.isEmpty()) {
                     refreshSourceSegments()
@@ -104,17 +164,26 @@ class ExtrudeSwipeTool(
                     } else {
                         "Extrude Swipe: nothing generated."
                     }
+                    onSelectTool()
                     true
                 }
             }
 
             Input.Keys.BACKSPACE -> {
-                if (pathLocal.isNotEmpty()) {
+                if (arcMode == ArcMode.CENTER && arcCenterLocal != null) {
+                    arcCenterLocal = null
+                    status.message = "Arc center cleared."
+                    true
+                } else if (arcMode == ArcMode.THREE && arcPass1Local != null) {
+                    arcPass1Local = null
+                    status.message = "Arc mid-point cleared."
+                    true
+                } else if (pathLocal.isNotEmpty()) {
                     pathLocal.removeAt(pathLocal.lastIndex)
                     status.message = if (pathLocal.isEmpty()) {
                         "Click to start swipe path. Enter creates faces."
                     } else {
-                        "Click next path point. Enter creates faces."
+                        "Click next path point. A/C/L arc modes. Enter creates faces."
                     }
                     true
                 } else {
@@ -124,7 +193,8 @@ class ExtrudeSwipeTool(
 
             Input.Keys.ESCAPE -> {
                 clearPath()
-                status.message = "Click to start swipe path. Enter creates faces."
+                status.message = "Canceled."
+                onSelectTool()
                 true
             }
 
@@ -168,7 +238,20 @@ class ExtrudeSwipeTool(
             renderer.line(group.toWorld(pathLocal[i]), group.toWorld(pathLocal[i + 1]))
         }
         if (hasHover) {
-            renderer.line(group.toWorld(pathLocal.last()), group.toWorld(hoverLocal))
+            val preview = when {
+                arcMode == ArcMode.CENTER && arcCenterLocal != null ->
+                    arcPointsFromCenter(pathLocal.last(), hoverLocal, arcCenterLocal!!)
+                arcMode == ArcMode.THREE && arcPass1Local != null ->
+                    arcPointsThrough(pathLocal.last(), arcPass1Local!!, hoverLocal)
+                else -> null
+            }
+            if (preview != null && preview.size > 1) {
+                for (i in 0 until preview.lastIndex) {
+                    renderer.line(group.toWorld(preview[i]), group.toWorld(preview[i + 1]))
+                }
+            } else {
+                renderer.line(group.toWorld(pathLocal.last()), group.toWorld(hoverLocal))
+            }
         }
     }
 
@@ -399,6 +482,127 @@ class ExtrudeSwipeTool(
         return Vector3(up).crs(0f, 0f, 1f).nor()
     }
 
+    private fun appendArcPoints(arcPoints: List<Vector3>) {
+        if (arcPoints.size <= 1 || pathLocal.isEmpty()) {
+            return
+        }
+        for (i in 1 until arcPoints.size) {
+            val next = arcPoints[i]
+            if (pathLocal.last().dst(next) > epsilon) {
+                pathLocal.add(Vector3(next))
+            }
+        }
+    }
+
+    private fun arcPointsFromCenter(start: Vector3, end: Vector3, center: Vector3): List<Vector3> {
+        val startVec = Vector3(start).sub(center)
+        val endVec = Vector3(end).sub(center)
+        val radius = startVec.len()
+        if (radius <= epsilon) {
+            return emptyList()
+        }
+        val normal = Vector3(startVec).crs(endVec)
+        if (normal.len2() <= epsilonSq) {
+            return if (start.dst2(end) <= epsilonSq) emptyList() else listOf(start, end)
+        }
+        val u = startVec.nor()
+        val w = normal.nor()
+        val v = Vector3(w).crs(u).nor()
+        val endAngle = atan2(endVec.dot(v).toDouble(), endVec.dot(u).toDouble()).toFloat()
+        val delta = normalizeAngle(endAngle)
+        if (abs(delta) <= epsilon) {
+            return listOf(start, end)
+        }
+        val steps = stepsForArc(radius, delta)
+        return buildArcPoints(center, u, v, radius, delta, steps)
+    }
+
+    private fun arcPointsThrough(start: Vector3, mid: Vector3, end: Vector3): List<Vector3> {
+        val ab = Vector3(mid).sub(start)
+        val ac = Vector3(end).sub(start)
+        val normal = Vector3(ab).crs(ac)
+        if (normal.len2() <= epsilonSq) {
+            return if (start.dst2(end) <= epsilonSq) emptyList() else listOf(start, end)
+        }
+        val u = Vector3(ab).nor()
+        val w = normal.nor()
+        val v = Vector3(w).crs(u).nor()
+        val bx = ab.len()
+        val cx = ac.dot(u)
+        val cy = ac.dot(v)
+        val d = 2f * (bx * cy)
+        if (abs(d) <= epsilon) {
+            return listOf(start, end)
+        }
+        val ux = (bx * bx * cy) / d
+        val uy = (cx * cx + cy * cy - bx * bx) / (2f * cy)
+        val center = Vector3(start).add(Vector3(u).scl(ux)).add(Vector3(v).scl(uy))
+        val startVec = Vector3(start).sub(center)
+        val midVec = Vector3(mid).sub(center)
+        val endVec = Vector3(end).sub(center)
+        val radius = startVec.len()
+        if (radius <= epsilon) {
+            return emptyList()
+        }
+        val u2 = startVec.nor()
+        val v2 = Vector3(w).crs(u2).nor()
+        val midAngle = atan2(midVec.dot(v2).toDouble(), midVec.dot(u2).toDouble()).toFloat()
+        val endAngle = atan2(endVec.dot(v2).toDouble(), endVec.dot(u2).toDouble()).toFloat()
+        var delta = normalizeAngle(endAngle)
+        val midNorm = normalizeAngle(midAngle)
+        if (!isBetweenCCW(0f, midNorm, delta)) {
+            delta -= (Math.PI * 2.0).toFloat()
+        }
+        if (abs(delta) <= epsilon) {
+            return listOf(start, end)
+        }
+        val steps = stepsForArc(radius, delta)
+        return buildArcPoints(center, u2, v2, radius, delta, steps)
+    }
+
+    private fun buildArcPoints(center: Vector3, u: Vector3, v: Vector3, radius: Float, delta: Float, steps: Int): List<Vector3> {
+        val pts = mutableListOf(Vector3(center).add(Vector3(u).scl(radius)))
+        val step = delta / steps
+        for (i in 1..steps) {
+            val angle = step * i
+            val c = cos(angle)
+            val s = sin(angle)
+            val point = Vector3(center)
+                .add(Vector3(u).scl(radius * c))
+                .add(Vector3(v).scl(radius * s))
+            pts.add(point)
+        }
+        return pts
+    }
+
+    private fun normalizeAngle(angle: Float): Float {
+        val twoPi = (Math.PI * 2.0).toFloat()
+        val a = angle % twoPi
+        return if (a < 0f) a + twoPi else a
+    }
+
+    private fun stepsForArc(radius: Float, delta: Float): Int {
+        val maxLen = settings.arcMaxLength
+        if (maxLen <= 0.0001f) {
+            return 16
+        }
+        val arcLength = abs(delta) * radius
+        val steps = ceil(arcLength / maxLen).toInt()
+        return maxOf(1, minOf(steps, 512))
+    }
+
+    private fun isBetweenCCW(start: Float, mid: Float, end: Float): Boolean {
+        var endVal = end
+        var midVal = mid
+        if (endVal < start) {
+            endVal += (Math.PI * 2.0).toFloat()
+        }
+        if (midVal < start) {
+            midVal += (Math.PI * 2.0).toFloat()
+        }
+        return midVal >= start && midVal <= endVal
+    }
+
     private fun refreshSourceSegments() {
         sourceSegments.clear()
         val selected = scene.activeGroup().lineStore.getSelected()
@@ -430,9 +634,14 @@ class ExtrudeSwipeTool(
     private fun clearPath() {
         pathLocal.clear()
         hasHover = false
+        arcMode = ArcMode.LINE
+        arcCenterLocal = null
+        arcPass1Local = null
     }
 
     private fun isFinite(vec: Vector3): Boolean {
         return vec.x.isFinite() && vec.y.isFinite() && vec.z.isFinite()
     }
+
+    private enum class ArcMode { LINE, CENTER, THREE }
 }

@@ -311,7 +311,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 CutHolesTool(scene) { toolController.setTool(ToolId.SELECT) },
                 CutHolesTool2(scene) { toolController.setTool(ToolId.SELECT) },
                 CutOut3Tool(scene) { toolController.setTool(ToolId.SELECT) },
-                ExtrudeSwipeTool(scene),
+                ExtrudeSwipeTool(scene, polylineSettings) { toolController.setTool(ToolId.SELECT) },
                 PlaneSectionTool(scene) { toolController.setTool(ToolId.SELECT) },
                 MeshIntersectionTool(scene) { toolController.setTool(ToolId.SELECT) },
                 RectangleTool(scene),
