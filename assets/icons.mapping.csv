@@ -22,7 +22,7 @@ order|name|line|col|start_x|end_x|start_y|end_y
 21|delete|4|3|64|95|96|127
 22|flip_faces|4|4|96|127|96|127
 23|voxel_frame|4|5|128|159|96|127
-24|free-1|4|6|160|192|96|127
+24|swipe_surface|4|6|160|192|96|127
 25|lighting|5|1|0|31|128|159
 26|plugins|5|2|32|63|128|159
 27|text|5|3|64|95|128|159

@@ -88,6 +88,7 @@ import com.github.alfu32.sketch.tools.ArchitectureSlabTool
 import com.github.alfu32.sketch.tools.ArchitectureStairTool
 import com.github.alfu32.sketch.tools.ArchitectureWallTool
 import com.github.alfu32.sketch.tools.ArchitectureWindowFrameTool
+import com.github.alfu32.sketch.tools.ExtrudeSwipeTool
 import com.github.alfu32.sketch.tools.MeshIntersectionTool
 import com.github.alfu32.sketch.tools.FaceOutlineTool
 import com.github.alfu32.sketch.tools.LinearDimensionTool
@@ -310,6 +311,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 CutHolesTool(scene) { toolController.setTool(ToolId.SELECT) },
                 CutHolesTool2(scene) { toolController.setTool(ToolId.SELECT) },
                 CutOut3Tool(scene) { toolController.setTool(ToolId.SELECT) },
+                ExtrudeSwipeTool(scene),
                 PlaneSectionTool(scene) { toolController.setTool(ToolId.SELECT) },
                 MeshIntersectionTool(scene) { toolController.setTool(ToolId.SELECT) },
                 RectangleTool(scene),
@@ -831,6 +833,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ToolId.CUT_HOLES,
             ToolId.CUT_HOLES_2,
             ToolId.CUT_OUT_3,
+            ToolId.EXTRUDE_SWIPE,
             ToolId.PLANE_SECTION,
             ToolId.MESH_INTERSECTION,
             ToolId.LINEAR_DIMENSION,

@@ -677,6 +677,7 @@ class SketchUiOverlay(
             ToolId.FACE_OUTLINE,
             ToolId.LINE_OFFSET,
             ToolId.CUT_OUT_3,
+            ToolId.EXTRUDE_SWIPE,
             ToolId.PLANE_SECTION,
             ToolId.MESH_INTERSECTION
         )
@@ -2858,6 +2859,7 @@ class SketchUiOverlay(
             ToolId.CUT_HOLES -> "cleanup"
             ToolId.CUT_HOLES_2 -> "cleanup"
             ToolId.CUT_OUT_3 -> "cleanup"
+            ToolId.EXTRUDE_SWIPE -> "swipe_surface"
             ToolId.PLANE_SECTION -> "plane_section"
             ToolId.MESH_INTERSECTION -> "mesh_intersection"
             ToolId.RECTANGLE -> "rectangle"
@@ -2896,6 +2898,7 @@ class SketchUiOverlay(
             ToolId.CUT_HOLES -> Color(0.85f, 0.55f, 0.35f, 1f)
             ToolId.CUT_HOLES_2 -> Color(0.85f, 0.55f, 0.35f, 1f)
             ToolId.CUT_OUT_3 -> Color(0.85f, 0.55f, 0.35f, 1f)
+            ToolId.EXTRUDE_SWIPE -> Color(0.4f, 0.85f, 0.95f, 1f)
             ToolId.PLANE_SECTION -> Color(0.75f, 0.6f, 0.95f, 1f)
             ToolId.MESH_INTERSECTION -> Color(0.55f, 0.8f, 0.95f, 1f)
             ToolId.RECTANGLE -> Color(0.35f, 0.75f, 0.95f, 1f)
