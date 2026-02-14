@@ -10,6 +10,9 @@ import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
 import com.github.alfu32.sketch.ui.ToolMeasurement
 import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
 
 class ExtrudeSwipeTool(
     private val scene: GroupScene
@@ -176,26 +179,52 @@ class ExtrudeSwipeTool(
             return 0
         }
 
+        val firstDir = Vector3(path[1]).sub(path[0])
+        if (firstDir.len2() <= epsilonSq) {
+            return 0
+        }
+        firstDir.nor()
+        val projectedFigure = sourceSegments.mapNotNull { segment ->
+            val a = projectPointToPlane(segment.start, path[0], firstDir)
+            val b = projectPointToPlane(segment.end, path[0], firstDir)
+            if (a.dst2(b) <= epsilonSq) {
+                null
+            } else {
+                SourceSegment(a, b)
+            }
+        }
+        if (projectedFigure.isEmpty()) {
+            return 0
+        }
         val segmentDirs = buildPathDirections(path)
         if (segmentDirs.isEmpty()) {
             return 0
         }
-        val nodePlaneNormals = buildNodePlaneNormals(segmentDirs)
+        val up = localVerticalAxis(group)
+        val nodeHeadings = buildNodeHeadings(segmentDirs, up)
+        if (nodeHeadings.isEmpty()) {
+            return 0
+        }
+        val baseHeading = nodeHeadings.first()
+        val nodeAngles = nodeHeadings.map { heading ->
+            signedAngleAroundAxis(baseHeading, heading, up)
+        }
 
         var generatedFaces = 0
         var generatedLines = 0
 
         group.faceStore.withChangeSuppressed {
             group.lineStore.withChangeSuppressed {
-                sourceSegments.forEach { segment ->
-                    val aTrack = buildSweepTrack(segment.start, path, segmentDirs, nodePlaneNormals)
-                    val bTrack = buildSweepTrack(segment.end, path, segmentDirs, nodePlaneNormals)
+                projectedFigure.forEach { segment ->
                     for (i in 0 until path.lastIndex) {
-                        val a0 = aTrack[i]
-                        val b0 = bTrack[i]
-                        val b1 = bTrack[i + 1]
-                        val a1 = aTrack[i + 1]
+                        val a0 = transformFigurePoint(segment.start, path.first(), path[i], up, nodeAngles[i])
+                        val b0 = transformFigurePoint(segment.end, path.first(), path[i], up, nodeAngles[i])
+                        val a1 = transformFigurePoint(segment.start, path.first(), path[i + 1], up, nodeAngles[i + 1])
+                        val b1 = transformFigurePoint(segment.end, path.first(), path[i + 1], up, nodeAngles[i + 1])
                         val spanNormal = Vector3(b0).sub(a0).crs(Vector3(path[i + 1]).sub(path[i]))
+                        if (spanNormal.len2() <= epsilonSq) {
+                            continue
+                        }
                         generatedFaces += addQuad(group, a0, b0, b1, a1, spanNormal)
                         generatedLines += addQuadEdges(group, a0, b0, b1, a1)
                     }
@@ -272,39 +301,6 @@ class ExtrudeSwipeTool(
         return count
     }
 
-    private fun buildSweepTrack(
-        sourcePoint: Vector3,
-        path: List<Vector3>,
-        segmentDirs: List<Vector3>,
-        nodePlaneNormals: List<Vector3>
-    ): List<Vector3> {
-        val result = MutableList(path.size) { Vector3() }
-        val pathStart = path.first()
-        result[0] = Vector3(sourcePoint)
-
-        for (node in 1 until path.size) {
-            val prev = result[node - 1]
-            val dir = segmentDirs[node - 1]
-            val planeNormal = nodePlaneNormals[node]
-            val anchor = Vector3(sourcePoint).add(Vector3(path[node]).sub(pathStart))
-
-            val denom = planeNormal.dot(dir)
-            val next = if (abs(denom) > epsilon) {
-                val t = planeNormal.dot(Vector3(anchor).sub(prev)) / denom
-                if (t.isFinite()) {
-                    Vector3(prev).mulAdd(dir, t)
-                } else {
-                    anchor
-                }
-            } else {
-                anchor
-            }
-            result[node] = if (isFinite(next)) next else anchor
-        }
-
-        return result
-    }
-
     private fun buildPathDirections(path: List<Vector3>): List<Vector3> {
         val dirs = mutableListOf<Vector3>()
         for (i in 0 until path.lastIndex) {
@@ -317,24 +313,90 @@ class ExtrudeSwipeTool(
         return dirs
     }
 
-    private fun buildNodePlaneNormals(segmentDirs: List<Vector3>): List<Vector3> {
+    private fun buildNodeHeadings(segmentDirs: List<Vector3>, up: Vector3): List<Vector3> {
         if (segmentDirs.isEmpty()) {
             return emptyList()
         }
-        val normals = MutableList(segmentDirs.size + 1) { Vector3() }
-        normals[0] = Vector3(segmentDirs.first())
-        normals[normals.lastIndex] = Vector3(segmentDirs.last())
-        for (i in 1 until normals.lastIndex) {
-            val prev = segmentDirs[i - 1]
-            val next = segmentDirs[i]
+        val segmentHeadings = mutableListOf<Vector3>()
+        segmentDirs.forEach { dir ->
+            val heading = rejectOnAxis(dir, up)
+            if (heading.len2() > epsilonSq) {
+                segmentHeadings.add(heading.nor())
+            } else if (segmentHeadings.isNotEmpty()) {
+                segmentHeadings.add(Vector3(segmentHeadings.last()))
+            } else {
+                segmentHeadings.add(defaultHeading(up))
+            }
+        }
+        val headings = MutableList(segmentHeadings.size + 1) { Vector3() }
+        headings[0] = Vector3(segmentHeadings.first())
+        headings[headings.lastIndex] = Vector3(segmentHeadings.last())
+        for (i in 1 until headings.lastIndex) {
+            val prev = segmentHeadings[i - 1]
+            val next = segmentHeadings[i]
             val bisector = Vector3(prev).add(next)
-            normals[i] = if (bisector.len2() > epsilonSq) {
+            headings[i] = if (bisector.len2() > epsilonSq) {
                 bisector.nor()
             } else {
                 Vector3(next)
             }
         }
-        return normals
+        return headings
+    }
+
+    private fun signedAngleAroundAxis(from: Vector3, to: Vector3, axis: Vector3): Float {
+        val a = rejectOnAxis(from, axis)
+        val b = rejectOnAxis(to, axis)
+        if (a.len2() <= epsilonSq || b.len2() <= epsilonSq) {
+            return 0f
+        }
+        a.nor()
+        b.nor()
+        val cross = Vector3(a).crs(b)
+        return atan2(cross.dot(axis).toDouble(), a.dot(b).toDouble()).toFloat()
+    }
+
+    private fun transformFigurePoint(point: Vector3, pathStart: Vector3, pathNode: Vector3, up: Vector3, angle: Float): Vector3 {
+        val relative = Vector3(point).sub(pathStart)
+        val rotated = rotateVectorAroundAxis(relative, up, angle)
+        return Vector3(pathNode).add(rotated)
+    }
+
+    private fun rotateVectorAroundAxis(vector: Vector3, axis: Vector3, angle: Float): Vector3 {
+        if (abs(angle) <= 1e-6f) {
+            return Vector3(vector)
+        }
+        val c = cos(angle)
+        val s = sin(angle)
+        val term1 = Vector3(vector).scl(c)
+        val term2 = Vector3(axis).crs(vector).scl(s)
+        val term3 = Vector3(axis).scl(axis.dot(vector) * (1f - c))
+        return term1.add(term2).add(term3)
+    }
+
+    private fun projectPointToPlane(point: Vector3, planePoint: Vector3, planeNormal: Vector3): Vector3 {
+        val signedDistance = Vector3(point).sub(planePoint).dot(planeNormal)
+        return Vector3(point).mulAdd(planeNormal, -signedDistance)
+    }
+
+    private fun rejectOnAxis(vector: Vector3, axis: Vector3): Vector3 {
+        return Vector3(vector).mulAdd(axis, -vector.dot(axis))
+    }
+
+    private fun localVerticalAxis(group: GroupScene.GroupNode): Vector3 {
+        val up = group.vectorToLocal(Vector3(0f, 1f, 0f))
+        if (up.len2() <= epsilonSq) {
+            return Vector3(0f, 1f, 0f)
+        }
+        return up.nor()
+    }
+
+    private fun defaultHeading(up: Vector3): Vector3 {
+        val candidate = Vector3(up).crs(1f, 0f, 0f)
+        if (candidate.len2() > epsilonSq) {
+            return candidate.nor()
+        }
+        return Vector3(up).crs(0f, 0f, 1f).nor()
     }
 
     private fun refreshSourceSegments() {
