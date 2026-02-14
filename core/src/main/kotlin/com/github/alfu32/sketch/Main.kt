@@ -1127,7 +1127,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             executeCommand = ::executePaletteCommandForMcp,
             executeConsoleCommand = ::executeConsoleCommandForMcp,
             dispatchPointerEvent = ::dispatchPointerEventForMcp,
-            contractProvider = ::buildMcpContractForMcp
+            contractProvider = ::buildMcpContractForMcp,
+            sceneSummaryProvider = ::buildMcpSceneSummaryForMcp,
+            selectionSummaryProvider = ::buildMcpSelectionSummaryForMcp
         )
         val message = mcpServer.start()
         mcpPort = mcpServer.port()
@@ -1439,6 +1441,133 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             )
         )
         return toMcpJson(payload)
+    }
+
+    private fun buildMcpSceneSummaryForMcp(): String {
+        val latch = CountDownLatch(1)
+        val result = AtomicReference<String>()
+        Gdx.app.postRunnable {
+            try {
+                val root = scene.root
+                var groupCount = 0
+                var edgeCount = root.lineStore.getSegments().size
+                var faceCount = root.faceStore.getTriangles().size
+                var voxelCount = root.voxelStore?.all()?.size ?: 0
+                scene.walkGroups(root) { group ->
+                    groupCount++
+                    edgeCount += group.lineStore.getSegments().size
+                    faceCount += group.faceStore.getTriangles().size
+                    voxelCount += group.voxelStore?.all()?.size ?: 0
+                }
+                val payload = linkedMapOf<String, Any?>(
+                    "success" to true,
+                    "generatedAt" to LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+                    "activeTool" to linkedMapOf(
+                        "id" to toolController.activeToolId().name,
+                        "name" to toolController.activeToolId().displayName
+                    ),
+                    "activeCameraMode" to activeCameraMode.name,
+                    "activeGroup" to linkedMapOf(
+                        "id" to scene.activeGroup().id,
+                        "name" to scene.activeGroup().name,
+                        "isEditing" to scene.isEditing()
+                    ),
+                    "counts" to linkedMapOf(
+                        "groups" to groupCount,
+                        "groupsIncludingRoot" to groupCount + 1,
+                        "faces" to faceCount,
+                        "edges" to edgeCount,
+                        "voxels" to voxelCount
+                    )
+                )
+                result.set(toMcpJson(payload))
+            } catch (t: Throwable) {
+                result.set(
+                    toMcpJson(
+                        linkedMapOf(
+                            "success" to false,
+                            "message" to "Scene summary failed: ${t.message ?: t.javaClass.simpleName}"
+                        )
+                    )
+                )
+            } finally {
+                latch.countDown()
+            }
+        }
+        val ok = latch.await(3, TimeUnit.SECONDS)
+        if (!ok) {
+            return toMcpJson(linkedMapOf("success" to false, "message" to "Scene summary timed out."))
+        }
+        return result.get() ?: toMcpJson(linkedMapOf("success" to false, "message" to "Scene summary unavailable."))
+    }
+
+    private fun buildMcpSelectionSummaryForMcp(): String {
+        val latch = CountDownLatch(1)
+        val result = AtomicReference<String>()
+        Gdx.app.postRunnable {
+            try {
+                val info = selectionInfo()
+                val active = scene.activeGroup()
+                val selectedGroups = scene.selectedGroups().map { group ->
+                    linkedMapOf(
+                        "id" to group.id,
+                        "name" to group.name
+                    )
+                }
+                val selectedVoxels = scene.selectedVoxels(active)
+                    .take(128)
+                    .map { key -> linkedMapOf("x" to key.x, "y" to key.y, "z" to key.z) }
+                val selectedArch = active.architectureStore?.selectedElement()?.let { element ->
+                    linkedMapOf(
+                        "kind" to element.kind.name,
+                        "id" to element.id
+                    )
+                }
+                val payload = linkedMapOf<String, Any?>(
+                    "success" to true,
+                    "generatedAt" to LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+                    "activeGroup" to linkedMapOf(
+                        "id" to active.id,
+                        "name" to active.name,
+                        "kind" to active.kind.name
+                    ),
+                    "counts" to linkedMapOf(
+                        "edges" to info.edgeCount,
+                        "faces" to info.faceCount,
+                        "voxels" to info.voxelCount,
+                        "groups" to info.groupCount,
+                        "dimensions" to info.dimensionCount,
+                        "texts" to info.textCount
+                    ),
+                    "selectedGroups" to selectedGroups,
+                    "selectedVoxelsSample" to selectedVoxels,
+                    "selectedArchitectureElement" to selectedArch,
+                    "selectedText" to linkedMapOf(
+                        "id" to info.selectedTextId,
+                        "value" to info.selectedTextValue,
+                        "size" to info.selectedTextSize,
+                        "screenText" to info.selectedTextScreen
+                    )
+                )
+                result.set(toMcpJson(payload))
+            } catch (t: Throwable) {
+                result.set(
+                    toMcpJson(
+                        linkedMapOf(
+                            "success" to false,
+                            "message" to "Selection summary failed: ${t.message ?: t.javaClass.simpleName}"
+                        )
+                    )
+                )
+            } finally {
+                latch.countDown()
+            }
+        }
+        val ok = latch.await(3, TimeUnit.SECONDS)
+        if (!ok) {
+            return toMcpJson(linkedMapOf("success" to false, "message" to "Selection summary timed out."))
+        }
+        return result.get() ?: toMcpJson(linkedMapOf("success" to false, "message" to "Selection summary unavailable."))
     }
 
     private fun toMcpJson(value: Any?): String {

@@ -290,6 +290,8 @@ class ConsoleTui(
                       mcp: port <1..65535>
 
                     MCP HTTP endpoints (localhost only):
+                      POST /  (MCP JSON-RPC: initialize, tools/list, tools/call)
+                      POST /mcp  (alias for MCP JSON-RPC)
                       GET  /mcp/status
                       GET  /mcp/contract
                       GET  /scene/listCommands
