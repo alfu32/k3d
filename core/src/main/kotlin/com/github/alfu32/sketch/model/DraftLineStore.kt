@@ -75,6 +75,20 @@ class DraftLineStore {
         return before - segments.size
     }
 
+    fun deleteSegments(items: Collection<Segment>): Int {
+        if (items.isEmpty()) {
+            return 0
+        }
+        val before = segments.size
+        val target = items.toSet()
+        segments.removeAll(target)
+        selected.removeAll(target)
+        if (before != segments.size) {
+            notifyChange()
+        }
+        return before - segments.size
+    }
+
     fun transformSelected(transform: (Vector3) -> Vector3): Int {
         if (selected.isEmpty()) {
             return 0

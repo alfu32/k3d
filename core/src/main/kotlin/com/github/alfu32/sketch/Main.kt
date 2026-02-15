@@ -170,6 +170,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private val selectedFaceColor = Color(1f, 0f, 0f, 0.3f)
     private val selectedLineColor = Color(1f, 0f, 0f, 1f)
     private val architectureHoleGuideColor = Color(0.2f, 0.55f, 0.95f, 1f)
+    private val architectureHoleHotspotColor = Color(0.2f, 0.55f, 0.95f, 1f)
+    private val architectureSlabHotspotColor = Color(0.2f, 0.9f, 0.85f, 1f)
+    private val architectureFrameHotspotColor = Color(1f, 0.7f, 0.25f, 1f)
     private val selectedEntityBoxColor = Color(0.2f, 0.7f, 0.95f, 1f)
     private val editModeBoxColor = Color(1f, 0.6f, 0.2f, 1f)
     private val selectedLineWidth = 8f
@@ -413,6 +416,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             polylineSettings,
             architectureSettings,
             ::architectureSelectionInfo,
+            ::architectureSelectionSummary,
+            ::updateArchitectureElementName,
             ::updateArchitectureWallParameters,
             ::updateArchitectureSlabParameters,
             ::updateArchitectureStairParameters,
@@ -549,11 +554,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         pluginHost.getCommandPalette().registerCommand(
             com.github.alfu32.sketch.plugin.PaletteCommand(
                 id = "edit.new_architecture_group",
-                name = "Edit> New Architecture Group",
-                description = "Create an architecture group and enter edit mode",
+                name = "Edit> Architecture: Wall Tool",
+                description = "Activate architecture modeling in the model root",
                 icon = "edit",
                 category = "Edit",
-                tags = listOf("architecture", "group", "wall", "slab", "stair"),
+                tags = listOf("architecture", "wall", "slab", "stair"),
                 priority = 1,
                 execute = {
                     createArchitectureGroup()
@@ -1334,7 +1339,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                         "resetScene()",
                         "rootPrototype()",
                         "createVoxelGroup()",
-                        "createArchitectureGroup()"
+                        "hasArchitectureElements()"
                     )
                 ),
                 linkedMapOf(
@@ -1520,12 +1525,15 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 val selectedVoxels = scene.selectedVoxels(active)
                     .take(128)
                     .map { key -> linkedMapOf("x" to key.x, "y" to key.y, "z" to key.z) }
-                val selectedArch = active.architectureStore?.selectedElement()?.let { element ->
-                    linkedMapOf(
-                        "kind" to element.kind.name,
-                        "id" to element.id
-                    )
-                }
+                val selectedArch = scene.root.architectureStore
+                    ?.selectedElements()
+                    ?.take(128)
+                    ?.map { element ->
+                        linkedMapOf(
+                            "kind" to element.kind.name,
+                            "id" to element.id
+                        )
+                    }
                 val payload = linkedMapOf<String, Any?>(
                     "success" to true,
                     "generatedAt" to LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
@@ -1544,7 +1552,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                     ),
                     "selectedGroups" to selectedGroups,
                     "selectedVoxelsSample" to selectedVoxels,
-                    "selectedArchitectureElement" to selectedArch,
+                    "selectedArchitectureElements" to selectedArch,
                     "selectedText" to linkedMapOf(
                         "id" to info.selectedTextId,
                         "value" to info.selectedTextValue,
@@ -1943,6 +1951,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         drawDraftLines()
         drawArchitectureHoleGuides()
         drawArchitectureWallEndpointHitAreas()
+        drawArchitectureConstructionHotspots()
         drawDimensions()
         toolController.render(shapeRenderer)
         drawActiveToolMeasurementLine()
@@ -2787,11 +2796,19 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun drawArchitectureHoleGuides() {
-        val active = scene.activeGroup()
-        if (!scene.isEditing() || !scene.isArchitectureGroup(active)) {
+        if (!scene.hasArchitectureElements()) {
             return
         }
-        val guides = scene.architectureHoleGuideSegmentsWorld(active, includeDiagonals = true)
+        val selectedWallIds = scene.selectedArchitectureElements(scene.root)
+            .filter { it.kind == ArchitectureStore.ElementKind.WALL }
+            .map { it.id }
+            .toSet()
+        if (selectedWallIds.isEmpty()) {
+            return
+        }
+        val guides = selectedWallIds.flatMap { wallId ->
+            scene.architectureHoleGuideSegmentsWorld(scene.root, includeDiagonals = true, wallId = wallId)
+        }
         if (guides.isEmpty()) {
             return
         }
@@ -2802,32 +2819,80 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun drawArchitectureWallEndpointHitAreas() {
-        val active = scene.activeGroup()
-        if (!scene.isEditing() || !scene.isArchitectureGroup(active)) {
+        if (!scene.hasArchitectureElements()) {
             return
         }
-        val markers = scene.architectureWallEndpointHandleMarkersWorld(active)
-        if (markers.isEmpty()) {
+        val root = scene.root
+        val wallMarkers = scene.architectureWallEndpointHandleMarkersWorld(root)
+        val slabMarkers = scene.architectureSlabEndpointHandleMarkersWorld(root)
+        val frameMarkers = scene.architectureFrameEndpointHandleMarkersWorld(root)
+        val selectedWallIds = scene.selectedArchitectureElements(root)
+            .filter { it.kind == ArchitectureStore.ElementKind.WALL }
+            .map { it.id }
+            .toSet()
+        val holeMarkers = if (selectedWallIds.isEmpty()) {
+            emptyList()
+        } else {
+            selectedWallIds.flatMap { wallId ->
+                scene.architectureHoleHandleMarkersWorld(root, wallId = wallId)
+            }
+        }
+        if (wallMarkers.isEmpty() && slabMarkers.isEmpty() && frameMarkers.isEmpty() && holeMarkers.isEmpty()) {
             return
         }
-        shapeRenderer.color = architectureHoleGuideColor
         Gdx.gl.glLineWidth(3f)
-        markers.forEach { marker ->
-            val half = marker.halfSize
-            val y = marker.center.y + 0.01f
-            val c = marker.center
-            val p0 = Vector3(c.x - half, y, c.z - half)
-            val p1 = Vector3(c.x + half, y, c.z - half)
-            val p2 = Vector3(c.x + half, y, c.z + half)
-            val p3 = Vector3(c.x - half, y, c.z + half)
-            shapeRenderer.line(p0, p1)
-            shapeRenderer.line(p1, p2)
-            shapeRenderer.line(p2, p3)
-            shapeRenderer.line(p3, p0)
-            shapeRenderer.line(p0, p2)
-            shapeRenderer.line(p1, p3)
-        }
+        shapeRenderer.color = architectureHoleGuideColor
+        wallMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.center, marker.halfSize) }
+        shapeRenderer.color = architectureSlabHotspotColor
+        slabMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.center, marker.halfSize) }
+        shapeRenderer.color = architectureFrameHotspotColor
+        frameMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.center, marker.halfSize) }
+        shapeRenderer.color = architectureHoleHotspotColor
+        holeMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.world, 0.18f) }
         Gdx.gl.glLineWidth(2f)
+    }
+
+    private fun drawArchitectureConstructionHotspots() {
+        if (!scene.hasArchitectureElements()) {
+            return
+        }
+        val root = scene.root
+        val selections = scene.selectedArchitectureElements(root)
+        if (selections.isEmpty()) {
+            return
+        }
+        val slabIds = selections.filter { it.kind == ArchitectureStore.ElementKind.SLAB }.map { it.id }.toSet()
+        val frameIds = selections.filter { it.kind == ArchitectureStore.ElementKind.FRAME }.map { it.id }.toSet()
+        val wallIds = selections.filter { it.kind == ArchitectureStore.ElementKind.WALL }.map { it.id }.toSet()
+        val slabMarkers = slabIds.flatMap { slabId -> scene.architectureSlabConstructionHotspotsWorld(root, slabId = slabId) }
+        val frameMarkers = frameIds.flatMap { frameId -> scene.architectureFrameConstructionHotspotsWorld(root, frameId = frameId) }
+        val holeMarkers = wallIds.flatMap { wallId -> scene.architectureHoleConstructionHotspotsWorld(root, wallId = wallId) }
+        if (slabMarkers.isEmpty() && frameMarkers.isEmpty() && holeMarkers.isEmpty()) {
+            return
+        }
+        val hotspotSize = 0.16f
+        Gdx.gl.glLineWidth(3f)
+        shapeRenderer.color = architectureSlabHotspotColor
+        slabMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.world, hotspotSize) }
+        shapeRenderer.color = architectureFrameHotspotColor
+        frameMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.world, hotspotSize) }
+        shapeRenderer.color = architectureHoleHotspotColor
+        holeMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.world, hotspotSize) }
+        Gdx.gl.glLineWidth(2f)
+    }
+
+    private fun drawArchitectureHandleSquare(center: Vector3, halfSize: Float) {
+        val y = center.y + 0.01f
+        val p0 = Vector3(center.x - halfSize, y, center.z - halfSize)
+        val p1 = Vector3(center.x + halfSize, y, center.z - halfSize)
+        val p2 = Vector3(center.x + halfSize, y, center.z + halfSize)
+        val p3 = Vector3(center.x - halfSize, y, center.z + halfSize)
+        shapeRenderer.line(p0, p1)
+        shapeRenderer.line(p1, p2)
+        shapeRenderer.line(p2, p3)
+        shapeRenderer.line(p3, p0)
+        shapeRenderer.line(p0, p2)
+        shapeRenderer.line(p1, p3)
     }
 
     private fun drawLineCross(point: Vector3, size: Float) {
@@ -3311,31 +3376,36 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private fun deleteSelection() {
         val group = scene.activeGroup()
         val isVoxel = scene.isVoxelGroup(group)
-        val isArchitecture = scene.isArchitectureGroup(group)
+        val hasArchitecture = scene.hasArchitectureElements()
+        val architectureElementDeletes = if (hasArchitecture) {
+            scene.deleteSelectedArchitectureElements(scene.root)
+        } else {
+            0
+        }
         val voxelDeletes = if (isVoxel) {
             scene.deleteSelectedVoxels(group)
         } else {
             0
         }
-        val architectureHoleDeletes = if (isArchitecture) {
+        val architectureHoleDeletes = if (hasArchitecture) {
             scene.deleteSelectedArchitectureHoleContours(group)
         } else {
             0
         }
-        val edges = if (isVoxel || isArchitecture) 0 else activeLineStore().deleteSelected()
-        val faces = if (isVoxel || isArchitecture) 0 else activeFaceStore().deleteSelected()
+        val edges = if (isVoxel) 0 else activeLineStore().deleteSelected()
+        val faces = if (isVoxel) 0 else activeFaceStore().deleteSelected()
         val dimensions = activeDimensionStore().deleteSelected()
         val texts = activeTextStore().deleteSelected()
         val groups = scene.deleteSelectedGroups()
-        if (edges + faces + voxelDeletes + architectureHoleDeletes + dimensions + texts + groups > 0) {
+        if (edges + faces + voxelDeletes + architectureHoleDeletes + architectureElementDeletes + dimensions + texts + groups > 0) {
             statusModel.message =
-                "Deleted | voxels $voxelDeletes holes $architectureHoleDeletes edges $edges faces $faces dimensions $dimensions texts $texts groups $groups"
-            if (groups > 0 && edges + faces + voxelDeletes + architectureHoleDeletes == 0) {
+                "Deleted | architecture $architectureElementDeletes voxels $voxelDeletes holes $architectureHoleDeletes edges $edges faces $faces dimensions $dimensions texts $texts groups $groups"
+            if (groups > 0 && edges + faces + voxelDeletes + architectureHoleDeletes + architectureElementDeletes == 0) {
                 undoManager.commit("Delete")
                 saveModel()
             }
-        } else if (isArchitecture) {
-            statusModel.message = "Select hole contours to delete holes in architecture groups."
+        } else if (hasArchitecture) {
+            statusModel.message = "Select hole contours to delete wall holes."
         }
     }
 
@@ -3486,6 +3556,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 SketchUiOverlay.ArchitectureElementInfo(
                     kind = SketchUiOverlay.ArchitectureElementKind.WALL,
                     id = wall.id,
+                    name = wall.name,
                     wallThickness = wall.thickness,
                     wallHeight = wall.height,
                     wallInclinationDeg = wall.inclinationDeg,
@@ -3498,6 +3569,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 SketchUiOverlay.ArchitectureElementInfo(
                     kind = SketchUiOverlay.ArchitectureElementKind.SLAB,
                     id = slab.id,
+                    name = slab.name,
                     slabThickness = slab.thickness,
                     slabTopColor = Color(slab.topColor),
                     slabBottomColor = Color(slab.bottomColor),
@@ -3509,6 +3581,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 SketchUiOverlay.ArchitectureElementInfo(
                     kind = SketchUiOverlay.ArchitectureElementKind.STAIR,
                     id = stair.id,
+                    name = stair.name,
                     stairHeight = stair.height,
                     stairStepCount = stair.stepCount,
                     stairSupportThickness = stair.supportThickness,
@@ -3523,25 +3596,49 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 SketchUiOverlay.ArchitectureElementInfo(
                     kind = SketchUiOverlay.ArchitectureElementKind.FRAME,
                     id = frame.id,
+                    name = frame.name,
                     frameDepth = frame.depth,
                     frameWidth = frame.frameWidth,
-                    frameColor = Color(frame.color)
+                    frameColor = Color(frame.color),
+                    frameGlazingEnabled = frame.glazingEnabled,
+                    frameGlazingColor = Color(frame.glazingColor)
                 )
             }
         }
     }
 
+    private fun architectureSelectionSummary(): SketchUiOverlay.ArchitectureSelectionSummary {
+        val group = architecturePanelTargetGroup() ?: return SketchUiOverlay.ArchitectureSelectionSummary()
+        val store = group.architectureStore ?: return SketchUiOverlay.ArchitectureSelectionSummary()
+        val selected = store.selectedElements()
+        val selectedWalls = selected.filter { it.kind == ArchitectureStore.ElementKind.WALL }
+        val selectedSlabs = selected.filter { it.kind == ArchitectureStore.ElementKind.SLAB }
+        val selectedStairs = selected.filter { it.kind == ArchitectureStore.ElementKind.STAIR }
+        val selectedFrames = selected.filter { it.kind == ArchitectureStore.ElementKind.FRAME }
+
+        val singleWall = if (selectedWalls.size == 1) store.wallById(selectedWalls.first().id) else null
+        val singleSlab = if (selectedSlabs.size == 1) store.allSlabs().firstOrNull { it.id == selectedSlabs.first().id } else null
+        val singleStair = if (selectedStairs.size == 1) store.allStairs().firstOrNull { it.id == selectedStairs.first().id } else null
+        val singleFrame = if (selectedFrames.size == 1) store.allFrames().firstOrNull { it.id == selectedFrames.first().id } else null
+
+        return SketchUiOverlay.ArchitectureSelectionSummary(
+            selectedWallCount = selectedWalls.size,
+            selectedSlabCount = selectedSlabs.size,
+            selectedStairCount = selectedStairs.size,
+            selectedFrameCount = selectedFrames.size,
+            singleWallId = singleWall?.id,
+            singleSlabId = singleSlab?.id,
+            singleStairId = singleStair?.id,
+            singleFrameId = singleFrame?.id,
+            singleWallName = singleWall?.name,
+            singleSlabName = singleSlab?.name,
+            singleStairName = singleStair?.name,
+            singleFrameName = singleFrame?.name
+        )
+    }
+
     private fun architecturePanelTargetGroup(): GroupScene.GroupNode? {
-        val active = scene.activeGroup()
-        if (scene.isArchitectureGroup(active)) {
-            return active
-        }
-        val selected = scene.selectedGroups().toList()
-        if (selected.size != 1) {
-            return null
-        }
-        val candidate = selected.first()
-        return if (scene.isArchitectureGroup(candidate)) candidate else null
+        return scene.root
     }
 
     private fun architecturePanelSelection(store: ArchitectureStore): ArchitectureStore.ElementSelection? {
@@ -3571,8 +3668,23 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         interiorColor: Color
     ) {
         val group = architecturePanelTargetGroup() ?: return
-        if (scene.updateArchitectureWall(group, id, thickness, height, inclinationDeg, exteriorColor, interiorColor)) {
-            statusModel.message = "Wall parameters updated."
+        val selectedWallIds = scene.selectedArchitectureElements(group)
+            .filter { it.kind == ArchitectureStore.ElementKind.WALL }
+            .map { it.id }
+            .toSet()
+        val targetIds = if (selectedWallIds.isEmpty()) setOf(id) else selectedWallIds
+        var updated = 0
+        targetIds.forEach { wallId ->
+            if (scene.updateArchitectureWall(group, wallId, thickness, height, inclinationDeg, exteriorColor, interiorColor)) {
+                updated++
+            }
+        }
+        if (updated > 0) {
+            statusModel.message = if (updated == 1) {
+                "Wall parameters updated."
+            } else {
+                "Wall parameters updated for $updated walls."
+            }
         }
     }
 
@@ -3584,8 +3696,23 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         sideColor: Color
     ) {
         val group = architecturePanelTargetGroup() ?: return
-        if (scene.updateArchitectureSlab(group, id, thickness, topColor, bottomColor, sideColor)) {
-            statusModel.message = "Slab parameters updated."
+        val selectedSlabIds = scene.selectedArchitectureElements(group)
+            .filter { it.kind == ArchitectureStore.ElementKind.SLAB }
+            .map { it.id }
+            .toSet()
+        val targetIds = if (selectedSlabIds.isEmpty()) setOf(id) else selectedSlabIds
+        var updated = 0
+        targetIds.forEach { slabId ->
+            if (scene.updateArchitectureSlab(group, slabId, thickness, topColor, bottomColor, sideColor)) {
+                updated++
+            }
+        }
+        if (updated > 0) {
+            statusModel.message = if (updated == 1) {
+                "Slab parameters updated."
+            } else {
+                "Slab parameters updated for $updated slabs."
+            }
         }
     }
 
@@ -3600,27 +3727,96 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         supportColor: Color
     ) {
         val group = architecturePanelTargetGroup() ?: return
-        if (
-            scene.updateArchitectureStair(
-                group,
-                id,
-                height,
-                stepCount,
-                supportThickness,
-                railLeftEnabled,
-                railRightEnabled,
-                treadColor,
-                supportColor
-            )
-        ) {
-            statusModel.message = "Stair parameters updated."
+        val selectedStairIds = scene.selectedArchitectureElements(group)
+            .filter { it.kind == ArchitectureStore.ElementKind.STAIR }
+            .map { it.id }
+            .toSet()
+        val targetIds = if (selectedStairIds.isEmpty()) setOf(id) else selectedStairIds
+        var updated = 0
+        targetIds.forEach { stairId ->
+            if (
+                scene.updateArchitectureStair(
+                    group,
+                    stairId,
+                    height,
+                    stepCount,
+                    supportThickness,
+                    railLeftEnabled,
+                    railRightEnabled,
+                    treadColor,
+                    supportColor
+                )
+            ) {
+                updated++
+            }
+        }
+        if (updated > 0) {
+            statusModel.message = if (updated == 1) {
+                "Stair parameters updated."
+            } else {
+                "Stair parameters updated for $updated stairs."
+            }
         }
     }
 
-    private fun updateArchitectureFrameParameters(id: String, depth: Float, frameWidth: Float, color: Color) {
+    private fun updateArchitectureFrameParameters(
+        id: String,
+        depth: Float,
+        frameWidth: Float,
+        color: Color,
+        glazingEnabled: Boolean,
+        glazingColor: Color
+    ) {
         val group = architecturePanelTargetGroup() ?: return
-        if (scene.updateArchitectureFrame(group, id, depth, frameWidth, color)) {
-            statusModel.message = "Frame parameters updated."
+        val selectedFrameIds = scene.selectedArchitectureElements(group)
+            .filter { it.kind == ArchitectureStore.ElementKind.FRAME }
+            .map { it.id }
+            .toSet()
+        val targetIds = if (selectedFrameIds.isEmpty()) setOf(id) else selectedFrameIds
+        var updated = 0
+        targetIds.forEach { frameId ->
+            if (scene.updateArchitectureFrame(group, frameId, depth, frameWidth, color, glazingEnabled, glazingColor)) {
+                updated++
+            }
+        }
+        if (updated > 0) {
+            statusModel.message = if (updated == 1) {
+                "Frame parameters updated."
+            } else {
+                "Frame parameters updated for $updated frames."
+            }
+        }
+    }
+
+    private fun updateArchitectureElementName(
+        kind: SketchUiOverlay.ArchitectureElementKind,
+        id: String,
+        name: String
+    ) {
+        val group = architecturePanelTargetGroup() ?: return
+        val targetKind = when (kind) {
+            SketchUiOverlay.ArchitectureElementKind.WALL -> ArchitectureStore.ElementKind.WALL
+            SketchUiOverlay.ArchitectureElementKind.SLAB -> ArchitectureStore.ElementKind.SLAB
+            SketchUiOverlay.ArchitectureElementKind.STAIR -> ArchitectureStore.ElementKind.STAIR
+            SketchUiOverlay.ArchitectureElementKind.FRAME -> ArchitectureStore.ElementKind.FRAME
+        }
+        val selectedIds = scene.selectedArchitectureElements(group)
+            .filter { it.kind == targetKind }
+            .map { it.id }
+            .toSet()
+        val targetIds = if (selectedIds.isEmpty()) setOf(id) else selectedIds
+        var updated = 0
+        targetIds.forEach { targetId ->
+            if (scene.updateArchitectureElementName(group, targetKind, targetId, name)) {
+                updated++
+            }
+        }
+        if (updated > 0) {
+            statusModel.message = if (updated == 1) {
+                "${targetKind.name.lowercase().replaceFirstChar { it.uppercase() }} name updated."
+            } else {
+                "${targetKind.name.lowercase().replaceFirstChar { it.uppercase() }} names updated for $updated elements."
+            }
         }
     }
 
@@ -3700,12 +3896,17 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun createArchitectureGroup() {
-        val group = scene.createArchitectureGroup(color = statusModel.paintColor)
-        scene.enterGroup(group)
-        statusModel.message = "Architecture group created. Editing architecture group."
+        var exited = false
+        while (scene.exitGroup()) {
+            exited = true
+        }
+        scene.clearAllSelections()
+        statusModel.message = if (exited) {
+            "Exited object edit mode. Architecture wall tool active."
+        } else {
+            "Architecture wall tool active."
+        }
         toolController.setTool(ToolId.ARCH_WALL)
-        undoManager.commit("Create Architecture Group")
-        saveModel()
     }
 
     private fun ensureActiveVoxelGroupForTools(): GroupScene.GroupNode? {
@@ -3722,16 +3923,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun ensureActiveArchitectureGroupForTools(): GroupScene.GroupNode? {
-        val current = scene.activeGroup()
-        if (scene.isArchitectureGroup(current)) {
-            return current
+        while (scene.exitGroup()) {
+            // Architecture entities live at model level.
         }
-        val group = scene.createArchitectureGroup(color = statusModel.paintColor)
-        scene.enterGroup(group)
-        statusModel.message = "Architecture group created. Editing architecture group."
-        undoManager.commit("Create Architecture Group")
-        saveModel()
-        return group
+        return scene.root
     }
 
     private data class WorldTriangle(
@@ -3980,7 +4175,18 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun ungroupSelection() {
         val targets = scene.selectedGroups().toList()
+        val architectureSelections = scene.selectedArchitectureElements(scene.root)
+        val explodedArchitecture = if (architectureSelections.isNotEmpty()) {
+            scene.explodeSelectedArchitectureElements(scene.root)
+        } else {
+            0
+        }
         if (targets.isEmpty()) {
+            if (explodedArchitecture > 0) {
+                statusModel.message = "Exploded $explodedArchitecture architecture element(s)."
+                undoManager.commit("Explode Architecture")
+                saveModel()
+            }
             return
         }
         val voxelTargets = targets.count { scene.isVoxelGroup(it) }
@@ -3992,18 +4198,28 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             // Defer actual explode one frame so the user sees feedback before heavy geometry transfer.
             Gdx.app.postRunnable {
                 val count = scene.ungroupSelected()
-                if (count > 0) {
-                    statusModel.message = "Ungrouped $count group(s)."
-                    undoManager.commit("Ungroup")
+                val changed = count + explodedArchitecture
+                if (changed > 0) {
+                    statusModel.message = if (explodedArchitecture > 0) {
+                        "Ungrouped $count group(s), exploded $explodedArchitecture architecture element(s)."
+                    } else {
+                        "Ungrouped $count group(s)."
+                    }
+                    undoManager.commit("Explode")
                     saveModel()
                 }
             }
             return
         }
         val count = scene.ungroupSelected()
-        if (count > 0) {
-            statusModel.message = "Ungrouped $count group(s)."
-            undoManager.commit("Ungroup")
+        val changed = count + explodedArchitecture
+        if (changed > 0) {
+            statusModel.message = if (explodedArchitecture > 0) {
+                "Ungrouped $count group(s), exploded $explodedArchitecture architecture element(s)."
+            } else {
+                "Ungrouped $count group(s)."
+            }
+            undoManager.commit("Explode")
             saveModel()
         }
     }
@@ -4205,6 +4421,14 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 hasAny = true
             } else {
                 bounds.ext(groupBounds)
+            }
+        }
+        scene.selectedArchitectureBounds(scene.root)?.let { architectureBounds ->
+            if (!hasAny) {
+                bounds.set(architectureBounds)
+                hasAny = true
+            } else {
+                bounds.ext(architectureBounds)
             }
         }
         group.lineStore.getSelected().forEach { segment ->

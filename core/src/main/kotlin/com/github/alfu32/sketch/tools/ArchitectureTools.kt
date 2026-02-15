@@ -273,10 +273,6 @@ class ArchitectureAddHoleTool(
             return false
         }
         val group = resolveWallTargetGroup(status) ?: return true
-        if (!scene.isWallOnlyArchitectureGroup(group)) {
-            status.message = "Add Hole works only on wall-only architecture groups."
-            return true
-        }
         if (firstCornerWorld == null) {
             firstCornerWorld = Vector3(world)
             firstNormalWorld = normal?.let { Vector3(it).nor() } ?: Vector3(0f, 1f, 0f)
@@ -345,22 +341,11 @@ class ArchitectureAddHoleTool(
     }
 
     private fun resolveWallTargetGroup(status: StatusModel): GroupScene.GroupNode? {
-        val active = scene.activeGroup()
-        if (scene.isArchitectureGroup(active) && scene.isWallOnlyArchitectureGroup(active)) {
-            return active
+        if (!scene.hasArchitectureElements()) {
+            status.message = "No walls available for hole creation."
+            return null
         }
-        val selected = scene.selectedGroups().filter { scene.isArchitectureGroup(it) && scene.isWallOnlyArchitectureGroup(it) }
-        return when {
-            selected.size == 1 -> selected.first()
-            selected.size > 1 -> {
-                status.message = "Select only one wall group before drawing holes."
-                null
-            }
-            else -> {
-                status.message = "Select a wall group (or enter one) before drawing holes."
-                null
-            }
-        }
+        return ensureArchitectureGroup?.invoke() ?: scene.activeGroup()
     }
 }
 
@@ -894,7 +879,9 @@ abstract class ArchitectureFrameTool(
             depth = settings.frameDepth,
             frameWidth = settings.frameWidth,
             kind = frameKind,
-            color = settings.frameColor
+            color = settings.frameColor,
+            glazingEnabled = settings.frameGlazingEnabled,
+            glazingColor = settings.frameGlazingColor
         )
         if (created) {
             status.message = "${frameKind.name.lowercase().replaceFirstChar { it.uppercaseChar() }} frame created."
@@ -955,16 +942,7 @@ private fun resolveArchitectureGroup(
     ensureArchitectureGroup: (() -> GroupScene.GroupNode?)?
 ): GroupScene.GroupNode? {
     val current = scene.activeGroup()
-    if (scene.isArchitectureGroup(current)) {
-        return current
-    }
-    val created = ensureArchitectureGroup?.invoke()
-    val resolved = created ?: scene.activeGroup()
-    if (!scene.isArchitectureGroup(resolved)) {
-        status.message = "Active object is not an architecture group."
-        return null
-    }
-    return resolved
+    return ensureArchitectureGroup?.invoke() ?: current
 }
 
 private fun drawLoop(renderer: ShapeRenderer, points: List<Vector3>, color: Color) {

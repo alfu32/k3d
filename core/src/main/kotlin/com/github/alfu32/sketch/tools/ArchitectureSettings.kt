@@ -21,5 +21,7 @@ data class ArchitectureSettings(
     var stairSupportColor: Color = Color(0.82f, 0.82f, 0.82f, 1f),
     var frameDepth: Float = 0.12f,
     var frameWidth: Float = 0.06f,
-    var frameColor: Color = Color(0.90f, 0.90f, 0.90f, 1f)
+    var frameColor: Color = Color(0.90f, 0.90f, 0.90f, 1f),
+    var frameGlazingEnabled: Boolean = true,
+    var frameGlazingColor: Color = Color(0.72f, 0.84f, 0.95f, 0.40f)
 )

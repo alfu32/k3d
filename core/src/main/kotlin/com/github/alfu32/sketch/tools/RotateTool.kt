@@ -111,6 +111,11 @@ class RotateTool(
         val quaternionLocal = Quaternion().setFromAxis(axisL, degrees)
         val quaternionWorld = Quaternion().setFromAxis(axisW, degrees)
         if (status.copyMode) {
+            val rotatedArchitecture = scene.copySelectedArchitectureElements(
+                group = group,
+                pointTransform = { point -> Vector3(point).sub(cWorld).mul(quaternionWorld).add(cWorld) },
+                vectorTransform = { vector -> Vector3(vector).mul(quaternionWorld) }
+            )
             val movedFaces = group.faceStore.copySelected { point ->
                 Vector3(point).sub(cLocal).mul(quaternionLocal).add(cLocal)
             }
@@ -121,8 +126,13 @@ class RotateTool(
                 { point -> Vector3(point).sub(cWorld).mul(quaternionWorld).add(cWorld) },
                 { vector -> Vector3(vector).mul(quaternionWorld) }
             )
-            status.message = "Copied | edges $movedEdges faces $movedFaces groups $movedGroups"
+            status.message = "Copied | architecture $rotatedArchitecture edges $movedEdges faces $movedFaces groups $movedGroups"
         } else {
+            val rotatedArchitecture = scene.transformSelectedArchitectureElements(
+                group = group,
+                pointTransform = { point -> Vector3(point).sub(cWorld).mul(quaternionWorld).add(cWorld) },
+                vectorTransform = { vector -> Vector3(vector).mul(quaternionWorld) }
+            )
             val movedFaces = group.faceStore.transformSelected { point ->
                 Vector3(point).sub(cLocal).mul(quaternionLocal).add(cLocal)
             }
@@ -133,7 +143,7 @@ class RotateTool(
                 { point -> Vector3(point).sub(cWorld).mul(quaternionWorld).add(cWorld) },
                 { vector -> Vector3(vector).mul(quaternionWorld) }
             )
-            status.message = "Rotated | edges $movedEdges faces $movedFaces groups $movedGroups"
+            status.message = "Rotated | architecture $rotatedArchitecture edges $movedEdges faces $movedFaces groups $movedGroups"
         }
         clearTransient()
         return true

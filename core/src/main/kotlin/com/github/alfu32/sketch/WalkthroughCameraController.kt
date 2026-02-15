@@ -148,7 +148,7 @@ class WalkthroughCameraController(
         lastX = screenX
         lastY = screenY
         yawDeg += dx * lookDegreesPerPixel
-        pitchDeg = (pitchDeg + dy * lookDegreesPerPixel).coerceIn(-89f, 89f)
+        pitchDeg = (pitchDeg - dy * lookDegreesPerPixel).coerceIn(-89f, 89f)
         updateDirectionFromAngles()
         camera.update()
         return true

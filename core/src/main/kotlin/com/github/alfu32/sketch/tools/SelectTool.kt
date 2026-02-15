@@ -48,12 +48,21 @@ class SelectTool(
     private var pendingVolumeStart: Vector3? = null
     private var holeDrag: HoleDragState? = null
     private var wallDrag: WallDragState? = null
+    private var slabDrag: SlabDragState? = null
+    private var frameDrag: FrameDragState? = null
     private enum class SelectionMode { REPLACE, ADD, REMOVE }
 
     private data class HoleHandleHit(
         val wallId: String,
         val holeId: String,
         val kind: GroupScene.HoleHandleKind,
+        val point: Vector3,
+        val t: Float
+    )
+
+    private data class ArchitectureHotspotHit(
+        val kind: ArchitectureStore.ElementKind,
+        val id: String,
         val point: Vector3,
         val t: Float
     )
@@ -81,6 +90,36 @@ class SelectTool(
         val movingWorld: Vector3
     )
 
+    private data class SlabEndpointHit(
+        val slabId: String,
+        val draggingStart: Boolean,
+        val fixedWorld: Vector3,
+        val movingWorld: Vector3
+    )
+
+    private data class SlabDragState(
+        val group: GroupScene.GroupNode,
+        val slabId: String,
+        val draggingStart: Boolean,
+        val fixedWorld: Vector3,
+        val movingWorld: Vector3
+    )
+
+    private data class FrameEndpointHit(
+        val frameId: String,
+        val draggingStart: Boolean,
+        val fixedWorld: Vector3,
+        val movingWorld: Vector3
+    )
+
+    private data class FrameDragState(
+        val group: GroupScene.GroupNode,
+        val frameId: String,
+        val draggingStart: Boolean,
+        val fixedWorld: Vector3,
+        val movingWorld: Vector3
+    )
+
     override fun onEnter(status: StatusModel) {
         status.message = "Select entities."
     }
@@ -91,7 +130,7 @@ class SelectTool(
         scene.activeGroup().dimensionStore.clearSelection()
         scene.activeGroup().textStore.clearSelection()
         scene.clearVoxelSelection(scene.activeGroup())
-        scene.clearArchitectureElementSelection(scene.activeGroup())
+        scene.clearArchitectureElementSelection(scene.root)
         scene.clearGroupSelection()
         selectingVolume = false
         volumeStartRaw = null
@@ -102,6 +141,8 @@ class SelectTool(
         pendingVolumeStart = null
         holeDrag = null
         wallDrag = null
+        slabDrag = null
+        frameDrag = null
         status.message = "Selection cleared."
     }
 
@@ -115,6 +156,18 @@ class SelectTool(
         wallDrag?.let { drag ->
             if (valid && world != null) {
                 wallDrag = drag.copy(movingWorld = Vector3(world))
+            }
+            return
+        }
+        slabDrag?.let { drag ->
+            if (valid && world != null) {
+                slabDrag = drag.copy(movingWorld = Vector3(world))
+            }
+            return
+        }
+        frameDrag?.let { drag ->
+            if (valid && world != null) {
+                frameDrag = drag.copy(movingWorld = Vector3(world))
             }
             return
         }
@@ -165,13 +218,20 @@ class SelectTool(
         }
         val ray = cameraProvider().getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
         val activeGroup = scene.activeGroup()
+        val architectureGroup = scene.root
         val isVoxelGroup = scene.isVoxelGroup(activeGroup)
-        val isArchitectureGroup = scene.isArchitectureGroup(activeGroup)
-        if (isArchitectureGroup) {
-            val holeHit = pickArchitectureHoleHandle(activeGroup, ray, Gdx.input.x, Gdx.input.y)
+        val architectureSelectionEnabled = scene.hasArchitectureElements() && activeGroup == architectureGroup
+        if (architectureSelectionEnabled) {
+            val holeHit = pickArchitectureHoleHandle(architectureGroup, ray, Gdx.input.x, Gdx.input.y)
             if (holeHit != null) {
+                scene.selectArchitectureElement(
+                    architectureGroup,
+                    ArchitectureStore.ElementKind.WALL,
+                    holeHit.wallId,
+                    GroupScene.ArchitectureSelectionMode.REPLACE
+                )
                 holeDrag = HoleDragState(
-                    group = activeGroup,
+                    group = architectureGroup,
                     wallId = holeHit.wallId,
                     holeId = holeHit.holeId,
                     kind = holeHit.kind,
@@ -180,10 +240,16 @@ class SelectTool(
                 status.message = "Drag hole marker and release to update hole."
                 return true
             }
-            val endpointHit = pickSelectedWallEndpoint(activeGroup, ray)
+            val endpointHit = pickSelectedWallEndpoint(architectureGroup, ray)
             if (endpointHit != null) {
+                scene.selectArchitectureElement(
+                    architectureGroup,
+                    ArchitectureStore.ElementKind.WALL,
+                    endpointHit.wallId,
+                    GroupScene.ArchitectureSelectionMode.REPLACE
+                )
                 wallDrag = WallDragState(
-                    group = activeGroup,
+                    group = architectureGroup,
                     wallId = endpointHit.wallId,
                     draggingStart = endpointHit.draggingStart,
                     fixedWorld = Vector3(endpointHit.fixedWorld),
@@ -192,11 +258,92 @@ class SelectTool(
                 status.message = "Drag wall end and release to update."
                 return true
             }
+            val slabEndpointHit = pickSelectedSlabEndpoint(architectureGroup, ray)
+            if (slabEndpointHit != null) {
+                scene.selectArchitectureElement(
+                    architectureGroup,
+                    ArchitectureStore.ElementKind.SLAB,
+                    slabEndpointHit.slabId,
+                    GroupScene.ArchitectureSelectionMode.REPLACE
+                )
+                slabDrag = SlabDragState(
+                    group = architectureGroup,
+                    slabId = slabEndpointHit.slabId,
+                    draggingStart = slabEndpointHit.draggingStart,
+                    fixedWorld = Vector3(slabEndpointHit.fixedWorld),
+                    movingWorld = Vector3(slabEndpointHit.movingWorld)
+                )
+                status.message = "Drag slab handle and release to update."
+                return true
+            }
+            val frameEndpointHit = pickSelectedFrameEndpoint(architectureGroup, ray)
+            if (frameEndpointHit != null) {
+                scene.selectArchitectureElement(
+                    architectureGroup,
+                    ArchitectureStore.ElementKind.FRAME,
+                    frameEndpointHit.frameId,
+                    GroupScene.ArchitectureSelectionMode.REPLACE
+                )
+                frameDrag = FrameDragState(
+                    group = architectureGroup,
+                    frameId = frameEndpointHit.frameId,
+                    draggingStart = frameEndpointHit.draggingStart,
+                    fixedWorld = Vector3(frameEndpointHit.fixedWorld),
+                    movingWorld = Vector3(frameEndpointHit.movingWorld)
+                )
+                status.message = "Drag frame handle and release to update."
+                return true
+            }
+            val hotspotHit = pickArchitectureConstructionHotspot(architectureGroup, ray, Gdx.input.x, Gdx.input.y)
+            if (hotspotHit != null) {
+                val selected = scene.selectArchitectureElement(
+                    architectureGroup,
+                    hotspotHit.kind,
+                    hotspotHit.id,
+                    architectureSelectionMode()
+                )
+                status.message = if (selected) {
+                    "Architecture element selected."
+                } else {
+                    "No architecture element selected."
+                }
+                return true
+            }
+            val architectureFaceHit = pickFaceWorld(ray, onlyArchitectureGenerated = true)
+            val architectureEdgeHit = pickEdgeWorld(
+                ray,
+                Gdx.input.x,
+                Gdx.input.y,
+                onlyArchitectureGenerated = true
+            )
+            val architecturePointHit = when {
+                architectureFaceHit != null && architectureEdgeHit != null -> {
+                    if (architectureFaceHit.t <= architectureEdgeHit.t) architectureFaceHit.point else architectureEdgeHit.point
+                }
+                architectureFaceHit != null -> architectureFaceHit.point
+                architectureEdgeHit != null -> architectureEdgeHit.point
+                else -> null
+            }
+            if (architecturePointHit != null) {
+                scene.selectArchitectureElementNearWorldPoint(
+                    architectureGroup,
+                    architecturePointHit,
+                    architectureSelectionMode()
+                )
+                status.message = "Architecture selection updated."
+                return true
+            }
         }
-        val allowFaceSelection = !isVoxelGroup && !isArchitectureGroup
+        val allowFaceSelection = !isVoxelGroup
         val voxelHit = if (isVoxelGroup) pickVoxelWorld(ray) else null
-        val faceHit = if (allowFaceSelection || isArchitectureGroup) pickFaceWorld(ray) else null
-        val edgeHit = if (isVoxelGroup) null else pickEdgeWorld(ray, Gdx.input.x, Gdx.input.y)
+        val faceHit = if (allowFaceSelection || architectureSelectionEnabled) {
+            pickFaceWorld(ray, ignoreArchitectureGenerated = architectureSelectionEnabled)
+        } else {
+            null
+        }
+        val edgeHit = if (isVoxelGroup) null else {
+            pickEdgeWorld(ray, Gdx.input.x, Gdx.input.y, ignoreArchitectureGenerated = architectureSelectionEnabled)
+        }
         val dimensionHit = pickDimensionWorld(ray, Gdx.input.x, Gdx.input.y)
         val textHit = pickTextWorld(ray, Gdx.input.x, Gdx.input.y)
         val groupHit = pickGroupWorld(ray, Gdx.input.x, Gdx.input.y)
@@ -207,8 +354,8 @@ class SelectTool(
         val pickedText = textHit != null
         val pickedGroup = groupHit != null
         if (!pickedVoxel && !pickedFace && !pickedEdge && !pickedGroup && !pickedDimension && !pickedText) {
-            if (isArchitectureGroup) {
-                scene.clearArchitectureElementSelection(activeGroup)
+            if (architectureSelectionEnabled) {
+                scene.clearArchitectureElementSelection(architectureGroup)
             }
             selectingWindow = true
             windowDragActive = false
@@ -314,16 +461,8 @@ class SelectTool(
             status.message = "Face toggled."
             return true
         }
-        if (isArchitectureGroup && pickedFace && (!pickedEdge || faceHit!!.t <= edgeHit!!.t)) {
-            val selection = scene.selectArchitectureElementNearWorldPoint(activeGroup, faceHit.point)
-            status.message = if (selection != null) "Architecture element selected." else "No architecture element selected."
-            return true
-        }
         if (!isVoxelGroup && pickedEdge) {
             scene.activeGroup().lineStore.toggleSelection(edgeHit!!.segment)
-            if (isArchitectureGroup) {
-                scene.selectArchitectureElementNearWorldPoint(activeGroup, edgeHit.point)
-            }
             status.message = "Edge toggled."
             return true
         }
@@ -371,6 +510,40 @@ class SelectTool(
             status.message = if (updated) "Wall end updated." else "Wall end update failed."
             return true
         }
+        slabDrag?.let { drag ->
+            val movingWorld = if (valid && world != null) Vector3(world) else Vector3(drag.movingWorld)
+            val (minWorld, maxWorld) = if (drag.draggingStart) {
+                movingWorld to drag.fixedWorld
+            } else {
+                drag.fixedWorld to movingWorld
+            }
+            val updated = scene.updateArchitectureSlabCorners(
+                group = drag.group,
+                id = drag.slabId,
+                minCorner = drag.group.toLocal(minWorld),
+                maxCorner = drag.group.toLocal(maxWorld)
+            )
+            slabDrag = null
+            status.message = if (updated) "Slab handle updated." else "Slab handle update failed."
+            return true
+        }
+        frameDrag?.let { drag ->
+            val movingWorld = if (valid && world != null) Vector3(world) else Vector3(drag.movingWorld)
+            val (cornerAWorld, cornerBWorld) = if (drag.draggingStart) {
+                movingWorld to drag.fixedWorld
+            } else {
+                drag.fixedWorld to movingWorld
+            }
+            val updated = scene.updateArchitectureFrameCorners(
+                group = drag.group,
+                id = drag.frameId,
+                cornerA = drag.group.toLocal(cornerAWorld),
+                cornerB = drag.group.toLocal(cornerBWorld)
+            )
+            frameDrag = null
+            status.message = if (updated) "Frame handle updated." else "Frame handle update failed."
+            return true
+        }
         if (selectingWindow) {
             windowEndX = Gdx.input.x
             windowEndY = Gdx.input.y
@@ -394,13 +567,28 @@ class SelectTool(
                 } else {
                     0
                 }
-                val faces = if (scene.isVoxelGroup(scene.activeGroup()) || scene.isArchitectureGroup(scene.activeGroup())) 0 else selectFacesInWindow(rect, includeIntersect, mode)
-                val edges = if (scene.isVoxelGroup(scene.activeGroup())) 0 else selectEdgesInWindow(rect, includeIntersect, mode)
+                val architectureSelectionEnabled =
+                    scene.hasArchitectureElements() && scene.activeGroup() == scene.root
+                val architectureCount = if (architectureSelectionEnabled) {
+                    selectArchitectureInWindow(rect, includeIntersect, mode)
+                } else {
+                    0
+                }
+                val faces = if (scene.isVoxelGroup(scene.activeGroup())) {
+                    0
+                } else {
+                    selectFacesInWindow(rect, includeIntersect, mode, ignoreArchitectureGenerated = architectureSelectionEnabled)
+                }
+                val edges = if (scene.isVoxelGroup(scene.activeGroup())) {
+                    0
+                } else {
+                    selectEdgesInWindow(rect, includeIntersect, mode, ignoreArchitectureGenerated = architectureSelectionEnabled)
+                }
                 val dimensions = selectDimensionsInWindow(rect, includeIntersect, mode)
                 val texts = selectTextsInWindow(rect, includeIntersect, mode)
                 val groups = selectGroupsInWindow(rect, includeIntersect, mode)
                 status.message =
-                    "Window select | voxels $voxelCount edges $edges faces $faces dims $dimensions texts $texts groups $groups"
+                    "Window select | architecture $architectureCount voxels $voxelCount edges $edges faces $faces dims $dimensions texts $texts groups $groups"
                 return true
             } else if (pendingVolumeStart != null) {
                 selectingVolume = true
@@ -442,6 +630,16 @@ class SelectTool(
         }
         wallDrag?.let { drag ->
             renderer.color = com.badlogic.gdx.graphics.Color(0.25f, 0.65f, 1f, 1f)
+            renderer.line(drag.fixedWorld, drag.movingWorld)
+            return
+        }
+        slabDrag?.let { drag ->
+            renderer.color = com.badlogic.gdx.graphics.Color(0.2f, 0.55f, 0.95f, 1f)
+            renderer.line(drag.fixedWorld, drag.movingWorld)
+            return
+        }
+        frameDrag?.let { drag ->
+            renderer.color = com.badlogic.gdx.graphics.Color(0.2f, 0.55f, 0.95f, 1f)
             renderer.line(drag.fixedWorld, drag.movingWorld)
             return
         }
@@ -512,13 +710,39 @@ class SelectTool(
         status.message = "Volume select | voxels $voxelCount edges $edgeCount faces $faceCount groups $groupCount"
     }
 
-    private fun pickFaceWorld(ray: Ray): FaceHitWorld? {
+    private fun pickFaceWorld(
+        ray: Ray,
+        ignoreArchitectureGenerated: Boolean = false,
+        onlyArchitectureGenerated: Boolean = false
+    ): FaceHitWorld? {
         val group = scene.activeGroup()
         val localRay = Ray(group.toLocal(ray.origin), group.vectorToLocal(ray.direction).nor())
-        val hit = group.faceStore.pickTriangle(localRay) ?: return null
-        val worldPoint = group.toWorld(hit.point)
-        val t = Vector3(worldPoint).sub(ray.origin).dot(ray.direction)
-        return FaceHitWorld(hit.triangle, worldPoint, t)
+        if (!ignoreArchitectureGenerated && !onlyArchitectureGenerated) {
+            val hit = group.faceStore.pickTriangle(localRay) ?: return null
+            val worldPoint = group.toWorld(hit.point)
+            val t = Vector3(worldPoint).sub(ray.origin).dot(ray.direction)
+            return FaceHitWorld(hit.triangle, worldPoint, t)
+        }
+        var best: FaceHitWorld? = null
+        group.faceStore.getTriangles().forEach { triangle ->
+            val isArchitecture = scene.isGeneratedArchitectureTriangle(triangle)
+            if (ignoreArchitectureGenerated && isArchitecture) {
+                return@forEach
+            }
+            if (onlyArchitectureGenerated && !isArchitecture) {
+                return@forEach
+            }
+            val hit = intersectRayTriangleLocal(localRay, triangle) ?: return@forEach
+            val worldPoint = group.toWorld(hit.point)
+            val t = Vector3(worldPoint).sub(ray.origin).dot(ray.direction)
+            if (t < 0f) {
+                return@forEach
+            }
+            if (best == null || t < best!!.t) {
+                best = FaceHitWorld(triangle, worldPoint, t)
+            }
+        }
+        return best
     }
 
     private fun pickVoxelWorld(ray: Ray): VoxelHitWorld? {
@@ -548,10 +772,24 @@ class SelectTool(
         return best
     }
 
-    private fun pickEdgeWorld(ray: Ray, screenX: Int, screenY: Int, maxPixels: Float = 12f): EdgeHitWorld? {
+    private fun pickEdgeWorld(
+        ray: Ray,
+        screenX: Int,
+        screenY: Int,
+        maxPixels: Float = 12f,
+        ignoreArchitectureGenerated: Boolean = false,
+        onlyArchitectureGenerated: Boolean = false
+    ): EdgeHitWorld? {
         val group = scene.activeGroup()
         var best: EdgeHitWorld? = null
         group.lineStore.getSegments().forEach { segment ->
+            val isArchitecture = scene.isGeneratedArchitectureSegment(segment)
+            if (ignoreArchitectureGenerated && isArchitecture) {
+                return@forEach
+            }
+            if (onlyArchitectureGenerated && !isArchitecture) {
+                return@forEach
+            }
             val a = group.toWorld(segment.start)
             val b = group.toWorld(segment.end)
             val hit = closestRaySegment(ray.origin, ray.direction, a, b) ?: return@forEach
@@ -851,6 +1089,8 @@ class SelectTool(
 
     private data class RaySegmentHit(val point: Vector3, val t: Float)
 
+    private data class RayTriangleHit(val point: Vector3, val t: Float)
+
     private fun closestRaySegment(rayOrigin: Vector3, rayDir: Vector3, a: Vector3, b: Vector3): RaySegmentHit? {
         val dir = Vector3(rayDir).nor()
         val e = Vector3(b).sub(a)
@@ -879,6 +1119,33 @@ class SelectTool(
         val pointOnRay = Vector3(rayOrigin).mulAdd(dir, t)
         val pointOnSeg = Vector3(a).mulAdd(e, s)
         return RaySegmentHit(pointOnSeg, t)
+    }
+
+    private fun intersectRayTriangleLocal(ray: Ray, triangle: DraftFaceStore.Triangle): RayTriangleHit? {
+        val edge1 = Vector3(triangle.b).sub(triangle.a)
+        val edge2 = Vector3(triangle.c).sub(triangle.a)
+        val pvec = Vector3(ray.direction).crs(edge2)
+        val det = edge1.dot(pvec)
+        if (kotlin.math.abs(det) < 1e-6f) {
+            return null
+        }
+        val invDet = 1f / det
+        val tvec = Vector3(ray.origin).sub(triangle.a)
+        val u = tvec.dot(pvec) * invDet
+        if (u < 0f || u > 1f) {
+            return null
+        }
+        val qvec = Vector3(tvec).crs(edge1)
+        val v = ray.direction.dot(qvec) * invDet
+        if (v < 0f || u + v > 1f) {
+            return null
+        }
+        val t = edge2.dot(qvec) * invDet
+        if (t <= 1e-6f) {
+            return null
+        }
+        val point = Vector3(ray.origin).mulAdd(ray.direction, t)
+        return RayTriangleHit(point, t)
     }
 
     private fun rayAabbIntersectionT(origin: Vector3, direction: Vector3, min: Vector3, max: Vector3): Float? {
@@ -958,12 +1225,16 @@ class SelectTool(
             ?.id
         val markers = scene.architectureHoleHandleMarkersWorld(group, wallId = selectedWallId)
         var best: HoleHandleHit? = null
+        val halfSize = 0.18f
         markers.forEach { marker ->
             val dist = screenDistance(marker.world, screenX, screenY)
-            if (dist > maxPixels) {
+            if (dist > maxPixels * 2f) {
                 return@forEach
             }
-            val t = Vector3(marker.world).sub(ray.origin).dot(ray.direction)
+            val min = Vector3(marker.world.x - halfSize, marker.world.y - halfSize, marker.world.z - halfSize)
+            val max = Vector3(marker.world.x + halfSize, marker.world.y + halfSize, marker.world.z + halfSize)
+            val t = rayAabbIntersectionT(ray.origin, ray.direction, min, max)
+                ?: Vector3(marker.world).sub(ray.origin).dot(ray.direction)
             if (t < 0f) {
                 return@forEach
             }
@@ -980,19 +1251,48 @@ class SelectTool(
         return best
     }
 
+    private fun pickArchitectureConstructionHotspot(
+        group: GroupScene.GroupNode,
+        ray: Ray,
+        screenX: Int,
+        screenY: Int,
+        maxPixels: Float = 14f
+    ): ArchitectureHotspotHit? {
+        val markers = mutableListOf<GroupScene.ArchitectureElementHotspotMarker>()
+        markers.addAll(scene.architectureSlabConstructionHotspotsWorld(group))
+        markers.addAll(scene.architectureFrameConstructionHotspotsWorld(group))
+        markers.addAll(scene.architectureHoleConstructionHotspotsWorld(group))
+        var best: ArchitectureHotspotHit? = null
+        markers.forEach { marker ->
+            val dist = screenDistance(marker.world, screenX, screenY)
+            if (dist > maxPixels) {
+                return@forEach
+            }
+            val t = Vector3(marker.world).sub(ray.origin).dot(ray.direction)
+            if (t < 0f) {
+                return@forEach
+            }
+            if (best == null || t < best!!.t) {
+                best = ArchitectureHotspotHit(
+                    kind = marker.kind,
+                    id = marker.id,
+                    point = Vector3(marker.world),
+                    t = t
+                )
+            }
+        }
+        return best
+    }
+
     private fun pickSelectedWallEndpoint(
         group: GroupScene.GroupNode,
         ray: Ray
     ): WallEndpointHit? {
-        val selection = scene.selectedArchitectureElement(group) ?: return null
-        if (selection.kind != ArchitectureStore.ElementKind.WALL) {
+        val markers = scene.architectureWallEndpointHandleMarkersWorld(group)
+        if (markers.isEmpty()) {
             return null
         }
-        val wall = scene.selectedArchitectureWall(group) ?: return null
-        val startWorld = group.toWorld(wall.start)
-        val endWorld = group.toWorld(wall.end)
-        val markers = scene.architectureWallEndpointHandleMarkersWorld(group, wallId = wall.id)
-        var bestDraggingStart: Boolean? = null
+        var bestMarker: GroupScene.WallEndpointHandleMarker? = null
         var bestT = Float.POSITIVE_INFINITY
         markers.forEach { marker ->
             val t = rayPlaneIntersectionT(ray, marker.center.y) ?: return@forEach
@@ -1003,11 +1303,15 @@ class SelectTool(
             if (kotlin.math.abs(hit.x - marker.center.x) <= marker.halfSize &&
                 kotlin.math.abs(hit.z - marker.center.z) <= marker.halfSize
             ) {
-                bestDraggingStart = marker.draggingStart
+                bestMarker = marker
                 bestT = t
             }
         }
-        return when (bestDraggingStart) {
+        val marker = bestMarker ?: return null
+        val wall = scene.architectureWallById(group, marker.wallId) ?: return null
+        val startWorld = group.toWorld(wall.start)
+        val endWorld = group.toWorld(wall.end)
+        return when (marker.draggingStart) {
             true -> {
             WallEndpointHit(
                 wallId = wall.id,
@@ -1026,6 +1330,76 @@ class SelectTool(
             }
             else -> null
         }
+    }
+
+    private fun pickSelectedSlabEndpoint(
+        group: GroupScene.GroupNode,
+        ray: Ray
+    ): SlabEndpointHit? {
+        val marker = pickArchitectureEndpointMarker(ray, scene.architectureSlabEndpointHandleMarkersWorld(group)) ?: return null
+        val slab = scene.architectureSlabById(group, marker.id) ?: return null
+        val minWorld = group.toWorld(slab.min)
+        val maxWorld = group.toWorld(slab.max)
+        return if (marker.draggingStart) {
+            SlabEndpointHit(
+                slabId = slab.id,
+                draggingStart = true,
+                fixedWorld = Vector3(maxWorld),
+                movingWorld = Vector3(minWorld)
+            )
+        } else {
+            SlabEndpointHit(
+                slabId = slab.id,
+                draggingStart = false,
+                fixedWorld = Vector3(minWorld),
+                movingWorld = Vector3(maxWorld)
+            )
+        }
+    }
+
+    private fun pickSelectedFrameEndpoint(
+        group: GroupScene.GroupNode,
+        ray: Ray
+    ): FrameEndpointHit? {
+        val marker = pickArchitectureEndpointMarker(ray, scene.architectureFrameEndpointHandleMarkersWorld(group)) ?: return null
+        val frame = scene.architectureFrameById(group, marker.id) ?: return null
+        val cornerAWorld = group.toWorld(frame.cornerA)
+        val cornerBWorld = group.toWorld(frame.cornerB)
+        return if (marker.draggingStart) {
+            FrameEndpointHit(
+                frameId = frame.id,
+                draggingStart = true,
+                fixedWorld = Vector3(cornerBWorld),
+                movingWorld = Vector3(cornerAWorld)
+            )
+        } else {
+            FrameEndpointHit(
+                frameId = frame.id,
+                draggingStart = false,
+                fixedWorld = Vector3(cornerAWorld),
+                movingWorld = Vector3(cornerBWorld)
+            )
+        }
+    }
+
+    private fun pickArchitectureEndpointMarker(
+        ray: Ray,
+        markers: List<GroupScene.ArchitectureEndpointHandleMarker>
+    ): GroupScene.ArchitectureEndpointHandleMarker? {
+        var best: GroupScene.ArchitectureEndpointHandleMarker? = null
+        var bestT = Float.POSITIVE_INFINITY
+        markers.forEach { marker ->
+            val half = marker.halfSize
+            val min = Vector3(marker.center.x - half, marker.center.y - half, marker.center.z - half)
+            val max = Vector3(marker.center.x + half, marker.center.y + half, marker.center.z + half)
+            val t = rayAabbIntersectionT(ray.origin, ray.direction, min, max) ?: return@forEach
+            if (t < 0f || t >= bestT) {
+                return@forEach
+            }
+            bestT = t
+            best = marker
+        }
+        return best
     }
 
     private fun rayPlaneIntersectionT(ray: Ray, y: Float): Float? {
@@ -1054,9 +1428,17 @@ class SelectTool(
         return WindowRectTopLeft(minX, maxX, minY, maxY)
     }
 
-    private fun selectFacesInWindow(rect: WindowRectTopLeft, includeIntersect: Boolean, mode: SelectionMode): Int {
+    private fun selectFacesInWindow(
+        rect: WindowRectTopLeft,
+        includeIntersect: Boolean,
+        mode: SelectionMode,
+        ignoreArchitectureGenerated: Boolean = false
+    ): Int {
         var count = 0
         scene.activeGroup().faceStore.getTriangles().forEach { tri ->
+            if (ignoreArchitectureGenerated && scene.isGeneratedArchitectureTriangle(tri)) {
+                return@forEach
+            }
             val a = projectToScreen(tri.a)
             val b = projectToScreen(tri.b)
             val c = projectToScreen(tri.c)
@@ -1084,9 +1466,17 @@ class SelectTool(
         return count
     }
 
-    private fun selectEdgesInWindow(rect: WindowRectTopLeft, includeIntersect: Boolean, mode: SelectionMode): Int {
+    private fun selectEdgesInWindow(
+        rect: WindowRectTopLeft,
+        includeIntersect: Boolean,
+        mode: SelectionMode,
+        ignoreArchitectureGenerated: Boolean = false
+    ): Int {
         var count = 0
         scene.activeGroup().lineStore.getSegments().forEach { segment ->
+            if (ignoreArchitectureGenerated && scene.isGeneratedArchitectureSegment(segment)) {
+                return@forEach
+            }
             val a = projectToScreen(segment.start)
             val b = projectToScreen(segment.end)
             val matches = if (!includeIntersect) {
@@ -1111,6 +1501,72 @@ class SelectTool(
             }
         }
         return count
+    }
+
+    private fun selectArchitectureInWindow(
+        rect: WindowRectTopLeft,
+        includeIntersect: Boolean,
+        mode: SelectionMode
+    ): Int {
+        val group = scene.activeGroup()
+        if (group != scene.root) {
+            return 0
+        }
+
+        val samplePoints = mutableListOf<Vector3>()
+        group.faceStore.getTriangles().forEach { triangle ->
+            if (!scene.isGeneratedArchitectureTriangle(triangle)) {
+                return@forEach
+            }
+            val a = projectToScreen(triangle.a)
+            val b = projectToScreen(triangle.b)
+            val c = projectToScreen(triangle.c)
+            val matches = if (!includeIntersect) {
+                pointInRect(a, rect) && pointInRect(b, rect) && pointInRect(c, rect)
+            } else {
+                faceIntersectsRect(a, b, c, rect)
+            }
+            if (matches) {
+                val centroid = Vector3(triangle.a).add(triangle.b).add(triangle.c).scl(1f / 3f)
+                samplePoints.add(group.toWorld(centroid))
+            }
+        }
+        group.lineStore.getSegments().forEach { segment ->
+            if (!scene.isGeneratedArchitectureSegment(segment)) {
+                return@forEach
+            }
+            val a = projectToScreen(segment.start)
+            val b = projectToScreen(segment.end)
+            val matches = if (!includeIntersect) {
+                pointInRect(a, rect) && pointInRect(b, rect)
+            } else {
+                segmentIntersectsRect(a, b, rect)
+            }
+            if (matches) {
+                val midpoint = Vector3(segment.start).lerp(segment.end, 0.5f)
+                samplePoints.add(group.toWorld(midpoint))
+            }
+        }
+
+        val root = scene.root
+        val before = scene.selectedArchitectureElements(root).toSet()
+        if (mode == SelectionMode.REPLACE) {
+            scene.clearArchitectureElementSelection(root)
+        }
+        val opMode = if (mode == SelectionMode.REMOVE) {
+            GroupScene.ArchitectureSelectionMode.REMOVE
+        } else {
+            GroupScene.ArchitectureSelectionMode.ADD
+        }
+        samplePoints.forEach { point ->
+            scene.selectArchitectureElementNearWorldPoint(root, point, opMode)
+        }
+        val after = scene.selectedArchitectureElements(root).toSet()
+        return when (mode) {
+            SelectionMode.REMOVE -> (before.size - after.size).coerceAtLeast(0)
+            SelectionMode.ADD -> (after.size - before.size).coerceAtLeast(0)
+            SelectionMode.REPLACE -> after.size
+        }
     }
 
     private fun selectDimensionsInWindow(rect: WindowRectTopLeft, includeIntersect: Boolean, mode: SelectionMode): Int {
@@ -1198,6 +1654,14 @@ class SelectTool(
             ctrl -> SelectionMode.REMOVE
             shift -> SelectionMode.ADD
             else -> SelectionMode.REPLACE
+        }
+    }
+
+    private fun architectureSelectionMode(): GroupScene.ArchitectureSelectionMode {
+        return when (selectionMode()) {
+            SelectionMode.REPLACE -> GroupScene.ArchitectureSelectionMode.REPLACE
+            SelectionMode.ADD -> GroupScene.ArchitectureSelectionMode.ADD
+            SelectionMode.REMOVE -> GroupScene.ArchitectureSelectionMode.REMOVE
         }
     }
 

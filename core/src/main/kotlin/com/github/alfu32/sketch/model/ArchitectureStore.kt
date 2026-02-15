@@ -23,6 +23,7 @@ class ArchitectureStore {
 
     data class RectHole(
         var id: String,
+        var name: String,
         var u0: Float,
         var u1: Float,
         var v0: Float,
@@ -31,6 +32,7 @@ class ArchitectureStore {
 
     data class WallSegment(
         var id: String,
+        var name: String,
         var start: Vector3,
         var end: Vector3,
         var thickness: Float,
@@ -43,8 +45,12 @@ class ArchitectureStore {
 
     data class Slab(
         var id: String,
+        var name: String,
         var min: Vector3,
         var max: Vector3,
+        var axisU: Vector3,
+        var axisV: Vector3,
+        var normal: Vector3,
         var thickness: Float,
         var topColor: Color,
         var bottomColor: Color,
@@ -53,6 +59,7 @@ class ArchitectureStore {
 
     data class Stair(
         var id: String,
+        var name: String,
         var min: Vector3,
         var max: Vector3,
         var contour: MutableList<Vector3>,
@@ -70,20 +77,29 @@ class ArchitectureStore {
 
     data class Frame(
         var id: String,
+        var name: String,
         var cornerA: Vector3,
         var cornerB: Vector3,
         var normal: Vector3,
         var depth: Float,
         var frameWidth: Float,
         var kind: FrameKind,
-        var color: Color
+        var color: Color,
+        var glazingEnabled: Boolean,
+        var glazingColor: Color
     )
 
     private val walls = mutableListOf<WallSegment>()
     private val slabs = mutableListOf<Slab>()
     private val stairs = mutableListOf<Stair>()
     private val frames = mutableListOf<Frame>()
+    private var wallNameCounter = 1
+    private var slabNameCounter = 1
+    private var stairNameCounter = 1
+    private var frameNameCounter = 1
+    private var holeNameCounter = 1
     private var selectedElement: ElementSelection? = null
+    private val selectedElements = linkedSetOf<ElementSelection>()
 
     fun allWalls(): List<WallSegment> = walls
 
@@ -94,6 +110,8 @@ class ArchitectureStore {
     fun allFrames(): List<Frame> = frames
 
     fun selectedElement(): ElementSelection? = selectedElement
+
+    fun selectedElements(): Set<ElementSelection> = selectedElements
 
     fun wallById(id: String): WallSegment? = walls.firstOrNull { it.id == id }
 
@@ -107,6 +125,33 @@ class ArchitectureStore {
 
     fun clearSelectedElement() {
         selectedElement = null
+        selectedElements.clear()
+    }
+
+    fun deleteSelectedElement(): Boolean {
+        return deleteSelectedElements() > 0
+    }
+
+    fun deleteSelectedElements(): Int {
+        val targets = selectedElements.toList()
+        if (targets.isEmpty()) {
+            return 0
+        }
+        var removed = 0
+        targets.forEach { selection ->
+            val deleted = when (selection.kind) {
+                ElementKind.WALL -> walls.removeIf { it.id == selection.id }
+                ElementKind.SLAB -> slabs.removeIf { it.id == selection.id }
+                ElementKind.STAIR -> stairs.removeIf { it.id == selection.id }
+                ElementKind.FRAME -> frames.removeIf { it.id == selection.id }
+            }
+            if (deleted) {
+                removed++
+            }
+        }
+        selectedElements.clear()
+        selectedElement = null
+        return removed
     }
 
     fun setSelectedElement(kind: ElementKind, id: String): Boolean {
@@ -118,10 +163,42 @@ class ArchitectureStore {
         }
         if (!exists) {
             selectedElement = null
+            selectedElements.clear()
             return false
         }
-        selectedElement = ElementSelection(kind, id)
+        val selection = ElementSelection(kind, id)
+        selectedElement = selection
+        selectedElements.clear()
+        selectedElements.add(selection)
         return true
+    }
+
+    fun addSelectedElement(kind: ElementKind, id: String): Boolean {
+        val exists = when (kind) {
+            ElementKind.WALL -> walls.any { it.id == id }
+            ElementKind.SLAB -> slabs.any { it.id == id }
+            ElementKind.STAIR -> stairs.any { it.id == id }
+            ElementKind.FRAME -> frames.any { it.id == id }
+        }
+        if (!exists) {
+            return false
+        }
+        val selection = ElementSelection(kind, id)
+        selectedElement = selection
+        return selectedElements.add(selection)
+    }
+
+    fun removeSelectedElement(kind: ElementKind, id: String): Boolean {
+        val selection = ElementSelection(kind, id)
+        val removed = selectedElements.remove(selection)
+        if (selectedElement == selection) {
+            selectedElement = selectedElements.lastOrNull()
+        }
+        return removed
+    }
+
+    fun isSelectedElement(kind: ElementKind, id: String): Boolean {
+        return selectedElements.contains(ElementSelection(kind, id))
     }
 
     fun addWall(
@@ -132,10 +209,12 @@ class ArchitectureStore {
         inclinationDeg: Float,
         exteriorColor: Color = Color(0.93f, 0.93f, 0.93f, 1f),
         interiorColor: Color = Color(0.84f, 0.84f, 0.84f, 1f),
+        name: String = "",
         id: String = UUID.randomUUID().toString()
     ): WallSegment {
         val wall = WallSegment(
             id = id,
+            name = nextWallName(name),
             start = Vector3(start),
             end = Vector3(end),
             thickness = thickness,
@@ -155,6 +234,7 @@ class ArchitectureStore {
         topColor: Color = Color(0.93f, 0.93f, 0.93f, 1f),
         bottomColor: Color = Color(0.84f, 0.84f, 0.84f, 1f),
         sideColor: Color = Color(0.88f, 0.88f, 0.88f, 1f),
+        name: String = "",
         id: String = UUID.randomUUID().toString()
     ): Slab {
         val min = Vector3(
@@ -169,8 +249,12 @@ class ArchitectureStore {
         )
         val slab = Slab(
             id = id,
+            name = nextSlabName(name),
             min = min,
             max = max,
+            axisU = Vector3(1f, 0f, 0f),
+            axisV = Vector3(0f, 0f, 1f),
+            normal = Vector3(0f, 1f, 0f),
             thickness = thickness,
             topColor = Color(topColor),
             bottomColor = Color(bottomColor),
@@ -194,6 +278,7 @@ class ArchitectureStore {
         railRightEnabled: Boolean = true,
         treadColor: Color = Color(0.93f, 0.93f, 0.93f, 1f),
         supportColor: Color = Color(0.82f, 0.82f, 0.82f, 1f),
+        name: String = "",
         id: String = UUID.randomUUID().toString()
     ): Stair {
         val min = Vector3(
@@ -223,6 +308,7 @@ class ArchitectureStore {
         }
         val stair = Stair(
             id = id,
+            name = nextStairName(name),
             min = min,
             max = max,
             contour = contour.toMutableList(),
@@ -249,17 +335,23 @@ class ArchitectureStore {
         frameWidth: Float,
         kind: FrameKind,
         color: Color = Color(0.9f, 0.9f, 0.9f, 1f),
+        glazingEnabled: Boolean = kind == FrameKind.WINDOW,
+        glazingColor: Color = Color(0.72f, 0.84f, 0.95f, 0.40f),
+        name: String = "",
         id: String = UUID.randomUUID().toString()
     ): Frame {
         val frame = Frame(
             id = id,
+            name = nextFrameName(name),
             cornerA = Vector3(cornerA),
             cornerB = Vector3(cornerB),
             normal = Vector3(normal),
             depth = depth,
             frameWidth = frameWidth,
             kind = kind,
-            color = Color(color)
+            color = Color(color),
+            glazingEnabled = glazingEnabled,
+            glazingColor = Color(glazingColor)
         )
         frames.add(frame)
         return frame
@@ -272,6 +364,7 @@ class ArchitectureStore {
         v0: Float,
         v1: Float,
         minSize: Float = 0.05f,
+        name: String = "",
         id: String = UUID.randomUUID().toString()
     ): RectHole? {
         val wall = walls.firstOrNull { it.id == wallId } ?: return null
@@ -284,6 +377,7 @@ class ArchitectureStore {
         }
         val hole = RectHole(
             id = id,
+            name = nextHoleName(name),
             u0 = holeU0,
             u1 = holeU1,
             v0 = holeV0,
@@ -340,7 +434,13 @@ class ArchitectureStore {
         slabs.clear()
         stairs.clear()
         frames.clear()
+        wallNameCounter = 1
+        slabNameCounter = 1
+        stairNameCounter = 1
+        frameNameCounter = 1
+        holeNameCounter = 1
         selectedElement = null
+        selectedElements.clear()
     }
 
     fun updateWall(
@@ -382,6 +482,13 @@ class ArchitectureStore {
         return true
     }
 
+    fun updateSlabCorners(id: String, minCorner: Vector3, maxCorner: Vector3): Boolean {
+        val slab = slabs.firstOrNull { it.id == id } ?: return false
+        slab.min.set(minCorner)
+        slab.max.set(maxCorner)
+        return true
+    }
+
     fun updateStair(
         id: String,
         height: Float,
@@ -403,11 +510,108 @@ class ArchitectureStore {
         return true
     }
 
-    fun updateFrame(id: String, depth: Float, frameWidth: Float, color: Color): Boolean {
+    fun updateFrame(
+        id: String,
+        depth: Float,
+        frameWidth: Float,
+        color: Color,
+        glazingEnabled: Boolean,
+        glazingColor: Color
+    ): Boolean {
         val frame = frames.firstOrNull { it.id == id } ?: return false
         frame.depth = depth
         frame.frameWidth = frameWidth
         frame.color.set(color)
+        frame.glazingEnabled = glazingEnabled
+        frame.glazingColor.set(glazingColor)
         return true
+    }
+
+    fun updateFrameCorners(id: String, cornerA: Vector3, cornerB: Vector3): Boolean {
+        val frame = frames.firstOrNull { it.id == id } ?: return false
+        frame.cornerA.set(cornerA)
+        frame.cornerB.set(cornerB)
+        return true
+    }
+
+    fun updateWallName(id: String, name: String): Boolean {
+        val wall = walls.firstOrNull { it.id == id } ?: return false
+        wall.name = name.trim().ifBlank { wall.name }
+        return true
+    }
+
+    fun updateSlabName(id: String, name: String): Boolean {
+        val slab = slabs.firstOrNull { it.id == id } ?: return false
+        slab.name = name.trim().ifBlank { slab.name }
+        return true
+    }
+
+    fun updateStairName(id: String, name: String): Boolean {
+        val stair = stairs.firstOrNull { it.id == id } ?: return false
+        stair.name = name.trim().ifBlank { stair.name }
+        return true
+    }
+
+    fun updateFrameName(id: String, name: String): Boolean {
+        val frame = frames.firstOrNull { it.id == id } ?: return false
+        frame.name = name.trim().ifBlank { frame.name }
+        return true
+    }
+
+    fun updateHoleName(wallId: String, holeId: String, name: String): Boolean {
+        val wall = walls.firstOrNull { it.id == wallId } ?: return false
+        val hole = wall.holes.firstOrNull { it.id == holeId } ?: return false
+        hole.name = name.trim().ifBlank { hole.name }
+        return true
+    }
+
+    private fun nextWallName(candidate: String): String = nextName(candidate, "WALL_") { proposed ->
+        walls.none { it.name == proposed }
+    }
+
+    private fun nextSlabName(candidate: String): String = nextName(candidate, "SLAB_") { proposed ->
+        slabs.none { it.name == proposed }
+    }
+
+    private fun nextStairName(candidate: String): String = nextName(candidate, "STAIR_") { proposed ->
+        stairs.none { it.name == proposed }
+    }
+
+    private fun nextFrameName(candidate: String): String = nextName(candidate, "FRAME_") { proposed ->
+        frames.none { it.name == proposed }
+    }
+
+    private fun nextHoleName(candidate: String): String {
+        return nextName(candidate, "HOLE_") { proposed ->
+            walls.none { wall -> wall.holes.any { it.name == proposed } }
+        }
+    }
+
+    private fun nextName(candidate: String, prefix: String, isAvailable: (String) -> Boolean): String {
+        val trimmed = candidate.trim()
+        if (trimmed.isNotEmpty()) {
+            return trimmed
+        }
+        var index = when (prefix) {
+            "WALL_" -> wallNameCounter
+            "SLAB_" -> slabNameCounter
+            "STAIR_" -> stairNameCounter
+            "FRAME_" -> frameNameCounter
+            "HOLE_" -> holeNameCounter
+            else -> 1
+        }
+        var generated = "$prefix$index"
+        while (!isAvailable(generated)) {
+            index++
+            generated = "$prefix$index"
+        }
+        when (prefix) {
+            "WALL_" -> wallNameCounter = index + 1
+            "SLAB_" -> slabNameCounter = index + 1
+            "STAIR_" -> stairNameCounter = index + 1
+            "FRAME_" -> frameNameCounter = index + 1
+            "HOLE_" -> holeNameCounter = index + 1
+        }
+        return generated
     }
 }

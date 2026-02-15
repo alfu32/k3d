@@ -11,6 +11,7 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 import kotlin.math.sqrt
 import kotlin.math.tan
 
@@ -24,6 +25,7 @@ class GroupScene(
         EDGE_0, EDGE_1, EDGE_2, EDGE_3,
         CENTER
     }
+    enum class ArchitectureSelectionMode { REPLACE, ADD, REMOVE }
     data class HoleHandleMarker(
         val wallId: String,
         val holeId: String,
@@ -35,6 +37,18 @@ class GroupScene(
         val draggingStart: Boolean,
         val center: Vector3,
         val halfSize: Float
+    )
+    data class ArchitectureEndpointHandleMarker(
+        val kind: ArchitectureStore.ElementKind,
+        val id: String,
+        val draggingStart: Boolean,
+        val center: Vector3,
+        val halfSize: Float
+    )
+    data class ArchitectureElementHotspotMarker(
+        val kind: ArchitectureStore.ElementKind,
+        val id: String,
+        val world: Vector3
     )
 
     class ObjectPrototype(
@@ -285,6 +299,9 @@ class GroupScene(
 
     private val prototypes = linkedMapOf<String, ObjectPrototype>()
     private val prototypeInstances = mutableMapOf<String, MutableSet<GroupNode>>()
+    private val modelArchitectureStore = ArchitectureStore()
+    private val generatedArchitectureLines = mutableSetOf<DraftLineStore.Segment>()
+    private val generatedArchitectureFaces = mutableSetOf<DraftFaceStore.Triangle>()
     private val rootPrototype = ObjectPrototype(
         id = "root",
         name = "Root",
@@ -296,7 +313,7 @@ class GroupScene(
         kind = PrototypeKind.MESH,
         voxelColor = Color(defaultFaceColor),
         voxelStore = null,
-        architectureStore = null,
+        architectureStore = modelArchitectureStore,
         lineStore = DraftLineStore(),
         faceStore = DraftFaceStore(defaultFaceColor),
         dimensionStore = DraftDimensionStore(),
@@ -382,6 +399,7 @@ class GroupScene(
         root.faceStore.clearSelection()
         root.dimensionStore.clearSelection()
         root.textStore.clearSelection()
+        modelArchitectureStore.clearSelectedElement()
         root.voxelStore?.clearSelection()
         walkGroups(root) { group ->
             group.lineStore.clearSelection()
@@ -519,11 +537,27 @@ class GroupScene(
     }
 
     fun isWallOnlyArchitectureGroup(group: GroupNode): Boolean {
-        val store = group.architectureStore ?: return false
+        val store = architectureStoreFor(group)
         return store.allWalls().isNotEmpty() &&
             store.allSlabs().isEmpty() &&
             store.allStairs().isEmpty() &&
             store.allFrames().isEmpty()
+    }
+
+    fun hasArchitectureElements(): Boolean {
+        val store = modelArchitectureStore
+        return store.allWalls().isNotEmpty() ||
+            store.allSlabs().isNotEmpty() ||
+            store.allStairs().isNotEmpty() ||
+            store.allFrames().isNotEmpty()
+    }
+
+    fun isGeneratedArchitectureSegment(segment: DraftLineStore.Segment): Boolean {
+        return generatedArchitectureLines.contains(segment)
+    }
+
+    fun isGeneratedArchitectureTriangle(triangle: DraftFaceStore.Triangle): Boolean {
+        return generatedArchitectureFaces.contains(triangle)
     }
 
     fun voxelColor(group: GroupNode): Color? {
@@ -667,6 +701,10 @@ class GroupScene(
         return changed
     }
 
+    private fun architectureStoreFor(group: GroupNode? = null): ArchitectureStore {
+        return modelArchitectureStore
+    }
+
     fun addArchitectureWall(
         group: GroupNode,
         start: Vector3,
@@ -677,20 +715,22 @@ class GroupScene(
         exteriorColor: Color,
         interiorColor: Color
     ): Boolean {
-        val store = group.architectureStore ?: return false
-        if (start.dst2(end) <= 1e-6f) {
+        val store = architectureStoreFor(group)
+        val startWorld = group.toWorld(start)
+        val endWorld = group.toWorld(end)
+        if (startWorld.dst2(endWorld) <= 1e-6f) {
             return false
         }
         store.addWall(
-            start = start,
-            end = end,
+            start = startWorld,
+            end = endWorld,
             thickness = thickness.coerceAtLeast(0.01f),
             height = height.coerceAtLeast(0.05f),
             inclinationDeg = inclinationDeg,
             exteriorColor = exteriorColor,
             interiorColor = interiorColor
         )
-        rebuildArchitectureGeometry(group.prototype)
+        rebuildArchitectureGeometry(rootPrototype)
         notifyChange()
         return true
     }
@@ -704,19 +744,21 @@ class GroupScene(
         bottomColor: Color,
         sideColor: Color
     ): Boolean {
-        val store = group.architectureStore ?: return false
-        if (minCorner.dst2(maxCorner) <= 1e-6f) {
+        val store = architectureStoreFor(group)
+        val minWorld = group.toWorld(minCorner)
+        val maxWorld = group.toWorld(maxCorner)
+        if (minWorld.dst2(maxWorld) <= 1e-6f) {
             return false
         }
         store.addSlab(
-            minCorner = minCorner,
-            maxCorner = maxCorner,
+            minCorner = minWorld,
+            maxCorner = maxWorld,
             thickness = thickness.coerceAtLeast(0.01f),
             topColor = topColor,
             bottomColor = bottomColor,
             sideColor = sideColor
         )
-        rebuildArchitectureGeometry(group.prototype)
+        rebuildArchitectureGeometry(rootPrototype)
         notifyChange()
         return true
     }
@@ -737,17 +779,19 @@ class GroupScene(
         treadColor: Color,
         supportColor: Color
     ): Boolean {
-        val store = group.architectureStore ?: return false
-        if (minCorner.dst2(maxCorner) <= 1e-6f) {
+        val store = architectureStoreFor(group)
+        val minWorld = group.toWorld(minCorner)
+        val maxWorld = group.toWorld(maxCorner)
+        if (minWorld.dst2(maxWorld) <= 1e-6f) {
             return false
         }
         store.addStair(
-            minCorner = minCorner,
-            maxCorner = maxCorner,
-            contourPoints = contourPoints,
-            walkingPathPoints = walkingPathPoints,
-            walkingStart = walkingStart,
-            walkingEnd = walkingEnd,
+            minCorner = minWorld,
+            maxCorner = maxWorld,
+            contourPoints = contourPoints.map { group.toWorld(it) },
+            walkingPathPoints = walkingPathPoints.map { group.toWorld(it) },
+            walkingStart = group.toWorld(walkingStart),
+            walkingEnd = group.toWorld(walkingEnd),
             height = height.coerceAtLeast(0.05f),
             stepCount = stepCount.coerceAtLeast(1),
             supportThickness = supportThickness.coerceAtLeast(0.01f),
@@ -756,7 +800,7 @@ class GroupScene(
             treadColor = treadColor,
             supportColor = supportColor
         )
-        rebuildArchitectureGeometry(group.prototype)
+        rebuildArchitectureGeometry(rootPrototype)
         notifyChange()
         return true
     }
@@ -769,23 +813,30 @@ class GroupScene(
         depth: Float,
         frameWidth: Float,
         kind: ArchitectureStore.FrameKind,
-        color: Color
+        color: Color,
+        glazingEnabled: Boolean,
+        glazingColor: Color
     ): Boolean {
-        val store = group.architectureStore ?: return false
-        if (cornerA.dst2(cornerB) <= 1e-6f) {
+        val store = architectureStoreFor(group)
+        val cornerAWorld = group.toWorld(cornerA)
+        val cornerBWorld = group.toWorld(cornerB)
+        if (cornerAWorld.dst2(cornerBWorld) <= 1e-6f) {
             return false
         }
-        val safeNormal = if (normal.len2() <= 1e-6f) Vector3(0f, 1f, 0f) else Vector3(normal).nor()
+        val normalWorld = group.vectorToWorld(normal)
+        val safeNormal = if (normalWorld.len2() <= 1e-6f) Vector3(0f, 1f, 0f) else Vector3(normalWorld).nor()
         store.addFrame(
-            cornerA = cornerA,
-            cornerB = cornerB,
+            cornerA = cornerAWorld,
+            cornerB = cornerBWorld,
             normal = safeNormal,
             depth = depth.coerceAtLeast(0.01f),
             frameWidth = frameWidth.coerceAtLeast(0.01f),
             kind = kind,
-            color = color
+            color = color,
+            glazingEnabled = glazingEnabled,
+            glazingColor = glazingColor
         )
-        rebuildArchitectureGeometry(group.prototype)
+        rebuildArchitectureGeometry(rootPrototype)
         notifyChange()
         return true
     }
@@ -799,7 +850,7 @@ class GroupScene(
         exteriorColor: Color,
         interiorColor: Color
     ): Boolean {
-        val store = group.architectureStore ?: return false
+        val store = architectureStoreFor(group)
         if (
             !store.updateWall(
                 id,
@@ -812,7 +863,7 @@ class GroupScene(
         ) {
             return false
         }
-        rebuildArchitectureGeometry(group.prototype)
+        rebuildArchitectureGeometry(rootPrototype)
         notifyChange()
         return true
     }
@@ -825,11 +876,31 @@ class GroupScene(
         bottomColor: Color,
         sideColor: Color
     ): Boolean {
-        val store = group.architectureStore ?: return false
+        val store = architectureStoreFor(group)
         if (!store.updateSlab(id, thickness.coerceAtLeast(0.01f), topColor, bottomColor, sideColor)) {
             return false
         }
-        rebuildArchitectureGeometry(group.prototype)
+        rebuildArchitectureGeometry(rootPrototype)
+        notifyChange()
+        return true
+    }
+
+    fun updateArchitectureSlabCorners(
+        group: GroupNode,
+        id: String,
+        minCorner: Vector3,
+        maxCorner: Vector3
+    ): Boolean {
+        val store = architectureStoreFor(group)
+        val minWorld = group.toWorld(minCorner)
+        val maxWorld = group.toWorld(maxCorner)
+        if (minWorld.dst2(maxWorld) <= 1e-6f) {
+            return false
+        }
+        if (!store.updateSlabCorners(id, minWorld, maxWorld)) {
+            return false
+        }
+        rebuildArchitectureGeometry(rootPrototype)
         notifyChange()
         return true
     }
@@ -845,7 +916,7 @@ class GroupScene(
         treadColor: Color,
         supportColor: Color
     ): Boolean {
-        val store = group.architectureStore ?: return false
+        val store = architectureStoreFor(group)
         if (
             !store.updateStair(
                 id,
@@ -860,31 +931,182 @@ class GroupScene(
         ) {
             return false
         }
-        rebuildArchitectureGeometry(group.prototype)
+        rebuildArchitectureGeometry(rootPrototype)
         notifyChange()
         return true
     }
 
-    fun updateArchitectureFrame(group: GroupNode, id: String, depth: Float, frameWidth: Float, color: Color): Boolean {
-        val store = group.architectureStore ?: return false
-        if (!store.updateFrame(id, depth.coerceAtLeast(0.01f), frameWidth.coerceAtLeast(0.01f), color)) {
+    fun updateArchitectureFrame(
+        group: GroupNode,
+        id: String,
+        depth: Float,
+        frameWidth: Float,
+        color: Color,
+        glazingEnabled: Boolean,
+        glazingColor: Color
+    ): Boolean {
+        val store = architectureStoreFor(group)
+        if (
+            !store.updateFrame(
+                id,
+                depth.coerceAtLeast(0.01f),
+                frameWidth.coerceAtLeast(0.01f),
+                color,
+                glazingEnabled,
+                glazingColor
+            )
+        ) {
             return false
         }
-        rebuildArchitectureGeometry(group.prototype)
+        rebuildArchitectureGeometry(rootPrototype)
+        notifyChange()
+        return true
+    }
+
+    fun updateArchitectureFrameCorners(
+        group: GroupNode,
+        id: String,
+        cornerA: Vector3,
+        cornerB: Vector3
+    ): Boolean {
+        val store = architectureStoreFor(group)
+        val cornerAWorld = group.toWorld(cornerA)
+        val cornerBWorld = group.toWorld(cornerB)
+        if (cornerAWorld.dst2(cornerBWorld) <= 1e-6f) {
+            return false
+        }
+        if (!store.updateFrameCorners(id, cornerAWorld, cornerBWorld)) {
+            return false
+        }
+        rebuildArchitectureGeometry(rootPrototype)
+        notifyChange()
+        return true
+    }
+
+    fun updateArchitectureElementName(
+        group: GroupNode,
+        kind: ArchitectureStore.ElementKind,
+        id: String,
+        name: String
+    ): Boolean {
+        val store = architectureStoreFor(group)
+        val updated = when (kind) {
+            ArchitectureStore.ElementKind.WALL -> store.updateWallName(id, name)
+            ArchitectureStore.ElementKind.SLAB -> store.updateSlabName(id, name)
+            ArchitectureStore.ElementKind.STAIR -> store.updateStairName(id, name)
+            ArchitectureStore.ElementKind.FRAME -> store.updateFrameName(id, name)
+        }
+        if (!updated) {
+            return false
+        }
+        rebuildArchitectureGeometry(rootPrototype)
         notifyChange()
         return true
     }
 
     fun selectedArchitectureElement(group: GroupNode): ArchitectureStore.ElementSelection? {
-        return group.architectureStore?.selectedElement()
+        return architectureStoreFor(group).selectedElement()
+    }
+
+    fun selectedArchitectureElements(group: GroupNode): Set<ArchitectureStore.ElementSelection> {
+        return architectureStoreFor(group).selectedElements()
     }
 
     fun selectedArchitectureWall(group: GroupNode): ArchitectureStore.WallSegment? {
-        return group.architectureStore?.selectedWall()
+        return architectureStoreFor(group).selectedWall()
+    }
+
+    fun architectureWallById(group: GroupNode, id: String): ArchitectureStore.WallSegment? {
+        return architectureStoreFor(group).wallById(id)
+    }
+
+    fun architectureSlabById(group: GroupNode, id: String): ArchitectureStore.Slab? {
+        return architectureStoreFor(group).allSlabs().firstOrNull { it.id == id }
+    }
+
+    fun architectureStairById(group: GroupNode, id: String): ArchitectureStore.Stair? {
+        return architectureStoreFor(group).allStairs().firstOrNull { it.id == id }
+    }
+
+    fun architectureFrameById(group: GroupNode, id: String): ArchitectureStore.Frame? {
+        return architectureStoreFor(group).allFrames().firstOrNull { it.id == id }
+    }
+
+    fun selectedArchitectureBounds(group: GroupNode): BoundingBox? {
+        val store = architectureStoreFor(group)
+        val selected = store.selectedElements().toList()
+        if (selected.isEmpty()) {
+            return null
+        }
+        val bounds = BoundingBox()
+        var hasAny = false
+        fun ext(point: Vector3) {
+            if (!hasAny) {
+                bounds.set(point, point)
+                hasAny = true
+            } else {
+                bounds.ext(point)
+            }
+        }
+
+        selected.forEach { selection ->
+            when (selection.kind) {
+                ArchitectureStore.ElementKind.WALL -> {
+                    val wall = store.wallById(selection.id) ?: return@forEach
+                    val basis = wallBasis(wall) ?: return@forEach
+                    val uMax = basis.length
+                    val vMax = wall.height
+                    listOf(0f, uMax).forEach { u ->
+                        listOf(0f, vMax).forEach { v ->
+                            ext(wallPoint(basis, wall, u, v, 0f, 0f))
+                            ext(wallPoint(basis, wall, u, v, 1f, 0f))
+                        }
+                    }
+                }
+                ArchitectureStore.ElementKind.SLAB -> {
+                    val slab = store.allSlabs().firstOrNull { it.id == selection.id } ?: return@forEach
+                    slabCorners(slab).forEach { ext(it) }
+                }
+                ArchitectureStore.ElementKind.STAIR -> {
+                    val stair = store.allStairs().firstOrNull { it.id == selection.id } ?: return@forEach
+                    val minX = min(stair.min.x, stair.max.x)
+                    val maxX = max(stair.min.x, stair.max.x)
+                    val minZ = min(stair.min.z, stair.max.z)
+                    val maxZ = max(stair.min.z, stair.max.z)
+                    val baseY = min(stair.min.y, stair.max.y) - stair.supportThickness.coerceAtLeast(0.01f)
+                    val maxY = min(stair.min.y, stair.max.y) + stair.height.coerceAtLeast(0.05f)
+                    listOf(minX, maxX).forEach { x ->
+                        listOf(baseY, maxY).forEach { y ->
+                            listOf(minZ, maxZ).forEach { z ->
+                                ext(Vector3(x, y, z))
+                            }
+                        }
+                    }
+                }
+                ArchitectureStore.ElementKind.FRAME -> {
+                    val frame = store.allFrames().firstOrNull { it.id == selection.id } ?: return@forEach
+                    val basis = frameSelectionBasis(frame) ?: return@forEach
+                    listOf(basis.uMin, basis.uMax).forEach { u ->
+                        listOf(basis.vMin, basis.vMax).forEach { v ->
+                            listOf(basis.nMin, basis.nMax).forEach { n ->
+                                ext(
+                                    Vector3(basis.origin)
+                                        .mulAdd(basis.axisU, u)
+                                        .mulAdd(basis.axisV, v)
+                                        .mulAdd(basis.normal, n)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return if (hasAny) bounds else null
     }
 
     fun clearArchitectureElementSelection(group: GroupNode): Boolean {
-        val store = group.architectureStore ?: return false
+        val store = architectureStoreFor(group)
         if (store.selectedElement() == null) {
             return false
         }
@@ -892,51 +1114,291 @@ class GroupScene(
         return true
     }
 
+    fun deleteSelectedArchitectureElements(group: GroupNode): Int {
+        val store = architectureStoreFor(group)
+        val removed = store.deleteSelectedElements()
+        if (removed <= 0) {
+            return 0
+        }
+        rebuildArchitectureGeometry(rootPrototype)
+        notifyChange()
+        return removed
+    }
+
+    fun deleteSelectedArchitectureElement(group: GroupNode): Boolean {
+        return deleteSelectedArchitectureElements(group) > 0
+    }
+
+    fun selectArchitectureElement(
+        group: GroupNode,
+        kind: ArchitectureStore.ElementKind,
+        id: String,
+        mode: ArchitectureSelectionMode = ArchitectureSelectionMode.REPLACE
+    ): Boolean {
+        val store = architectureStoreFor(group)
+        return when (mode) {
+            ArchitectureSelectionMode.REPLACE -> store.setSelectedElement(kind, id)
+            ArchitectureSelectionMode.ADD -> store.addSelectedElement(kind, id)
+            ArchitectureSelectionMode.REMOVE -> store.removeSelectedElement(kind, id)
+        }
+    }
+
     fun selectArchitectureElementNearWorldPoint(
         group: GroupNode,
-        worldPoint: Vector3
+        worldPoint: Vector3,
+        mode: ArchitectureSelectionMode = ArchitectureSelectionMode.REPLACE
     ): ArchitectureStore.ElementSelection? {
-        val store = group.architectureStore ?: return null
-        val point = group.toLocal(worldPoint)
+        val store = architectureStoreFor(group)
+        val point = Vector3(worldPoint)
         var bestSelection: ArchitectureStore.ElementSelection? = null
         var bestDist2 = Float.POSITIVE_INFINITY
-
-        store.allWalls().forEach { wall ->
-            val dist2 = architectureWallDistanceSq(wall, point)
-            if (dist2 < bestDist2) {
+        fun priority(kind: ArchitectureStore.ElementKind): Int = when (kind) {
+            ArchitectureStore.ElementKind.FRAME -> 0
+            ArchitectureStore.ElementKind.STAIR -> 1
+            ArchitectureStore.ElementKind.SLAB -> 2
+            ArchitectureStore.ElementKind.WALL -> 3
+        }
+        fun tryCandidate(kind: ArchitectureStore.ElementKind, id: String, dist2: Float) {
+            if (!dist2.isFinite()) {
+                return
+            }
+            val current = bestSelection
+            if (current == null) {
                 bestDist2 = dist2
-                bestSelection = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.WALL, wall.id)
+                bestSelection = ArchitectureStore.ElementSelection(kind, id)
+                return
+            }
+            val delta = dist2 - bestDist2
+            if (delta < -1e-6f || (abs(delta) <= 1e-6f && priority(kind) < priority(current.kind))) {
+                bestDist2 = dist2
+                bestSelection = ArchitectureStore.ElementSelection(kind, id)
             }
         }
-        store.allSlabs().forEach { slab ->
-            val dist2 = architectureSlabDistanceSq(slab, point)
-            if (dist2 < bestDist2) {
-                bestDist2 = dist2
-                bestSelection = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.SLAB, slab.id)
-            }
+
+        store.allFrames().forEach { frame ->
+            tryCandidate(ArchitectureStore.ElementKind.FRAME, frame.id, architectureFrameDistanceSq(frame, point))
         }
         store.allStairs().forEach { stair ->
-            val dist2 = architectureStairDistanceSq(stair, point)
-            if (dist2 < bestDist2) {
-                bestDist2 = dist2
-                bestSelection = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.STAIR, stair.id)
-            }
+            tryCandidate(ArchitectureStore.ElementKind.STAIR, stair.id, architectureStairDistanceSq(stair, point))
         }
-        store.allFrames().forEach { frame ->
-            val dist2 = architectureFrameDistanceSq(frame, point)
-            if (dist2 < bestDist2) {
-                bestDist2 = dist2
-                bestSelection = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.FRAME, frame.id)
-            }
+        store.allSlabs().forEach { slab ->
+            tryCandidate(ArchitectureStore.ElementKind.SLAB, slab.id, architectureSlabDistanceSq(slab, point))
+        }
+        store.allWalls().forEach { wall ->
+            tryCandidate(ArchitectureStore.ElementKind.WALL, wall.id, architectureWallDistanceSq(wall, point))
         }
 
         val selection = bestSelection
         if (selection == null) {
-            store.clearSelectedElement()
+            if (mode == ArchitectureSelectionMode.REPLACE) {
+                store.clearSelectedElement()
+            }
             return null
         }
-        store.setSelectedElement(selection.kind, selection.id)
+        when (mode) {
+            ArchitectureSelectionMode.REPLACE -> store.setSelectedElement(selection.kind, selection.id)
+            ArchitectureSelectionMode.ADD -> store.addSelectedElement(selection.kind, selection.id)
+            ArchitectureSelectionMode.REMOVE -> store.removeSelectedElement(selection.kind, selection.id)
+        }
         return store.selectedElement()
+    }
+
+    fun transformSelectedArchitectureElements(
+        group: GroupNode,
+        pointTransform: (Vector3) -> Vector3,
+        vectorTransform: (Vector3) -> Vector3 = { Vector3(it) }
+    ): Int {
+        val store = architectureStoreFor(group)
+        val selected = store.selectedElements().toList()
+        if (selected.isEmpty()) {
+            return 0
+        }
+        var changed = 0
+        selected.forEach { selection ->
+            when (selection.kind) {
+                ArchitectureStore.ElementKind.WALL -> {
+                    val wall = store.wallById(selection.id) ?: return@forEach
+                    wall.start.set(pointTransform(Vector3(wall.start)))
+                    wall.end.set(pointTransform(Vector3(wall.end)))
+                    changed++
+                }
+                ArchitectureStore.ElementKind.SLAB -> {
+                    val slab = store.allSlabs().firstOrNull { it.id == selection.id } ?: return@forEach
+                    val a = pointTransform(Vector3(slab.min))
+                    val b = pointTransform(Vector3(slab.max))
+                    store.updateSlabCorners(slab.id, a, b)
+                    val nextAxisU = vectorTransform(Vector3(slab.axisU))
+                    if (nextAxisU.len2() > 1e-6f) {
+                        slab.axisU.set(nextAxisU.nor())
+                    }
+                    val nextAxisV = vectorTransform(Vector3(slab.axisV))
+                    if (nextAxisV.len2() > 1e-6f) {
+                        slab.axisV.set(nextAxisV.nor())
+                    }
+                    val nextNormal = vectorTransform(Vector3(slab.normal))
+                    if (nextNormal.len2() > 1e-6f) {
+                        slab.normal.set(nextNormal.nor())
+                    }
+                    changed++
+                }
+                ArchitectureStore.ElementKind.STAIR -> {
+                    val stair = store.allStairs().firstOrNull { it.id == selection.id } ?: return@forEach
+                    stair.min.set(pointTransform(Vector3(stair.min)))
+                    stair.max.set(pointTransform(Vector3(stair.max)))
+                    stair.contour = stair.contour.map { pointTransform(Vector3(it)) }.toMutableList()
+                    stair.walkingPath = stair.walkingPath.map { pointTransform(Vector3(it)) }.toMutableList()
+                    stair.walkingStart.set(pointTransform(Vector3(stair.walkingStart)))
+                    stair.walkingEnd.set(pointTransform(Vector3(stair.walkingEnd)))
+                    changed++
+                }
+                ArchitectureStore.ElementKind.FRAME -> {
+                    val frame = store.allFrames().firstOrNull { it.id == selection.id } ?: return@forEach
+                    frame.cornerA.set(pointTransform(Vector3(frame.cornerA)))
+                    frame.cornerB.set(pointTransform(Vector3(frame.cornerB)))
+                    val newNormal = vectorTransform(Vector3(frame.normal))
+                    if (newNormal.len2() > 1e-6f) {
+                        frame.normal.set(newNormal.nor())
+                    }
+                    changed++
+                }
+            }
+        }
+        if (changed > 0) {
+            rebuildArchitectureGeometry(rootPrototype)
+            notifyChange()
+        }
+        return changed
+    }
+
+    fun copySelectedArchitectureElements(
+        group: GroupNode,
+        pointTransform: (Vector3) -> Vector3,
+        vectorTransform: (Vector3) -> Vector3 = { Vector3(it) }
+    ): Int {
+        val store = architectureStoreFor(group)
+        val selected = store.selectedElements().toList()
+        if (selected.isEmpty()) {
+            return 0
+        }
+
+        val copiedSelections = mutableListOf<ArchitectureStore.ElementSelection>()
+        selected.forEach { selection ->
+            when (selection.kind) {
+                ArchitectureStore.ElementKind.WALL -> {
+                    val wall = store.wallById(selection.id) ?: return@forEach
+                    val copiedWall = store.addWall(
+                        start = pointTransform(Vector3(wall.start)),
+                        end = pointTransform(Vector3(wall.end)),
+                        thickness = wall.thickness,
+                        height = wall.height,
+                        inclinationDeg = wall.inclinationDeg,
+                        exteriorColor = Color(wall.exteriorColor),
+                        interiorColor = Color(wall.interiorColor)
+                    )
+                    wall.holes.forEach { hole ->
+                        store.addHole(
+                            wallId = copiedWall.id,
+                            u0 = hole.u0,
+                            u1 = hole.u1,
+                            v0 = hole.v0,
+                            v1 = hole.v1,
+                            minSize = 0f
+                        )
+                    }
+                    copiedSelections.add(
+                        ArchitectureStore.ElementSelection(
+                            ArchitectureStore.ElementKind.WALL,
+                            copiedWall.id
+                        )
+                    )
+                }
+                ArchitectureStore.ElementKind.SLAB -> {
+                    val slab = store.allSlabs().firstOrNull { it.id == selection.id } ?: return@forEach
+                    val copiedSlab = store.addSlab(
+                        minCorner = pointTransform(Vector3(slab.min)),
+                        maxCorner = pointTransform(Vector3(slab.max)),
+                        thickness = slab.thickness,
+                        topColor = Color(slab.topColor),
+                        bottomColor = Color(slab.bottomColor),
+                        sideColor = Color(slab.sideColor)
+                    )
+                    val nextAxisU = vectorTransform(Vector3(slab.axisU))
+                    if (nextAxisU.len2() > 1e-6f) {
+                        copiedSlab.axisU.set(nextAxisU.nor())
+                    }
+                    val nextAxisV = vectorTransform(Vector3(slab.axisV))
+                    if (nextAxisV.len2() > 1e-6f) {
+                        copiedSlab.axisV.set(nextAxisV.nor())
+                    }
+                    val nextNormal = vectorTransform(Vector3(slab.normal))
+                    if (nextNormal.len2() > 1e-6f) {
+                        copiedSlab.normal.set(nextNormal.nor())
+                    }
+                    copiedSelections.add(
+                        ArchitectureStore.ElementSelection(
+                            ArchitectureStore.ElementKind.SLAB,
+                            copiedSlab.id
+                        )
+                    )
+                }
+                ArchitectureStore.ElementKind.STAIR -> {
+                    val stair = store.allStairs().firstOrNull { it.id == selection.id } ?: return@forEach
+                    val copiedStair = store.addStair(
+                        minCorner = pointTransform(Vector3(stair.min)),
+                        maxCorner = pointTransform(Vector3(stair.max)),
+                        contourPoints = stair.contour.map { pointTransform(Vector3(it)) },
+                        walkingPathPoints = stair.walkingPath.map { pointTransform(Vector3(it)) },
+                        walkingStart = pointTransform(Vector3(stair.walkingStart)),
+                        walkingEnd = pointTransform(Vector3(stair.walkingEnd)),
+                        height = stair.height,
+                        stepCount = stair.stepCount,
+                        supportThickness = stair.supportThickness,
+                        railLeftEnabled = stair.railLeftEnabled,
+                        railRightEnabled = stair.railRightEnabled,
+                        treadColor = Color(stair.treadColor),
+                        supportColor = Color(stair.supportColor)
+                    )
+                    copiedSelections.add(
+                        ArchitectureStore.ElementSelection(
+                            ArchitectureStore.ElementKind.STAIR,
+                            copiedStair.id
+                        )
+                    )
+                }
+                ArchitectureStore.ElementKind.FRAME -> {
+                    val frame = store.allFrames().firstOrNull { it.id == selection.id } ?: return@forEach
+                    val normal = vectorTransform(Vector3(frame.normal))
+                    val copiedFrame = store.addFrame(
+                        cornerA = pointTransform(Vector3(frame.cornerA)),
+                        cornerB = pointTransform(Vector3(frame.cornerB)),
+                        normal = if (normal.len2() <= 1e-6f) Vector3(frame.normal) else normal.nor(),
+                        depth = frame.depth,
+                        frameWidth = frame.frameWidth,
+                        kind = frame.kind,
+                        color = Color(frame.color),
+                        glazingEnabled = frame.glazingEnabled,
+                        glazingColor = Color(frame.glazingColor)
+                    )
+                    copiedSelections.add(
+                        ArchitectureStore.ElementSelection(
+                            ArchitectureStore.ElementKind.FRAME,
+                            copiedFrame.id
+                        )
+                    )
+                }
+            }
+        }
+
+        if (copiedSelections.isNotEmpty()) {
+            store.clearSelectedElement()
+            copiedSelections.forEach { copied ->
+                store.addSelectedElement(copied.kind, copied.id)
+            }
+            rebuildArchitectureGeometry(rootPrototype)
+            notifyChange()
+        }
+
+        return copiedSelections.size
     }
 
     fun updateArchitectureWallEndpoints(
@@ -945,14 +1407,16 @@ class GroupScene(
         start: Vector3,
         end: Vector3
     ): Boolean {
-        val store = group.architectureStore ?: return false
-        if (start.dst2(end) <= 1e-6f) {
+        val store = architectureStoreFor(group)
+        val startWorld = group.toWorld(start)
+        val endWorld = group.toWorld(end)
+        if (startWorld.dst2(endWorld) <= 1e-6f) {
             return false
         }
-        if (!store.updateWallEndpoints(id, start, end)) {
+        if (!store.updateWallEndpoints(id, startWorld, endWorld)) {
             return false
         }
-        rebuildArchitectureGeometry(group.prototype)
+        rebuildArchitectureGeometry(rootPrototype)
         notifyChange()
         return true
     }
@@ -963,9 +1427,11 @@ class GroupScene(
         cornerA: Vector3,
         cornerB: Vector3
     ): Boolean {
-        val store = group.architectureStore ?: return false
+        val store = architectureStoreFor(group)
+        val cornerAWorld = group.toWorld(cornerA)
+        val cornerBWorld = group.toWorld(cornerB)
         val wall = store.wallById(wallId) ?: return false
-        val candidate = wallHoleCandidate(wall, cornerA, cornerB) ?: return false
+        val candidate = wallHoleCandidate(wall, cornerAWorld, cornerBWorld) ?: return false
         val added = store.addHole(
             wallId = wall.id,
             u0 = candidate.u0,
@@ -976,7 +1442,7 @@ class GroupScene(
         if (added.u1 - added.u0 <= 1e-4f || added.v1 - added.v0 <= 1e-4f) {
             return false
         }
-        rebuildArchitectureGeometry(group.prototype)
+        rebuildArchitectureGeometry(rootPrototype)
         notifyChange()
         return true
     }
@@ -986,26 +1452,27 @@ class GroupScene(
         cornerA: Vector3,
         cornerB: Vector3
     ): Boolean {
-        val store = group.architectureStore ?: return false
-        if (
-            store.allWalls().isEmpty() ||
-            store.allSlabs().isNotEmpty() ||
-            store.allStairs().isNotEmpty() ||
-            store.allFrames().isNotEmpty()
-        ) {
+        val store = architectureStoreFor(group)
+        val cornerAWorld = group.toWorld(cornerA)
+        val cornerBWorld = group.toWorld(cornerB)
+        if (store.allWalls().isEmpty()) {
             return false
         }
-        val candidate = findNearestWallHoleCandidate(store, cornerA, cornerB) ?: return false
+        val candidate = findNearestWallHoleCandidate(store, cornerAWorld, cornerBWorld) ?: return false
         return addArchitectureHoleToWall(group, candidate.wall.id, cornerA, cornerB)
     }
 
     fun architectureHoleGuideSegmentsWorld(
         group: GroupNode,
-        includeDiagonals: Boolean = true
+        includeDiagonals: Boolean = true,
+        wallId: String? = null
     ): List<Pair<Vector3, Vector3>> {
-        val store = group.architectureStore ?: return emptyList()
+        val store = architectureStoreFor(group)
         val guides = mutableListOf<Pair<Vector3, Vector3>>()
         store.allWalls().forEach { wall ->
+            if (wallId != null && wall.id != wallId) {
+                return@forEach
+            }
             wall.holes.forEach { hole ->
                 guides.addAll(holeContourSegments(wall, hole, includeDiagonals = includeDiagonals))
             }
@@ -1017,7 +1484,7 @@ class GroupScene(
         group: GroupNode,
         wallId: String? = null
     ): List<HoleHandleMarker> {
-        val store = group.architectureStore ?: return emptyList()
+        val store = architectureStoreFor(group)
         val handles = mutableListOf<HoleHandleMarker>()
         store.allWalls().forEach { wall ->
             if (wallId != null && wall.id != wallId) {
@@ -1052,32 +1519,204 @@ class GroupScene(
         return handles
     }
 
+    fun architectureHoleConstructionHotspotsWorld(
+        group: GroupNode,
+        wallId: String? = null
+    ): List<ArchitectureElementHotspotMarker> {
+        val store = architectureStoreFor(group)
+        val markers = mutableListOf<ArchitectureElementHotspotMarker>()
+        store.allWalls().forEach { wall ->
+            if (wallId != null && wall.id != wallId) {
+                return@forEach
+            }
+            val basis = wallBasis(wall) ?: return@forEach
+            wall.holes.forEach { hole ->
+                val p0 = wallPoint(basis, wall, hole.u0, hole.v0, 1f, 0.002f)
+                val p2 = wallPoint(basis, wall, hole.u1, hole.v1, 1f, 0.002f)
+                markers.add(
+                    ArchitectureElementHotspotMarker(
+                        kind = ArchitectureStore.ElementKind.WALL,
+                        id = wall.id,
+                        world = p0
+                    )
+                )
+                markers.add(
+                    ArchitectureElementHotspotMarker(
+                        kind = ArchitectureStore.ElementKind.WALL,
+                        id = wall.id,
+                        world = p2
+                    )
+                )
+            }
+        }
+        return markers
+    }
+
+    fun architectureSlabConstructionHotspotsWorld(
+        group: GroupNode,
+        slabId: String? = null
+    ): List<ArchitectureElementHotspotMarker> {
+        val store = architectureStoreFor(group)
+        val markers = mutableListOf<ArchitectureElementHotspotMarker>()
+        store.allSlabs().forEach { slab ->
+            if (slabId != null && slab.id != slabId) {
+                return@forEach
+            }
+            markers.add(
+                ArchitectureElementHotspotMarker(
+                    kind = ArchitectureStore.ElementKind.SLAB,
+                    id = slab.id,
+                    world = Vector3(slab.min)
+                )
+            )
+            markers.add(
+                ArchitectureElementHotspotMarker(
+                    kind = ArchitectureStore.ElementKind.SLAB,
+                    id = slab.id,
+                    world = Vector3(slab.max)
+                )
+            )
+        }
+        return markers
+    }
+
+    fun architectureFrameConstructionHotspotsWorld(
+        group: GroupNode,
+        frameId: String? = null
+    ): List<ArchitectureElementHotspotMarker> {
+        val store = architectureStoreFor(group)
+        val markers = mutableListOf<ArchitectureElementHotspotMarker>()
+        store.allFrames().forEach { frame ->
+            if (frameId != null && frame.id != frameId) {
+                return@forEach
+            }
+            markers.add(
+                ArchitectureElementHotspotMarker(
+                    kind = ArchitectureStore.ElementKind.FRAME,
+                    id = frame.id,
+                    world = Vector3(frame.cornerA)
+                )
+            )
+            markers.add(
+                ArchitectureElementHotspotMarker(
+                    kind = ArchitectureStore.ElementKind.FRAME,
+                    id = frame.id,
+                    world = Vector3(frame.cornerB)
+                )
+            )
+        }
+        return markers
+    }
+
+    fun architectureSlabEndpointHandleMarkersWorld(
+        group: GroupNode,
+        slabId: String? = null
+    ): List<ArchitectureEndpointHandleMarker> {
+        val store = architectureStoreFor(group)
+        val selectedIds = store.selectedElements()
+            .filter { it.kind == ArchitectureStore.ElementKind.SLAB }
+            .map { it.id }
+            .toSet()
+        val targets = store.allSlabs().filter { slab ->
+            when {
+                slabId != null -> slab.id == slabId
+                selectedIds.isNotEmpty() -> selectedIds.contains(slab.id)
+                else -> false
+            }
+        }
+        return targets.flatMap { slab ->
+            val halfSize = max(0.2f, slab.thickness * 0.65f)
+            listOf(
+                ArchitectureEndpointHandleMarker(
+                    kind = ArchitectureStore.ElementKind.SLAB,
+                    id = slab.id,
+                    draggingStart = true,
+                    center = Vector3(slab.min),
+                    halfSize = halfSize
+                ),
+                ArchitectureEndpointHandleMarker(
+                    kind = ArchitectureStore.ElementKind.SLAB,
+                    id = slab.id,
+                    draggingStart = false,
+                    center = Vector3(slab.max),
+                    halfSize = halfSize
+                )
+            )
+        }
+    }
+
+    fun architectureFrameEndpointHandleMarkersWorld(
+        group: GroupNode,
+        frameId: String? = null
+    ): List<ArchitectureEndpointHandleMarker> {
+        val store = architectureStoreFor(group)
+        val selectedIds = store.selectedElements()
+            .filter { it.kind == ArchitectureStore.ElementKind.FRAME }
+            .map { it.id }
+            .toSet()
+        val targets = store.allFrames().filter { frame ->
+            when {
+                frameId != null -> frame.id == frameId
+                selectedIds.isNotEmpty() -> selectedIds.contains(frame.id)
+                else -> false
+            }
+        }
+        return targets.flatMap { frame ->
+            val halfSize = max(0.2f, max(frame.frameWidth, frame.depth) * 0.75f)
+            listOf(
+                ArchitectureEndpointHandleMarker(
+                    kind = ArchitectureStore.ElementKind.FRAME,
+                    id = frame.id,
+                    draggingStart = true,
+                    center = Vector3(frame.cornerA),
+                    halfSize = halfSize
+                ),
+                ArchitectureEndpointHandleMarker(
+                    kind = ArchitectureStore.ElementKind.FRAME,
+                    id = frame.id,
+                    draggingStart = false,
+                    center = Vector3(frame.cornerB),
+                    halfSize = halfSize
+                )
+            )
+        }
+    }
+
     fun architectureWallEndpointHandleMarkersWorld(
         group: GroupNode,
         wallId: String? = null
     ): List<WallEndpointHandleMarker> {
-        val store = group.architectureStore ?: return emptyList()
-        val targetWall = when {
-            wallId != null -> store.wallById(wallId)
-            else -> store.selectedWall()
-        } ?: return emptyList()
-        val startWorld = group.toWorld(targetWall.start)
-        val endWorld = group.toWorld(targetWall.end)
-        val halfSize = max(0.2f, targetWall.thickness * 0.65f)
-        return listOf(
-            WallEndpointHandleMarker(
-                wallId = targetWall.id,
-                draggingStart = true,
-                center = Vector3(startWorld),
-                halfSize = halfSize
-            ),
-            WallEndpointHandleMarker(
-                wallId = targetWall.id,
-                draggingStart = false,
-                center = Vector3(endWorld),
-                halfSize = halfSize
+        val store = architectureStoreFor(group)
+        val selectedIds = store.selectedElements()
+            .filter { it.kind == ArchitectureStore.ElementKind.WALL }
+            .map { it.id }
+            .toSet()
+        val targets = store.allWalls().filter { wall ->
+            when {
+                wallId != null -> wall.id == wallId
+                selectedIds.isNotEmpty() -> selectedIds.contains(wall.id)
+                else -> false
+            }
+        }
+        return targets.flatMap { wall ->
+            val startWorld = Vector3(wall.start)
+            val endWorld = Vector3(wall.end)
+            val halfSize = max(0.2f, wall.thickness * 0.65f)
+            listOf(
+                WallEndpointHandleMarker(
+                    wallId = wall.id,
+                    draggingStart = true,
+                    center = Vector3(startWorld),
+                    halfSize = halfSize
+                ),
+                WallEndpointHandleMarker(
+                    wallId = wall.id,
+                    draggingStart = false,
+                    center = Vector3(endWorld),
+                    halfSize = halfSize
+                )
             )
-        )
+        }
     }
 
     fun updateArchitectureHoleByHandle(
@@ -1087,7 +1726,7 @@ class GroupScene(
         handleKind: HoleHandleKind,
         targetWorld: Vector3
     ): Boolean {
-        val store = group.architectureStore ?: return false
+        val store = architectureStoreFor(group)
         val wall = store.wallById(wallId) ?: return false
         val hole = wall.holes.firstOrNull { it.id == holeId } ?: return false
         val basis = wallBasis(wall) ?: return false
@@ -1144,14 +1783,14 @@ class GroupScene(
         if (!store.updateHole(wallId, holeId, u0, u1, v0, v1)) {
             return false
         }
-        rebuildArchitectureGeometry(group.prototype)
+        rebuildArchitectureGeometry(rootPrototype)
         notifyChange()
         return true
     }
 
     fun deleteSelectedArchitectureHoleContours(group: GroupNode): Int {
-        val store = group.architectureStore ?: return 0
-        val selected = group.lineStore.getSelected().toList()
+        val store = architectureStoreFor(group)
+        val selected = root.lineStore.getSelected().toList()
         if (selected.isEmpty()) {
             return 0
         }
@@ -1164,9 +1803,100 @@ class GroupScene(
             }
         }
         if (removed > 0) {
-            rebuildArchitectureGeometry(group.prototype)
+            rebuildArchitectureGeometry(rootPrototype)
             notifyChange()
         }
+        return removed
+    }
+
+    fun explodeSelectedArchitectureElements(group: GroupNode): Int {
+        val store = architectureStoreFor(group)
+        val selected = store.selectedElements().toList()
+        if (selected.isEmpty()) {
+            return 0
+        }
+
+        val wallJoinShifts = computeWallJoinShifts(store.allWalls())
+        val capturedLineStore = DraftLineStore()
+        val capturedFaceStore = DraftFaceStore(defaultFaceColor)
+        capturedFaceStore.withChangeSuppressed {
+            capturedLineStore.withChangeSuppressed {
+                selected.forEach { selection ->
+                    when (selection.kind) {
+                        ArchitectureStore.ElementKind.WALL -> {
+                            val wall = store.wallById(selection.id) ?: return@forEach
+                            appendWallGeometry(
+                                faceStore = capturedFaceStore,
+                                lineStore = capturedLineStore,
+                                wall = wall,
+                                exteriorColor = wall.exteriorColor,
+                                interiorColor = wall.interiorColor,
+                                joinShift = wallJoinShifts[wall.id] ?: WallJoinShift()
+                            )
+                        }
+                        ArchitectureStore.ElementKind.SLAB -> {
+                            val slab = store.allSlabs().firstOrNull { it.id == selection.id } ?: return@forEach
+                            appendSlabGeometry(
+                                faceStore = capturedFaceStore,
+                                lineStore = capturedLineStore,
+                                slab = slab,
+                                topColor = slab.topColor,
+                                bottomColor = slab.bottomColor,
+                                sideColor = slab.sideColor
+                            )
+                        }
+                        ArchitectureStore.ElementKind.STAIR -> {
+                            val stair = store.allStairs().firstOrNull { it.id == selection.id } ?: return@forEach
+                            appendStairGeometry(
+                                faceStore = capturedFaceStore,
+                                lineStore = capturedLineStore,
+                                stair = stair,
+                                treadColor = stair.treadColor,
+                                supportColor = stair.supportColor
+                            )
+                        }
+                        ArchitectureStore.ElementKind.FRAME -> {
+                            val frame = store.allFrames().firstOrNull { it.id == selection.id } ?: return@forEach
+                            appendFrameGeometry(
+                                faceStore = capturedFaceStore,
+                                lineStore = capturedLineStore,
+                                frame = frame,
+                                color = frame.color
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        val removed = store.deleteSelectedElements()
+        if (removed <= 0) {
+            return 0
+        }
+        rebuildArchitectureGeometry(rootPrototype)
+
+        val lineStore = root.lineStore
+        val faceStore = root.faceStore
+        val existingLines = lineStore.getSegments().toMutableSet()
+        val existingFaces = faceStore.getTriangles().toMutableSet()
+
+        faceStore.withChangeSuppressed {
+            lineStore.withChangeSuppressed {
+                capturedLineStore.getSegments().forEach { segment ->
+                    if (existingLines.add(segment)) {
+                        lineStore.addSegment(segment.start, segment.end, autoCleanup = false)
+                    }
+                }
+                capturedFaceStore.getTriangles().forEach { triangle ->
+                    if (existingFaces.add(triangle)) {
+                        faceStore.addTriangle(triangle.a, triangle.b, triangle.c, capturedFaceStore.colorFor(triangle))
+                    }
+                }
+            }
+        }
+        lineStore.notifyExternalChange()
+        faceStore.notifyExternalChange()
+        notifyChange()
         return removed
     }
 
@@ -1602,19 +2332,18 @@ class GroupScene(
     }
 
     fun rebuildArchitectureGeometry(prototype: ObjectPrototype) {
-        if (prototype.kind != PrototypeKind.ARCHITECTURE) {
-            return
-        }
-        val store = prototype.architectureStore ?: return
-        val lineStore = prototype.lineStore
-        val faceStore = prototype.faceStore
+        val store = modelArchitectureStore
+        val lineStore = root.lineStore
+        val faceStore = root.faceStore
 
         lineStore.withChangeSuppressed {
-            lineStore.clearAll()
+            lineStore.deleteSegments(generatedArchitectureLines)
         }
         faceStore.withChangeSuppressed {
-            faceStore.clearAll()
+            faceStore.deleteTriangles(generatedArchitectureFaces)
         }
+        generatedArchitectureLines.clear()
+        generatedArchitectureFaces.clear()
 
         if (store.allWalls().isEmpty() &&
             store.allSlabs().isEmpty() &&
@@ -1626,6 +2355,8 @@ class GroupScene(
             return
         }
 
+        val lineBaseline = lineStore.getSegments().toSet()
+        val faceBaseline = faceStore.getTriangles().toSet()
         val wallJoinShifts = computeWallJoinShifts(store.allWalls())
         faceStore.withChangeSuppressed {
             lineStore.withChangeSuppressed {
@@ -1650,9 +2381,144 @@ class GroupScene(
                 }
             }
         }
-        lineStore.cleanupJts()
+        generatedArchitectureLines.addAll(lineStore.getSegments().filter { it !in lineBaseline })
+        generatedArchitectureFaces.addAll(faceStore.getTriangles().filter { it !in faceBaseline })
         lineStore.notifyExternalChange()
         faceStore.notifyExternalChange()
+    }
+
+    fun syncArchitectureGeometryAfterLoad() {
+        generatedArchitectureLines.clear()
+        generatedArchitectureFaces.clear()
+
+        val store = modelArchitectureStore
+        if (store.allWalls().isEmpty() &&
+            store.allSlabs().isEmpty() &&
+            store.allStairs().isEmpty() &&
+            store.allFrames().isEmpty()
+        ) {
+            return
+        }
+
+        val expectedLineStore = DraftLineStore()
+        val expectedFaceStore = DraftFaceStore(defaultFaceColor)
+        val wallJoinShifts = computeWallJoinShifts(store.allWalls())
+        expectedFaceStore.withChangeSuppressed {
+            expectedLineStore.withChangeSuppressed {
+                store.allWalls().forEach { wall ->
+                    appendWallGeometry(
+                        faceStore = expectedFaceStore,
+                        lineStore = expectedLineStore,
+                        wall = wall,
+                        exteriorColor = wall.exteriorColor,
+                        interiorColor = wall.interiorColor,
+                        joinShift = wallJoinShifts[wall.id] ?: WallJoinShift()
+                    )
+                }
+                store.allSlabs().forEach { slab ->
+                    appendSlabGeometry(expectedFaceStore, expectedLineStore, slab, slab.topColor, slab.bottomColor, slab.sideColor)
+                }
+                store.allStairs().forEach { stair ->
+                    appendStairGeometry(expectedFaceStore, expectedLineStore, stair, stair.treadColor, stair.supportColor)
+                }
+                store.allFrames().forEach { frame ->
+                    appendFrameGeometry(expectedFaceStore, expectedLineStore, frame, frame.color)
+                }
+            }
+        }
+
+        val expectedSegmentCounts = mutableMapOf<SegmentGeomKey, Int>()
+        expectedLineStore.getSegments().forEach { segment ->
+            val key = segmentGeomKey(segment.start, segment.end)
+            expectedSegmentCounts[key] = (expectedSegmentCounts[key] ?: 0) + 1
+        }
+        val expectedTriangleCounts = mutableMapOf<TriangleGeomKey, Int>()
+        expectedFaceStore.getTriangles().forEach { triangle ->
+            val key = triangleGeomKey(triangle.a, triangle.b, triangle.c)
+            expectedTriangleCounts[key] = (expectedTriangleCounts[key] ?: 0) + 1
+        }
+
+        val staleSegments = mutableListOf<DraftLineStore.Segment>()
+        root.lineStore.getSegments().forEach { segment ->
+            val key = segmentGeomKey(segment.start, segment.end)
+            val remaining = expectedSegmentCounts[key] ?: 0
+            if (remaining > 0) {
+                staleSegments.add(segment)
+                if (remaining == 1) {
+                    expectedSegmentCounts.remove(key)
+                } else {
+                    expectedSegmentCounts[key] = remaining - 1
+                }
+            }
+        }
+
+        val staleTriangles = mutableListOf<DraftFaceStore.Triangle>()
+        root.faceStore.getTriangles().forEach { triangle ->
+            val key = triangleGeomKey(triangle.a, triangle.b, triangle.c)
+            val remaining = expectedTriangleCounts[key] ?: 0
+            if (remaining > 0) {
+                staleTriangles.add(triangle)
+                if (remaining == 1) {
+                    expectedTriangleCounts.remove(key)
+                } else {
+                    expectedTriangleCounts[key] = remaining - 1
+                }
+            }
+        }
+
+        if (staleSegments.isNotEmpty() || staleTriangles.isNotEmpty()) {
+            root.faceStore.withChangeSuppressed {
+                root.lineStore.withChangeSuppressed {
+                    root.lineStore.deleteSegments(staleSegments)
+                    root.faceStore.deleteTriangles(staleTriangles)
+                }
+            }
+            root.lineStore.notifyExternalChange()
+            root.faceStore.notifyExternalChange()
+        }
+
+        rebuildArchitectureGeometry(rootPrototype)
+    }
+
+    private data class QuantizedPointKey(val x: Long, val y: Long, val z: Long)
+
+    private data class SegmentGeomKey(val a: QuantizedPointKey, val b: QuantizedPointKey)
+
+    private data class TriangleGeomKey(val a: QuantizedPointKey, val b: QuantizedPointKey, val c: QuantizedPointKey)
+
+    private val quantizedPointComparator = Comparator<QuantizedPointKey> { left, right ->
+        when {
+            left.x != right.x -> left.x.compareTo(right.x)
+            left.y != right.y -> left.y.compareTo(right.y)
+            else -> left.z.compareTo(right.z)
+        }
+    }
+
+    private fun quantizedPointKey(point: Vector3, epsilon: Float = 1e-3f): QuantizedPointKey {
+        return QuantizedPointKey(
+            x = (point.x / epsilon).roundToLong(),
+            y = (point.y / epsilon).roundToLong(),
+            z = (point.z / epsilon).roundToLong()
+        )
+    }
+
+    private fun segmentGeomKey(start: Vector3, end: Vector3): SegmentGeomKey {
+        val a = quantizedPointKey(start)
+        val b = quantizedPointKey(end)
+        return if (quantizedPointComparator.compare(a, b) <= 0) {
+            SegmentGeomKey(a, b)
+        } else {
+            SegmentGeomKey(b, a)
+        }
+    }
+
+    private fun triangleGeomKey(a: Vector3, b: Vector3, c: Vector3): TriangleGeomKey {
+        val sorted = listOf(
+            quantizedPointKey(a),
+            quantizedPointKey(b),
+            quantizedPointKey(c)
+        ).sortedWith(quantizedPointComparator)
+        return TriangleGeomKey(sorted[0], sorted[1], sorted[2])
     }
 
     private data class WallBasis(
@@ -1986,6 +2852,82 @@ class GroupScene(
         val nMax: Float
     )
 
+    private data class SlabBasis(
+        val origin: Vector3,
+        val axisU: Vector3,
+        val axisV: Vector3,
+        val normal: Vector3,
+        val sizeU: Float,
+        val sizeV: Float,
+        val thickness: Float
+    )
+
+    private fun slabBasis(slab: ArchitectureStore.Slab): SlabBasis? {
+        var axisU = Vector3(slab.axisU)
+        if (axisU.len2() <= 1e-6f) {
+            axisU.set(1f, 0f, 0f)
+        } else {
+            axisU.nor()
+        }
+        var axisV = Vector3(slab.axisV)
+        axisV.mulAdd(axisU, -axisV.dot(axisU))
+        if (axisV.len2() <= 1e-6f) {
+            axisV = if (abs(axisU.y) < 0.9f) {
+                Vector3(0f, 1f, 0f).crs(axisU)
+            } else {
+                Vector3(0f, 0f, 1f).crs(axisU)
+            }
+        }
+        if (axisV.len2() <= 1e-6f) {
+            return null
+        }
+        axisV.nor()
+
+        var normal = Vector3(slab.normal)
+        if (normal.len2() <= 1e-6f) {
+            normal = Vector3(axisU).crs(axisV)
+        }
+        if (normal.len2() <= 1e-6f) {
+            return null
+        }
+        normal.nor()
+        if (Vector3(axisU).crs(axisV).dot(normal) < 0f) {
+            axisV.scl(-1f)
+        }
+
+        val diagonal = Vector3(slab.max).sub(slab.min)
+        var sizeU = diagonal.dot(axisU)
+        var sizeV = diagonal.dot(axisV)
+        if (abs(sizeU) <= 1e-6f && abs(sizeV) <= 1e-6f) {
+            sizeU = 1f
+            sizeV = 1f
+        }
+
+        return SlabBasis(
+            origin = Vector3(slab.min),
+            axisU = axisU,
+            axisV = axisV,
+            normal = normal,
+            sizeU = sizeU,
+            sizeV = sizeV,
+            thickness = slab.thickness.coerceAtLeast(0.01f)
+        )
+    }
+
+    private fun slabCorners(slab: ArchitectureStore.Slab): List<Vector3> {
+        val basis = slabBasis(slab) ?: return emptyList()
+        val c0 = Vector3(basis.origin)
+        val c1 = Vector3(c0).mulAdd(basis.axisU, basis.sizeU)
+        val c3 = Vector3(c0).mulAdd(basis.axisV, basis.sizeV)
+        val c2 = Vector3(c1).mulAdd(basis.axisV, basis.sizeV)
+        val lift = Vector3(basis.normal).scl(basis.thickness)
+        val t0 = Vector3(c0).add(lift)
+        val t1 = Vector3(c1).add(lift)
+        val t2 = Vector3(c2).add(lift)
+        val t3 = Vector3(c3).add(lift)
+        return listOf(c0, c1, c2, c3, t0, t1, t2, t3)
+    }
+
     private fun architectureWallDistanceSq(wall: ArchitectureStore.WallSegment, point: Vector3): Float {
         val basis = wallBasis(wall) ?: return Float.POSITIVE_INFINITY
         val projected = projectToWall(basis, point)
@@ -2000,16 +2942,15 @@ class GroupScene(
     }
 
     private fun architectureSlabDistanceSq(slab: ArchitectureStore.Slab, point: Vector3): Float {
-        val minX = min(slab.min.x, slab.max.x)
-        val maxX = max(slab.min.x, slab.max.x)
-        val minZ = min(slab.min.z, slab.max.z)
-        val maxZ = max(slab.min.z, slab.max.z)
-        val baseY = min(slab.min.y, slab.max.y)
-        val topY = baseY + slab.thickness.coerceAtLeast(0.01f)
-        val dx = rangeDistance(point.x, minX, maxX)
-        val dy = rangeDistance(point.y, baseY, topY)
-        val dz = rangeDistance(point.z, minZ, maxZ)
-        return dx * dx + dy * dy + dz * dz
+        val basis = slabBasis(slab) ?: return Float.POSITIVE_INFINITY
+        val rel = Vector3(point).sub(basis.origin)
+        val u = rel.dot(basis.axisU)
+        val v = rel.dot(basis.axisV)
+        val n = rel.dot(basis.normal)
+        val du = rangeDistance(u, min(0f, basis.sizeU), max(0f, basis.sizeU))
+        val dv = rangeDistance(v, min(0f, basis.sizeV), max(0f, basis.sizeV))
+        val dn = rangeDistance(n, 0f, basis.thickness)
+        return du * du + dv * dv + dn * dn
     }
 
     private fun architectureStairDistanceSq(stair: ArchitectureStore.Stair, point: Vector3): Float {
@@ -2115,7 +3056,7 @@ class GroupScene(
             val u1 = max(hole.u0, hole.u1).coerceIn(0.01f, basis.length - 0.01f)
             val v0 = min(hole.v0, hole.v1).coerceIn(0.01f, wall.height - 0.01f)
             val v1 = max(hole.v0, hole.v1).coerceIn(0.01f, wall.height - 0.01f)
-            ArchitectureStore.RectHole(hole.id, u0, u1, v0, v1)
+            ArchitectureStore.RectHole(hole.id, hole.name, u0, u1, v0, v1)
         }.filter { it.u1 - it.u0 > 0.02f && it.v1 - it.v0 > 0.02f }
 
         fun wallJoinPoint(u: Float, v: Float, side: Float): Vector3 {
@@ -2250,26 +3191,28 @@ class GroupScene(
         bottomColor: Color,
         sideColor: Color
     ) {
-        val minX = min(slab.min.x, slab.max.x)
-        val maxX = max(slab.min.x, slab.max.x)
-        val minZ = min(slab.min.z, slab.max.z)
-        val maxZ = max(slab.min.z, slab.max.z)
-        val baseY = min(slab.min.y, slab.max.y)
-        val topY = baseY + slab.thickness.coerceAtLeast(0.01f)
-        val p000 = Vector3(minX, baseY, minZ)
-        val p100 = Vector3(maxX, baseY, minZ)
-        val p110 = Vector3(maxX, baseY, maxZ)
-        val p010 = Vector3(minX, baseY, maxZ)
-        val p001 = Vector3(minX, topY, minZ)
-        val p101 = Vector3(maxX, topY, minZ)
-        val p111 = Vector3(maxX, topY, maxZ)
-        val p011 = Vector3(minX, topY, maxZ)
-        addQuad(faceStore, lineStore, p000, p100, p110, p010, Vector3(0f, -1f, 0f), bottomColor)
-        addQuad(faceStore, lineStore, p001, p011, p111, p101, Vector3(0f, 1f, 0f), topColor)
-        addQuad(faceStore, lineStore, p000, p001, p101, p100, Vector3(0f, 0f, -1f), sideColor)
-        addQuad(faceStore, lineStore, p100, p101, p111, p110, Vector3(1f, 0f, 0f), sideColor)
-        addQuad(faceStore, lineStore, p110, p111, p011, p010, Vector3(0f, 0f, 1f), sideColor)
-        addQuad(faceStore, lineStore, p010, p011, p001, p000, Vector3(-1f, 0f, 0f), sideColor)
+        val basis = slabBasis(slab) ?: return
+        val corners = slabCorners(slab)
+        if (corners.size < 8) {
+            return
+        }
+        val p000 = corners[0]
+        val p100 = corners[1]
+        val p110 = corners[2]
+        val p010 = corners[3]
+        val p001 = corners[4]
+        val p101 = corners[5]
+        val p111 = corners[6]
+        val p011 = corners[7]
+        val topNormal = Vector3(basis.normal).nor()
+        val sideUNormal = Vector3(topNormal).crs(basis.axisU).nor()
+        val sideVNormal = Vector3(topNormal).crs(basis.axisV).nor()
+        addQuad(faceStore, lineStore, p000, p100, p110, p010, Vector3(topNormal).scl(-1f), bottomColor)
+        addQuad(faceStore, lineStore, p001, p011, p111, p101, Vector3(topNormal), topColor)
+        addQuad(faceStore, lineStore, p000, p001, p101, p100, Vector3(sideVNormal).scl(-1f), sideColor)
+        addQuad(faceStore, lineStore, p100, p101, p111, p110, Vector3(sideUNormal), sideColor)
+        addQuad(faceStore, lineStore, p110, p111, p011, p010, Vector3(sideVNormal), sideColor)
+        addQuad(faceStore, lineStore, p010, p011, p001, p000, Vector3(sideUNormal).scl(-1f), sideColor)
     }
 
     private fun appendStairGeometry(
@@ -3143,6 +4086,14 @@ class GroupScene(
         appendPrismFromRect(faceStore, lineStore, b, c, ic, ib, normal, depth, color)
         appendPrismFromRect(faceStore, lineStore, id, ic, c, d, normal, depth, color)
         appendPrismFromRect(faceStore, lineStore, a, ia, id, d, normal, depth, color)
+        if (frame.glazingEnabled) {
+            val panelOffset = depth * 0.5f
+            val ga = Vector3(ia).mulAdd(normal, panelOffset)
+            val gb = Vector3(ib).mulAdd(normal, panelOffset)
+            val gc = Vector3(ic).mulAdd(normal, panelOffset)
+            val gd = Vector3(id).mulAdd(normal, panelOffset)
+            addDoubleSidedQuad(faceStore, lineStore, ga, gb, gc, gd, frame.glazingColor)
+        }
     }
 
     private fun appendPrismFromRect(
@@ -3213,6 +4164,25 @@ class GroupScene(
             faceStore.addTriangle(Vector3(p0), Vector3(p3), Vector3(p2), color)
             faceStore.addTriangle(Vector3(p0), Vector3(p2), Vector3(p1), color)
         }
+        lineStore.addSegment(Vector3(p0), Vector3(p1), autoCleanup = false)
+        lineStore.addSegment(Vector3(p1), Vector3(p2), autoCleanup = false)
+        lineStore.addSegment(Vector3(p2), Vector3(p3), autoCleanup = false)
+        lineStore.addSegment(Vector3(p3), Vector3(p0), autoCleanup = false)
+    }
+
+    private fun addDoubleSidedQuad(
+        faceStore: DraftFaceStore,
+        lineStore: DraftLineStore,
+        p0: Vector3,
+        p1: Vector3,
+        p2: Vector3,
+        p3: Vector3,
+        color: Color
+    ) {
+        faceStore.addTriangle(Vector3(p0), Vector3(p1), Vector3(p2), color)
+        faceStore.addTriangle(Vector3(p0), Vector3(p2), Vector3(p3), color)
+        faceStore.addTriangle(Vector3(p0), Vector3(p2), Vector3(p1), color)
+        faceStore.addTriangle(Vector3(p0), Vector3(p3), Vector3(p2), color)
         lineStore.addSegment(Vector3(p0), Vector3(p1), autoCleanup = false)
         lineStore.addSegment(Vector3(p1), Vector3(p2), autoCleanup = false)
         lineStore.addSegment(Vector3(p2), Vector3(p3), autoCleanup = false)
@@ -3479,6 +4449,9 @@ class GroupScene(
         root.faceStore.clearAll()
         root.dimensionStore.clearAll()
         root.textStore.clearAll()
+        modelArchitectureStore.clear()
+        generatedArchitectureLines.clear()
+        generatedArchitectureFaces.clear()
         clearGroupSelection()
         activeGroup = root
         prototypeInstances.clear()
