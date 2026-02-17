@@ -64,6 +64,16 @@ class GroupScene(
         val id: String,
         val world: Vector3
     )
+    private data class ResolvedVentilationDuct(
+        val id: String,
+        val start: Vector3,
+        val end: Vector3,
+        val binormalRef: Vector3,
+        val width: Float,
+        val height: Float,
+        val startJoined: Boolean,
+        val endJoined: Boolean
+    )
 
     class ObjectPrototype(
         val id: String,
@@ -322,6 +332,7 @@ class GroupScene(
     private val generatedArchitectureFaces = mutableSetOf<DraftFaceStore.Triangle>()
     private val generatedHvacLines = mutableSetOf<DraftLineStore.Segment>()
     private val generatedHvacFaces = mutableSetOf<DraftFaceStore.Triangle>()
+    private val resolvedHvacVentilation = mutableMapOf<String, ResolvedVentilationDuct>()
     private val rootPrototype = ObjectPrototype(
         id = "root",
         name = "Root",
@@ -2068,25 +2079,26 @@ class GroupScene(
             if (id != null && duct.id != id) {
                 return@forEach
             }
+            val resolved = resolvedVentilation(duct)
             markers.add(
                 HvacElementHotspotMarker(
                     kind = HvacStore.ElementKind.VENTILATION,
                     id = duct.id,
-                    world = Vector3(duct.start)
+                    world = Vector3(resolved.start)
                 )
             )
             markers.add(
                 HvacElementHotspotMarker(
                     kind = HvacStore.ElementKind.VENTILATION,
                     id = duct.id,
-                    world = Vector3(duct.end)
+                    world = Vector3(resolved.end)
                 )
             )
             markers.add(
                 HvacElementHotspotMarker(
                     kind = HvacStore.ElementKind.VENTILATION,
                     id = duct.id,
-                    world = Vector3(duct.binormalRef)
+                    world = Vector3(resolved.binormalRef)
                 )
             )
         }
@@ -2139,14 +2151,15 @@ class GroupScene(
             if (!include) {
                 return@forEach
             }
-            val halfSize = max(0.14f, max(duct.width, duct.height) * 0.45f)
+            val resolved = resolvedVentilation(duct)
+            val halfSize = max(0.14f, max(resolved.width, resolved.height) * 0.45f)
             markers.add(
                 HvacControlHandleMarker(
                     kind = HvacStore.ElementKind.VENTILATION,
                     id = duct.id,
                     pointIndex = null,
                     ventilationControlKind = HvacStore.VentilationControlKind.START,
-                    center = Vector3(duct.start),
+                    center = Vector3(resolved.start),
                     halfSize = halfSize
                 )
             )
@@ -2156,7 +2169,7 @@ class GroupScene(
                     id = duct.id,
                     pointIndex = null,
                     ventilationControlKind = HvacStore.VentilationControlKind.END,
-                    center = Vector3(duct.end),
+                    center = Vector3(resolved.end),
                     halfSize = halfSize
                 )
             )
@@ -2166,7 +2179,7 @@ class GroupScene(
                     id = duct.id,
                     pointIndex = null,
                     ventilationControlKind = HvacStore.VentilationControlKind.BINORMAL_REF,
-                    center = Vector3(duct.binormalRef),
+                    center = Vector3(resolved.binormalRef),
                     halfSize = halfSize
                 )
             )
@@ -2353,6 +2366,64 @@ class GroupScene(
             return 0
         }
         rebuildArchitectureGeometry(rootPrototype)
+
+        val lineStore = root.lineStore
+        val faceStore = root.faceStore
+        val existingLines = lineStore.getSegments().toMutableSet()
+        val existingFaces = faceStore.getTriangles().toMutableSet()
+
+        faceStore.withChangeSuppressed {
+            lineStore.withChangeSuppressed {
+                capturedLineStore.getSegments().forEach { segment ->
+                    if (existingLines.add(segment)) {
+                        lineStore.addSegment(segment.start, segment.end, autoCleanup = false)
+                    }
+                }
+                capturedFaceStore.getTriangles().forEach { triangle ->
+                    if (existingFaces.add(triangle)) {
+                        faceStore.addTriangle(triangle.a, triangle.b, triangle.c, capturedFaceStore.colorFor(triangle))
+                    }
+                }
+            }
+        }
+        lineStore.notifyExternalChange()
+        faceStore.notifyExternalChange()
+        notifyChange()
+        return removed
+    }
+
+    fun explodeSelectedHvacElements(group: GroupNode): Int {
+        val store = hvacStoreFor(group)
+        val selected = store.selectedElements().toList()
+        if (selected.isEmpty()) {
+            return 0
+        }
+        rebuildResolvedVentilation(store.allVentilationDucts())
+
+        val capturedLineStore = DraftLineStore()
+        val capturedFaceStore = DraftFaceStore(defaultFaceColor)
+        capturedFaceStore.withChangeSuppressed {
+            capturedLineStore.withChangeSuppressed {
+                selected.forEach { selection ->
+                    when (selection.kind) {
+                        HvacStore.ElementKind.PLUMBING -> {
+                            val run = store.plumbingById(selection.id) ?: return@forEach
+                            appendHvacPlumbingGeometry(capturedFaceStore, capturedLineStore, run)
+                        }
+                        HvacStore.ElementKind.VENTILATION -> {
+                            val duct = store.ventilationById(selection.id) ?: return@forEach
+                            appendHvacVentilationGeometry(capturedFaceStore, capturedLineStore, duct)
+                        }
+                    }
+                }
+            }
+        }
+
+        val removed = store.deleteSelectedElements()
+        if (removed <= 0) {
+            return 0
+        }
+        rebuildHvacGeometry(rootPrototype)
 
         val lineStore = root.lineStore
         val faceStore = root.faceStore
@@ -2964,6 +3035,7 @@ class GroupScene(
         val store = modelHvacStore
         val lineStore = root.lineStore
         val faceStore = root.faceStore
+        rebuildResolvedVentilation(store.allVentilationDucts())
 
         lineStore.withChangeSuppressed {
             lineStore.deleteSegments(generatedHvacLines)
@@ -2975,6 +3047,7 @@ class GroupScene(
         generatedHvacFaces.clear()
 
         if (store.allPlumbingRuns().isEmpty() && store.allVentilationDucts().isEmpty()) {
+            resolvedHvacVentilation.clear()
             lineStore.notifyExternalChange()
             faceStore.notifyExternalChange()
             return
@@ -4669,6 +4742,269 @@ class GroupScene(
         }
     }
 
+    private data class SegmentProjection(
+        val point: Vector3,
+        val t: Float,
+        val dist2: Float
+    )
+
+    private data class ResolvedJoinPoint(
+        val point: Vector3,
+        val joined: Boolean
+    )
+
+    private data class SegmentSegmentClosest(
+        val dist2: Float,
+        val s: Float,
+        val t: Float
+    )
+
+    private fun rebuildResolvedVentilation(ducts: List<HvacStore.VentilationDuct>) {
+        resolvedHvacVentilation.clear()
+        if (ducts.isEmpty()) {
+            return
+        }
+        val processed = mutableListOf<ResolvedVentilationDuct>()
+        ducts.forEach { duct ->
+            var start = Vector3(duct.start)
+            var end = Vector3(duct.end)
+            var binormalRef = Vector3(duct.binormalRef)
+            val width = duct.width.coerceAtLeast(0.01f)
+            val height = duct.height.coerceAtLeast(0.01f)
+            if (start.dst2(end) <= 1e-6f) {
+                return@forEach
+            }
+
+            val joinSnapDistance = max(0.08f, max(width, height) * 0.65f)
+            val startJoin = resolveVentilationJoinPoint(start, processed, joinSnapDistance)
+            val endJoin = resolveVentilationJoinPoint(end, processed, joinSnapDistance)
+            start = startJoin.point
+            end = endJoin.point
+            if (start.dst2(end) <= 1e-6f) {
+                end.set(duct.end)
+                if (start.dst2(end) <= 1e-6f) {
+                    return@forEach
+                }
+            }
+
+            // Newer ducts get shifted to avoid intersecting older ones.
+            val shift = resolveVentilationCrossingShift(
+                start = start,
+                end = end,
+                binormalRef = binormalRef,
+                height = height,
+                older = processed,
+                joinSnapDistance = joinSnapDistance
+            )
+            if (shift.len2() > 1e-10f) {
+                start.add(shift)
+                end.add(shift)
+                binormalRef.add(shift)
+            }
+
+            val resolved = ResolvedVentilationDuct(
+                id = duct.id,
+                start = start,
+                end = end,
+                binormalRef = binormalRef,
+                width = width,
+                height = height,
+                startJoined = startJoin.joined,
+                endJoined = endJoin.joined
+            )
+            resolvedHvacVentilation[duct.id] = resolved
+            processed.add(resolved)
+        }
+    }
+
+    private fun resolveVentilationJoinPoint(
+        point: Vector3,
+        older: List<ResolvedVentilationDuct>,
+        snapDistance: Float
+    ): ResolvedJoinPoint {
+        if (older.isEmpty()) {
+            return ResolvedJoinPoint(Vector3(point), false)
+        }
+        val snapSq = snapDistance * snapDistance
+        var bestPoint: Vector3? = null
+        var bestDist2 = snapSq
+        var joined = false
+
+        older.forEach { duct ->
+            val endpoints = listOf(duct.start, duct.end)
+            endpoints.forEach { endpoint ->
+                val dist2 = point.dst2(endpoint)
+                if (dist2 < bestDist2) {
+                    bestDist2 = dist2
+                    bestPoint = Vector3(endpoint)
+                    joined = true
+                }
+            }
+        }
+        if (bestPoint != null) {
+            return ResolvedJoinPoint(bestPoint!!, joined)
+        }
+
+        older.forEach { duct ->
+            val projected = projectPointToSegment(point, duct.start, duct.end) ?: return@forEach
+            if (projected.t <= 0.05f || projected.t >= 0.95f) {
+                return@forEach
+            }
+            if (projected.dist2 < bestDist2) {
+                bestDist2 = projected.dist2
+                bestPoint = Vector3(projected.point)
+                joined = true
+            }
+        }
+
+        return ResolvedJoinPoint(bestPoint ?: Vector3(point), joined)
+    }
+
+    private fun resolveVentilationCrossingShift(
+        start: Vector3,
+        end: Vector3,
+        binormalRef: Vector3,
+        height: Float,
+        older: List<ResolvedVentilationDuct>,
+        joinSnapDistance: Float
+    ): Vector3 {
+        if (older.isEmpty()) {
+            return Vector3()
+        }
+        val basis = hvacVentilationBasis(start, end, binormalRef, width = 0.2f, height = height) ?: return Vector3()
+        val normal = Vector3(basis.normal)
+        val endpointTolSq = (joinSnapDistance * 0.75f) * (joinSnapDistance * 0.75f)
+        var crossingCount = 0
+        var maxOlderHeight = 0f
+
+        older.forEach { duct ->
+            val sharedEndpoint =
+                start.dst2(duct.start) <= endpointTolSq ||
+                    start.dst2(duct.end) <= endpointTolSq ||
+                    end.dst2(duct.start) <= endpointTolSq ||
+                    end.dst2(duct.end) <= endpointTolSq
+            if (sharedEndpoint) {
+                return@forEach
+            }
+            val closest = closestSegmentToSegment(start, end, duct.start, duct.end) ?: return@forEach
+            if (closest.s <= 0.05f || closest.s >= 0.95f || closest.t <= 0.05f || closest.t >= 0.95f) {
+                return@forEach
+            }
+            val tol = max(0.05f, min(height, duct.height) * 0.5f)
+            if (closest.dist2 <= tol * tol) {
+                crossingCount++
+                maxOlderHeight = max(maxOlderHeight, duct.height)
+            }
+        }
+
+        if (crossingCount <= 0) {
+            return Vector3()
+        }
+        val clearance = max(0.05f, min(height, maxOlderHeight).coerceAtLeast(0.05f) * 0.15f)
+        val step = height.coerceAtLeast(0.05f) + maxOlderHeight.coerceAtLeast(0.05f) + clearance
+        return normal.scl(step * crossingCount.toFloat())
+    }
+
+    private fun projectPointToSegment(point: Vector3, a: Vector3, b: Vector3): SegmentProjection? {
+        val ab = Vector3(b).sub(a)
+        val len2 = ab.len2()
+        if (len2 <= 1e-10f) {
+            return null
+        }
+        val t = Vector3(point).sub(a).dot(ab) / len2
+        val clamped = t.coerceIn(0f, 1f)
+        val projected = Vector3(a).mulAdd(ab, clamped)
+        return SegmentProjection(
+            point = projected,
+            t = clamped,
+            dist2 = Vector3(point).sub(projected).len2()
+        )
+    }
+
+    private fun closestSegmentToSegment(
+        p0: Vector3,
+        p1: Vector3,
+        q0: Vector3,
+        q1: Vector3
+    ): SegmentSegmentClosest? {
+        val u = Vector3(p1).sub(p0)
+        val v = Vector3(q1).sub(q0)
+        val w = Vector3(p0).sub(q0)
+        val a = u.dot(u)
+        val b = u.dot(v)
+        val c = v.dot(v)
+        val d = u.dot(w)
+        val e = v.dot(w)
+        val small = 1e-8f
+        var sN: Float
+        var sD = a * c - b * b
+        var tN: Float
+        var tD = sD
+
+        if (a <= small || c <= small) {
+            return null
+        }
+
+        if (sD < small) {
+            sN = 0f
+            sD = 1f
+            tN = e
+            tD = c
+        } else {
+            sN = b * e - c * d
+            tN = a * e - b * d
+            if (sN < 0f) {
+                sN = 0f
+                tN = e
+                tD = c
+            } else if (sN > sD) {
+                sN = sD
+                tN = e + b
+                tD = c
+            }
+        }
+
+        if (tN < 0f) {
+            tN = 0f
+            if (-d < 0f) {
+                sN = 0f
+            } else if (-d > a) {
+                sN = sD
+            } else {
+                sN = -d
+                sD = a
+            }
+        } else if (tN > tD) {
+            tN = tD
+            if (-d + b < 0f) {
+                sN = 0f
+            } else if (-d + b > a) {
+                sN = sD
+            } else {
+                sN = -d + b
+                sD = a
+            }
+        }
+
+        val s = if (abs(sN) < small) 0f else sN / sD
+        val t = if (abs(tN) < small) 0f else tN / tD
+        val dP = Vector3(w).mulAdd(u, s).mulAdd(v, -t)
+        return SegmentSegmentClosest(dist2 = dP.len2(), s = s, t = t)
+    }
+
+    private fun resolvedVentilation(duct: HvacStore.VentilationDuct): ResolvedVentilationDuct {
+        return resolvedHvacVentilation[duct.id] ?: ResolvedVentilationDuct(
+            id = duct.id,
+            start = Vector3(duct.start),
+            end = Vector3(duct.end),
+            binormalRef = Vector3(duct.binormalRef),
+            width = duct.width.coerceAtLeast(0.01f),
+            height = duct.height.coerceAtLeast(0.01f),
+            startJoined = false,
+            endJoined = false
+        )
+    }
+
     private fun appendHvacPlumbingGeometry(
         faceStore: DraftFaceStore,
         lineStore: DraftLineStore,
@@ -4737,6 +5073,7 @@ class GroupScene(
         lineStore: DraftLineStore,
         duct: HvacStore.VentilationDuct
     ) {
+        val resolved = resolvedVentilation(duct)
         val basis = hvacVentilationBasis(duct) ?: return
         val start = Vector3(basis.start)
         val tangent = Vector3(basis.tangent)
@@ -4762,20 +5099,40 @@ class GroupScene(
         addQuad(faceStore, lineStore, sBL, sBR, eBR, eBL, Vector3(normal).scl(-1f), duct.color)
         addQuad(faceStore, lineStore, sTL, sBL, eBL, eTL, binormal, duct.color)
         addQuad(faceStore, lineStore, sTR, eTR, eBR, sBR, Vector3(binormal).scl(-1f), duct.color)
-        addQuad(faceStore, lineStore, sTR, sTL, sBL, sBR, Vector3(tangent).scl(-1f), duct.color)
-        addQuad(faceStore, lineStore, eTL, eTR, eBR, eBL, tangent, duct.color)
+        if (!resolved.startJoined) {
+            addQuad(faceStore, lineStore, sTR, sTL, sBL, sBR, Vector3(tangent).scl(-1f), duct.color)
+        }
+        if (!resolved.endJoined) {
+            addQuad(faceStore, lineStore, eTL, eTR, eBR, eBL, tangent, duct.color)
+        }
     }
 
     private fun hvacVentilationBasis(duct: HvacStore.VentilationDuct): VentilationBasis? {
-        val start = Vector3(duct.start)
-        val tangent = Vector3(duct.end).sub(start)
+        val resolved = resolvedVentilation(duct)
+        return hvacVentilationBasis(
+            start = resolved.start,
+            end = resolved.end,
+            binormalRef = resolved.binormalRef,
+            width = resolved.width,
+            height = resolved.height
+        )
+    }
+
+    private fun hvacVentilationBasis(
+        start: Vector3,
+        end: Vector3,
+        binormalRef: Vector3,
+        width: Float,
+        height: Float
+    ): VentilationBasis? {
+        val tangent = Vector3(end).sub(start)
         val length = tangent.len()
         if (length <= 1e-6f) {
             return null
         }
         tangent.scl(1f / length)
 
-        var binormal = Vector3(duct.binormalRef).sub(start)
+        var binormal = Vector3(binormalRef).sub(start)
         binormal.sub(Vector3(tangent).scl(binormal.dot(tangent)))
         if (binormal.len2() <= 1e-6f) {
             binormal = initialPerpendicular(tangent)
@@ -4797,13 +5154,13 @@ class GroupScene(
         binormal.nor()
 
         return VentilationBasis(
-            start = start,
+            start = Vector3(start),
             tangent = tangent,
             binormal = binormal,
             normal = normal,
             length = length,
-            halfWidth = (duct.width * 0.5f).coerceAtLeast(0.005f),
-            height = duct.height.coerceAtLeast(0.005f)
+            halfWidth = (width * 0.5f).coerceAtLeast(0.005f),
+            height = height.coerceAtLeast(0.005f)
         )
     }
 
@@ -5240,6 +5597,7 @@ class GroupScene(
         generatedArchitectureFaces.clear()
         generatedHvacLines.clear()
         generatedHvacFaces.clear()
+        resolvedHvacVentilation.clear()
         clearGroupSelection()
         activeGroup = root
         prototypeInstances.clear()

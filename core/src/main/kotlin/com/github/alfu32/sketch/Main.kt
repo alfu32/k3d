@@ -4232,15 +4232,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private fun ungroupSelection() {
         val targets = scene.selectedGroups().toList()
         val architectureSelections = scene.selectedArchitectureElements(scene.root)
+        val hvacSelections = scene.selectedHvacElements(scene.root)
         val explodedArchitecture = if (architectureSelections.isNotEmpty()) {
             scene.explodeSelectedArchitectureElements(scene.root)
         } else {
             0
         }
+        val explodedHvac = if (hvacSelections.isNotEmpty()) {
+            scene.explodeSelectedHvacElements(scene.root)
+        } else {
+            0
+        }
         if (targets.isEmpty()) {
-            if (explodedArchitecture > 0) {
-                statusModel.message = "Exploded $explodedArchitecture architecture element(s)."
-                undoManager.commit("Explode Architecture")
+            if (explodedArchitecture + explodedHvac > 0) {
+                statusModel.message = "Exploded architecture $explodedArchitecture, HVAC $explodedHvac element(s)."
+                undoManager.commit("Explode Elements")
                 saveModel()
             }
             return
@@ -4254,10 +4260,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             // Defer actual explode one frame so the user sees feedback before heavy geometry transfer.
             Gdx.app.postRunnable {
                 val count = scene.ungroupSelected()
-                val changed = count + explodedArchitecture
+                val changed = count + explodedArchitecture + explodedHvac
                 if (changed > 0) {
-                    statusModel.message = if (explodedArchitecture > 0) {
-                        "Ungrouped $count group(s), exploded $explodedArchitecture architecture element(s)."
+                    statusModel.message = if (explodedArchitecture > 0 || explodedHvac > 0) {
+                        "Ungrouped $count group(s), exploded architecture $explodedArchitecture and HVAC $explodedHvac element(s)."
                     } else {
                         "Ungrouped $count group(s)."
                     }
@@ -4268,10 +4274,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             return
         }
         val count = scene.ungroupSelected()
-        val changed = count + explodedArchitecture
+        val changed = count + explodedArchitecture + explodedHvac
         if (changed > 0) {
-            statusModel.message = if (explodedArchitecture > 0) {
-                "Ungrouped $count group(s), exploded $explodedArchitecture architecture element(s)."
+            statusModel.message = if (explodedArchitecture > 0 || explodedHvac > 0) {
+                "Ungrouped $count group(s), exploded architecture $explodedArchitecture and HVAC $explodedHvac element(s)."
             } else {
                 "Ungrouped $count group(s)."
             }
