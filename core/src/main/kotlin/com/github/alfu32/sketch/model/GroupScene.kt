@@ -73,7 +73,9 @@ class GroupScene(
         val width: Float,
         val height: Float,
         val startJoined: Boolean,
-        val endJoined: Boolean
+        val endJoined: Boolean,
+        val startJoinPlaneNormal: Vector3? = null,
+        val endJoinPlaneNormal: Vector3? = null
     )
 
     class ObjectPrototype(
@@ -4811,8 +4813,79 @@ class GroupScene(
                 startJoined = startJoin.joined,
                 endJoined = endJoin.joined
             )
-            resolvedHvacVentilation[duct.id] = resolved
             processed.add(resolved)
+        }
+        val startJoinPlanes = mutableMapOf<String, Vector3>()
+        val endJoinPlanes = mutableMapOf<String, Vector3>()
+        computeVentilationJoinPlaneNormals(processed, startJoinPlanes, endJoinPlanes)
+        processed.forEach { resolved ->
+            resolvedHvacVentilation[resolved.id] = resolved.copy(
+                startJoinPlaneNormal = startJoinPlanes[resolved.id]?.let { Vector3(it) },
+                endJoinPlaneNormal = endJoinPlanes[resolved.id]?.let { Vector3(it) }
+            )
+        }
+    }
+
+    private fun computeVentilationJoinPlaneNormals(
+        ducts: List<ResolvedVentilationDuct>,
+        startPlanes: MutableMap<String, Vector3>,
+        endPlanes: MutableMap<String, Vector3>
+    ) {
+        data class EndpointRef(
+            val id: String,
+            val atStart: Boolean,
+            val point: Vector3,
+            val inwardDir: Vector3
+        )
+
+        val snap = 1e-3f
+        fun keyOf(point: Vector3): EndpointKey {
+            return EndpointKey(
+                (point.x / snap).roundToInt(),
+                (point.y / snap).roundToInt(),
+                (point.z / snap).roundToInt()
+            )
+        }
+
+        val refsByKey = mutableMapOf<EndpointKey, MutableList<EndpointRef>>()
+        ducts.forEach { duct ->
+            val path = duct.path
+            if (path.size < 2) {
+                return@forEach
+            }
+            val start = Vector3(path.first())
+            val end = Vector3(path.last())
+            val startDir = Vector3(path[1]).sub(start)
+            val endDir = Vector3(path[path.lastIndex - 1]).sub(end)
+            if (startDir.len2() > 1e-8f) {
+                refsByKey.getOrPut(keyOf(start)) { mutableListOf() }.add(
+                    EndpointRef(duct.id, true, start, startDir.nor())
+                )
+            }
+            if (endDir.len2() > 1e-8f) {
+                refsByKey.getOrPut(keyOf(end)) { mutableListOf() }.add(
+                    EndpointRef(duct.id, false, end, endDir.nor())
+                )
+            }
+        }
+
+        refsByKey.values.forEach { refs ->
+            if (refs.size < 2) {
+                return@forEach
+            }
+            val planeNormal = Vector3()
+            refs.forEach { ref -> planeNormal.add(ref.inwardDir) }
+            if (planeNormal.len2() <= 1e-8f) {
+                return@forEach
+            }
+            planeNormal.nor()
+            refs.forEach { ref ->
+                if (ref.atStart) {
+                    startPlanes[ref.id] = Vector3(planeNormal)
+                } else {
+                    endPlanes[ref.id] = Vector3(planeNormal)
+                }
+            }
         }
     }
 
@@ -5317,9 +5390,54 @@ class GroupScene(
             val tr = Vector3(center).mulAdd(binormal, -halfWidth)
             val br = Vector3(tr).mulAdd(normal, -height)
             val bl = Vector3(tl).mulAdd(normal, -height)
-            rings.add(listOf(tl, tr, br, bl))
+            var ring = listOf(tl, tr, br, bl)
+            if (i == 0 && resolved.startJoinPlaneNormal != null) {
+                val inside = Vector3(path[1]).sub(path[0]).nor()
+                ring = applyMiterPlaneToRing(
+                    ring = ring,
+                    planePoint = path[0],
+                    planeNormal = resolved.startJoinPlaneNormal,
+                    insideDir = inside,
+                    maxOffset = max(resolved.width, resolved.height) * 4f
+                )
+            } else if (i == path.lastIndex && resolved.endJoinPlaneNormal != null) {
+                val inside = Vector3(path[path.lastIndex - 1]).sub(path[path.lastIndex]).nor()
+                ring = applyMiterPlaneToRing(
+                    ring = ring,
+                    planePoint = path[path.lastIndex],
+                    planeNormal = resolved.endJoinPlaneNormal,
+                    insideDir = inside,
+                    maxOffset = max(resolved.width, resolved.height) * 4f
+                )
+            }
+            rings.add(ring)
         }
         return rings
+    }
+
+    private fun applyMiterPlaneToRing(
+        ring: List<Vector3>,
+        planePoint: Vector3,
+        planeNormal: Vector3,
+        insideDir: Vector3,
+        maxOffset: Float
+    ): List<Vector3> {
+        if (ring.isEmpty()) {
+            return ring
+        }
+        if (insideDir.len2() <= 1e-8f || planeNormal.len2() <= 1e-8f) {
+            return ring
+        }
+        val dir = Vector3(insideDir).nor()
+        val normal = Vector3(planeNormal).nor()
+        val denom = normal.dot(dir)
+        if (abs(denom) <= 1e-6f) {
+            return ring
+        }
+        return ring.map { point ->
+            val s = (-normal.dot(Vector3(point).sub(planePoint)) / denom).coerceIn(-maxOffset, maxOffset)
+            Vector3(point).mulAdd(dir, s)
+        }
     }
 
     private fun hvacVentilationBasis(duct: HvacStore.VentilationDuct): VentilationBasis? {
