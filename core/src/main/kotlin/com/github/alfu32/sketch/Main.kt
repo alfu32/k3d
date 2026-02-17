@@ -46,6 +46,7 @@ import com.github.alfu32.sketch.input.Snapper
 import com.github.alfu32.sketch.input.ToolPointerProcessor
 import com.github.alfu32.sketch.model.ArchitectureStore
 import com.github.alfu32.sketch.model.GroupScene
+import com.github.alfu32.sketch.model.HvacStore
 import com.github.alfu32.sketch.model.ModelPersistence
 import com.github.alfu32.sketch.model.ModelCleanup
 import com.github.alfu32.sketch.model.ModelUnit
@@ -176,6 +177,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private val architectureHoleHotspotColor = Color(0.2f, 0.55f, 0.95f, 1f)
     private val architectureSlabHotspotColor = Color(0.2f, 0.9f, 0.85f, 1f)
     private val architectureFrameHotspotColor = Color(1f, 0.7f, 0.25f, 1f)
+    private val hvacPlumbingHotspotColor = Color(0.3f, 0.75f, 0.95f, 1f)
+    private val hvacVentilationHotspotColor = Color(0.45f, 0.95f, 0.55f, 1f)
     private val selectedEntityBoxColor = Color(0.2f, 0.7f, 0.95f, 1f)
     private val editModeBoxColor = Color(1f, 0.6f, 0.2f, 1f)
     private val selectedLineWidth = 8f
@@ -1974,6 +1977,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         drawArchitectureHoleGuides()
         drawArchitectureWallEndpointHitAreas()
         drawArchitectureConstructionHotspots()
+        drawHvacControlPoints()
         drawDimensions()
         toolController.render(shapeRenderer)
         drawActiveToolMeasurementLine()
@@ -2903,6 +2907,30 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         Gdx.gl.glLineWidth(2f)
     }
 
+    private fun drawHvacControlPoints() {
+        if (!scene.hasHvacElements()) {
+            return
+        }
+        val root = scene.root
+        val selected = scene.selectedHvacElements(root)
+        if (selected.isEmpty()) {
+            return
+        }
+        val markers = scene.hvacControlHandleMarkersWorld(root)
+        if (markers.isEmpty()) {
+            return
+        }
+        Gdx.gl.glLineWidth(3f)
+        markers.forEach { marker ->
+            shapeRenderer.color = when (marker.kind) {
+                HvacStore.ElementKind.PLUMBING -> hvacPlumbingHotspotColor
+                HvacStore.ElementKind.VENTILATION -> hvacVentilationHotspotColor
+            }
+            drawArchitectureHandleSquare(marker.center, marker.halfSize)
+        }
+        Gdx.gl.glLineWidth(2f)
+    }
+
     private fun drawArchitectureHandleSquare(center: Vector3, halfSize: Float) {
         val y = center.y + 0.01f
         val p0 = Vector3(center.x - halfSize, y, center.z - halfSize)
@@ -3399,8 +3427,14 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val group = scene.activeGroup()
         val isVoxel = scene.isVoxelGroup(group)
         val hasArchitecture = scene.hasArchitectureElements()
+        val hasHvac = scene.hasHvacElements()
         val architectureElementDeletes = if (hasArchitecture) {
             scene.deleteSelectedArchitectureElements(scene.root)
+        } else {
+            0
+        }
+        val hvacElementDeletes = if (hasHvac) {
+            scene.deleteSelectedHvacElements(scene.root)
         } else {
             0
         }
@@ -3419,10 +3453,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val dimensions = activeDimensionStore().deleteSelected()
         val texts = activeTextStore().deleteSelected()
         val groups = scene.deleteSelectedGroups()
-        if (edges + faces + voxelDeletes + architectureHoleDeletes + architectureElementDeletes + dimensions + texts + groups > 0) {
+        if (edges + faces + voxelDeletes + architectureHoleDeletes + architectureElementDeletes + hvacElementDeletes + dimensions + texts + groups > 0) {
             statusModel.message =
-                "Deleted | architecture $architectureElementDeletes voxels $voxelDeletes holes $architectureHoleDeletes edges $edges faces $faces dimensions $dimensions texts $texts groups $groups"
-            if (groups > 0 && edges + faces + voxelDeletes + architectureHoleDeletes + architectureElementDeletes == 0) {
+                "Deleted | architecture $architectureElementDeletes hvac $hvacElementDeletes voxels $voxelDeletes holes $architectureHoleDeletes edges $edges faces $faces dimensions $dimensions texts $texts groups $groups"
+            if (groups > 0 && edges + faces + voxelDeletes + architectureHoleDeletes + architectureElementDeletes + hvacElementDeletes == 0) {
                 undoManager.commit("Delete")
                 saveModel()
             }
@@ -4451,6 +4485,14 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 hasAny = true
             } else {
                 bounds.ext(architectureBounds)
+            }
+        }
+        scene.selectedHvacBounds(scene.root)?.let { hvacBounds ->
+            if (!hasAny) {
+                bounds.set(hvacBounds)
+                hasAny = true
+            } else {
+                bounds.ext(hvacBounds)
             }
         }
         group.lineStore.getSelected().forEach { segment ->

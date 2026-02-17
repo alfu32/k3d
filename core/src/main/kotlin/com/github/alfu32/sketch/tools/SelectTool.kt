@@ -15,6 +15,7 @@ import com.github.alfu32.sketch.model.DraftFaceStore
 import com.github.alfu32.sketch.model.DraftLineStore
 import com.github.alfu32.sketch.model.DraftTextStore
 import com.github.alfu32.sketch.model.GroupScene
+import com.github.alfu32.sketch.model.HvacStore
 import com.github.alfu32.sketch.model.VoxelStore
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
@@ -50,6 +51,7 @@ class SelectTool(
     private var wallDrag: WallDragState? = null
     private var slabDrag: SlabDragState? = null
     private var frameDrag: FrameDragState? = null
+    private var hvacDrag: HvacDragState? = null
     private enum class SelectionMode { REPLACE, ADD, REMOVE }
 
     private data class HoleHandleHit(
@@ -63,6 +65,19 @@ class SelectTool(
     private data class ArchitectureHotspotHit(
         val kind: ArchitectureStore.ElementKind,
         val id: String,
+        val point: Vector3,
+        val t: Float
+    )
+
+    private data class HvacHotspotHit(
+        val kind: HvacStore.ElementKind,
+        val id: String,
+        val point: Vector3,
+        val t: Float
+    )
+
+    private data class HvacHandleHit(
+        val marker: GroupScene.HvacControlHandleMarker,
         val point: Vector3,
         val t: Float
     )
@@ -120,6 +135,12 @@ class SelectTool(
         val movingWorld: Vector3
     )
 
+    private data class HvacDragState(
+        val group: GroupScene.GroupNode,
+        val marker: GroupScene.HvacControlHandleMarker,
+        val movingWorld: Vector3
+    )
+
     override fun onEnter(status: StatusModel) {
         status.message = "Select entities."
     }
@@ -131,6 +152,7 @@ class SelectTool(
         scene.activeGroup().textStore.clearSelection()
         scene.clearVoxelSelection(scene.activeGroup())
         scene.clearArchitectureElementSelection(scene.root)
+        scene.clearHvacElementSelection(scene.root)
         scene.clearGroupSelection()
         selectingVolume = false
         volumeStartRaw = null
@@ -143,6 +165,7 @@ class SelectTool(
         wallDrag = null
         slabDrag = null
         frameDrag = null
+        hvacDrag = null
         status.message = "Selection cleared."
     }
 
@@ -168,6 +191,12 @@ class SelectTool(
         frameDrag?.let { drag ->
             if (valid && world != null) {
                 frameDrag = drag.copy(movingWorld = Vector3(world))
+            }
+            return
+        }
+        hvacDrag?.let { drag ->
+            if (valid && world != null) {
+                hvacDrag = drag.copy(movingWorld = Vector3(world))
             }
             return
         }
@@ -221,6 +250,7 @@ class SelectTool(
         val architectureGroup = scene.root
         val isVoxelGroup = scene.isVoxelGroup(activeGroup)
         val architectureSelectionEnabled = scene.hasArchitectureElements() && activeGroup == architectureGroup
+        val hvacSelectionEnabled = scene.hasHvacElements() && activeGroup == architectureGroup
         val parametricSelectionEnabled =
             (scene.hasArchitectureElements() || scene.hasHvacElements()) && activeGroup == architectureGroup
         if (architectureSelectionEnabled) {
@@ -336,6 +366,63 @@ class SelectTool(
                 return true
             }
         }
+        if (hvacSelectionEnabled) {
+            val handleHit = pickSelectedHvacHandle(architectureGroup, ray, Gdx.input.x, Gdx.input.y)
+            if (handleHit != null) {
+                scene.selectHvacElement(
+                    architectureGroup,
+                    handleHit.marker.kind,
+                    handleHit.marker.id,
+                    GroupScene.HvacSelectionMode.REPLACE
+                )
+                hvacDrag = HvacDragState(
+                    group = architectureGroup,
+                    marker = handleHit.marker,
+                    movingWorld = Vector3(handleHit.point)
+                )
+                status.message = "Drag HVAC control point and release to update."
+                return true
+            }
+            val hotspotHit = pickHvacConstructionHotspot(architectureGroup, ray, Gdx.input.x, Gdx.input.y)
+            if (hotspotHit != null) {
+                val selected = scene.selectHvacElement(
+                    architectureGroup,
+                    hotspotHit.kind,
+                    hotspotHit.id,
+                    hvacSelectionMode()
+                )
+                status.message = if (selected) {
+                    "HVAC element selected."
+                } else {
+                    "No HVAC element selected."
+                }
+                return true
+            }
+            val hvacFaceHit = pickFaceWorld(ray, onlyHvacGenerated = true)
+            val hvacEdgeHit = pickEdgeWorld(
+                ray,
+                Gdx.input.x,
+                Gdx.input.y,
+                onlyHvacGenerated = true
+            )
+            val hvacPointHit = when {
+                hvacFaceHit != null && hvacEdgeHit != null -> {
+                    if (hvacFaceHit.t <= hvacEdgeHit.t) hvacFaceHit.point else hvacEdgeHit.point
+                }
+                hvacFaceHit != null -> hvacFaceHit.point
+                hvacEdgeHit != null -> hvacEdgeHit.point
+                else -> null
+            }
+            if (hvacPointHit != null) {
+                scene.selectHvacElementNearWorldPoint(
+                    architectureGroup,
+                    hvacPointHit,
+                    hvacSelectionMode()
+                )
+                status.message = "HVAC selection updated."
+                return true
+            }
+        }
         val allowFaceSelection = !isVoxelGroup
         val voxelHit = if (isVoxelGroup) pickVoxelWorld(ray) else null
         val faceHit = if (allowFaceSelection || architectureSelectionEnabled) {
@@ -358,6 +445,9 @@ class SelectTool(
         if (!pickedVoxel && !pickedFace && !pickedEdge && !pickedGroup && !pickedDimension && !pickedText) {
             if (architectureSelectionEnabled) {
                 scene.clearArchitectureElementSelection(architectureGroup)
+            }
+            if (hvacSelectionEnabled) {
+                scene.clearHvacElementSelection(architectureGroup)
             }
             selectingWindow = true
             windowDragActive = false
@@ -546,6 +636,17 @@ class SelectTool(
             status.message = if (updated) "Frame handle updated." else "Frame handle update failed."
             return true
         }
+        hvacDrag?.let { drag ->
+            val movingWorld = if (valid && world != null) Vector3(world) else Vector3(drag.movingWorld)
+            val updated = scene.updateHvacControlPoint(
+                group = drag.group,
+                marker = drag.marker,
+                targetWorld = movingWorld
+            )
+            hvacDrag = null
+            status.message = if (updated) "HVAC control point updated." else "HVAC update failed."
+            return true
+        }
         if (selectingWindow) {
             windowEndX = Gdx.input.x
             windowEndY = Gdx.input.y
@@ -562,6 +663,7 @@ class SelectTool(
                     scene.activeGroup().dimensionStore.clearSelection()
                     scene.activeGroup().textStore.clearSelection()
                     scene.clearVoxelSelection(scene.activeGroup())
+                    scene.clearHvacElementSelection(scene.root)
                     scene.clearGroupSelection()
                 }
                 val voxelCount = if (scene.isVoxelGroup(scene.activeGroup())) {
@@ -575,6 +677,13 @@ class SelectTool(
                     (scene.hasArchitectureElements() || scene.hasHvacElements()) && scene.activeGroup() == scene.root
                 val architectureCount = if (architectureSelectionEnabled) {
                     selectArchitectureInWindow(rect, includeIntersect, mode)
+                } else {
+                    0
+                }
+                val hvacSelectionEnabled =
+                    scene.hasHvacElements() && scene.activeGroup() == scene.root
+                val hvacCount = if (hvacSelectionEnabled) {
+                    selectHvacInWindow(rect, includeIntersect, mode)
                 } else {
                     0
                 }
@@ -592,7 +701,7 @@ class SelectTool(
                 val texts = selectTextsInWindow(rect, includeIntersect, mode)
                 val groups = selectGroupsInWindow(rect, includeIntersect, mode)
                 status.message =
-                    "Window select | architecture $architectureCount voxels $voxelCount edges $edges faces $faces dims $dimensions texts $texts groups $groups"
+                    "Window select | architecture $architectureCount hvac $hvacCount voxels $voxelCount edges $edges faces $faces dims $dimensions texts $texts groups $groups"
                 return true
             } else if (pendingVolumeStart != null) {
                 selectingVolume = true
@@ -645,6 +754,11 @@ class SelectTool(
         frameDrag?.let { drag ->
             renderer.color = com.badlogic.gdx.graphics.Color(0.2f, 0.55f, 0.95f, 1f)
             renderer.line(drag.fixedWorld, drag.movingWorld)
+            return
+        }
+        hvacDrag?.let { drag ->
+            renderer.color = com.badlogic.gdx.graphics.Color(0.35f, 0.9f, 0.7f, 1f)
+            renderer.line(drag.marker.center, drag.movingWorld)
             return
         }
         val bounds = volumeBounds() ?: return
@@ -703,13 +817,41 @@ class SelectTool(
         val bounds = volumeBounds() ?: return
         val group = scene.activeGroup()
         val localBounds = volumeBoundsLocal(group, bounds.first, bounds.second)
+        val parametricSelectionEnabled =
+            (scene.hasArchitectureElements() || scene.hasHvacElements()) && group == scene.root
         val voxelCount = if (scene.isVoxelGroup(group)) {
             selectVoxelsInVolume(localBounds.first, localBounds.second, replace = true)
         } else {
             0
         }
-        val faceCount = if (scene.isVoxelGroup(group)) 0 else group.faceStore.selectInVolume(localBounds.first, localBounds.second, replace = true)
-        val edgeCount = if (scene.isVoxelGroup(group)) 0 else group.lineStore.selectInVolume(localBounds.first, localBounds.second, replace = true)
+        val faceCount = if (scene.isVoxelGroup(group)) {
+            0
+        } else {
+            val raw = group.faceStore.selectInVolume(localBounds.first, localBounds.second, replace = true)
+            if (parametricSelectionEnabled) {
+                val generated = group.faceStore.getSelected().filter { tri ->
+                    scene.isGeneratedArchitectureTriangle(tri) || scene.isGeneratedHvacTriangle(tri)
+                }
+                generated.forEach { group.faceStore.removeSelection(it) }
+                (raw - generated.size).coerceAtLeast(0)
+            } else {
+                raw
+            }
+        }
+        val edgeCount = if (scene.isVoxelGroup(group)) {
+            0
+        } else {
+            val raw = group.lineStore.selectInVolume(localBounds.first, localBounds.second, replace = true)
+            if (parametricSelectionEnabled) {
+                val generated = group.lineStore.getSelected().filter { segment ->
+                    scene.isGeneratedArchitectureSegment(segment) || scene.isGeneratedHvacSegment(segment)
+                }
+                generated.forEach { group.lineStore.removeSelection(it) }
+                (raw - generated.size).coerceAtLeast(0)
+            } else {
+                raw
+            }
+        }
         val groupCount = selectGroupsInVolume(bounds.first, bounds.second)
         status.message = "Volume select | voxels $voxelCount edges $edgeCount faces $faceCount groups $groupCount"
     }
@@ -717,11 +859,12 @@ class SelectTool(
     private fun pickFaceWorld(
         ray: Ray,
         ignoreArchitectureGenerated: Boolean = false,
-        onlyArchitectureGenerated: Boolean = false
+        onlyArchitectureGenerated: Boolean = false,
+        onlyHvacGenerated: Boolean = false
     ): FaceHitWorld? {
         val group = scene.activeGroup()
         val localRay = Ray(group.toLocal(ray.origin), group.vectorToLocal(ray.direction).nor())
-        if (!ignoreArchitectureGenerated && !onlyArchitectureGenerated) {
+        if (!ignoreArchitectureGenerated && !onlyArchitectureGenerated && !onlyHvacGenerated) {
             val hit = group.faceStore.pickTriangle(localRay) ?: return null
             val worldPoint = group.toWorld(hit.point)
             val t = Vector3(worldPoint).sub(ray.origin).dot(ray.direction)
@@ -734,6 +877,9 @@ class SelectTool(
                 return@forEach
             }
             if (onlyArchitectureGenerated && !scene.isGeneratedArchitectureTriangle(triangle)) {
+                return@forEach
+            }
+            if (onlyHvacGenerated && !scene.isGeneratedHvacTriangle(triangle)) {
                 return@forEach
             }
             val hit = intersectRayTriangleLocal(localRay, triangle) ?: return@forEach
@@ -782,7 +928,8 @@ class SelectTool(
         screenY: Int,
         maxPixels: Float = 12f,
         ignoreArchitectureGenerated: Boolean = false,
-        onlyArchitectureGenerated: Boolean = false
+        onlyArchitectureGenerated: Boolean = false,
+        onlyHvacGenerated: Boolean = false
     ): EdgeHitWorld? {
         val group = scene.activeGroup()
         var best: EdgeHitWorld? = null
@@ -792,6 +939,9 @@ class SelectTool(
                 return@forEach
             }
             if (onlyArchitectureGenerated && !scene.isGeneratedArchitectureSegment(segment)) {
+                return@forEach
+            }
+            if (onlyHvacGenerated && !scene.isGeneratedHvacSegment(segment)) {
                 return@forEach
             }
             val a = group.toWorld(segment.start)
@@ -1288,6 +1438,69 @@ class SelectTool(
         return best
     }
 
+    private fun pickSelectedHvacHandle(
+        group: GroupScene.GroupNode,
+        ray: Ray,
+        screenX: Int,
+        screenY: Int,
+        maxPixels: Float = 16f
+    ): HvacHandleHit? {
+        val markers = scene.hvacControlHandleMarkersWorld(group)
+        var best: HvacHandleHit? = null
+        markers.forEach { marker ->
+            val dist = screenDistance(marker.center, screenX, screenY)
+            if (dist > maxPixels * 2f) {
+                return@forEach
+            }
+            val half = marker.halfSize
+            val min = Vector3(marker.center.x - half, marker.center.y - half, marker.center.z - half)
+            val max = Vector3(marker.center.x + half, marker.center.y + half, marker.center.z + half)
+            val t = rayAabbIntersectionT(ray.origin, ray.direction, min, max)
+                ?: Vector3(marker.center).sub(ray.origin).dot(ray.direction)
+            if (t < 0f) {
+                return@forEach
+            }
+            if (best == null || t < best!!.t) {
+                best = HvacHandleHit(
+                    marker = marker,
+                    point = Vector3(marker.center),
+                    t = t
+                )
+            }
+        }
+        return best
+    }
+
+    private fun pickHvacConstructionHotspot(
+        group: GroupScene.GroupNode,
+        ray: Ray,
+        screenX: Int,
+        screenY: Int,
+        maxPixels: Float = 14f
+    ): HvacHotspotHit? {
+        val markers = scene.hvacConstructionHotspotsWorld(group)
+        var best: HvacHotspotHit? = null
+        markers.forEach { marker ->
+            val dist = screenDistance(marker.world, screenX, screenY)
+            if (dist > maxPixels) {
+                return@forEach
+            }
+            val t = Vector3(marker.world).sub(ray.origin).dot(ray.direction)
+            if (t < 0f) {
+                return@forEach
+            }
+            if (best == null || t < best!!.t) {
+                best = HvacHotspotHit(
+                    kind = marker.kind,
+                    id = marker.id,
+                    point = Vector3(marker.world),
+                    t = t
+                )
+            }
+        }
+        return best
+    }
+
     private fun pickSelectedWallEndpoint(
         group: GroupScene.GroupNode,
         ray: Ray
@@ -1573,6 +1786,72 @@ class SelectTool(
         }
     }
 
+    private fun selectHvacInWindow(
+        rect: WindowRectTopLeft,
+        includeIntersect: Boolean,
+        mode: SelectionMode
+    ): Int {
+        val group = scene.activeGroup()
+        if (group != scene.root) {
+            return 0
+        }
+
+        val samplePoints = mutableListOf<Vector3>()
+        group.faceStore.getTriangles().forEach { triangle ->
+            if (!scene.isGeneratedHvacTriangle(triangle)) {
+                return@forEach
+            }
+            val a = projectToScreen(triangle.a)
+            val b = projectToScreen(triangle.b)
+            val c = projectToScreen(triangle.c)
+            val matches = if (!includeIntersect) {
+                pointInRect(a, rect) && pointInRect(b, rect) && pointInRect(c, rect)
+            } else {
+                faceIntersectsRect(a, b, c, rect)
+            }
+            if (matches) {
+                val centroid = Vector3(triangle.a).add(triangle.b).add(triangle.c).scl(1f / 3f)
+                samplePoints.add(group.toWorld(centroid))
+            }
+        }
+        group.lineStore.getSegments().forEach { segment ->
+            if (!scene.isGeneratedHvacSegment(segment)) {
+                return@forEach
+            }
+            val a = projectToScreen(segment.start)
+            val b = projectToScreen(segment.end)
+            val matches = if (!includeIntersect) {
+                pointInRect(a, rect) && pointInRect(b, rect)
+            } else {
+                segmentIntersectsRect(a, b, rect)
+            }
+            if (matches) {
+                val midpoint = Vector3(segment.start).lerp(segment.end, 0.5f)
+                samplePoints.add(group.toWorld(midpoint))
+            }
+        }
+
+        val root = scene.root
+        val before = scene.selectedHvacElements(root).toSet()
+        if (mode == SelectionMode.REPLACE) {
+            scene.clearHvacElementSelection(root)
+        }
+        val opMode = if (mode == SelectionMode.REMOVE) {
+            GroupScene.HvacSelectionMode.REMOVE
+        } else {
+            GroupScene.HvacSelectionMode.ADD
+        }
+        samplePoints.forEach { point ->
+            scene.selectHvacElementNearWorldPoint(root, point, opMode)
+        }
+        val after = scene.selectedHvacElements(root).toSet()
+        return when (mode) {
+            SelectionMode.REMOVE -> (before.size - after.size).coerceAtLeast(0)
+            SelectionMode.ADD -> (after.size - before.size).coerceAtLeast(0)
+            SelectionMode.REPLACE -> after.size
+        }
+    }
+
     private fun selectDimensionsInWindow(rect: WindowRectTopLeft, includeIntersect: Boolean, mode: SelectionMode): Int {
         var count = 0
         val group = scene.activeGroup()
@@ -1666,6 +1945,14 @@ class SelectTool(
             SelectionMode.REPLACE -> GroupScene.ArchitectureSelectionMode.REPLACE
             SelectionMode.ADD -> GroupScene.ArchitectureSelectionMode.ADD
             SelectionMode.REMOVE -> GroupScene.ArchitectureSelectionMode.REMOVE
+        }
+    }
+
+    private fun hvacSelectionMode(): GroupScene.HvacSelectionMode {
+        return when (selectionMode()) {
+            SelectionMode.REPLACE -> GroupScene.HvacSelectionMode.REPLACE
+            SelectionMode.ADD -> GroupScene.HvacSelectionMode.ADD
+            SelectionMode.REMOVE -> GroupScene.HvacSelectionMode.REMOVE
         }
     }
 

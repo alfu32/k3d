@@ -90,6 +90,10 @@ class MoveTool(
                 pointTransform = { point -> Vector3(point).add(delta) },
                 vectorTransform = { vector -> Vector3(vector) }
             )
+            val movedHvac = scene.copySelectedHvacElements(
+                group = group,
+                pointTransform = { point -> Vector3(point).add(delta) }
+            )
             val movedFaces = group.faceStore.copySelected { point -> Vector3(point).add(localDelta) }
             val movedEdges = group.lineStore.copySelected { point -> Vector3(point).add(localDelta) }
             val movedDimensions = group.dimensionStore.copySelected { point -> Vector3(point).add(localDelta) }
@@ -100,7 +104,7 @@ class MoveTool(
             )
             alignSelectedGroupsIfNeeded()
             status.message =
-                "Copied | architecture $movedArchitecture voxels $movedVoxels edges $movedEdges faces $movedFaces dims $movedDimensions texts $movedTexts groups $movedGroups"
+                "Copied | architecture $movedArchitecture hvac $movedHvac voxels $movedVoxels edges $movedEdges faces $movedFaces dims $movedDimensions texts $movedTexts groups $movedGroups"
         } else {
             val movedVoxels = if (scene.isVoxelGroup(group)) {
                 scene.moveSelectedVoxels(group, voxelDx, voxelDy, voxelDz, copy = false)
@@ -112,6 +116,10 @@ class MoveTool(
                 pointTransform = { point -> Vector3(point).add(delta) },
                 vectorTransform = { vector -> Vector3(vector) }
             )
+            val movedHvac = scene.transformSelectedHvacElements(
+                group = group,
+                pointTransform = { point -> Vector3(point).add(delta) }
+            )
             val movedFaces = group.faceStore.transformSelected { point -> Vector3(point).add(localDelta) }
             val movedEdges = group.lineStore.transformSelected { point -> Vector3(point).add(localDelta) }
             val movedDimensions = group.dimensionStore.transformSelected { point -> Vector3(point).add(localDelta) }
@@ -122,7 +130,7 @@ class MoveTool(
             )
             alignSelectedGroupsIfNeeded()
             status.message =
-                "Moved | architecture $movedArchitecture voxels $movedVoxels edges $movedEdges faces $movedFaces dims $movedDimensions texts $movedTexts groups $movedGroups"
+                "Moved | architecture $movedArchitecture hvac $movedHvac voxels $movedVoxels edges $movedEdges faces $movedFaces dims $movedDimensions texts $movedTexts groups $movedGroups"
         }
         clearTransient()
         return true

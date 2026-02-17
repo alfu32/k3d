@@ -26,6 +26,7 @@ class GroupScene(
         CENTER
     }
     enum class ArchitectureSelectionMode { REPLACE, ADD, REMOVE }
+    enum class HvacSelectionMode { REPLACE, ADD, REMOVE }
     data class HoleHandleMarker(
         val wallId: String,
         val holeId: String,
@@ -47,6 +48,19 @@ class GroupScene(
     )
     data class ArchitectureElementHotspotMarker(
         val kind: ArchitectureStore.ElementKind,
+        val id: String,
+        val world: Vector3
+    )
+    data class HvacControlHandleMarker(
+        val kind: HvacStore.ElementKind,
+        val id: String,
+        val pointIndex: Int?,
+        val ventilationControlKind: HvacStore.VentilationControlKind?,
+        val center: Vector3,
+        val halfSize: Float
+    )
+    data class HvacElementHotspotMarker(
+        val kind: HvacStore.ElementKind,
         val id: String,
         val world: Vector3
     )
@@ -407,6 +421,7 @@ class GroupScene(
         root.dimensionStore.clearSelection()
         root.textStore.clearSelection()
         modelArchitectureStore.clearSelectedElement()
+        modelHvacStore.clearSelectedElement()
         root.voxelStore?.clearSelection()
         walkGroups(root) { group ->
             group.lineStore.clearSelection()
@@ -415,6 +430,7 @@ class GroupScene(
             group.textStore.clearSelection()
             group.voxelStore?.clearSelection()
             group.architectureStore?.clearSelectedElement()
+            group.hvacStore?.clearSelectedElement()
         }
         clearGroupSelection()
     }
@@ -1111,6 +1127,22 @@ class GroupScene(
         return architectureStoreFor(group).allFrames().firstOrNull { it.id == id }
     }
 
+    fun selectedHvacElement(group: GroupNode): HvacStore.ElementSelection? {
+        return hvacStoreFor(group).selectedElement()
+    }
+
+    fun selectedHvacElements(group: GroupNode): Set<HvacStore.ElementSelection> {
+        return hvacStoreFor(group).selectedElements()
+    }
+
+    fun hvacPlumbingById(group: GroupNode, id: String): HvacStore.PlumbingRun? {
+        return hvacStoreFor(group).plumbingById(id)
+    }
+
+    fun hvacVentilationById(group: GroupNode, id: String): HvacStore.VentilationDuct? {
+        return hvacStoreFor(group).ventilationById(id)
+    }
+
     fun selectedArchitectureBounds(group: GroupNode): BoundingBox? {
         val store = architectureStoreFor(group)
         val selected = store.selectedElements().toList()
@@ -1177,6 +1209,44 @@ class GroupScene(
                             }
                         }
                     }
+                }
+            }
+        }
+
+        return if (hasAny) bounds else null
+    }
+
+    fun selectedHvacBounds(group: GroupNode): BoundingBox? {
+        val store = hvacStoreFor(group)
+        val selected = store.selectedElements().toList()
+        if (selected.isEmpty()) {
+            return null
+        }
+        val bounds = BoundingBox()
+        var hasAny = false
+        fun ext(point: Vector3) {
+            if (!hasAny) {
+                bounds.set(point, point)
+                hasAny = true
+            } else {
+                bounds.ext(point)
+            }
+        }
+
+        selected.forEach { selection ->
+            when (selection.kind) {
+                HvacStore.ElementKind.PLUMBING -> {
+                    val run = store.plumbingById(selection.id) ?: return@forEach
+                    val half = (run.diameter * 0.5f).coerceAtLeast(0.01f)
+                    run.path.forEach { point ->
+                        ext(Vector3(point.x - half, point.y - half, point.z - half))
+                        ext(Vector3(point.x + half, point.y + half, point.z + half))
+                    }
+                }
+                HvacStore.ElementKind.VENTILATION -> {
+                    val duct = store.ventilationById(selection.id) ?: return@forEach
+                    hvacVentilationCorners(duct).forEach { ext(it) }
+                    ext(Vector3(duct.binormalRef))
                 }
             }
         }
@@ -1282,6 +1352,92 @@ class GroupScene(
         return store.selectedElement()
     }
 
+    fun clearHvacElementSelection(group: GroupNode): Boolean {
+        val store = hvacStoreFor(group)
+        if (store.selectedElement() == null) {
+            return false
+        }
+        store.clearSelectedElement()
+        return true
+    }
+
+    fun deleteSelectedHvacElements(group: GroupNode): Int {
+        val store = hvacStoreFor(group)
+        val removed = store.deleteSelectedElements()
+        if (removed <= 0) {
+            return 0
+        }
+        rebuildHvacGeometry(rootPrototype)
+        notifyChange()
+        return removed
+    }
+
+    fun selectHvacElement(
+        group: GroupNode,
+        kind: HvacStore.ElementKind,
+        id: String,
+        mode: HvacSelectionMode = HvacSelectionMode.REPLACE
+    ): Boolean {
+        val store = hvacStoreFor(group)
+        return when (mode) {
+            HvacSelectionMode.REPLACE -> store.setSelectedElement(kind, id)
+            HvacSelectionMode.ADD -> store.addSelectedElement(kind, id)
+            HvacSelectionMode.REMOVE -> store.removeSelectedElement(kind, id)
+        }
+    }
+
+    fun selectHvacElementNearWorldPoint(
+        group: GroupNode,
+        worldPoint: Vector3,
+        mode: HvacSelectionMode = HvacSelectionMode.REPLACE
+    ): HvacStore.ElementSelection? {
+        val store = hvacStoreFor(group)
+        val point = Vector3(worldPoint)
+        var bestSelection: HvacStore.ElementSelection? = null
+        var bestDist2 = Float.POSITIVE_INFINITY
+        fun priority(kind: HvacStore.ElementKind): Int = when (kind) {
+            HvacStore.ElementKind.VENTILATION -> 0
+            HvacStore.ElementKind.PLUMBING -> 1
+        }
+        fun tryCandidate(kind: HvacStore.ElementKind, id: String, dist2: Float) {
+            if (!dist2.isFinite()) {
+                return
+            }
+            val current = bestSelection
+            if (current == null) {
+                bestDist2 = dist2
+                bestSelection = HvacStore.ElementSelection(kind, id)
+                return
+            }
+            val delta = dist2 - bestDist2
+            if (delta < -1e-6f || (abs(delta) <= 1e-6f && priority(kind) < priority(current.kind))) {
+                bestDist2 = dist2
+                bestSelection = HvacStore.ElementSelection(kind, id)
+            }
+        }
+
+        store.allVentilationDucts().forEach { duct ->
+            tryCandidate(HvacStore.ElementKind.VENTILATION, duct.id, hvacVentilationDistanceSq(duct, point))
+        }
+        store.allPlumbingRuns().forEach { run ->
+            tryCandidate(HvacStore.ElementKind.PLUMBING, run.id, hvacPlumbingDistanceSq(run, point))
+        }
+
+        val selection = bestSelection
+        if (selection == null) {
+            if (mode == HvacSelectionMode.REPLACE) {
+                store.clearSelectedElement()
+            }
+            return null
+        }
+        when (mode) {
+            HvacSelectionMode.REPLACE -> store.setSelectedElement(selection.kind, selection.id)
+            HvacSelectionMode.ADD -> store.addSelectedElement(selection.kind, selection.id)
+            HvacSelectionMode.REMOVE -> store.removeSelectedElement(selection.kind, selection.id)
+        }
+        return store.selectedElement()
+    }
+
     fun transformSelectedArchitectureElements(
         group: GroupNode,
         pointTransform: (Vector3) -> Vector3,
@@ -1344,6 +1500,39 @@ class GroupScene(
         }
         if (changed > 0) {
             rebuildArchitectureGeometry(rootPrototype)
+            notifyChange()
+        }
+        return changed
+    }
+
+    fun transformSelectedHvacElements(
+        group: GroupNode,
+        pointTransform: (Vector3) -> Vector3
+    ): Int {
+        val store = hvacStoreFor(group)
+        val selected = store.selectedElements().toList()
+        if (selected.isEmpty()) {
+            return 0
+        }
+        var changed = 0
+        selected.forEach { selection ->
+            when (selection.kind) {
+                HvacStore.ElementKind.PLUMBING -> {
+                    val run = store.plumbingById(selection.id) ?: return@forEach
+                    run.path = run.path.map { pointTransform(Vector3(it)) }.toMutableList()
+                    changed++
+                }
+                HvacStore.ElementKind.VENTILATION -> {
+                    val duct = store.ventilationById(selection.id) ?: return@forEach
+                    duct.start.set(pointTransform(Vector3(duct.start)))
+                    duct.end.set(pointTransform(Vector3(duct.end)))
+                    duct.binormalRef.set(pointTransform(Vector3(duct.binormalRef)))
+                    changed++
+                }
+            }
+        }
+        if (changed > 0) {
+            rebuildHvacGeometry(rootPrototype)
             notifyChange()
         }
         return changed
@@ -1477,6 +1666,55 @@ class GroupScene(
             notifyChange()
         }
 
+        return copiedSelections.size
+    }
+
+    fun copySelectedHvacElements(
+        group: GroupNode,
+        pointTransform: (Vector3) -> Vector3
+    ): Int {
+        val store = hvacStoreFor(group)
+        val selected = store.selectedElements().toList()
+        if (selected.isEmpty()) {
+            return 0
+        }
+
+        val copiedSelections = mutableListOf<HvacStore.ElementSelection>()
+        selected.forEach { selection ->
+            when (selection.kind) {
+                HvacStore.ElementKind.PLUMBING -> {
+                    val run = store.plumbingById(selection.id) ?: return@forEach
+                    val copy = store.addPlumbingRun(
+                        path = run.path.map { pointTransform(Vector3(it)) },
+                        diameter = run.diameter,
+                        sides = run.sides,
+                        color = Color(run.color)
+                    )
+                    copiedSelections.add(HvacStore.ElementSelection(HvacStore.ElementKind.PLUMBING, copy.id))
+                }
+                HvacStore.ElementKind.VENTILATION -> {
+                    val duct = store.ventilationById(selection.id) ?: return@forEach
+                    val copy = store.addVentilationDuct(
+                        start = pointTransform(Vector3(duct.start)),
+                        end = pointTransform(Vector3(duct.end)),
+                        binormalRef = pointTransform(Vector3(duct.binormalRef)),
+                        width = duct.width,
+                        height = duct.height,
+                        color = Color(duct.color)
+                    )
+                    copiedSelections.add(HvacStore.ElementSelection(HvacStore.ElementKind.VENTILATION, copy.id))
+                }
+            }
+        }
+
+        if (copiedSelections.isNotEmpty()) {
+            store.clearSelectedElement()
+            copiedSelections.forEach { copied ->
+                store.addSelectedElement(copied.kind, copied.id)
+            }
+            rebuildHvacGeometry(rootPrototype)
+            notifyChange()
+        }
         return copiedSelections.size
     }
 
@@ -1796,6 +2034,168 @@ class GroupScene(
                 )
             )
         }
+    }
+
+    fun hvacConstructionHotspotsWorld(
+        group: GroupNode,
+        id: String? = null
+    ): List<HvacElementHotspotMarker> {
+        val store = hvacStoreFor(group)
+        val markers = mutableListOf<HvacElementHotspotMarker>()
+        store.allPlumbingRuns().forEach { run ->
+            if (id != null && run.id != id) {
+                return@forEach
+            }
+            if (run.path.isEmpty()) {
+                return@forEach
+            }
+            markers.add(
+                HvacElementHotspotMarker(
+                    kind = HvacStore.ElementKind.PLUMBING,
+                    id = run.id,
+                    world = Vector3(run.path.first())
+                )
+            )
+            markers.add(
+                HvacElementHotspotMarker(
+                    kind = HvacStore.ElementKind.PLUMBING,
+                    id = run.id,
+                    world = Vector3(run.path.last())
+                )
+            )
+        }
+        store.allVentilationDucts().forEach { duct ->
+            if (id != null && duct.id != id) {
+                return@forEach
+            }
+            markers.add(
+                HvacElementHotspotMarker(
+                    kind = HvacStore.ElementKind.VENTILATION,
+                    id = duct.id,
+                    world = Vector3(duct.start)
+                )
+            )
+            markers.add(
+                HvacElementHotspotMarker(
+                    kind = HvacStore.ElementKind.VENTILATION,
+                    id = duct.id,
+                    world = Vector3(duct.end)
+                )
+            )
+            markers.add(
+                HvacElementHotspotMarker(
+                    kind = HvacStore.ElementKind.VENTILATION,
+                    id = duct.id,
+                    world = Vector3(duct.binormalRef)
+                )
+            )
+        }
+        return markers
+    }
+
+    fun hvacControlHandleMarkersWorld(
+        group: GroupNode,
+        id: String? = null
+    ): List<HvacControlHandleMarker> {
+        val store = hvacStoreFor(group)
+        val selectedPlumbing = store.selectedElements()
+            .filter { it.kind == HvacStore.ElementKind.PLUMBING }
+            .map { it.id }
+            .toSet()
+        val selectedVentilation = store.selectedElements()
+            .filter { it.kind == HvacStore.ElementKind.VENTILATION }
+            .map { it.id }
+            .toSet()
+        val markers = mutableListOf<HvacControlHandleMarker>()
+        store.allPlumbingRuns().forEach { run ->
+            val include = when {
+                id != null -> run.id == id
+                selectedPlumbing.isNotEmpty() -> selectedPlumbing.contains(run.id)
+                else -> false
+            }
+            if (!include) {
+                return@forEach
+            }
+            val halfSize = max(0.14f, run.diameter * 0.45f)
+            run.path.forEachIndexed { index, point ->
+                markers.add(
+                    HvacControlHandleMarker(
+                        kind = HvacStore.ElementKind.PLUMBING,
+                        id = run.id,
+                        pointIndex = index,
+                        ventilationControlKind = null,
+                        center = Vector3(point),
+                        halfSize = halfSize
+                    )
+                )
+            }
+        }
+        store.allVentilationDucts().forEach { duct ->
+            val include = when {
+                id != null -> duct.id == id
+                selectedVentilation.isNotEmpty() -> selectedVentilation.contains(duct.id)
+                else -> false
+            }
+            if (!include) {
+                return@forEach
+            }
+            val halfSize = max(0.14f, max(duct.width, duct.height) * 0.45f)
+            markers.add(
+                HvacControlHandleMarker(
+                    kind = HvacStore.ElementKind.VENTILATION,
+                    id = duct.id,
+                    pointIndex = null,
+                    ventilationControlKind = HvacStore.VentilationControlKind.START,
+                    center = Vector3(duct.start),
+                    halfSize = halfSize
+                )
+            )
+            markers.add(
+                HvacControlHandleMarker(
+                    kind = HvacStore.ElementKind.VENTILATION,
+                    id = duct.id,
+                    pointIndex = null,
+                    ventilationControlKind = HvacStore.VentilationControlKind.END,
+                    center = Vector3(duct.end),
+                    halfSize = halfSize
+                )
+            )
+            markers.add(
+                HvacControlHandleMarker(
+                    kind = HvacStore.ElementKind.VENTILATION,
+                    id = duct.id,
+                    pointIndex = null,
+                    ventilationControlKind = HvacStore.VentilationControlKind.BINORMAL_REF,
+                    center = Vector3(duct.binormalRef),
+                    halfSize = halfSize
+                )
+            )
+        }
+        return markers
+    }
+
+    fun updateHvacControlPoint(
+        group: GroupNode,
+        marker: HvacControlHandleMarker,
+        targetWorld: Vector3
+    ): Boolean {
+        val store = hvacStoreFor(group)
+        val updated = when (marker.kind) {
+            HvacStore.ElementKind.PLUMBING -> {
+                val pointIndex = marker.pointIndex ?: return false
+                store.updatePlumbingPathPoint(marker.id, pointIndex, targetWorld)
+            }
+            HvacStore.ElementKind.VENTILATION -> {
+                val controlKind = marker.ventilationControlKind ?: return false
+                store.updateVentilationControlPoint(marker.id, controlKind, targetWorld)
+            }
+        }
+        if (!updated) {
+            return false
+        }
+        rebuildHvacGeometry(rootPrototype)
+        notifyChange()
+        return true
     }
 
     fun updateArchitectureHoleByHandle(
@@ -2986,6 +3386,16 @@ class GroupScene(
         val thickness: Float
     )
 
+    private data class VentilationBasis(
+        val start: Vector3,
+        val tangent: Vector3,
+        val binormal: Vector3,
+        val normal: Vector3,
+        val length: Float,
+        val halfWidth: Float,
+        val height: Float
+    )
+
     private fun slabBasis(slab: ArchitectureStore.Slab): SlabBasis? {
         var axisU = Vector3(slab.axisU)
         if (axisU.len2() <= 1e-6f) {
@@ -3101,6 +3511,45 @@ class GroupScene(
         val dv = rangeDistance(v, basis.vMin, basis.vMax)
         val dn = rangeDistance(n, basis.nMin, basis.nMax)
         return du * du + dv * dv + dn * dn
+    }
+
+    private fun hvacPlumbingDistanceSq(run: HvacStore.PlumbingRun, point: Vector3): Float {
+        if (run.path.size < 2) {
+            return Float.POSITIVE_INFINITY
+        }
+        var best = Float.POSITIVE_INFINITY
+        for (i in 0 until run.path.lastIndex) {
+            val dist2 = pointSegmentDistanceSq(point, run.path[i], run.path[i + 1])
+            if (dist2 < best) {
+                best = dist2
+            }
+        }
+        val radius = (run.diameter * 0.5f).coerceAtLeast(0.005f)
+        return (best - radius * radius).coerceAtLeast(0f)
+    }
+
+    private fun hvacVentilationDistanceSq(duct: HvacStore.VentilationDuct, point: Vector3): Float {
+        val basis = hvacVentilationBasis(duct) ?: return Float.POSITIVE_INFINITY
+        val rel = Vector3(point).sub(basis.start)
+        val t = rel.dot(basis.tangent)
+        val b = rel.dot(basis.binormal)
+        val n = rel.dot(basis.normal)
+        val dt = rangeDistance(t, 0f, basis.length)
+        val db = rangeDistance(b, -basis.halfWidth, basis.halfWidth)
+        val dn = rangeDistance(n, -basis.height, 0f)
+        return dt * dt + db * db + dn * dn
+    }
+
+    private fun pointSegmentDistanceSq(point: Vector3, a: Vector3, b: Vector3): Float {
+        val ab = Vector3(b).sub(a)
+        val denom = ab.len2()
+        if (denom <= 1e-10f) {
+            return Vector3(point).sub(a).len2()
+        }
+        val t = Vector3(point).sub(a).dot(ab) / denom
+        val clamped = t.coerceIn(0f, 1f)
+        val closest = Vector3(a).mulAdd(ab, clamped)
+        return Vector3(point).sub(closest).len2()
     }
 
     private fun frameSelectionBasis(frame: ArchitectureStore.Frame): FrameSelectionBasis? {
@@ -4288,30 +4737,17 @@ class GroupScene(
         lineStore: DraftLineStore,
         duct: HvacStore.VentilationDuct
     ) {
-        val start = Vector3(duct.start)
-        val end = Vector3(duct.end)
-        val tangent = Vector3(end).sub(start)
-        if (tangent.len2() <= 1e-6f) {
+        val basis = hvacVentilationBasis(duct) ?: return
+        val start = Vector3(basis.start)
+        val tangent = Vector3(basis.tangent)
+        val binormal = Vector3(basis.binormal)
+        val normal = Vector3(basis.normal)
+        val halfWidth = basis.halfWidth
+        val height = basis.height
+        if (basis.length <= 1e-6f) {
             return
         }
-        tangent.nor()
-
-        var binormal = Vector3(duct.binormalRef).sub(start)
-        binormal.sub(Vector3(tangent).scl(binormal.dot(tangent)))
-        if (binormal.len2() <= 1e-6f) {
-            binormal = initialPerpendicular(tangent)
-        }
-        binormal.nor()
-        var normal = Vector3(tangent).crs(binormal)
-        if (normal.len2() <= 1e-6f) {
-            normal = initialPerpendicular(tangent)
-            binormal = Vector3(normal).crs(tangent).nor()
-        }
-        normal.nor()
-
-        val halfWidth = (duct.width * 0.5f).coerceAtLeast(0.005f)
-        val height = duct.height.coerceAtLeast(0.005f)
-        val delta = Vector3(end).sub(start)
+        val delta = Vector3(tangent).scl(basis.length)
 
         val sTL = Vector3(start).mulAdd(binormal, halfWidth)
         val sTR = Vector3(start).mulAdd(binormal, -halfWidth)
@@ -4328,6 +4764,61 @@ class GroupScene(
         addQuad(faceStore, lineStore, sTR, eTR, eBR, sBR, Vector3(binormal).scl(-1f), duct.color)
         addQuad(faceStore, lineStore, sTR, sTL, sBL, sBR, Vector3(tangent).scl(-1f), duct.color)
         addQuad(faceStore, lineStore, eTL, eTR, eBR, eBL, tangent, duct.color)
+    }
+
+    private fun hvacVentilationBasis(duct: HvacStore.VentilationDuct): VentilationBasis? {
+        val start = Vector3(duct.start)
+        val tangent = Vector3(duct.end).sub(start)
+        val length = tangent.len()
+        if (length <= 1e-6f) {
+            return null
+        }
+        tangent.scl(1f / length)
+
+        var binormal = Vector3(duct.binormalRef).sub(start)
+        binormal.sub(Vector3(tangent).scl(binormal.dot(tangent)))
+        if (binormal.len2() <= 1e-6f) {
+            binormal = initialPerpendicular(tangent)
+        }
+        if (binormal.len2() <= 1e-6f) {
+            return null
+        }
+        binormal.nor()
+
+        var normal = Vector3(tangent).crs(binormal)
+        if (normal.len2() <= 1e-6f) {
+            normal = initialPerpendicular(tangent)
+            binormal = Vector3(normal).crs(tangent)
+        }
+        if (normal.len2() <= 1e-6f || binormal.len2() <= 1e-6f) {
+            return null
+        }
+        normal.nor()
+        binormal.nor()
+
+        return VentilationBasis(
+            start = start,
+            tangent = tangent,
+            binormal = binormal,
+            normal = normal,
+            length = length,
+            halfWidth = (duct.width * 0.5f).coerceAtLeast(0.005f),
+            height = duct.height.coerceAtLeast(0.005f)
+        )
+    }
+
+    private fun hvacVentilationCorners(duct: HvacStore.VentilationDuct): List<Vector3> {
+        val basis = hvacVentilationBasis(duct) ?: return emptyList()
+        val delta = Vector3(basis.tangent).scl(basis.length)
+        val sTL = Vector3(basis.start).mulAdd(basis.binormal, basis.halfWidth)
+        val sTR = Vector3(basis.start).mulAdd(basis.binormal, -basis.halfWidth)
+        val sBR = Vector3(sTR).mulAdd(basis.normal, -basis.height)
+        val sBL = Vector3(sTL).mulAdd(basis.normal, -basis.height)
+        val eTL = Vector3(sTL).add(delta)
+        val eTR = Vector3(sTR).add(delta)
+        val eBR = Vector3(sBR).add(delta)
+        val eBL = Vector3(sBL).add(delta)
+        return listOf(sTL, sTR, sBR, sBL, eTL, eTR, eBR, eBL)
     }
 
     private fun computePipeTangents(path: List<Vector3>): List<Vector3> {
