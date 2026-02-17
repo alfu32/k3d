@@ -33,6 +33,7 @@ import com.github.alfu32.sketch.plugin.PluginHost
 import com.github.alfu32.sketch.plugin.capabilities.PanelPosition
 import com.github.alfu32.sketch.plugin.capabilities.PluginPanel
 import com.github.alfu32.sketch.tools.ArchitectureSettings
+import com.github.alfu32.sketch.tools.HvacSettings
 import com.github.alfu32.sketch.tools.PolylineSettings
 import java.util.Locale
 import kotlin.math.abs
@@ -68,6 +69,7 @@ class SketchUiOverlay(
     private val shadowChanged: (ShadowSettings) -> Unit,
     private val polylineSettings: PolylineSettings,
     private val architectureSettings: ArchitectureSettings,
+    private val hvacSettings: HvacSettings,
     private val architectureElementProvider: () -> ArchitectureElementInfo?,
     private val architectureSelectionSummaryProvider: () -> ArchitectureSelectionSummary,
     private val architectureElementNameChanged: (ArchitectureElementKind, String, String) -> Unit,
@@ -159,7 +161,7 @@ class SketchUiOverlay(
     private var toolbarsPositioned = false
     private val uiPrefs by lazy { Gdx.app.getPreferences("k3d-ui-layout") }
     private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
-    private val toolbarLayoutVersion = 6
+    private val toolbarLayoutVersion = 7
     private val toolbarButtonSize = 32f
     private val archDefaultWallThicknessKey = "arch_default_wall_thickness"
     private val archDefaultWallHeightKey = "arch_default_wall_height"
@@ -182,6 +184,12 @@ class SketchUiOverlay(
     private val archDefaultFrameColorKey = "arch_default_frame_color"
     private val archDefaultFrameGlazingEnabledKey = "arch_default_frame_glazing_enabled"
     private val archDefaultFrameGlazingColorKey = "arch_default_frame_glazing_color"
+    private val hvacDefaultPlumbingDiameterKey = "hvac_default_plumbing_diameter"
+    private val hvacDefaultPlumbingSidesKey = "hvac_default_plumbing_sides"
+    private val hvacDefaultPlumbingColorKey = "hvac_default_plumbing_color"
+    private val hvacDefaultVentilationWidthKey = "hvac_default_ventilation_width"
+    private val hvacDefaultVentilationHeightKey = "hvac_default_ventilation_height"
+    private val hvacDefaultVentilationColorKey = "hvac_default_ventilation_color"
     private val iconTextures = mutableListOf<Texture>()
     private val iconDrawables = mutableMapOf<String, TextureRegionDrawable>()
     private var iconsTexture: Texture? = null
@@ -227,6 +235,7 @@ class SketchUiOverlay(
     private lateinit var modelSettingsPanel: CollapsibleWindow
     private lateinit var polylineSettingsPanel: CollapsibleWindow
     private lateinit var architectureSettingsPanel: CollapsibleWindow
+    private lateinit var hvacSettingsPanel: CollapsibleWindow
     private lateinit var architectureModeLabel: VisLabel
     private lateinit var architectureWallSectionLabel: VisLabel
     private lateinit var architectureSlabSectionLabel: VisLabel
@@ -291,6 +300,15 @@ class SketchUiOverlay(
     private lateinit var architectureFrameGlazingColorLabel: VisLabel
     private lateinit var architectureFrameGlazingColorField: VisTextField
     private lateinit var architectureFrameGlazingColorButton: VisImageTextButton
+    private lateinit var hvacPlumbingDiameterField: VisTextField
+    private lateinit var hvacPlumbingSidesField: VisTextField
+    private lateinit var hvacPlumbingColorField: VisTextField
+    private lateinit var hvacPlumbingColorButton: VisImageTextButton
+    private lateinit var hvacVentilationWidthField: VisTextField
+    private lateinit var hvacVentilationHeightField: VisTextField
+    private lateinit var hvacVentilationColorField: VisTextField
+    private lateinit var hvacVentilationColorButton: VisImageTextButton
+    private var updatingHvacFields = false
     private lateinit var architectureSettingsContent: VisTable
     private var updatingArchitectureFields = false
     private val unitNameField = VisTextField()
@@ -328,6 +346,7 @@ class SketchUiOverlay(
         iconDrawables.putAll(loadIconDrawables())
         migrateBuiltinToolbarPrefs()
         loadArchitectureDefaults()
+        loadHvacDefaults()
         val root = Table()
         root.setFillParent(true)
         stage.addActor(root)
@@ -340,6 +359,7 @@ class SketchUiOverlay(
         modelSettingsPanel = buildModelSettingsPanel()
         polylineSettingsPanel = buildPolylineSettingsPanel()
         architectureSettingsPanel = buildArchitectureSettingsPanel()
+        hvacSettingsPanel = buildHvacSettingsPanel()
         lightingPanel = buildLightingPanel()
         val mainRow = Table()
         mainRow.add().expand().fill()
@@ -353,6 +373,7 @@ class SketchUiOverlay(
         stage.addActor(modelSettingsPanel)
         stage.addActor(polylineSettingsPanel)
         stage.addActor(architectureSettingsPanel)
+        stage.addActor(hvacSettingsPanel)
         lightingPanel?.let { stage.addActor(it) }
         positionPanels()
         needsPanelLayout = true
@@ -538,6 +559,7 @@ class SketchUiOverlay(
         updateObjectsPanel()
         updateModelSettingsPanel()
         updateArchitectureSettingsPanel()
+        updateHvacSettingsPanel()
         refreshPluginToolbar()
         toolButtons[status.activeTool]?.isChecked = true
         updatePluginToolSelection()
@@ -638,6 +660,11 @@ class SketchUiOverlay(
         needsPanelLayout = true
     }
 
+    fun showHvacSettingsPanel() {
+        hvacSettingsPanel.isVisible = true
+        needsPanelLayout = true
+    }
+
     fun showPluginManager() {
         pluginManagerPanel?.let {
             it.isVisible = true
@@ -658,6 +685,7 @@ class SketchUiOverlay(
             modelSettingsPanel.isVisible = false
             polylineSettingsPanel.isVisible = false
             architectureSettingsPanel.isVisible = false
+            hvacSettingsPanel.isVisible = false
             lightingPanel?.isVisible = false
             pluginManagerPanel?.isVisible = false
             pluginPanels.values.forEach { panel -> panel.isVisible = false }
@@ -725,6 +753,10 @@ class SketchUiOverlay(
             ToolId.ARCH_WINDOW_FRAME,
             ToolId.ARCH_DOOR_FRAME
         )
+        val hvacTools = listOf(
+            ToolId.HVAC_PLUMBING,
+            ToolId.HVAC_VENTILATION
+        )
 
         val construction = buildToolsToolbarWindow(
             title = "Construction",
@@ -756,6 +788,12 @@ class SketchUiOverlay(
             toolIds = architectureTools,
             group = toolGroup
         )
+        val hvac = buildToolsToolbarWindow(
+            title = "HVAC",
+            toolbarId = "builtin_toolbar_hvac",
+            toolIds = hvacTools,
+            group = toolGroup
+        )
         val actions = buildActionsToolbarWindow(
             title = "Actions",
             toolbarId = "builtin_toolbar_actions"
@@ -769,11 +807,12 @@ class SketchUiOverlay(
         builtInToolbars["builtin_toolbar_construction"] = construction
         builtInToolbars["builtin_toolbar_modification"] = modification
         builtInToolbars["builtin_toolbar_architecture"] = architecture
+        builtInToolbars["builtin_toolbar_hvac"] = hvac
         builtInToolbars["builtin_toolbar_voxel"] = voxel
         builtInToolbars["builtin_toolbar_actions"] = actions
         builtInToolbars["builtin_toolbar_camera"] = camera
         toolbarsPositioned = false
-        return listOf(construction, modification, architecture, voxel, actions, camera)
+        return listOf(construction, modification, architecture, hvac, voxel, actions, camera)
     }
 
     private fun buildToolsToolbarWindow(
@@ -1826,6 +1865,200 @@ class SketchUiOverlay(
         uiPrefs.flush()
     }
 
+    private fun buildHvacSettingsPanel(): CollapsibleWindow {
+        val panel = CollapsibleWindow("HVAC Settings")
+        val content = VisTable()
+        content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        content.defaults().pad(4f).left()
+
+        hvacPlumbingDiameterField = VisTextField()
+        hvacPlumbingSidesField = VisTextField()
+        hvacPlumbingColorField = VisTextField()
+        hvacPlumbingColorButton = createHvacColorButton("HVAC Plumbing Color", hvacPlumbingColorField)
+        hvacVentilationWidthField = VisTextField()
+        hvacVentilationHeightField = VisTextField()
+        hvacVentilationColorField = VisTextField()
+        hvacVentilationColorButton = createHvacColorButton("HVAC Ventilation Color", hvacVentilationColorField)
+
+        content.add(VisLabel("Plumbing")).colspan(2).left().growX().row()
+        content.add(VisLabel("Pipe diameter")).left()
+        content.add(hvacPlumbingDiameterField).growX().row()
+        content.add(VisLabel("Pipe sides")).left()
+        content.add(hvacPlumbingSidesField).growX().row()
+        content.add(VisLabel("Pipe color")).left()
+        run {
+            val colorControls = VisTable()
+            colorControls.defaults().left()
+            colorControls.add(hvacPlumbingColorField).growX().padRight(4f)
+            colorControls.add(hvacPlumbingColorButton).size(24f, 24f)
+            content.add(colorControls).growX().row()
+        }
+
+        content.add(VisLabel("Ventilation")).colspan(2).left().growX().padTop(6f).row()
+        content.add(VisLabel("Duct width")).left()
+        content.add(hvacVentilationWidthField).growX().row()
+        content.add(VisLabel("Duct height")).left()
+        content.add(hvacVentilationHeightField).growX().row()
+        content.add(VisLabel("Duct color")).left()
+        run {
+            val colorControls = VisTable()
+            colorControls.defaults().left()
+            colorControls.add(hvacVentilationColorField).growX().padRight(4f)
+            colorControls.add(hvacVentilationColorButton).size(24f, 24f)
+            content.add(colorControls).growX().row()
+        }
+
+        hvacPlumbingDiameterField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingHvacFields) {
+                    return
+                }
+                val value = hvacPlumbingDiameterField.text.toFloatOrNull()?.coerceAtLeast(0.01f) ?: return
+                hvacSettings.plumbingDiameter = value
+                saveHvacDefaults()
+            }
+        })
+        hvacPlumbingSidesField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingHvacFields) {
+                    return
+                }
+                val value = hvacPlumbingSidesField.text.toIntOrNull()?.coerceIn(3, 128) ?: return
+                hvacSettings.plumbingSides = value
+                saveHvacDefaults()
+            }
+        })
+        hvacVentilationWidthField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingHvacFields) {
+                    return
+                }
+                val value = hvacVentilationWidthField.text.toFloatOrNull()?.coerceAtLeast(0.01f) ?: return
+                hvacSettings.ventilationWidth = value
+                saveHvacDefaults()
+            }
+        })
+        hvacVentilationHeightField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingHvacFields) {
+                    return
+                }
+                val value = hvacVentilationHeightField.text.toFloatOrNull()?.coerceAtLeast(0.01f) ?: return
+                hvacSettings.ventilationHeight = value
+                saveHvacDefaults()
+            }
+        })
+        hvacPlumbingColorField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingHvacFields) {
+                    return
+                }
+                val color = parseColorField(hvacPlumbingColorField.text) ?: return
+                hvacSettings.plumbingColor.set(color)
+                updateArchitectureColorButtonSwatch(hvacPlumbingColorButton, color)
+                saveHvacDefaults()
+            }
+        })
+        hvacVentilationColorField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingHvacFields) {
+                    return
+                }
+                val color = parseColorField(hvacVentilationColorField.text) ?: return
+                hvacSettings.ventilationColor.set(color)
+                updateArchitectureColorButtonSwatch(hvacVentilationColorButton, color)
+                saveHvacDefaults()
+            }
+        })
+
+        panel.add(content).growX()
+        panel.isVisible = false
+        updateHvacSettingsPanel()
+        return panel
+    }
+
+    private fun createHvacColorButton(title: String, field: VisTextField): VisImageTextButton {
+        val icon = iconFor("color", createActionIconDrawable(Color(0.8f, 0.8f, 0.8f, 1f)))
+        return VisImageTextButton("", icon).apply {
+            applyWhiteButtonStyle(this)
+            applyIconStyle(this, icon)
+            addListener(object : ClickListener() {
+                override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                    val current = parseColorField(field.text) ?: Color.WHITE
+                    showArchitectureColorPicker(title, current) { picked ->
+                        applyHvacColorPickerValue(field, this@apply, picked)
+                    }
+                }
+            })
+        }
+    }
+
+    private fun applyHvacColorPickerValue(field: VisTextField, button: VisImageTextButton, color: Color) {
+        val value = formatColorField(color)
+        updatingHvacFields = true
+        field.text = value
+        updateArchitectureColorButtonSwatch(button, color)
+        updatingHvacFields = false
+        when (field) {
+            hvacPlumbingColorField -> hvacSettings.plumbingColor.set(color)
+            hvacVentilationColorField -> hvacSettings.ventilationColor.set(color)
+        }
+        saveHvacDefaults()
+    }
+
+    private fun loadHvacDefaults() {
+        hvacSettings.plumbingDiameter =
+            uiPrefs.getFloat(hvacDefaultPlumbingDiameterKey, hvacSettings.plumbingDiameter).coerceAtLeast(0.01f)
+        hvacSettings.plumbingSides =
+            uiPrefs.getInteger(hvacDefaultPlumbingSidesKey, hvacSettings.plumbingSides).coerceIn(3, 128)
+        hvacSettings.plumbingColor.set(loadColorPref(hvacDefaultPlumbingColorKey, hvacSettings.plumbingColor))
+        hvacSettings.ventilationWidth =
+            uiPrefs.getFloat(hvacDefaultVentilationWidthKey, hvacSettings.ventilationWidth).coerceAtLeast(0.01f)
+        hvacSettings.ventilationHeight =
+            uiPrefs.getFloat(hvacDefaultVentilationHeightKey, hvacSettings.ventilationHeight).coerceAtLeast(0.01f)
+        hvacSettings.ventilationColor.set(loadColorPref(hvacDefaultVentilationColorKey, hvacSettings.ventilationColor))
+    }
+
+    private fun saveHvacDefaults() {
+        uiPrefs.putFloat(hvacDefaultPlumbingDiameterKey, hvacSettings.plumbingDiameter)
+        uiPrefs.putInteger(hvacDefaultPlumbingSidesKey, hvacSettings.plumbingSides)
+        uiPrefs.putString(hvacDefaultPlumbingColorKey, formatColorField(hvacSettings.plumbingColor))
+        uiPrefs.putFloat(hvacDefaultVentilationWidthKey, hvacSettings.ventilationWidth)
+        uiPrefs.putFloat(hvacDefaultVentilationHeightKey, hvacSettings.ventilationHeight)
+        uiPrefs.putString(hvacDefaultVentilationColorKey, formatColorField(hvacSettings.ventilationColor))
+        uiPrefs.flush()
+    }
+
+    private fun updateHvacSettingsPanel() {
+        if (!::hvacPlumbingDiameterField.isInitialized) {
+            return
+        }
+        fun updateField(field: VisTextField, text: String) {
+            if (field.hasKeyboardFocus()) {
+                return
+            }
+            if (field.text != text) {
+                field.text = text
+            }
+        }
+        updatingHvacFields = true
+        updateField(hvacPlumbingDiameterField, String.format(Locale.US, "%.3f", hvacSettings.plumbingDiameter))
+        updateField(hvacPlumbingSidesField, hvacSettings.plumbingSides.toString())
+        updateField(hvacPlumbingColorField, formatColorField(hvacSettings.plumbingColor))
+        updateField(hvacVentilationWidthField, String.format(Locale.US, "%.3f", hvacSettings.ventilationWidth))
+        updateField(hvacVentilationHeightField, String.format(Locale.US, "%.3f", hvacSettings.ventilationHeight))
+        updateField(hvacVentilationColorField, formatColorField(hvacSettings.ventilationColor))
+        updateArchitectureColorButtonSwatch(
+            hvacPlumbingColorButton,
+            parseColorField(hvacPlumbingColorField.text) ?: hvacSettings.plumbingColor
+        )
+        updateArchitectureColorButtonSwatch(
+            hvacVentilationColorButton,
+            parseColorField(hvacVentilationColorField.text) ?: hvacSettings.ventilationColor
+        )
+        updatingHvacFields = false
+    }
+
     private fun rebuildArchitectureSettingsContent(mode: ArchitectureElementKind?) {
         architectureSettingsContent.clearChildren()
         architectureSettingsContent.add(architectureModeLabel).left().colspan(2).growX().row()
@@ -2604,6 +2837,7 @@ class SketchUiOverlay(
         panels.add(modelSettingsPanel)
         panels.add(polylineSettingsPanel)
         panels.add(architectureSettingsPanel)
+        panels.add(hvacSettingsPanel)
         lightingPanel?.let { panels.add(it) }
         panels.forEach {
             it.invalidateHierarchy()
@@ -2707,6 +2941,7 @@ class SketchUiOverlay(
             "builtin_toolbar_construction",
             "builtin_toolbar_modification",
             "builtin_toolbar_architecture",
+            "builtin_toolbar_hvac",
             "builtin_toolbar_voxel",
             "builtin_toolbar_actions",
             "builtin_toolbar_camera"
@@ -2756,6 +2991,7 @@ class SketchUiOverlay(
             "builtin_toolbar_construction",
             "builtin_toolbar_modification",
             "builtin_toolbar_architecture",
+            "builtin_toolbar_hvac",
             "builtin_toolbar_voxel",
             "builtin_toolbar_actions",
             "builtin_toolbar_camera"
@@ -3093,6 +3329,8 @@ class SketchUiOverlay(
             ToolId.ARCH_ADD_HOLE -> "arch_hole"
             ToolId.ARCH_WINDOW_FRAME -> "arch_window"
             ToolId.ARCH_DOOR_FRAME -> "arch_door"
+            ToolId.HVAC_PLUMBING -> "hvac_plumbing"
+            ToolId.HVAC_VENTILATION -> "hvac_ventilation"
             ToolId.FACE_OUTLINE -> "line"
             ToolId.LINE_OFFSET -> "offset"
             ToolId.CUT_HOLES -> "cleanup"
@@ -3132,6 +3370,8 @@ class SketchUiOverlay(
             ToolId.ARCH_ADD_HOLE -> Color(0.95f, 0.55f, 0.25f, 1f)
             ToolId.ARCH_WINDOW_FRAME -> Color(0.35f, 0.8f, 0.95f, 1f)
             ToolId.ARCH_DOOR_FRAME -> Color(0.95f, 0.75f, 0.25f, 1f)
+            ToolId.HVAC_PLUMBING -> Color(0.55f, 0.8f, 0.95f, 1f)
+            ToolId.HVAC_VENTILATION -> Color(0.82f, 0.82f, 0.82f, 1f)
             ToolId.FACE_OUTLINE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.LINE_OFFSET -> Color(0.35f, 0.75f, 0.95f, 1f)
             ToolId.CUT_HOLES -> Color(0.85f, 0.55f, 0.35f, 1f)

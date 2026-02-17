@@ -221,6 +221,8 @@ class SelectTool(
         val architectureGroup = scene.root
         val isVoxelGroup = scene.isVoxelGroup(activeGroup)
         val architectureSelectionEnabled = scene.hasArchitectureElements() && activeGroup == architectureGroup
+        val parametricSelectionEnabled =
+            (scene.hasArchitectureElements() || scene.hasHvacElements()) && activeGroup == architectureGroup
         if (architectureSelectionEnabled) {
             val holeHit = pickArchitectureHoleHandle(architectureGroup, ray, Gdx.input.x, Gdx.input.y)
             if (holeHit != null) {
@@ -337,12 +339,12 @@ class SelectTool(
         val allowFaceSelection = !isVoxelGroup
         val voxelHit = if (isVoxelGroup) pickVoxelWorld(ray) else null
         val faceHit = if (allowFaceSelection || architectureSelectionEnabled) {
-            pickFaceWorld(ray, ignoreArchitectureGenerated = architectureSelectionEnabled)
+            pickFaceWorld(ray, ignoreArchitectureGenerated = parametricSelectionEnabled)
         } else {
             null
         }
         val edgeHit = if (isVoxelGroup) null else {
-            pickEdgeWorld(ray, Gdx.input.x, Gdx.input.y, ignoreArchitectureGenerated = architectureSelectionEnabled)
+            pickEdgeWorld(ray, Gdx.input.x, Gdx.input.y, ignoreArchitectureGenerated = parametricSelectionEnabled)
         }
         val dimensionHit = pickDimensionWorld(ray, Gdx.input.x, Gdx.input.y)
         val textHit = pickTextWorld(ray, Gdx.input.x, Gdx.input.y)
@@ -569,6 +571,8 @@ class SelectTool(
                 }
                 val architectureSelectionEnabled =
                     scene.hasArchitectureElements() && scene.activeGroup() == scene.root
+                val parametricSelectionEnabled =
+                    (scene.hasArchitectureElements() || scene.hasHvacElements()) && scene.activeGroup() == scene.root
                 val architectureCount = if (architectureSelectionEnabled) {
                     selectArchitectureInWindow(rect, includeIntersect, mode)
                 } else {
@@ -577,12 +581,12 @@ class SelectTool(
                 val faces = if (scene.isVoxelGroup(scene.activeGroup())) {
                     0
                 } else {
-                    selectFacesInWindow(rect, includeIntersect, mode, ignoreArchitectureGenerated = architectureSelectionEnabled)
+                    selectFacesInWindow(rect, includeIntersect, mode, ignoreArchitectureGenerated = parametricSelectionEnabled)
                 }
                 val edges = if (scene.isVoxelGroup(scene.activeGroup())) {
                     0
                 } else {
-                    selectEdgesInWindow(rect, includeIntersect, mode, ignoreArchitectureGenerated = architectureSelectionEnabled)
+                    selectEdgesInWindow(rect, includeIntersect, mode, ignoreArchitectureGenerated = parametricSelectionEnabled)
                 }
                 val dimensions = selectDimensionsInWindow(rect, includeIntersect, mode)
                 val texts = selectTextsInWindow(rect, includeIntersect, mode)
@@ -725,11 +729,11 @@ class SelectTool(
         }
         var best: FaceHitWorld? = null
         group.faceStore.getTriangles().forEach { triangle ->
-            val isArchitecture = scene.isGeneratedArchitectureTriangle(triangle)
-            if (ignoreArchitectureGenerated && isArchitecture) {
+            val isGenerated = scene.isGeneratedArchitectureTriangle(triangle) || scene.isGeneratedHvacTriangle(triangle)
+            if (ignoreArchitectureGenerated && isGenerated) {
                 return@forEach
             }
-            if (onlyArchitectureGenerated && !isArchitecture) {
+            if (onlyArchitectureGenerated && !scene.isGeneratedArchitectureTriangle(triangle)) {
                 return@forEach
             }
             val hit = intersectRayTriangleLocal(localRay, triangle) ?: return@forEach
@@ -783,11 +787,11 @@ class SelectTool(
         val group = scene.activeGroup()
         var best: EdgeHitWorld? = null
         group.lineStore.getSegments().forEach { segment ->
-            val isArchitecture = scene.isGeneratedArchitectureSegment(segment)
-            if (ignoreArchitectureGenerated && isArchitecture) {
+            val isGenerated = scene.isGeneratedArchitectureSegment(segment) || scene.isGeneratedHvacSegment(segment)
+            if (ignoreArchitectureGenerated && isGenerated) {
                 return@forEach
             }
-            if (onlyArchitectureGenerated && !isArchitecture) {
+            if (onlyArchitectureGenerated && !scene.isGeneratedArchitectureSegment(segment)) {
                 return@forEach
             }
             val a = group.toWorld(segment.start)
@@ -1436,7 +1440,7 @@ class SelectTool(
     ): Int {
         var count = 0
         scene.activeGroup().faceStore.getTriangles().forEach { tri ->
-            if (ignoreArchitectureGenerated && scene.isGeneratedArchitectureTriangle(tri)) {
+            if (ignoreArchitectureGenerated && (scene.isGeneratedArchitectureTriangle(tri) || scene.isGeneratedHvacTriangle(tri))) {
                 return@forEach
             }
             val a = projectToScreen(tri.a)
@@ -1474,7 +1478,7 @@ class SelectTool(
     ): Int {
         var count = 0
         scene.activeGroup().lineStore.getSegments().forEach { segment ->
-            if (ignoreArchitectureGenerated && scene.isGeneratedArchitectureSegment(segment)) {
+            if (ignoreArchitectureGenerated && (scene.isGeneratedArchitectureSegment(segment) || scene.isGeneratedHvacSegment(segment))) {
                 return@forEach
             }
             val a = projectToScreen(segment.start)

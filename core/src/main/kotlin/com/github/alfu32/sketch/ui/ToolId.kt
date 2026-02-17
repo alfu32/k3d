@@ -15,6 +15,8 @@ enum class ToolId(val displayName: String) {
     ARCH_ADD_HOLE("Add Hole"),
     ARCH_WINDOW_FRAME("Window Frame"),
     ARCH_DOOR_FRAME("Door Frame"),
+    HVAC_PLUMBING("HVAC Plumbing"),
+    HVAC_VENTILATION("HVAC Ventilation"),
     FACE_OUTLINE("Face Outline"),
     LINE_OFFSET("Line Offset"),
     CUT_HOLES("Cut Holes"),

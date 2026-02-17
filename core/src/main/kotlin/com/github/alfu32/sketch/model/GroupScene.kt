@@ -63,6 +63,7 @@ class GroupScene(
         var voxelColor: Color = Color(1f, 1f, 1f, 1f),
         val voxelStore: VoxelStore? = null,
         val architectureStore: ArchitectureStore? = null,
+        val hvacStore: HvacStore? = null,
         val lineStore: DraftLineStore,
         val faceStore: DraftFaceStore,
         val dimensionStore: DraftDimensionStore,
@@ -111,6 +112,8 @@ class GroupScene(
             get() = prototype.voxelStore
         val architectureStore: ArchitectureStore?
             get() = prototype.architectureStore
+        val hvacStore: HvacStore?
+            get() = prototype.hvacStore
         val voxelColor: Color
             get() = prototype.voxelColor
 
@@ -300,8 +303,11 @@ class GroupScene(
     private val prototypes = linkedMapOf<String, ObjectPrototype>()
     private val prototypeInstances = mutableMapOf<String, MutableSet<GroupNode>>()
     private val modelArchitectureStore = ArchitectureStore()
+    private val modelHvacStore = HvacStore()
     private val generatedArchitectureLines = mutableSetOf<DraftLineStore.Segment>()
     private val generatedArchitectureFaces = mutableSetOf<DraftFaceStore.Triangle>()
+    private val generatedHvacLines = mutableSetOf<DraftLineStore.Segment>()
+    private val generatedHvacFaces = mutableSetOf<DraftFaceStore.Triangle>()
     private val rootPrototype = ObjectPrototype(
         id = "root",
         name = "Root",
@@ -314,6 +320,7 @@ class GroupScene(
         voxelColor = Color(defaultFaceColor),
         voxelStore = null,
         architectureStore = modelArchitectureStore,
+        hvacStore = modelHvacStore,
         lineStore = DraftLineStore(),
         faceStore = DraftFaceStore(defaultFaceColor),
         dimensionStore = DraftDimensionStore(),
@@ -466,6 +473,7 @@ class GroupScene(
             voxelColor = Color(color),
             voxelStore = VoxelStore(),
             architectureStore = null,
+            hvacStore = null,
             lineStore = DraftLineStore(),
             faceStore = DraftFaceStore(defaultFaceColor),
             dimensionStore = DraftDimensionStore(),
@@ -504,6 +512,7 @@ class GroupScene(
             voxelColor = Color(color),
             voxelStore = null,
             architectureStore = ArchitectureStore(),
+            hvacStore = null,
             lineStore = DraftLineStore(),
             faceStore = DraftFaceStore(defaultFaceColor),
             dimensionStore = DraftDimensionStore(),
@@ -552,12 +561,25 @@ class GroupScene(
             store.allFrames().isNotEmpty()
     }
 
+    fun hasHvacElements(): Boolean {
+        return modelHvacStore.allPlumbingRuns().isNotEmpty() ||
+            modelHvacStore.allVentilationDucts().isNotEmpty()
+    }
+
     fun isGeneratedArchitectureSegment(segment: DraftLineStore.Segment): Boolean {
         return generatedArchitectureLines.contains(segment)
     }
 
     fun isGeneratedArchitectureTriangle(triangle: DraftFaceStore.Triangle): Boolean {
         return generatedArchitectureFaces.contains(triangle)
+    }
+
+    fun isGeneratedHvacSegment(segment: DraftLineStore.Segment): Boolean {
+        return generatedHvacLines.contains(segment)
+    }
+
+    fun isGeneratedHvacTriangle(triangle: DraftFaceStore.Triangle): Boolean {
+        return generatedHvacFaces.contains(triangle)
     }
 
     fun voxelColor(group: GroupNode): Color? {
@@ -703,6 +725,63 @@ class GroupScene(
 
     private fun architectureStoreFor(group: GroupNode? = null): ArchitectureStore {
         return modelArchitectureStore
+    }
+
+    private fun hvacStoreFor(group: GroupNode? = null): HvacStore {
+        return modelHvacStore
+    }
+
+    fun addHvacPlumbingRun(
+        pathWorld: List<Vector3>,
+        diameter: Float,
+        sides: Int,
+        color: Color
+    ): Boolean {
+        if (pathWorld.size < 2) {
+            return false
+        }
+        val cleaned = mutableListOf<Vector3>()
+        pathWorld.forEach { point ->
+            if (cleaned.isEmpty() || cleaned.last().dst2(point) > 1e-6f) {
+                cleaned.add(Vector3(point))
+            }
+        }
+        if (cleaned.size < 2) {
+            return false
+        }
+        hvacStoreFor().addPlumbingRun(
+            path = cleaned,
+            diameter = diameter.coerceAtLeast(0.01f),
+            sides = sides.coerceIn(3, 128),
+            color = color
+        )
+        rebuildHvacGeometry(rootPrototype)
+        notifyChange()
+        return true
+    }
+
+    fun addHvacVentilationDuct(
+        startWorld: Vector3,
+        endWorld: Vector3,
+        binormalRefWorld: Vector3,
+        width: Float,
+        height: Float,
+        color: Color
+    ): Boolean {
+        if (startWorld.dst2(endWorld) <= 1e-6f) {
+            return false
+        }
+        hvacStoreFor().addVentilationDuct(
+            start = startWorld,
+            end = endWorld,
+            binormalRef = binormalRefWorld,
+            width = width.coerceAtLeast(0.01f),
+            height = height.coerceAtLeast(0.01f),
+            color = color
+        )
+        rebuildHvacGeometry(rootPrototype)
+        notifyChange()
+        return true
     }
 
     fun addArchitectureWall(
@@ -1957,6 +2036,7 @@ class GroupScene(
             voxelColor = Color(defaultFaceColor),
             voxelStore = null,
             architectureStore = null,
+            hvacStore = null,
             lineStore = DraftLineStore(),
             faceStore = DraftFaceStore(defaultFaceColor),
             dimensionStore = DraftDimensionStore(),
@@ -2478,6 +2558,50 @@ class GroupScene(
         }
 
         rebuildArchitectureGeometry(rootPrototype)
+    }
+
+    fun rebuildHvacGeometry(prototype: ObjectPrototype) {
+        val store = modelHvacStore
+        val lineStore = root.lineStore
+        val faceStore = root.faceStore
+
+        lineStore.withChangeSuppressed {
+            lineStore.deleteSegments(generatedHvacLines)
+        }
+        faceStore.withChangeSuppressed {
+            faceStore.deleteTriangles(generatedHvacFaces)
+        }
+        generatedHvacLines.clear()
+        generatedHvacFaces.clear()
+
+        if (store.allPlumbingRuns().isEmpty() && store.allVentilationDucts().isEmpty()) {
+            lineStore.notifyExternalChange()
+            faceStore.notifyExternalChange()
+            return
+        }
+
+        val lineBaseline = lineStore.getSegments().toSet()
+        val faceBaseline = faceStore.getTriangles().toSet()
+        faceStore.withChangeSuppressed {
+            lineStore.withChangeSuppressed {
+                store.allPlumbingRuns().forEach { run ->
+                    appendHvacPlumbingGeometry(faceStore, lineStore, run)
+                }
+                store.allVentilationDucts().forEach { duct ->
+                    appendHvacVentilationGeometry(faceStore, lineStore, duct)
+                }
+            }
+        }
+        generatedHvacLines.addAll(lineStore.getSegments().filter { it !in lineBaseline })
+        generatedHvacFaces.addAll(faceStore.getTriangles().filter { it !in faceBaseline })
+        lineStore.notifyExternalChange()
+        faceStore.notifyExternalChange()
+    }
+
+    fun syncHvacGeometryAfterLoad() {
+        generatedHvacLines.clear()
+        generatedHvacFaces.clear()
+        rebuildHvacGeometry(rootPrototype)
     }
 
     private data class QuantizedPointKey(val x: Long, val y: Long, val z: Long)
@@ -4096,6 +4220,176 @@ class GroupScene(
         }
     }
 
+    private fun appendHvacPlumbingGeometry(
+        faceStore: DraftFaceStore,
+        lineStore: DraftLineStore,
+        run: HvacStore.PlumbingRun
+    ) {
+        val path = run.path
+        if (path.size < 2) {
+            return
+        }
+        val radius = (run.diameter * 0.5f).coerceAtLeast(0.005f)
+        val sides = run.sides.coerceIn(3, 128)
+        val tangents = computePipeTangents(path)
+        if (tangents.isEmpty()) {
+            return
+        }
+        val rings = mutableListOf<List<Vector3>>()
+        var previousNormal = initialPerpendicular(tangents.first())
+        for (i in path.indices) {
+            val tangent = tangents[i]
+            var normal = if (i == 0) {
+                Vector3(previousNormal)
+            } else {
+                Vector3(previousNormal).sub(Vector3(tangent).scl(previousNormal.dot(tangent)))
+            }
+            if (normal.len2() <= 1e-6f) {
+                normal = initialPerpendicular(tangent)
+            }
+            normal.nor()
+            var binormal = Vector3(tangent).crs(normal)
+            if (binormal.len2() <= 1e-6f) {
+                normal = initialPerpendicular(tangent)
+                binormal = Vector3(tangent).crs(normal)
+            }
+            binormal.nor()
+            normal = Vector3(binormal).crs(tangent).nor()
+            previousNormal = Vector3(normal)
+
+            val ring = MutableList(sides) { index ->
+                val angle = (2.0 * Math.PI * index.toDouble() / sides.toDouble()).toFloat()
+                val radial = Vector3(normal).scl(kotlin.math.cos(angle.toDouble()).toFloat())
+                    .add(Vector3(binormal).scl(kotlin.math.sin(angle.toDouble()).toFloat()))
+                Vector3(path[i]).mulAdd(radial, radius)
+            }
+            rings.add(ring)
+        }
+
+        for (i in 0 until rings.lastIndex) {
+            val ringA = rings[i]
+            val ringB = rings[i + 1]
+            for (j in 0 until sides) {
+                val next = (j + 1) % sides
+                val a = ringA[j]
+                val b = ringA[next]
+                val c = ringB[next]
+                val d = ringB[j]
+                val outward = Vector3(a).sub(path[i])
+                addQuad(faceStore, lineStore, a, b, c, d, outward, run.color)
+            }
+        }
+        addPipeCap(faceStore, lineStore, path.first(), rings.first(), Vector3(tangents.first()).scl(-1f), run.color)
+        addPipeCap(faceStore, lineStore, path.last(), rings.last(), Vector3(tangents.last()), run.color)
+    }
+
+    private fun appendHvacVentilationGeometry(
+        faceStore: DraftFaceStore,
+        lineStore: DraftLineStore,
+        duct: HvacStore.VentilationDuct
+    ) {
+        val start = Vector3(duct.start)
+        val end = Vector3(duct.end)
+        val tangent = Vector3(end).sub(start)
+        if (tangent.len2() <= 1e-6f) {
+            return
+        }
+        tangent.nor()
+
+        var binormal = Vector3(duct.binormalRef).sub(start)
+        binormal.sub(Vector3(tangent).scl(binormal.dot(tangent)))
+        if (binormal.len2() <= 1e-6f) {
+            binormal = initialPerpendicular(tangent)
+        }
+        binormal.nor()
+        var normal = Vector3(tangent).crs(binormal)
+        if (normal.len2() <= 1e-6f) {
+            normal = initialPerpendicular(tangent)
+            binormal = Vector3(normal).crs(tangent).nor()
+        }
+        normal.nor()
+
+        val halfWidth = (duct.width * 0.5f).coerceAtLeast(0.005f)
+        val height = duct.height.coerceAtLeast(0.005f)
+        val delta = Vector3(end).sub(start)
+
+        val sTL = Vector3(start).mulAdd(binormal, halfWidth)
+        val sTR = Vector3(start).mulAdd(binormal, -halfWidth)
+        val sBR = Vector3(sTR).mulAdd(normal, -height)
+        val sBL = Vector3(sTL).mulAdd(normal, -height)
+        val eTL = Vector3(sTL).add(delta)
+        val eTR = Vector3(sTR).add(delta)
+        val eBR = Vector3(sBR).add(delta)
+        val eBL = Vector3(sBL).add(delta)
+
+        addQuad(faceStore, lineStore, sTL, eTL, eTR, sTR, normal, duct.color)
+        addQuad(faceStore, lineStore, sBL, sBR, eBR, eBL, Vector3(normal).scl(-1f), duct.color)
+        addQuad(faceStore, lineStore, sTL, sBL, eBL, eTL, binormal, duct.color)
+        addQuad(faceStore, lineStore, sTR, eTR, eBR, sBR, Vector3(binormal).scl(-1f), duct.color)
+        addQuad(faceStore, lineStore, sTR, sTL, sBL, sBR, Vector3(tangent).scl(-1f), duct.color)
+        addQuad(faceStore, lineStore, eTL, eTR, eBR, eBL, tangent, duct.color)
+    }
+
+    private fun computePipeTangents(path: List<Vector3>): List<Vector3> {
+        if (path.size < 2) {
+            return emptyList()
+        }
+        val tangents = MutableList(path.size) { Vector3() }
+        for (i in path.indices) {
+            tangents[i] = when (i) {
+                0 -> Vector3(path[1]).sub(path[0]).nor()
+                path.lastIndex -> Vector3(path[path.lastIndex]).sub(path[path.lastIndex - 1]).nor()
+                else -> {
+                    val prev = Vector3(path[i]).sub(path[i - 1]).nor()
+                    val next = Vector3(path[i + 1]).sub(path[i]).nor()
+                    val merged = Vector3(prev).add(next)
+                    if (merged.len2() <= 1e-8f) next else merged.nor()
+                }
+            }
+            if (tangents[i].len2() <= 1e-8f) {
+                tangents[i] = Vector3(1f, 0f, 0f)
+            }
+        }
+        return tangents
+    }
+
+    private fun initialPerpendicular(direction: Vector3): Vector3 {
+        var normal = Vector3(0f, 1f, 0f).sub(Vector3(direction).scl(direction.y))
+        if (normal.len2() <= 1e-6f) {
+            normal = Vector3(1f, 0f, 0f).sub(Vector3(direction).scl(direction.x))
+        }
+        if (normal.len2() <= 1e-6f) {
+            normal = Vector3(0f, 0f, 1f).sub(Vector3(direction).scl(direction.z))
+        }
+        return normal.nor()
+    }
+
+    private fun addPipeCap(
+        faceStore: DraftFaceStore,
+        lineStore: DraftLineStore,
+        center: Vector3,
+        ring: List<Vector3>,
+        outward: Vector3,
+        color: Color
+    ) {
+        if (ring.size < 3) {
+            return
+        }
+        for (i in ring.indices) {
+            val next = (i + 1) % ring.size
+            val p0 = Vector3(center)
+            val p1 = Vector3(ring[i])
+            val p2 = Vector3(ring[next])
+            val normal = Vector3(p1).sub(p0).crs(Vector3(p2).sub(p0))
+            if (normal.dot(outward) >= 0f) {
+                faceStore.addTriangle(p0, p1, p2, color)
+            } else {
+                faceStore.addTriangle(p0, p2, p1, color)
+            }
+            lineStore.addSegment(Vector3(ring[i]), Vector3(ring[next]), autoCleanup = false)
+        }
+    }
+
     private fun appendPrismFromRect(
         faceStore: DraftFaceStore,
         lineStore: DraftLineStore,
@@ -4450,8 +4744,11 @@ class GroupScene(
         root.dimensionStore.clearAll()
         root.textStore.clearAll()
         modelArchitectureStore.clear()
+        modelHvacStore.clear()
         generatedArchitectureLines.clear()
         generatedArchitectureFaces.clear()
+        generatedHvacLines.clear()
+        generatedHvacFaces.clear()
         clearGroupSelection()
         activeGroup = root
         prototypeInstances.clear()

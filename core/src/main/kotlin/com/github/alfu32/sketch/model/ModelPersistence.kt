@@ -53,11 +53,11 @@ object ModelPersistence {
                 val dto = ObjectPrototypeDto.fromPrototype(prototype)
                 if (prototype.id == rootPrototypeId) {
                     dto.segments = prototype.lineStore.getSegments()
-                        .filterNot { scene.isGeneratedArchitectureSegment(it) }
+                        .filterNot { scene.isGeneratedArchitectureSegment(it) || scene.isGeneratedHvacSegment(it) }
                         .map { seg -> SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end)) }
                         .toMutableList()
                     dto.faces = prototype.faceStore.getTriangles()
-                        .filterNot { scene.isGeneratedArchitectureTriangle(it) }
+                        .filterNot { scene.isGeneratedArchitectureTriangle(it) || scene.isGeneratedHvacTriangle(it) }
                         .map { tri ->
                             val color = prototype.faceStore.colorFor(tri)
                             FaceDto(Vec3Dto(tri.a), Vec3Dto(tri.b), Vec3Dto(tri.c), ColorDto(color))
@@ -192,6 +192,7 @@ object ModelPersistence {
             }
         }
         scene.syncArchitectureGeometryAfterLoad()
+        scene.syncHvacGeometryAfterLoad()
         if (snapshot.cameraState != null) {
             snapshot.cameraState?.applyTo(camera, cameraTarget)
         } else {
@@ -270,6 +271,8 @@ object ModelPersistence {
         var architectureSlabs: MutableList<ArchitectureSlabDto> = mutableListOf()
         var architectureStairs: MutableList<ArchitectureStairDto> = mutableListOf()
         var architectureFrames: MutableList<ArchitectureFrameDto> = mutableListOf()
+        var hvacPlumbingRuns: MutableList<HvacPlumbingDto> = mutableListOf()
+        var hvacVentilationDucts: MutableList<HvacVentilationDto> = mutableListOf()
         var segments: MutableList<SegmentDto> = mutableListOf()
         var faces: MutableList<FaceDto> = mutableListOf()
         var dimensions: MutableList<DimensionDto> = mutableListOf()
@@ -283,6 +286,7 @@ object ModelPersistence {
             }
             val voxelStore = if (prototypeKind == GroupScene.PrototypeKind.VOXEL) VoxelStore() else null
             val architectureStore = if (prototypeKind == GroupScene.PrototypeKind.ARCHITECTURE) ArchitectureStore() else null
+            val hvacStore = if (id == "root") HvacStore() else null
             val prototype = GroupScene.ObjectPrototype(
                 id = id.ifBlank { java.util.UUID.randomUUID().toString() },
                 name = name.ifBlank { "Object" },
@@ -295,12 +299,14 @@ object ModelPersistence {
                 voxelColor = voxelColor?.toColor() ?: Color(defaultColor),
                 voxelStore = voxelStore,
                 architectureStore = architectureStore,
+                hvacStore = hvacStore,
                 lineStore = DraftLineStore(),
                 faceStore = DraftFaceStore(defaultColor),
                 dimensionStore = DraftDimensionStore(),
                 textStore = DraftTextStore()
             )
             restoreArchitecture(architectureStore)
+            restoreHvac(hvacStore)
             applyGeometry(prototype)
             return prototype
         }
@@ -329,6 +335,8 @@ object ModelPersistence {
             }
             prototype.architectureStore?.clear()
             restoreArchitecture(prototype.architectureStore)
+            prototype.hvacStore?.clear()
+            restoreHvac(prototype.hvacStore)
             prototype.lineStore.clearAll()
             prototype.faceStore.clearAll()
             prototype.dimensionStore.clearAll()
@@ -457,6 +465,32 @@ object ModelPersistence {
             }
         }
 
+        private fun restoreHvac(store: HvacStore?) {
+            val hvac = store ?: return
+            hvacPlumbingRuns.forEach { run ->
+                hvac.addPlumbingRun(
+                    path = run.path.map { it.toVector3() },
+                    diameter = run.diameter,
+                    sides = run.sides,
+                    color = run.color.toColor(),
+                    name = run.name,
+                    id = run.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                )
+            }
+            hvacVentilationDucts.forEach { duct ->
+                hvac.addVentilationDuct(
+                    start = duct.start.toVector3(),
+                    end = duct.end.toVector3(),
+                    binormalRef = duct.binormalRef.toVector3(),
+                    width = duct.width,
+                    height = duct.height,
+                    color = duct.color.toColor(),
+                    name = duct.name,
+                    id = duct.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                )
+            }
+        }
+
         companion object {
             fun fromPrototype(prototype: GroupScene.ObjectPrototype): ObjectPrototypeDto {
                 val dto = ObjectPrototypeDto()
@@ -542,6 +576,28 @@ object ModelPersistence {
                         color = ColorDto(frame.color),
                         glazingEnabled = frame.glazingEnabled,
                         glazingColor = ColorDto(frame.glazingColor)
+                    )
+                }?.toMutableList() ?: mutableListOf()
+                dto.hvacPlumbingRuns = prototype.hvacStore?.allPlumbingRuns()?.map { run ->
+                    HvacPlumbingDto(
+                        id = run.id,
+                        name = run.name,
+                        path = run.path.map { Vec3Dto(it) }.toMutableList(),
+                        diameter = run.diameter,
+                        sides = run.sides,
+                        color = ColorDto(run.color)
+                    )
+                }?.toMutableList() ?: mutableListOf()
+                dto.hvacVentilationDucts = prototype.hvacStore?.allVentilationDucts()?.map { duct ->
+                    HvacVentilationDto(
+                        id = duct.id,
+                        name = duct.name,
+                        start = Vec3Dto(duct.start),
+                        end = Vec3Dto(duct.end),
+                        binormalRef = Vec3Dto(duct.binormalRef),
+                        width = duct.width,
+                        height = duct.height,
+                        color = ColorDto(duct.color)
                     )
                 }?.toMutableList() ?: mutableListOf()
                 dto.segments = prototype.lineStore.getSegments().map { seg ->
@@ -767,6 +823,62 @@ object ModelPersistence {
             this.color = color
             this.glazingEnabled = glazingEnabled
             this.glazingColor = glazingColor
+        }
+    }
+
+    class HvacPlumbingDto() {
+        var id: String = ""
+        var name: String = ""
+        var path: MutableList<Vec3Dto> = mutableListOf()
+        var diameter: Float = 0.2f
+        var sides: Int = 16
+        var color: ColorDto = ColorDto(Color(0.70f, 0.82f, 0.95f, 1f))
+
+        constructor(
+            id: String,
+            name: String,
+            path: MutableList<Vec3Dto>,
+            diameter: Float,
+            sides: Int,
+            color: ColorDto
+        ) : this() {
+            this.id = id
+            this.name = name
+            this.path = path
+            this.diameter = diameter
+            this.sides = sides
+            this.color = color
+        }
+    }
+
+    class HvacVentilationDto() {
+        var id: String = ""
+        var name: String = ""
+        var start: Vec3Dto = Vec3Dto()
+        var end: Vec3Dto = Vec3Dto()
+        var binormalRef: Vec3Dto = Vec3Dto()
+        var width: Float = 0.5f
+        var height: Float = 0.25f
+        var color: ColorDto = ColorDto(Color(0.82f, 0.82f, 0.82f, 1f))
+
+        constructor(
+            id: String,
+            name: String,
+            start: Vec3Dto,
+            end: Vec3Dto,
+            binormalRef: Vec3Dto,
+            width: Float,
+            height: Float,
+            color: ColorDto
+        ) : this() {
+            this.id = id
+            this.name = name
+            this.start = start
+            this.end = end
+            this.binormalRef = binormalRef
+            this.width = width
+            this.height = height
+            this.color = color
         }
     }
 

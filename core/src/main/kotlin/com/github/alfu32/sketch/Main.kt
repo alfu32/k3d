@@ -91,6 +91,9 @@ import com.github.alfu32.sketch.tools.ArchitectureWindowFrameTool
 import com.github.alfu32.sketch.tools.ExtrudeSwipeTool
 import com.github.alfu32.sketch.tools.MeshIntersectionTool
 import com.github.alfu32.sketch.tools.FaceOutlineTool
+import com.github.alfu32.sketch.tools.HvacPlumbingTool
+import com.github.alfu32.sketch.tools.HvacSettings
+import com.github.alfu32.sketch.tools.HvacVentilationTool
 import com.github.alfu32.sketch.tools.LinearDimensionTool
 import com.github.alfu32.sketch.tools.LineOffsetTool
 import com.github.alfu32.sketch.tools.LineTool
@@ -182,6 +185,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var toolPointer: ToolPointerProcessor
     private val polylineSettings = PolylineSettings()
     private val architectureSettings = ArchitectureSettings()
+    private val hvacSettings = HvacSettings()
     private lateinit var statusModel: StatusModel
     private lateinit var scene: GroupScene
     private lateinit var modelCleanup: ModelCleanup
@@ -309,6 +313,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 ArchitectureAddHoleTool(scene, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
                 ArchitectureWindowFrameTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
                 ArchitectureDoorFrameTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
+                HvacPlumbingTool(scene, hvacSettings) { toolController.setTool(ToolId.SELECT) },
+                HvacVentilationTool(scene, hvacSettings) { toolController.setTool(ToolId.SELECT) },
                 FaceOutlineTool(scene),
                 LineOffsetTool(scene),
                 CutHolesTool(scene) { toolController.setTool(ToolId.SELECT) },
@@ -415,6 +421,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::applyShadowSettings,
             polylineSettings,
             architectureSettings,
+            hvacSettings,
             ::architectureSelectionInfo,
             ::architectureSelectionSummary,
             ::updateArchitectureElementName,
@@ -532,6 +539,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 priority = 1,
                 execute = {
                     uiOverlay.showArchitectureSettingsPanel()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.hvac_settings",
+                name = "View> HVAC Settings",
+                description = "Show HVAC settings panel",
+                icon = "view",
+                category = "View",
+                tags = listOf("hvac", "settings", "panel"),
+                priority = 1,
+                execute = {
+                    uiOverlay.showHvacSettingsPanel()
                     com.github.alfu32.sketch.plugin.PluginResult.success()
                 }
             )
