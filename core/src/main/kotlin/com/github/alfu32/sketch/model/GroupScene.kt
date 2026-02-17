@@ -68,6 +68,7 @@ class GroupScene(
         val id: String,
         val start: Vector3,
         val end: Vector3,
+        val path: List<Vector3>,
         val binormalRef: Vector3,
         val width: Float,
         val height: Float,
@@ -3602,15 +3603,19 @@ class GroupScene(
     }
 
     private fun hvacVentilationDistanceSq(duct: HvacStore.VentilationDuct, point: Vector3): Float {
-        val basis = hvacVentilationBasis(duct) ?: return Float.POSITIVE_INFINITY
-        val rel = Vector3(point).sub(basis.start)
-        val t = rel.dot(basis.tangent)
-        val b = rel.dot(basis.binormal)
-        val n = rel.dot(basis.normal)
-        val dt = rangeDistance(t, 0f, basis.length)
-        val db = rangeDistance(b, -basis.halfWidth, basis.halfWidth)
-        val dn = rangeDistance(n, -basis.height, 0f)
-        return dt * dt + db * db + dn * dn
+        val resolved = resolvedVentilation(duct)
+        if (resolved.path.size < 2) {
+            return Float.POSITIVE_INFINITY
+        }
+        var best = Float.POSITIVE_INFINITY
+        for (i in 0 until resolved.path.lastIndex) {
+            val dist2 = pointSegmentDistanceSq(point, resolved.path[i], resolved.path[i + 1])
+            if (dist2 < best) {
+                best = dist2
+            }
+        }
+        val radius = max(resolved.width, resolved.height).coerceAtLeast(0.01f)
+        return (best - radius * radius).coerceAtLeast(0f)
     }
 
     private fun pointSegmentDistanceSq(point: Vector3, a: Vector3, b: Vector3): Float {
@@ -4787,25 +4792,19 @@ class GroupScene(
                 }
             }
 
-            // Newer ducts get shifted to avoid intersecting older ones.
-            val shift = resolveVentilationCrossingShift(
-                start = start,
-                end = end,
-                binormalRef = binormalRef,
-                height = height,
-                older = processed,
-                joinSnapDistance = joinSnapDistance
-            )
-            if (shift.len2() > 1e-10f) {
-                start.add(shift)
-                end.add(shift)
-                binormalRef.add(shift)
-            }
-
             val resolved = ResolvedVentilationDuct(
                 id = duct.id,
                 start = start,
                 end = end,
+                path = buildVentilationPathWithHumps(
+                    start = start,
+                    end = end,
+                    binormalRef = binormalRef,
+                    width = width,
+                    height = height,
+                    older = processed,
+                    joinSnapDistance = joinSnapDistance
+                ),
                 binormalRef = binormalRef,
                 width = width,
                 height = height,
@@ -4846,37 +4845,123 @@ class GroupScene(
         }
 
         older.forEach { duct ->
-            val projected = projectPointToSegment(point, duct.start, duct.end) ?: return@forEach
-            if (projected.t <= 0.05f || projected.t >= 0.95f) {
+            val path = duct.path
+            if (path.size < 2) {
                 return@forEach
             }
-            if (projected.dist2 < bestDist2) {
-                bestDist2 = projected.dist2
-                bestPoint = Vector3(projected.point)
-                joined = true
+            for (i in 0 until path.lastIndex) {
+                val projected = projectPointToSegment(point, path[i], path[i + 1]) ?: continue
+                if (projected.t <= 0.05f || projected.t >= 0.95f) {
+                    continue
+                }
+                if (projected.dist2 < bestDist2) {
+                    bestDist2 = projected.dist2
+                    bestPoint = Vector3(projected.point)
+                    joined = true
+                }
             }
         }
 
         return ResolvedJoinPoint(bestPoint ?: Vector3(point), joined)
     }
 
-    private fun resolveVentilationCrossingShift(
+    private data class VentilationCrossing(
+        val s: Float,
+        val olderWidth: Float,
+        val olderHeight: Float
+    )
+
+    private data class HumpInterval(
+        val s0: Float,
+        val s1: Float,
+        val lift: Float
+    )
+
+    private fun buildVentilationPathWithHumps(
         start: Vector3,
         end: Vector3,
         binormalRef: Vector3,
+        width: Float,
         height: Float,
         older: List<ResolvedVentilationDuct>,
         joinSnapDistance: Float
-    ): Vector3 {
+    ): List<Vector3> {
         if (older.isEmpty()) {
-            return Vector3()
+            return listOf(Vector3(start), Vector3(end))
         }
-        val basis = hvacVentilationBasis(start, end, binormalRef, width = 0.2f, height = height) ?: return Vector3()
-        val normal = Vector3(basis.normal)
-        val endpointTolSq = (joinSnapDistance * 0.75f) * (joinSnapDistance * 0.75f)
-        var crossingCount = 0
-        var maxOlderHeight = 0f
+        val basis = hvacVentilationBasis(start, end, binormalRef, width, height) ?: return listOf(Vector3(start), Vector3(end))
+        val length = start.dst(end)
+        if (length <= 1e-6f) {
+            return listOf(Vector3(start), Vector3(end))
+        }
 
+        val crossings = collectVentilationCrossings(
+            start = start,
+            end = end,
+            height = height,
+            older = older,
+            joinSnapDistance = joinSnapDistance
+        )
+        if (crossings.isEmpty()) {
+            return listOf(Vector3(start), Vector3(end))
+        }
+
+        val rawIntervals = crossings.map { crossing ->
+            val halfSpan = max(0.2f, max(width, crossing.olderWidth) * 1.25f)
+            val s0 = ((crossing.s * length - halfSpan) / length).coerceIn(0f, 1f)
+            val s1 = ((crossing.s * length + halfSpan) / length).coerceIn(0f, 1f)
+            val clearance = max(0.05f, min(height, crossing.olderHeight).coerceAtLeast(0.05f) * 0.2f)
+            val lift = max(height, crossing.olderHeight).coerceAtLeast(0.05f) + clearance
+            HumpInterval(s0, s1, lift)
+        }.sortedBy { it.s0 }
+
+        if (rawIntervals.isEmpty()) {
+            return listOf(Vector3(start), Vector3(end))
+        }
+
+        val merged = mutableListOf<HumpInterval>()
+        rawIntervals.forEach { interval ->
+            val last = merged.lastOrNull()
+            if (last == null || interval.s0 > last.s1 + 0.02f) {
+                merged.add(interval)
+            } else {
+                merged[merged.lastIndex] = HumpInterval(
+                    s0 = last.s0,
+                    s1 = max(last.s1, interval.s1),
+                    lift = max(last.lift, interval.lift)
+                )
+            }
+        }
+
+        val result = mutableListOf<Vector3>()
+        appendUniquePoint(result, start)
+        merged.forEach { interval ->
+            if (interval.s1 <= interval.s0 + 1e-4f) {
+                return@forEach
+            }
+            val p0 = Vector3(start).lerp(end, interval.s0)
+            val p1 = Vector3(start).lerp(end, interval.s1)
+            val up0 = Vector3(p0).mulAdd(basis.normal, interval.lift)
+            val up1 = Vector3(p1).mulAdd(basis.normal, interval.lift)
+            appendUniquePoint(result, p0)
+            appendUniquePoint(result, up0)
+            appendUniquePoint(result, up1)
+            appendUniquePoint(result, p1)
+        }
+        appendUniquePoint(result, end)
+
+        return result
+    }
+
+    private fun collectVentilationCrossings(
+        start: Vector3,
+        end: Vector3,
+        height: Float,
+        older: List<ResolvedVentilationDuct>,
+        joinSnapDistance: Float
+    ): List<VentilationCrossing> {
+        val endpointTolSq = (joinSnapDistance * 0.75f) * (joinSnapDistance * 0.75f)
+        val found = mutableListOf<VentilationCrossing>()
         older.forEach { duct ->
             val sharedEndpoint =
                 start.dst2(duct.start) <= endpointTolSq ||
@@ -4886,23 +4971,52 @@ class GroupScene(
             if (sharedEndpoint) {
                 return@forEach
             }
-            val closest = closestSegmentToSegment(start, end, duct.start, duct.end) ?: return@forEach
-            if (closest.s <= 0.05f || closest.s >= 0.95f || closest.t <= 0.05f || closest.t >= 0.95f) {
+            val path = duct.path
+            if (path.size < 2) {
                 return@forEach
             }
-            val tol = max(0.05f, min(height, duct.height) * 0.5f)
-            if (closest.dist2 <= tol * tol) {
-                crossingCount++
-                maxOlderHeight = max(maxOlderHeight, duct.height)
+            for (i in 0 until path.lastIndex) {
+                val closest = closestSegmentToSegment(start, end, path[i], path[i + 1]) ?: continue
+                if (closest.s <= 0.05f || closest.s >= 0.95f || closest.t <= 0.05f || closest.t >= 0.95f) {
+                    continue
+                }
+                val tol = max(0.05f, min(height, duct.height) * 0.5f)
+                if (closest.dist2 <= tol * tol) {
+                    found.add(
+                        VentilationCrossing(
+                            s = closest.s,
+                            olderWidth = duct.width,
+                            olderHeight = duct.height
+                        )
+                    )
+                }
             }
         }
-
-        if (crossingCount <= 0) {
-            return Vector3()
+        if (found.isEmpty()) {
+            return emptyList()
         }
-        val clearance = max(0.05f, min(height, maxOlderHeight).coerceAtLeast(0.05f) * 0.15f)
-        val step = height.coerceAtLeast(0.05f) + maxOlderHeight.coerceAtLeast(0.05f) + clearance
-        return normal.scl(step * crossingCount.toFloat())
+
+        val sorted = found.sortedBy { it.s }
+        val merged = mutableListOf<VentilationCrossing>()
+        sorted.forEach { crossing ->
+            val last = merged.lastOrNull()
+            if (last == null || abs(crossing.s - last.s) > 0.05f) {
+                merged.add(crossing)
+            } else {
+                merged[merged.lastIndex] = VentilationCrossing(
+                    s = (last.s + crossing.s) * 0.5f,
+                    olderWidth = max(last.olderWidth, crossing.olderWidth),
+                    olderHeight = max(last.olderHeight, crossing.olderHeight)
+                )
+            }
+        }
+        return merged
+    }
+
+    private fun appendUniquePoint(path: MutableList<Vector3>, point: Vector3, epsilonSq: Float = 1e-6f) {
+        if (path.isEmpty() || path.last().dst2(point) > epsilonSq) {
+            path.add(Vector3(point))
+        }
     }
 
     private fun projectPointToSegment(point: Vector3, a: Vector3, b: Vector3): SegmentProjection? {
@@ -4997,6 +5111,7 @@ class GroupScene(
             id = duct.id,
             start = Vector3(duct.start),
             end = Vector3(duct.end),
+            path = listOf(Vector3(duct.start), Vector3(duct.end)),
             binormalRef = Vector3(duct.binormalRef),
             width = duct.width.coerceAtLeast(0.01f),
             height = duct.height.coerceAtLeast(0.01f),
@@ -5074,37 +5189,137 @@ class GroupScene(
         duct: HvacStore.VentilationDuct
     ) {
         val resolved = resolvedVentilation(duct)
-        val basis = hvacVentilationBasis(duct) ?: return
-        val start = Vector3(basis.start)
-        val tangent = Vector3(basis.tangent)
-        val binormal = Vector3(basis.binormal)
-        val normal = Vector3(basis.normal)
-        val halfWidth = basis.halfWidth
-        val height = basis.height
-        if (basis.length <= 1e-6f) {
+        val path = resolved.path
+        if (path.size < 2) {
             return
         }
-        val delta = Vector3(tangent).scl(basis.length)
+        val rings = hvacVentilationRings(resolved)
+        if (rings.size < 2) {
+            return
+        }
+        val tangents = computePipeTangents(path)
+        if (tangents.size != rings.size) {
+            return
+        }
+        for (i in 0 until rings.lastIndex) {
+            val ringA = rings[i]
+            val ringB = rings[i + 1]
+            val tangent = Vector3(path[i + 1]).sub(path[i]).nor()
+            if (tangent.len2() <= 1e-6f) {
+                continue
+            }
+            val binormalA = Vector3(ringA[0]).sub(path[i]).nor()
+            val binormalB = Vector3(ringB[0]).sub(path[i + 1]).nor()
+            val binormal = Vector3(binormalA).add(binormalB)
+            if (binormal.len2() <= 1e-6f) {
+                binormal.set(binormalA)
+            }
+            binormal.nor()
+            val normal = Vector3(tangent).crs(binormal).nor()
+            val capNormal = Vector3(tangent)
+            addQuad(faceStore, lineStore, ringA[0], ringB[0], ringB[1], ringA[1], normal, duct.color)
+            addQuad(faceStore, lineStore, ringA[3], ringA[2], ringB[2], ringB[3], Vector3(normal).scl(-1f), duct.color)
+            addQuad(faceStore, lineStore, ringA[0], ringA[3], ringB[3], ringB[0], binormal, duct.color)
+            addQuad(faceStore, lineStore, ringA[1], ringB[1], ringB[2], ringA[2], Vector3(binormal).scl(-1f), duct.color)
+        }
 
-        val sTL = Vector3(start).mulAdd(binormal, halfWidth)
-        val sTR = Vector3(start).mulAdd(binormal, -halfWidth)
-        val sBR = Vector3(sTR).mulAdd(normal, -height)
-        val sBL = Vector3(sTL).mulAdd(normal, -height)
-        val eTL = Vector3(sTL).add(delta)
-        val eTR = Vector3(sTR).add(delta)
-        val eBR = Vector3(sBR).add(delta)
-        val eBL = Vector3(sBL).add(delta)
-
-        addQuad(faceStore, lineStore, sTL, eTL, eTR, sTR, normal, duct.color)
-        addQuad(faceStore, lineStore, sBL, sBR, eBR, eBL, Vector3(normal).scl(-1f), duct.color)
-        addQuad(faceStore, lineStore, sTL, sBL, eBL, eTL, binormal, duct.color)
-        addQuad(faceStore, lineStore, sTR, eTR, eBR, sBR, Vector3(binormal).scl(-1f), duct.color)
+        val startTangent = Vector3(tangents.first()).nor()
+        val endTangent = Vector3(tangents.last()).nor()
+        val startRing = rings.first()
+        val endRing = rings.last()
         if (!resolved.startJoined) {
-            addQuad(faceStore, lineStore, sTR, sTL, sBL, sBR, Vector3(tangent).scl(-1f), duct.color)
+            addQuad(
+                faceStore,
+                lineStore,
+                startRing[1],
+                startRing[0],
+                startRing[3],
+                startRing[2],
+                Vector3(startTangent).scl(-1f),
+                duct.color
+            )
         }
         if (!resolved.endJoined) {
-            addQuad(faceStore, lineStore, eTL, eTR, eBR, eBL, tangent, duct.color)
+            addQuad(
+                faceStore,
+                lineStore,
+                endRing[0],
+                endRing[1],
+                endRing[2],
+                endRing[3],
+                endTangent,
+                duct.color
+            )
         }
+    }
+
+    private fun hvacVentilationRings(resolved: ResolvedVentilationDuct): List<List<Vector3>> {
+        val path = resolved.path
+        if (path.size < 2) {
+            return emptyList()
+        }
+        val tangents = computePipeTangents(path)
+        if (tangents.isEmpty()) {
+            return emptyList()
+        }
+        val halfWidth = (resolved.width * 0.5f).coerceAtLeast(0.005f)
+        val height = resolved.height.coerceAtLeast(0.005f)
+
+        var binormal = Vector3(resolved.binormalRef).sub(path.first())
+        val firstTangent = tangents.first()
+        binormal.sub(Vector3(firstTangent).scl(binormal.dot(firstTangent)))
+        if (binormal.len2() <= 1e-6f) {
+            binormal = initialPerpendicular(firstTangent)
+        }
+        if (binormal.len2() <= 1e-6f) {
+            return emptyList()
+        }
+        binormal.nor()
+        var normal = Vector3(firstTangent).crs(binormal)
+        if (normal.len2() <= 1e-6f) {
+            normal = initialPerpendicular(firstTangent)
+            binormal = Vector3(normal).crs(firstTangent)
+        }
+        if (normal.len2() <= 1e-6f || binormal.len2() <= 1e-6f) {
+            return emptyList()
+        }
+        normal.nor()
+        binormal.nor()
+
+        val rings = mutableListOf<List<Vector3>>()
+        for (i in path.indices) {
+            val tangent = tangents[i]
+            if (i > 0) {
+                binormal = Vector3(binormal).sub(Vector3(tangent).scl(binormal.dot(tangent)))
+                if (binormal.len2() <= 1e-6f) {
+                    binormal = Vector3(normal).sub(Vector3(tangent).scl(normal.dot(tangent)))
+                }
+                if (binormal.len2() <= 1e-6f) {
+                    binormal = initialPerpendicular(tangent)
+                }
+                if (binormal.len2() <= 1e-6f) {
+                    return emptyList()
+                }
+                binormal.nor()
+                normal = Vector3(tangent).crs(binormal)
+                if (normal.len2() <= 1e-6f) {
+                    normal = initialPerpendicular(tangent)
+                    binormal = Vector3(normal).crs(tangent)
+                }
+                if (normal.len2() <= 1e-6f || binormal.len2() <= 1e-6f) {
+                    return emptyList()
+                }
+                normal.nor()
+                binormal.nor()
+            }
+            val center = path[i]
+            val tl = Vector3(center).mulAdd(binormal, halfWidth)
+            val tr = Vector3(center).mulAdd(binormal, -halfWidth)
+            val br = Vector3(tr).mulAdd(normal, -height)
+            val bl = Vector3(tl).mulAdd(normal, -height)
+            rings.add(listOf(tl, tr, br, bl))
+        }
+        return rings
     }
 
     private fun hvacVentilationBasis(duct: HvacStore.VentilationDuct): VentilationBasis? {
@@ -5165,17 +5380,8 @@ class GroupScene(
     }
 
     private fun hvacVentilationCorners(duct: HvacStore.VentilationDuct): List<Vector3> {
-        val basis = hvacVentilationBasis(duct) ?: return emptyList()
-        val delta = Vector3(basis.tangent).scl(basis.length)
-        val sTL = Vector3(basis.start).mulAdd(basis.binormal, basis.halfWidth)
-        val sTR = Vector3(basis.start).mulAdd(basis.binormal, -basis.halfWidth)
-        val sBR = Vector3(sTR).mulAdd(basis.normal, -basis.height)
-        val sBL = Vector3(sTL).mulAdd(basis.normal, -basis.height)
-        val eTL = Vector3(sTL).add(delta)
-        val eTR = Vector3(sTR).add(delta)
-        val eBR = Vector3(sBR).add(delta)
-        val eBL = Vector3(sBL).add(delta)
-        return listOf(sTL, sTR, sBR, sBL, eTL, eTR, eBR, eBL)
+        val resolved = resolvedVentilation(duct)
+        return hvacVentilationRings(resolved).flatten()
     }
 
     private fun computePipeTangents(path: List<Vector3>): List<Vector3> {
