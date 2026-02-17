@@ -187,8 +187,11 @@ class SketchUiOverlay(
     private val hvacDefaultPlumbingDiameterKey = "hvac_default_plumbing_diameter"
     private val hvacDefaultPlumbingSidesKey = "hvac_default_plumbing_sides"
     private val hvacDefaultPlumbingColorKey = "hvac_default_plumbing_color"
+    private val hvacDefaultVentilationAutoJoinKey = "hvac_default_ventilation_auto_join"
     private val hvacDefaultVentilationWidthKey = "hvac_default_ventilation_width"
     private val hvacDefaultVentilationHeightKey = "hvac_default_ventilation_height"
+    private val hvacDefaultVentilationHumpHalfSpanKey = "hvac_default_ventilation_hump_half_span"
+    private val hvacDefaultVentilationHumpClearanceKey = "hvac_default_ventilation_hump_clearance"
     private val hvacDefaultVentilationColorKey = "hvac_default_ventilation_color"
     private val iconTextures = mutableListOf<Texture>()
     private val iconDrawables = mutableMapOf<String, TextureRegionDrawable>()
@@ -304,8 +307,11 @@ class SketchUiOverlay(
     private lateinit var hvacPlumbingSidesField: VisTextField
     private lateinit var hvacPlumbingColorField: VisTextField
     private lateinit var hvacPlumbingColorButton: VisImageTextButton
+    private lateinit var hvacVentilationAutoJoinCheck: VisCheckBox
     private lateinit var hvacVentilationWidthField: VisTextField
     private lateinit var hvacVentilationHeightField: VisTextField
+    private lateinit var hvacVentilationHumpHalfSpanField: VisTextField
+    private lateinit var hvacVentilationHumpClearanceField: VisTextField
     private lateinit var hvacVentilationColorField: VisTextField
     private lateinit var hvacVentilationColorButton: VisImageTextButton
     private var updatingHvacFields = false
@@ -1875,8 +1881,11 @@ class SketchUiOverlay(
         hvacPlumbingSidesField = VisTextField()
         hvacPlumbingColorField = VisTextField()
         hvacPlumbingColorButton = createHvacColorButton("HVAC Plumbing Color", hvacPlumbingColorField)
+        hvacVentilationAutoJoinCheck = VisCheckBox("Enabled")
         hvacVentilationWidthField = VisTextField()
         hvacVentilationHeightField = VisTextField()
+        hvacVentilationHumpHalfSpanField = VisTextField()
+        hvacVentilationHumpClearanceField = VisTextField()
         hvacVentilationColorField = VisTextField()
         hvacVentilationColorButton = createHvacColorButton("HVAC Ventilation Color", hvacVentilationColorField)
 
@@ -1895,10 +1904,16 @@ class SketchUiOverlay(
         }
 
         content.add(VisLabel("Ventilation")).colspan(2).left().growX().padTop(6f).row()
+        content.add(VisLabel("Auto join")).left()
+        content.add(hvacVentilationAutoJoinCheck).left().row()
         content.add(VisLabel("Duct width")).left()
         content.add(hvacVentilationWidthField).growX().row()
         content.add(VisLabel("Duct height")).left()
         content.add(hvacVentilationHeightField).growX().row()
+        content.add(VisLabel("Hump half span")).left()
+        content.add(hvacVentilationHumpHalfSpanField).growX().row()
+        content.add(VisLabel("Hump clearance")).left()
+        content.add(hvacVentilationHumpClearanceField).growX().row()
         content.add(VisLabel("Duct color")).left()
         run {
             val colorControls = VisTable()
@@ -1945,6 +1960,35 @@ class SketchUiOverlay(
                 }
                 val value = hvacVentilationHeightField.text.toFloatOrNull()?.coerceAtLeast(0.01f) ?: return
                 hvacSettings.ventilationHeight = value
+                saveHvacDefaults()
+            }
+        })
+        hvacVentilationAutoJoinCheck.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingHvacFields) {
+                    return
+                }
+                hvacSettings.ventilationAutoJoin = hvacVentilationAutoJoinCheck.isChecked
+                saveHvacDefaults()
+            }
+        })
+        hvacVentilationHumpHalfSpanField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingHvacFields) {
+                    return
+                }
+                val value = hvacVentilationHumpHalfSpanField.text.toFloatOrNull()?.coerceAtLeast(0.01f) ?: return
+                hvacSettings.ventilationHumpHalfSpan = value
+                saveHvacDefaults()
+            }
+        })
+        hvacVentilationHumpClearanceField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingHvacFields) {
+                    return
+                }
+                val value = hvacVentilationHumpClearanceField.text.toFloatOrNull()?.coerceAtLeast(0f) ?: return
+                hvacSettings.ventilationHumpClearance = value
                 saveHvacDefaults()
             }
         })
@@ -2012,10 +2056,22 @@ class SketchUiOverlay(
         hvacSettings.plumbingSides =
             uiPrefs.getInteger(hvacDefaultPlumbingSidesKey, hvacSettings.plumbingSides).coerceIn(3, 128)
         hvacSettings.plumbingColor.set(loadColorPref(hvacDefaultPlumbingColorKey, hvacSettings.plumbingColor))
+        hvacSettings.ventilationAutoJoin =
+            uiPrefs.getBoolean(hvacDefaultVentilationAutoJoinKey, hvacSettings.ventilationAutoJoin)
         hvacSettings.ventilationWidth =
             uiPrefs.getFloat(hvacDefaultVentilationWidthKey, hvacSettings.ventilationWidth).coerceAtLeast(0.01f)
         hvacSettings.ventilationHeight =
             uiPrefs.getFloat(hvacDefaultVentilationHeightKey, hvacSettings.ventilationHeight).coerceAtLeast(0.01f)
+        hvacSettings.ventilationHumpHalfSpan =
+            uiPrefs.getFloat(
+                hvacDefaultVentilationHumpHalfSpanKey,
+                hvacSettings.ventilationHumpHalfSpan
+            ).coerceAtLeast(0.01f)
+        hvacSettings.ventilationHumpClearance =
+            uiPrefs.getFloat(
+                hvacDefaultVentilationHumpClearanceKey,
+                hvacSettings.ventilationHumpClearance
+            ).coerceAtLeast(0f)
         hvacSettings.ventilationColor.set(loadColorPref(hvacDefaultVentilationColorKey, hvacSettings.ventilationColor))
     }
 
@@ -2023,8 +2079,11 @@ class SketchUiOverlay(
         uiPrefs.putFloat(hvacDefaultPlumbingDiameterKey, hvacSettings.plumbingDiameter)
         uiPrefs.putInteger(hvacDefaultPlumbingSidesKey, hvacSettings.plumbingSides)
         uiPrefs.putString(hvacDefaultPlumbingColorKey, formatColorField(hvacSettings.plumbingColor))
+        uiPrefs.putBoolean(hvacDefaultVentilationAutoJoinKey, hvacSettings.ventilationAutoJoin)
         uiPrefs.putFloat(hvacDefaultVentilationWidthKey, hvacSettings.ventilationWidth)
         uiPrefs.putFloat(hvacDefaultVentilationHeightKey, hvacSettings.ventilationHeight)
+        uiPrefs.putFloat(hvacDefaultVentilationHumpHalfSpanKey, hvacSettings.ventilationHumpHalfSpan)
+        uiPrefs.putFloat(hvacDefaultVentilationHumpClearanceKey, hvacSettings.ventilationHumpClearance)
         uiPrefs.putString(hvacDefaultVentilationColorKey, formatColorField(hvacSettings.ventilationColor))
         uiPrefs.flush()
     }
@@ -2045,8 +2104,19 @@ class SketchUiOverlay(
         updateField(hvacPlumbingDiameterField, String.format(Locale.US, "%.3f", hvacSettings.plumbingDiameter))
         updateField(hvacPlumbingSidesField, hvacSettings.plumbingSides.toString())
         updateField(hvacPlumbingColorField, formatColorField(hvacSettings.plumbingColor))
+        if (hvacVentilationAutoJoinCheck.isChecked != hvacSettings.ventilationAutoJoin) {
+            hvacVentilationAutoJoinCheck.isChecked = hvacSettings.ventilationAutoJoin
+        }
         updateField(hvacVentilationWidthField, String.format(Locale.US, "%.3f", hvacSettings.ventilationWidth))
         updateField(hvacVentilationHeightField, String.format(Locale.US, "%.3f", hvacSettings.ventilationHeight))
+        updateField(
+            hvacVentilationHumpHalfSpanField,
+            String.format(Locale.US, "%.3f", hvacSettings.ventilationHumpHalfSpan)
+        )
+        updateField(
+            hvacVentilationHumpClearanceField,
+            String.format(Locale.US, "%.3f", hvacSettings.ventilationHumpClearance)
+        )
         updateField(hvacVentilationColorField, formatColorField(hvacSettings.ventilationColor))
         updateArchitectureColorButtonSwatch(
             hvacPlumbingColorButton,

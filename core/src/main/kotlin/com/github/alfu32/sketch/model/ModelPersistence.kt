@@ -482,8 +482,11 @@ object ModelPersistence {
                     start = duct.start.toVector3(),
                     end = duct.end.toVector3(),
                     binormalRef = duct.binormalRef.toVector3(),
+                    autoJoinEnabled = duct.autoJoinEnabled,
                     width = duct.width,
                     height = duct.height,
+                    humpHalfSpan = duct.humpHalfSpan,
+                    humpClearance = duct.humpClearance,
                     color = duct.color.toColor(),
                     name = duct.name,
                     id = duct.id.ifBlank { java.util.UUID.randomUUID().toString() }
@@ -595,8 +598,11 @@ object ModelPersistence {
                         start = Vec3Dto(duct.start),
                         end = Vec3Dto(duct.end),
                         binormalRef = Vec3Dto(duct.binormalRef),
+                        autoJoinEnabled = duct.autoJoinEnabled,
                         width = duct.width,
                         height = duct.height,
+                        humpHalfSpan = duct.humpHalfSpan,
+                        humpClearance = duct.humpClearance,
                         color = ColorDto(duct.color)
                     )
                 }?.toMutableList() ?: mutableListOf()
@@ -857,8 +863,11 @@ object ModelPersistence {
         var start: Vec3Dto = Vec3Dto()
         var end: Vec3Dto = Vec3Dto()
         var binormalRef: Vec3Dto = Vec3Dto()
+        var autoJoinEnabled: Boolean = false
         var width: Float = 0.5f
         var height: Float = 0.25f
+        var humpHalfSpan: Float = 0.625f
+        var humpClearance: Float = 0.05f
         var color: ColorDto = ColorDto(Color(0.82f, 0.82f, 0.82f, 1f))
 
         constructor(
@@ -867,8 +876,11 @@ object ModelPersistence {
             start: Vec3Dto,
             end: Vec3Dto,
             binormalRef: Vec3Dto,
+            autoJoinEnabled: Boolean,
             width: Float,
             height: Float,
+            humpHalfSpan: Float,
+            humpClearance: Float,
             color: ColorDto
         ) : this() {
             this.id = id
@@ -876,8 +888,11 @@ object ModelPersistence {
             this.start = start
             this.end = end
             this.binormalRef = binormalRef
+            this.autoJoinEnabled = autoJoinEnabled
             this.width = width
             this.height = height
+            this.humpHalfSpan = humpHalfSpan
+            this.humpClearance = humpClearance
             this.color = color
         }
     }

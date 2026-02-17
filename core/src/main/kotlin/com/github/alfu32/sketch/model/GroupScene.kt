@@ -70,6 +70,7 @@ class GroupScene(
         val end: Vector3,
         val path: List<Vector3>,
         val binormalRef: Vector3,
+        val autoJoinEnabled: Boolean,
         val width: Float,
         val height: Float,
         val startJoined: Boolean,
@@ -794,8 +795,11 @@ class GroupScene(
         startWorld: Vector3,
         endWorld: Vector3,
         binormalRefWorld: Vector3,
+        autoJoinEnabled: Boolean,
         width: Float,
         height: Float,
+        humpHalfSpan: Float,
+        humpClearance: Float,
         color: Color
     ): Boolean {
         if (startWorld.dst2(endWorld) <= 1e-6f) {
@@ -805,8 +809,11 @@ class GroupScene(
             start = startWorld,
             end = endWorld,
             binormalRef = binormalRefWorld,
+            autoJoinEnabled = autoJoinEnabled,
             width = width.coerceAtLeast(0.01f),
             height = height.coerceAtLeast(0.01f),
+            humpHalfSpan = humpHalfSpan.coerceAtLeast(0.01f),
+            humpClearance = humpClearance.coerceAtLeast(0f),
             color = color
         )
         rebuildHvacGeometry(rootPrototype)
@@ -1712,8 +1719,11 @@ class GroupScene(
                         start = pointTransform(Vector3(duct.start)),
                         end = pointTransform(Vector3(duct.end)),
                         binormalRef = pointTransform(Vector3(duct.binormalRef)),
+                        autoJoinEnabled = duct.autoJoinEnabled,
                         width = duct.width,
                         height = duct.height,
+                        humpHalfSpan = duct.humpHalfSpan,
+                        humpClearance = duct.humpClearance,
                         color = Color(duct.color)
                     )
                     copiedSelections.add(HvacStore.ElementSelection(HvacStore.ElementKind.VENTILATION, copy.id))
@@ -4776,9 +4786,28 @@ class GroupScene(
             var start = Vector3(duct.start)
             var end = Vector3(duct.end)
             var binormalRef = Vector3(duct.binormalRef)
+            val autoJoinEnabled = duct.autoJoinEnabled
             val width = duct.width.coerceAtLeast(0.01f)
             val height = duct.height.coerceAtLeast(0.01f)
             if (start.dst2(end) <= 1e-6f) {
+                return@forEach
+            }
+
+            if (!autoJoinEnabled) {
+                processed.add(
+                    ResolvedVentilationDuct(
+                        id = duct.id,
+                        start = start,
+                        end = end,
+                        path = listOf(Vector3(start), Vector3(end)),
+                        binormalRef = binormalRef,
+                        autoJoinEnabled = false,
+                        width = width,
+                        height = height,
+                        startJoined = false,
+                        endJoined = false
+                    )
+                )
                 return@forEach
             }
 
@@ -4804,10 +4833,13 @@ class GroupScene(
                     binormalRef = binormalRef,
                     width = width,
                     height = height,
+                    humpHalfSpan = duct.humpHalfSpan.coerceAtLeast(0.01f),
+                    humpClearance = duct.humpClearance.coerceAtLeast(0f),
                     older = processed,
                     joinSnapDistance = joinSnapDistance
                 ),
                 binormalRef = binormalRef,
+                autoJoinEnabled = true,
                 width = width,
                 height = height,
                 startJoined = startJoin.joined,
@@ -4835,7 +4867,9 @@ class GroupScene(
             val id: String,
             val atStart: Boolean,
             val point: Vector3,
-            val inwardDir: Vector3
+            val inwardDir: Vector3,
+            val sideDir: Vector3,
+            val upDir: Vector3
         )
 
         val snap = 1e-3f
@@ -4847,8 +4881,103 @@ class GroupScene(
             )
         }
 
+        fun endpointAxes(point: Vector3, inward: Vector3, binormalRef: Vector3): Pair<Vector3, Vector3>? {
+            if (inward.len2() <= 1e-8f) {
+                return null
+            }
+            var side = Vector3(binormalRef).sub(point)
+            side.sub(Vector3(inward).scl(side.dot(inward)))
+            if (side.len2() <= 1e-8f) {
+                side = initialPerpendicular(inward)
+            }
+            if (side.len2() <= 1e-8f) {
+                return null
+            }
+            side.nor()
+            var up = Vector3(inward).crs(side)
+            if (up.len2() <= 1e-8f) {
+                return null
+            }
+            up.nor()
+            side = Vector3(up).crs(inward)
+            if (side.len2() <= 1e-8f) {
+                return null
+            }
+            side.nor()
+            return Pair(side, up)
+        }
+
+        fun averageDirection(values: List<Vector3>): Vector3? {
+            if (values.isEmpty()) {
+                return null
+            }
+            val sum = Vector3()
+            values.forEach { value -> sum.add(value) }
+            if (sum.len2() <= 1e-8f) {
+                return null
+            }
+            return sum.nor()
+        }
+
+        fun toSignedUnit(value: Float): Float {
+            return when {
+                value > 1e-4f -> 1f
+                value < -1e-4f -> -1f
+                else -> 0f
+            }
+        }
+
+        fun buildCandidate(raw: Vector3, upAxis: Vector3?): Vector3? {
+            if (raw.len2() <= 1e-8f) {
+                return null
+            }
+            val candidate = Vector3(raw)
+            if (upAxis != null) {
+                val flattened = Vector3(candidate).mulAdd(upAxis, -candidate.dot(upAxis))
+                if (flattened.len2() > 1e-8f) {
+                    candidate.set(flattened)
+                }
+            }
+            if (candidate.len2() <= 1e-8f) {
+                return null
+            }
+            return candidate.nor()
+        }
+
+        fun scoreCandidate(candidate: Vector3, refs: List<EndpointRef>, sideAxis: Vector3?, upAxis: Vector3?): Float {
+            val minDenom = refs.minOfOrNull { abs(candidate.dot(it.inwardDir)) } ?: 0f
+            if (minDenom <= 1e-4f) {
+                return Float.NEGATIVE_INFINITY
+            }
+            var score = minDenom * 4f
+            if (sideAxis != null) {
+                score += abs(candidate.dot(sideAxis)) * 2f
+            }
+            if (upAxis != null) {
+                score -= abs(candidate.dot(upAxis)) * 2f
+            }
+            if (refs.size == 2) {
+                val first = refs[0]
+                val second = refs[1]
+                val firstInsideSign = toSignedUnit(second.inwardDir.dot(first.sideDir))
+                val secondInsideSign = toSignedUnit(first.inwardDir.dot(second.sideDir))
+                if (firstInsideSign != 0f) {
+                    val slope = -candidate.dot(first.sideDir) / candidate.dot(first.inwardDir)
+                    score += (-slope * firstInsideSign) * 3f
+                }
+                if (secondInsideSign != 0f) {
+                    val slope = -candidate.dot(second.sideDir) / candidate.dot(second.inwardDir)
+                    score += (-slope * secondInsideSign) * 3f
+                }
+            }
+            return score
+        }
+
         val refsByKey = mutableMapOf<EndpointKey, MutableList<EndpointRef>>()
         ducts.forEach { duct ->
+            if (!duct.autoJoinEnabled) {
+                return@forEach
+            }
             val path = duct.path
             if (path.size < 2) {
                 return@forEach
@@ -4858,13 +4987,31 @@ class GroupScene(
             val startDir = Vector3(path[1]).sub(start)
             val endDir = Vector3(path[path.lastIndex - 1]).sub(end)
             if (startDir.len2() > 1e-8f) {
+                val inward = startDir.nor()
+                val axes = endpointAxes(start, inward, duct.binormalRef) ?: return@forEach
                 refsByKey.getOrPut(keyOf(start)) { mutableListOf() }.add(
-                    EndpointRef(duct.id, true, start, startDir.nor())
+                    EndpointRef(
+                        id = duct.id,
+                        atStart = true,
+                        point = start,
+                        inwardDir = inward,
+                        sideDir = axes.first,
+                        upDir = axes.second
+                    )
                 )
             }
             if (endDir.len2() > 1e-8f) {
+                val inward = endDir.nor()
+                val axes = endpointAxes(end, inward, duct.binormalRef) ?: return@forEach
                 refsByKey.getOrPut(keyOf(end)) { mutableListOf() }.add(
-                    EndpointRef(duct.id, false, end, endDir.nor())
+                    EndpointRef(
+                        id = duct.id,
+                        atStart = false,
+                        point = end,
+                        inwardDir = inward,
+                        sideDir = axes.first,
+                        upDir = axes.second
+                    )
                 )
             }
         }
@@ -4873,12 +5020,23 @@ class GroupScene(
             if (refs.size < 2) {
                 return@forEach
             }
-            val planeNormal = Vector3()
-            refs.forEach { ref -> planeNormal.add(ref.inwardDir) }
-            if (planeNormal.len2() <= 1e-8f) {
+            val averageUp = averageDirection(refs.map { it.upDir })
+            val averageSide = averageDirection(refs.map { it.sideDir })
+            val candidates = mutableListOf<Vector3>()
+            if (refs.size == 2) {
+                buildCandidate(Vector3(refs[0].inwardDir).add(refs[1].inwardDir), averageUp)?.let { candidates.add(it) }
+                buildCandidate(Vector3(refs[0].inwardDir).sub(refs[1].inwardDir), averageUp)?.let { candidates.add(it) }
+            } else {
+                val sum = Vector3()
+                refs.forEach { ref -> sum.add(ref.inwardDir) }
+                buildCandidate(sum, averageUp)?.let { candidates.add(it) }
+            }
+            if (candidates.isEmpty()) {
                 return@forEach
             }
-            planeNormal.nor()
+            val planeNormal = candidates.maxByOrNull { candidate ->
+                scoreCandidate(candidate, refs, averageSide, averageUp)
+            } ?: return@forEach
             refs.forEach { ref ->
                 if (ref.atStart) {
                     startPlanes[ref.id] = Vector3(planeNormal)
@@ -4956,6 +5114,8 @@ class GroupScene(
         binormalRef: Vector3,
         width: Float,
         height: Float,
+        humpHalfSpan: Float,
+        humpClearance: Float,
         older: List<ResolvedVentilationDuct>,
         joinSnapDistance: Float
     ): List<Vector3> {
@@ -4979,12 +5139,13 @@ class GroupScene(
             return listOf(Vector3(start), Vector3(end))
         }
 
+        val halfSpanSetting = humpHalfSpan.coerceAtLeast(0.01f)
+        val clearanceSetting = humpClearance.coerceAtLeast(0f)
         val rawIntervals = crossings.map { crossing ->
-            val halfSpan = max(0.2f, max(width, crossing.olderWidth) * 1.25f)
+            val halfSpan = halfSpanSetting
             val s0 = ((crossing.s * length - halfSpan) / length).coerceIn(0f, 1f)
             val s1 = ((crossing.s * length + halfSpan) / length).coerceIn(0f, 1f)
-            val clearance = max(0.05f, min(height, crossing.olderHeight).coerceAtLeast(0.05f) * 0.2f)
-            val lift = max(height, crossing.olderHeight).coerceAtLeast(0.05f) + clearance
+            val lift = max(height, crossing.olderHeight).coerceAtLeast(0.05f) + clearanceSetting
             HumpInterval(s0, s1, lift)
         }.sortedBy { it.s0 }
 
@@ -5186,6 +5347,7 @@ class GroupScene(
             end = Vector3(duct.end),
             path = listOf(Vector3(duct.start), Vector3(duct.end)),
             binormalRef = Vector3(duct.binormalRef),
+            autoJoinEnabled = duct.autoJoinEnabled,
             width = duct.width.coerceAtLeast(0.01f),
             height = duct.height.coerceAtLeast(0.01f),
             startJoined = false,

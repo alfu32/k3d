@@ -33,8 +33,11 @@ class HvacStore {
         var start: Vector3,
         var end: Vector3,
         var binormalRef: Vector3,
+        var autoJoinEnabled: Boolean,
         var width: Float,
         var height: Float,
+        var humpHalfSpan: Float,
+        var humpClearance: Float,
         var color: Color
     )
 
@@ -199,8 +202,11 @@ class HvacStore {
         start: Vector3,
         end: Vector3,
         binormalRef: Vector3,
+        autoJoinEnabled: Boolean,
         width: Float,
         height: Float,
+        humpHalfSpan: Float,
+        humpClearance: Float,
         color: Color,
         name: String = "",
         id: String = UUID.randomUUID().toString()
@@ -211,8 +217,11 @@ class HvacStore {
             start = Vector3(start),
             end = Vector3(end),
             binormalRef = Vector3(binormalRef),
+            autoJoinEnabled = autoJoinEnabled,
             width = width,
             height = height,
+            humpHalfSpan = humpHalfSpan,
+            humpClearance = humpClearance,
             color = Color(color)
         )
         ventilationDucts.add(duct)

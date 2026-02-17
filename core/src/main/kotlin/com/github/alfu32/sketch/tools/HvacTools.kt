@@ -178,8 +178,11 @@ class HvacVentilationTool(
                     startWorld = start,
                     endWorld = end,
                     binormalRefWorld = Vector3(world),
+                    autoJoinEnabled = settings.ventilationAutoJoin,
                     width = settings.ventilationWidth,
                     height = settings.ventilationHeight,
+                    humpHalfSpan = settings.ventilationHumpHalfSpan,
+                    humpClearance = settings.ventilationHumpClearance,
                     color = settings.ventilationColor
                 )
                 clear()
