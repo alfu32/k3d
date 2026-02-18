@@ -234,6 +234,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private var consoleThread: ConsoleThread? = null
     private var consoleRuntime: ConsoleGroovyRuntime? = null
     private var hotspotReferencePickTargetId: String? = null
+    private var hotspotReferencePickTargetGroup: GroupScene.GroupNode? = null
     private var mcpConsoleRuntime: ConsoleGroovyRuntime? = null
     private var mcpConsoleTui: ConsoleTui? = null
     private var consoleTerminal: TerminalController? = null
@@ -933,15 +934,15 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 }
                 uiOverlay.clearUiFocus()
                 val targetHotspotId = hotspotReferencePickTargetId
-                if (targetHotspotId != null && button == Input.Buttons.LEFT) {
+                val targetGroup = hotspotReferencePickTargetGroup
+                if (targetHotspotId != null && targetGroup != null && button == Input.Buttons.LEFT) {
                     val snap = distanceOverrideSnap ?: snapper.compute(screenX, screenY)
                     val world = snap.world
                     if (snap.valid && world != null) {
-                        val group = scene.activeGroup()
                         val updated = scene.updateHotspotReferencePosition(
-                            group = group,
+                            group = targetGroup,
                             id = targetHotspotId,
-                            referencePosition = group.toLocal(world)
+                            referencePosition = targetGroup.toLocal(world)
                         )
                         statusModel.message = if (updated) {
                             "Hotspot reference updated."
@@ -952,6 +953,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                         statusModel.message = "Reference pick canceled: invalid point."
                     }
                     hotspotReferencePickTargetId = null
+                    hotspotReferencePickTargetGroup = null
                     return true
                 }
                 return false
@@ -960,6 +962,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             override fun keyDown(keycode: Int): Boolean {
                 if (keycode == Input.Keys.ESCAPE && hotspotReferencePickTargetId != null) {
                     hotspotReferencePickTargetId = null
+                    hotspotReferencePickTargetGroup = null
                     statusModel.message = "Hotspot reference pick canceled."
                     return true
                 }
@@ -3087,7 +3090,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun drawHotspots2D() {
-        val markers = scene.hotspotMarkersWorld(scene.activeGroup())
+        val markers = hotspotInteractionGroups().flatMap { group ->
+            scene.hotspotMarkersWorld(group)
+        }
         if (markers.isEmpty()) {
             return
         }
@@ -3099,18 +3104,54 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             if (screen.z < 0f || screen.z > 1f) {
                 return@forEach
             }
+            val x = screen.x
+            val y = screen.y
             shapeRenderer.color = if (marker.selected) hotspotSelectedColor else hotspotColor
-            shapeRenderer.circle(screen.x, screen.y, 4.25f, 18)
+            shapeRenderer.circle(x, y, 7.5f, 22)
             marker.referenceWorld?.let { referenceWorld ->
                 val referenceScreen = activeCamera.project(Vector3(referenceWorld))
                 if (referenceScreen.z < 0f || referenceScreen.z > 1f) {
                     return@let
                 }
+                val rx = referenceScreen.x
+                val ry = referenceScreen.y
                 shapeRenderer.color = if (marker.selected) hotspotSelectedColor else hotspotReferenceColor
-                shapeRenderer.circle(referenceScreen.x, referenceScreen.y, 3.5f, 16)
+                shapeRenderer.circle(rx, ry, 6f, 20)
             }
         }
         shapeRenderer.end()
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
+        markers.forEach { marker ->
+            val screen = activeCamera.project(Vector3(marker.world))
+            if (screen.z < 0f || screen.z > 1f) {
+                return@forEach
+            }
+            val x = screen.x
+            val y = screen.y
+            shapeRenderer.color = Color(0f, 0f, 0f, 0.9f)
+            shapeRenderer.circle(x, y, 8.5f, 22)
+            marker.referenceWorld?.let { referenceWorld ->
+                val referenceScreen = activeCamera.project(Vector3(referenceWorld))
+                if (referenceScreen.z < 0f || referenceScreen.z > 1f) {
+                    return@let
+                }
+                val rx = referenceScreen.x
+                val ry = referenceScreen.y
+                shapeRenderer.color = Color(0f, 0f, 0f, 0.9f)
+                shapeRenderer.circle(rx, ry, 7f, 20)
+                shapeRenderer.line(x, y, rx, ry)
+            }
+        }
+        shapeRenderer.end()
+    }
+
+    private fun hotspotInteractionGroups(): List<GroupScene.GroupNode> {
+        val groups = linkedSetOf<GroupScene.GroupNode>()
+        groups.add(scene.activeGroup())
+        if (!scene.isEditing()) {
+            scene.selectedGroups().forEach { groups.add(it) }
+        }
+        return groups.toList()
     }
 
     private fun drawDimensionText(
@@ -3516,11 +3557,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val isVoxel = scene.isVoxelGroup(group)
         val hasArchitecture = scene.hasArchitectureElements()
         val hasHvac = scene.hasHvacElements()
-        val hotspotDeletes = if (scene.isEditing()) {
-            scene.deleteSelectedHotspots(group)
-        } else {
-            0
-        }
+        val hotspotDeletes = deleteSelectedHotspotsAcrossInteractionGroups()
         val architectureElementDeletes = if (hasArchitecture) {
             scene.deleteSelectedArchitectureElements(scene.root)
         } else {
@@ -3681,10 +3718,15 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val selectedTexts = group.textStore.getSelected()
         val selectedText = if (selectedTexts.size == 1) selectedTexts.first() else null
         val selectedVoxels = scene.selectedVoxels(group).size
+        val selectedHotspots = hotspotInteractionGroups()
+            .map { it.hotspotStore }
+            .toSet()
+            .sumOf { it.selectedHotspots().size }
         return SketchUiOverlay.SelectionInfo(
             edgeCount = activeLineStore().getSelected().size,
             faceCount = activeFaceStore().getSelected().size,
             voxelCount = selectedVoxels,
+            hotspotCount = selectedHotspots,
             groupCount = scene.selectedGroups().size,
             dimensionCount = group.dimensionStore.getSelected().size,
             textCount = selectedTexts.size,
@@ -3696,15 +3738,17 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun hotspotSelectionInfo(): SketchUiOverlay.HotspotSelectionInfo {
-        val group = scene.activeGroup()
-        val selected = scene.selectedHotspots(group)
-        if (selected.size != 1) {
-            return SketchUiOverlay.HotspotSelectionInfo(selectedCount = selected.size)
+        val selectedEntries = hotspotInteractionGroups().flatMap { group ->
+            scene.selectedHotspots(group).map { selection -> group to selection.id }
         }
-        val hotspot = scene.selectedHotspot(group)
-            ?: return SketchUiOverlay.HotspotSelectionInfo(selectedCount = selected.size)
+        if (selectedEntries.size != 1) {
+            return SketchUiOverlay.HotspotSelectionInfo(selectedCount = selectedEntries.size)
+        }
+        val (group, hotspotId) = selectedEntries.first()
+        val hotspot = scene.hotspotById(group, hotspotId)
+            ?: return SketchUiOverlay.HotspotSelectionInfo(selectedCount = selectedEntries.size)
         return SketchUiOverlay.HotspotSelectionInfo(
-            selectedCount = selected.size,
+            selectedCount = selectedEntries.size,
             selectedId = hotspot.id,
             selectedName = hotspot.name,
             selectedOperation = hotspot.operation,
@@ -3719,31 +3763,27 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun updateHotspotName(id: String, name: String) {
-        val group = scene.activeGroup()
+        val group = hotspotOwnerGroup(id) ?: scene.activeGroup()
         if (scene.updateHotspotName(group, id, name)) {
             statusModel.message = "Hotspot name updated."
         }
     }
 
     private fun updateHotspotOperation(id: String, operation: com.github.alfu32.sketch.model.HotspotStore.OperationKind) {
-        val group = scene.activeGroup()
+        val group = hotspotOwnerGroup(id) ?: scene.activeGroup()
         if (scene.updateHotspotOperation(group, id, operation)) {
             statusModel.message = "Hotspot operation updated."
         }
     }
 
     private fun addHotspotAtCursor() {
-        if (!scene.isEditing()) {
-            statusModel.message = "Enter an object to add hotspots."
-            return
-        }
         val snap = lastSnap
         val world = snap?.world
         if (snap?.valid != true || world == null) {
             statusModel.message = "Point at geometry to place hotspot."
             return
         }
-        val group = scene.activeGroup()
+        val group = hotspotDefaultTargetGroup()
         scene.addHotspot(
             group = group,
             position = group.toLocal(world),
@@ -3753,11 +3793,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun deleteSelectedHotspots() {
-        if (!scene.isEditing()) {
-            statusModel.message = "Enter an object to delete hotspots."
-            return
-        }
-        val removed = scene.deleteSelectedHotspots(scene.activeGroup())
+        val removed = deleteSelectedHotspotsAcrossInteractionGroups()
         statusModel.message = if (removed > 0) {
             "Deleted hotspots: $removed"
         } else {
@@ -3765,8 +3801,18 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
     }
 
+    private fun deleteSelectedHotspotsAcrossInteractionGroups(): Int {
+        var removed = 0
+        hotspotInteractionGroups()
+            .distinctBy { it.hotspotStore }
+            .forEach { group ->
+                removed += scene.deleteSelectedHotspots(group)
+            }
+        return removed
+    }
+
     private fun attachSelectionToHotspot(id: String) {
-        val group = scene.activeGroup()
+        val group = hotspotOwnerGroup(id) ?: scene.activeGroup()
         val attached = scene.attachCurrentSelectionToHotspot(group, id)
         statusModel.message = if (attached != null) {
             "Attached geometry | edges ${attached.first} faces ${attached.second}"
@@ -3776,7 +3822,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun selectHotspotAttachedGeometry(id: String) {
-        val group = scene.activeGroup()
+        val group = hotspotOwnerGroup(id) ?: scene.activeGroup()
         val selected = scene.selectHotspotAttachedGeometry(group, id, replace = true)
         statusModel.message = if (selected != null) {
             "Selected attached geometry | edges ${selected.first} faces ${selected.second}"
@@ -3786,23 +3832,38 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun beginHotspotReferencePick(id: String) {
-        if (!scene.isEditing()) {
-            statusModel.message = "Enter an object to set hotspot references."
+        val group = hotspotOwnerGroup(id)
+        if (group == null) {
+            statusModel.message = "Hotspot not found."
             return
         }
+        hotspotReferencePickTargetGroup = group
         hotspotReferencePickTargetId = id
         statusModel.message = "Pick reference point for hotspot."
     }
 
     private fun clearHotspotReference(id: String) {
-        val group = scene.activeGroup()
+        val group = hotspotOwnerGroup(id) ?: scene.activeGroup()
         val updated = scene.updateHotspotReferencePosition(group, id, null)
         if (updated) {
             hotspotReferencePickTargetId = null
+            hotspotReferencePickTargetGroup = null
             statusModel.message = "Hotspot reference cleared."
         } else {
             statusModel.message = "Hotspot reference clear failed."
         }
+    }
+
+    private fun hotspotDefaultTargetGroup(): GroupScene.GroupNode {
+        if (scene.isEditing()) {
+            return scene.activeGroup()
+        }
+        val selectedGroups = scene.selectedGroups()
+        return if (selectedGroups.size == 1) selectedGroups.first() else scene.activeGroup()
+    }
+
+    private fun hotspotOwnerGroup(id: String): GroupScene.GroupNode? {
+        return hotspotInteractionGroups().firstOrNull { group -> scene.hotspotById(group, id) != null }
     }
 
     private fun architectureSelectionInfo(): SketchUiOverlay.ArchitectureElementInfo? {

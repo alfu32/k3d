@@ -223,6 +223,7 @@ class SketchUiOverlay(
     private val selectionEdgesLabel = VisLabel()
     private val selectionFacesLabel = VisLabel()
     private val selectionVoxelsLabel = VisLabel()
+    private val selectionHotspotsLabel = VisLabel()
     private val selectionGroupsLabel = VisLabel()
     private val selectionDimensionsLabel = VisLabel()
     private val selectionTextsLabel = VisLabel()
@@ -350,6 +351,7 @@ class SketchUiOverlay(
     private val unitNameField = VisTextField()
     private val unitSizeField = VisTextField()
     private val gridSpacingField = VisTextField()
+    private val modelHotspotsLabel = VisLabel()
     private val snapEpsilonMin = 2f
     private val snapEpsilonMax = 48f
     private val snapEpsilonSlider = VisSlider(snapEpsilonMin, snapEpsilonMax, 1f, false)
@@ -579,6 +581,7 @@ class SketchUiOverlay(
         selectionEdgesLabel.setText("Edges: ${selection.edgeCount}")
         selectionFacesLabel.setText("Faces: ${selection.faceCount}")
         selectionVoxelsLabel.setText("Voxels: ${selection.voxelCount}")
+        selectionHotspotsLabel.setText("Hotspots: ${selection.hotspotCount}")
         selectionGroupsLabel.setText("Objects: ${selection.groupCount}")
         selectionDimensionsLabel.setText("Dimensions: ${selection.dimensionCount}")
         selectionTextsLabel.setText("Texts: ${selection.textCount}")
@@ -1060,6 +1063,7 @@ class SketchUiOverlay(
         content.add(selectionEdgesLabel).row()
         content.add(selectionFacesLabel).row()
         content.add(selectionVoxelsLabel).row()
+        content.add(selectionHotspotsLabel).row()
         content.add(selectionGroupsLabel).row()
         content.add(selectionDimensionsLabel).row()
         content.add(selectionTextsLabel).row()
@@ -1170,6 +1174,7 @@ class SketchUiOverlay(
         val content = VisTable()
         content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         content.defaults().pad(4f).left().growX()
+        content.add(modelHotspotsLabel).left().row()
         content.add(VisLabel("Unit name")).left().row()
         content.add(unitNameField).growX().row()
         content.add(VisLabel("Unit size")).left().padTop(4f).row()
@@ -2930,6 +2935,8 @@ class SketchUiOverlay(
         val snapEpsilon = snapEpsilonProvider()
         val gridSpacing = gridSpacingProvider()
         val walk = walkthroughTuningProvider()
+        val selection = selectionInfoProvider()
+        modelHotspotsLabel.setText("Selected hotspots: ${selection.hotspotCount}")
         val unitName = unit.name
         val unitSize = unit.size
         if (
@@ -3920,6 +3927,7 @@ class SketchUiOverlay(
         val edgeCount: Int,
         val faceCount: Int,
         val voxelCount: Int,
+        val hotspotCount: Int,
         val groupCount: Int,
         val dimensionCount: Int,
         val textCount: Int,

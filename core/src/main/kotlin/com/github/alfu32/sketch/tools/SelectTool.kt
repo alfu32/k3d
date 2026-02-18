@@ -84,6 +84,7 @@ class SelectTool(
     )
 
     private data class HotspotHit(
+        val group: GroupScene.GroupNode,
         val id: String,
         val point: Vector3,
         val t: Float
@@ -269,27 +270,30 @@ class SelectTool(
         val ray = cameraProvider().getPickRay(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
         val activeGroup = scene.activeGroup()
         val architectureGroup = scene.root
-        if (scene.isEditing()) {
-            val hotspotHit = pickHotspotWorld(activeGroup, ray, Gdx.input.x, Gdx.input.y)
-            if (hotspotHit != null) {
-                val mode = hotspotSelectionMode()
-                val changed = scene.selectHotspot(activeGroup, hotspotHit.id, mode)
-                hotspotDrag = if (mode == GroupScene.HotspotSelectionMode.REPLACE && changed) {
-                    HotspotDragState(
-                        group = activeGroup,
-                        hotspotId = hotspotHit.id,
-                        movingWorld = Vector3(hotspotHit.point)
-                    )
-                } else {
-                    null
-                }
-                status.message = when (mode) {
-                    GroupScene.HotspotSelectionMode.REMOVE -> "Hotspot deselected."
-                    GroupScene.HotspotSelectionMode.ADD -> "Hotspot added to selection."
-                    GroupScene.HotspotSelectionMode.REPLACE -> if (changed) "Hotspot selected. Drag and release to apply." else "Hotspot selection unchanged."
-                }
-                return true
+        val hotspotHit = pickHotspotWorld(
+            hotspotGroupsForInteraction(),
+            ray,
+            Gdx.input.x,
+            Gdx.input.y
+        )
+        if (hotspotHit != null) {
+            val mode = hotspotSelectionMode()
+            val changed = scene.selectHotspot(hotspotHit.group, hotspotHit.id, mode)
+            hotspotDrag = if (mode == GroupScene.HotspotSelectionMode.REPLACE && changed) {
+                HotspotDragState(
+                    group = hotspotHit.group,
+                    hotspotId = hotspotHit.id,
+                    movingWorld = Vector3(hotspotHit.point)
+                )
+            } else {
+                null
             }
+            status.message = when (mode) {
+                GroupScene.HotspotSelectionMode.REMOVE -> "Hotspot deselected."
+                GroupScene.HotspotSelectionMode.ADD -> "Hotspot added to selection."
+                GroupScene.HotspotSelectionMode.REPLACE -> if (changed) "Hotspot selected. Drag and release to apply." else "Hotspot selection unchanged."
+            }
+            return true
         }
         val isVoxelGroup = scene.isVoxelGroup(activeGroup)
         val architectureSelectionEnabled = scene.hasArchitectureElements() && activeGroup == architectureGroup
@@ -742,11 +746,7 @@ class SelectTool(
                 } else {
                     0
                 }
-                val hotspotCount = if (scene.isEditing()) {
-                    selectHotspotsInWindow(rect, mode)
-                } else {
-                    0
-                }
+                val hotspotCount = selectHotspotsInWindow(rect, mode)
                 val faces = if (scene.isVoxelGroup(scene.activeGroup())) {
                     0
                 } else {
@@ -1562,29 +1562,32 @@ class SelectTool(
     }
 
     private fun pickHotspotWorld(
-        group: GroupScene.GroupNode,
+        groups: List<GroupScene.GroupNode>,
         ray: Ray,
         screenX: Int,
         screenY: Int,
-        maxPixels: Float = 12f
+        maxPixels: Float = 20f
     ): HotspotHit? {
-        val markers = scene.hotspotMarkersWorld(group)
         var best: HotspotHit? = null
-        markers.forEach { marker ->
-            val dist = screenDistance(marker.world, screenX, screenY)
-            if (dist > maxPixels) {
-                return@forEach
-            }
-            val t = Vector3(marker.world).sub(ray.origin).dot(ray.direction)
-            if (t < 0f) {
-                return@forEach
-            }
-            if (best == null || t < best!!.t) {
-                best = HotspotHit(
-                    id = marker.id,
-                    point = Vector3(marker.world),
-                    t = t
-                )
+        groups.forEach { group ->
+            val markers = scene.hotspotMarkersWorld(group)
+            markers.forEach { marker ->
+                val dist = screenDistance(marker.world, screenX, screenY)
+                if (dist > maxPixels) {
+                    return@forEach
+                }
+                val t = Vector3(marker.world).sub(ray.origin).dot(ray.direction)
+                if (t < 0f) {
+                    return@forEach
+                }
+                if (best == null || t < best!!.t) {
+                    best = HotspotHit(
+                        group = group,
+                        id = marker.id,
+                        point = Vector3(marker.world),
+                        t = t
+                    )
+                }
             }
         }
         return best
@@ -1942,28 +1945,38 @@ class SelectTool(
     }
 
     private fun selectHotspotsInWindow(rect: WindowRectTopLeft, mode: SelectionMode): Int {
-        val group = scene.activeGroup()
-        val markers = scene.hotspotMarkersWorld(group)
         var count = 0
-        markers.forEach { marker ->
-            val point = projectWorldToScreen(marker.world)
-            if (!pointInRect(point, rect)) {
-                return@forEach
-            }
-            when (mode) {
-                SelectionMode.REPLACE, SelectionMode.ADD -> {
-                    if (scene.selectHotspot(group, marker.id, GroupScene.HotspotSelectionMode.ADD)) {
-                        count++
-                    }
+        hotspotGroupsForInteraction().forEach { group ->
+            val markers = scene.hotspotMarkersWorld(group)
+            markers.forEach { marker ->
+                val point = projectWorldToScreen(marker.world)
+                if (!pointInRect(point, rect)) {
+                    return@forEach
                 }
-                SelectionMode.REMOVE -> {
-                    if (scene.selectHotspot(group, marker.id, GroupScene.HotspotSelectionMode.REMOVE)) {
-                        count++
+                when (mode) {
+                    SelectionMode.REPLACE, SelectionMode.ADD -> {
+                        if (scene.selectHotspot(group, marker.id, GroupScene.HotspotSelectionMode.ADD)) {
+                            count++
+                        }
+                    }
+                    SelectionMode.REMOVE -> {
+                        if (scene.selectHotspot(group, marker.id, GroupScene.HotspotSelectionMode.REMOVE)) {
+                            count++
+                        }
                     }
                 }
             }
         }
         return count
+    }
+
+    private fun hotspotGroupsForInteraction(): List<GroupScene.GroupNode> {
+        val groups = linkedSetOf<GroupScene.GroupNode>()
+        groups.add(scene.activeGroup())
+        if (!scene.isEditing()) {
+            scene.selectedGroups().forEach { groups.add(it) }
+        }
+        return groups.toList()
     }
 
     private fun selectDimensionsInWindow(rect: WindowRectTopLeft, includeIntersect: Boolean, mode: SelectionMode): Int {
