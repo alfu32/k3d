@@ -92,6 +92,7 @@ import com.github.alfu32.sketch.tools.ArchitectureWindowFrameTool
 import com.github.alfu32.sketch.tools.ExtrudeSwipeTool
 import com.github.alfu32.sketch.tools.MeshIntersectionTool
 import com.github.alfu32.sketch.tools.FaceOutlineTool
+import com.github.alfu32.sketch.tools.HotspotSettings
 import com.github.alfu32.sketch.tools.HvacPlumbingTool
 import com.github.alfu32.sketch.tools.HvacSettings
 import com.github.alfu32.sketch.tools.HvacVentilationTool
@@ -179,6 +180,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private val architectureFrameHotspotColor = Color(1f, 0.7f, 0.25f, 1f)
     private val hvacPlumbingHotspotColor = Color(0.3f, 0.75f, 0.95f, 1f)
     private val hvacVentilationHotspotColor = Color(0.45f, 0.95f, 0.55f, 1f)
+    private val hotspotColor = Color(0.2f, 0.55f, 0.95f, 1f)
+    private val hotspotReferenceColor = Color(0.25f, 0.9f, 0.35f, 1f)
+    private val hotspotSelectedColor = Color(1f, 0.2f, 0.2f, 1f)
     private val selectedEntityBoxColor = Color(0.2f, 0.7f, 0.95f, 1f)
     private val editModeBoxColor = Color(1f, 0.6f, 0.2f, 1f)
     private val selectedLineWidth = 8f
@@ -189,6 +193,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private val polylineSettings = PolylineSettings()
     private val architectureSettings = ArchitectureSettings()
     private val hvacSettings = HvacSettings()
+    private val hotspotSettings = HotspotSettings()
     private lateinit var statusModel: StatusModel
     private lateinit var scene: GroupScene
     private lateinit var modelCleanup: ModelCleanup
@@ -228,6 +233,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private enum class OrthoView { TOP, BOTTOM, LEFT, RIGHT, FRONT, BACK }
     private var consoleThread: ConsoleThread? = null
     private var consoleRuntime: ConsoleGroovyRuntime? = null
+    private var hotspotReferencePickTargetId: String? = null
     private var mcpConsoleRuntime: ConsoleGroovyRuntime? = null
     private var mcpConsoleTui: ConsoleTui? = null
     private var consoleTerminal: TerminalController? = null
@@ -425,6 +431,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             polylineSettings,
             architectureSettings,
             hvacSettings,
+            hotspotSettings,
             ::architectureSelectionInfo,
             ::architectureSelectionSummary,
             ::updateArchitectureElementName,
@@ -432,6 +439,16 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::updateArchitectureSlabParameters,
             ::updateArchitectureStairParameters,
             ::updateArchitectureFrameParameters,
+            ::hotspotSelectionInfo,
+            ::updateHotspotDefaultOperation,
+            ::updateHotspotName,
+            ::updateHotspotOperation,
+            ::addHotspotAtCursor,
+            ::deleteSelectedHotspots,
+            ::attachSelectionToHotspot,
+            ::selectHotspotAttachedGeometry,
+            ::beginHotspotReferencePick,
+            ::clearHotspotReference,
             { activeCameraMode },
             ::setCameraMode
         )
@@ -557,6 +574,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 priority = 1,
                 execute = {
                     uiOverlay.showHvacSettingsPanel()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.hotspot_settings",
+                name = "View> Hotspot Settings",
+                description = "Show hotspot settings panel",
+                icon = "view",
+                category = "View",
+                tags = listOf("hotspot", "settings", "panel"),
+                priority = 1,
+                execute = {
+                    uiOverlay.showHotspotSettingsPanel()
                     com.github.alfu32.sketch.plugin.PluginResult.success()
                 }
             )
@@ -899,10 +931,37 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                     return true
                 }
                 uiOverlay.clearUiFocus()
+                val targetHotspotId = hotspotReferencePickTargetId
+                if (targetHotspotId != null && button == Input.Buttons.LEFT) {
+                    val snap = distanceOverrideSnap ?: snapper.compute(screenX, screenY)
+                    val world = snap.world
+                    if (snap.valid && world != null) {
+                        val group = scene.activeGroup()
+                        val updated = scene.updateHotspotReferencePosition(
+                            group = group,
+                            id = targetHotspotId,
+                            referencePosition = group.toLocal(world)
+                        )
+                        statusModel.message = if (updated) {
+                            "Hotspot reference updated."
+                        } else {
+                            "Failed to update hotspot reference."
+                        }
+                    } else {
+                        statusModel.message = "Reference pick canceled: invalid point."
+                    }
+                    hotspotReferencePickTargetId = null
+                    return true
+                }
                 return false
             }
 
             override fun keyDown(keycode: Int): Boolean {
+                if (keycode == Input.Keys.ESCAPE && hotspotReferencePickTargetId != null) {
+                    hotspotReferencePickTargetId = null
+                    statusModel.message = "Hotspot reference pick canceled."
+                    return true
+                }
                 return uiOverlay.isUiCapturingInputByPointer()
             }
 
@@ -1988,6 +2047,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         Gdx.gl.glEnable(GL20.GL_BLEND)
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
         drawAnnotations2D()
+        drawHotspots2D()
         Gdx.gl.glDisable(GL20.GL_BLEND)
 
         val windowRect = (toolController.activeTool() as? SelectTool)
@@ -3025,6 +3085,33 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         spriteBatch.end()
     }
 
+    private fun drawHotspots2D() {
+        val markers = scene.hotspotMarkersWorld(scene.activeGroup())
+        if (markers.isEmpty()) {
+            return
+        }
+        shapeRenderer.projectionMatrix = uiOverlay.stage.camera.combined
+        shapeRenderer.transformMatrix = Matrix4().idt()
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
+        markers.forEach { marker ->
+            val screen = activeCamera.project(Vector3(marker.world))
+            if (screen.z < 0f || screen.z > 1f) {
+                return@forEach
+            }
+            shapeRenderer.color = if (marker.selected) hotspotSelectedColor else hotspotColor
+            shapeRenderer.circle(screen.x, screen.y, 4.25f, 18)
+            marker.referenceWorld?.let { referenceWorld ->
+                val referenceScreen = activeCamera.project(Vector3(referenceWorld))
+                if (referenceScreen.z < 0f || referenceScreen.z > 1f) {
+                    return@let
+                }
+                shapeRenderer.color = if (marker.selected) hotspotSelectedColor else hotspotReferenceColor
+                shapeRenderer.circle(referenceScreen.x, referenceScreen.y, 3.5f, 16)
+            }
+        }
+        shapeRenderer.end()
+    }
+
     private fun drawDimensionText(
         lineStart: Vector3,
         lineEnd: Vector3,
@@ -3428,6 +3515,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val isVoxel = scene.isVoxelGroup(group)
         val hasArchitecture = scene.hasArchitectureElements()
         val hasHvac = scene.hasHvacElements()
+        val hotspotDeletes = if (scene.isEditing()) {
+            scene.deleteSelectedHotspots(group)
+        } else {
+            0
+        }
         val architectureElementDeletes = if (hasArchitecture) {
             scene.deleteSelectedArchitectureElements(scene.root)
         } else {
@@ -3453,10 +3545,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val dimensions = activeDimensionStore().deleteSelected()
         val texts = activeTextStore().deleteSelected()
         val groups = scene.deleteSelectedGroups()
-        if (edges + faces + voxelDeletes + architectureHoleDeletes + architectureElementDeletes + hvacElementDeletes + dimensions + texts + groups > 0) {
+        if (edges + faces + voxelDeletes + hotspotDeletes + architectureHoleDeletes + architectureElementDeletes + hvacElementDeletes + dimensions + texts + groups > 0) {
             statusModel.message =
-                "Deleted | architecture $architectureElementDeletes hvac $hvacElementDeletes voxels $voxelDeletes holes $architectureHoleDeletes edges $edges faces $faces dimensions $dimensions texts $texts groups $groups"
-            if (groups > 0 && edges + faces + voxelDeletes + architectureHoleDeletes + architectureElementDeletes + hvacElementDeletes == 0) {
+                "Deleted | architecture $architectureElementDeletes hvac $hvacElementDeletes hotspots $hotspotDeletes voxels $voxelDeletes holes $architectureHoleDeletes edges $edges faces $faces dimensions $dimensions texts $texts groups $groups"
+            if (groups > 0 && edges + faces + voxelDeletes + hotspotDeletes + architectureHoleDeletes + architectureElementDeletes + hvacElementDeletes == 0) {
                 undoManager.commit("Delete")
                 saveModel()
             }
@@ -3600,6 +3692,116 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             selectedTextSize = selectedText?.size,
             selectedTextScreen = selectedText?.screenText
         )
+    }
+
+    private fun hotspotSelectionInfo(): SketchUiOverlay.HotspotSelectionInfo {
+        val group = scene.activeGroup()
+        val selected = scene.selectedHotspots(group)
+        if (selected.size != 1) {
+            return SketchUiOverlay.HotspotSelectionInfo(selectedCount = selected.size)
+        }
+        val hotspot = scene.selectedHotspot(group)
+            ?: return SketchUiOverlay.HotspotSelectionInfo(selectedCount = selected.size)
+        return SketchUiOverlay.HotspotSelectionInfo(
+            selectedCount = selected.size,
+            selectedId = hotspot.id,
+            selectedName = hotspot.name,
+            selectedOperation = hotspot.operation,
+            attachedEdgeCount = hotspot.attachedSegments.size,
+            attachedFaceCount = hotspot.attachedTriangles.size,
+            hasReference = hotspot.referencePosition != null
+        )
+    }
+
+    private fun updateHotspotDefaultOperation(operation: com.github.alfu32.sketch.model.HotspotStore.OperationKind) {
+        hotspotSettings.defaultOperation = operation
+    }
+
+    private fun updateHotspotName(id: String, name: String) {
+        val group = scene.activeGroup()
+        if (scene.updateHotspotName(group, id, name)) {
+            statusModel.message = "Hotspot name updated."
+        }
+    }
+
+    private fun updateHotspotOperation(id: String, operation: com.github.alfu32.sketch.model.HotspotStore.OperationKind) {
+        val group = scene.activeGroup()
+        if (scene.updateHotspotOperation(group, id, operation)) {
+            statusModel.message = "Hotspot operation updated."
+        }
+    }
+
+    private fun addHotspotAtCursor() {
+        if (!scene.isEditing()) {
+            statusModel.message = "Enter an object to add hotspots."
+            return
+        }
+        val snap = lastSnap
+        val world = snap?.world
+        if (snap?.valid != true || world == null) {
+            statusModel.message = "Point at geometry to place hotspot."
+            return
+        }
+        val group = scene.activeGroup()
+        scene.addHotspot(
+            group = group,
+            position = group.toLocal(world),
+            operation = hotspotSettings.defaultOperation
+        )
+        statusModel.message = "Hotspot added."
+    }
+
+    private fun deleteSelectedHotspots() {
+        if (!scene.isEditing()) {
+            statusModel.message = "Enter an object to delete hotspots."
+            return
+        }
+        val removed = scene.deleteSelectedHotspots(scene.activeGroup())
+        statusModel.message = if (removed > 0) {
+            "Deleted hotspots: $removed"
+        } else {
+            "No hotspot selected."
+        }
+    }
+
+    private fun attachSelectionToHotspot(id: String) {
+        val group = scene.activeGroup()
+        val attached = scene.attachCurrentSelectionToHotspot(group, id)
+        statusModel.message = if (attached != null) {
+            "Attached geometry | edges ${attached.first} faces ${attached.second}"
+        } else {
+            "Hotspot not found."
+        }
+    }
+
+    private fun selectHotspotAttachedGeometry(id: String) {
+        val group = scene.activeGroup()
+        val selected = scene.selectHotspotAttachedGeometry(group, id, replace = true)
+        statusModel.message = if (selected != null) {
+            "Selected attached geometry | edges ${selected.first} faces ${selected.second}"
+        } else {
+            "Hotspot not found."
+        }
+    }
+
+    private fun beginHotspotReferencePick(id: String) {
+        if (!scene.isEditing()) {
+            statusModel.message = "Enter an object to set hotspot references."
+            return
+        }
+        hotspotReferencePickTargetId = id
+        statusModel.message = "Pick reference point for hotspot."
+    }
+
+    private fun clearHotspotReference(id: String) {
+        val group = scene.activeGroup()
+        val updated = scene.updateHotspotReferencePosition(group, id, null)
+        if (updated) {
+            hotspotReferencePickTargetId = null
+            statusModel.message = "Hotspot reference cleared."
+        } else {
+            statusModel.message = "Hotspot reference clear failed."
+        }
     }
 
     private fun architectureSelectionInfo(): SketchUiOverlay.ArchitectureElementInfo? {

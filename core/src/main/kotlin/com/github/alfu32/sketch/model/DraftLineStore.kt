@@ -115,6 +115,43 @@ class DraftLineStore {
         return newSelected.size
     }
 
+    fun transformSegments(
+        targets: Set<Segment>,
+        transform: (Vector3) -> Vector3
+    ): Map<Segment, Segment> {
+        if (targets.isEmpty()) {
+            return emptyMap()
+        }
+        val mapping = linkedMapOf<Segment, Segment>()
+        val targetSet = targets.toSet()
+        val oldSelected = selected.toSet()
+        val newSelected = mutableSetOf<Segment>()
+        val newSegments = mutableListOf<Segment>()
+        segments.forEach { segment ->
+            if (targetSet.contains(segment)) {
+                val a = transform(Vector3(segment.start))
+                val b = transform(Vector3(segment.end))
+                val next = Segment(a, b)
+                newSegments.add(next)
+                mapping[segment] = next
+                if (oldSelected.contains(segment)) {
+                    newSelected.add(next)
+                }
+            } else {
+                newSegments.add(segment)
+                if (oldSelected.contains(segment)) {
+                    newSelected.add(segment)
+                }
+            }
+        }
+        segments.clear()
+        segments.addAll(newSegments)
+        selected.clear()
+        selected.addAll(newSelected)
+        notifyChange()
+        return mapping
+    }
+
     fun copySelected(transform: (Vector3) -> Vector3): Int {
         if (selected.isEmpty()) {
             return 0

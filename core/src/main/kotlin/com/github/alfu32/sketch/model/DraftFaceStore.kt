@@ -216,6 +216,52 @@ class DraftFaceStore(
         return newSelected.size
     }
 
+    fun transformTriangles(
+        targets: Set<Triangle>,
+        transform: (Vector3) -> Vector3
+    ): Map<Triangle, Triangle> {
+        if (targets.isEmpty()) {
+            return emptyMap()
+        }
+        val mapping = linkedMapOf<Triangle, Triangle>()
+        val targetSet = targets.toSet()
+        val oldSelected = selected.toSet()
+        val newSelected = mutableSetOf<Triangle>()
+        val newTriangles = mutableListOf<Triangle>()
+        val newColors = mutableMapOf<Triangle, com.badlogic.gdx.graphics.Color>()
+
+        triangles.forEach { tri ->
+            val color = colors[tri] ?: defaultColor
+            if (targetSet.contains(tri)) {
+                val a = transform(Vector3(tri.a))
+                val b = transform(Vector3(tri.b))
+                val c = transform(Vector3(tri.c))
+                val next = Triangle(a, b, c)
+                newTriangles.add(next)
+                newColors[next] = com.badlogic.gdx.graphics.Color(color)
+                mapping[tri] = next
+                if (oldSelected.contains(tri)) {
+                    newSelected.add(next)
+                }
+            } else {
+                newTriangles.add(tri)
+                newColors[tri] = com.badlogic.gdx.graphics.Color(color)
+                if (oldSelected.contains(tri)) {
+                    newSelected.add(tri)
+                }
+            }
+        }
+
+        triangles.clear()
+        triangles.addAll(newTriangles)
+        colors.clear()
+        colors.putAll(newColors)
+        selected.clear()
+        selected.addAll(newSelected)
+        notifyChange()
+        return mapping
+    }
+
     fun copySelected(transform: (Vector3) -> Vector3): Int {
         if (selected.isEmpty()) {
             return 0

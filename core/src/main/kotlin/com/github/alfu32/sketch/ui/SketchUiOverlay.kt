@@ -20,9 +20,11 @@ import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.utils.viewport.ScreenViewport
+import com.github.alfu32.sketch.model.HotspotStore
 import com.kotcrab.vis.ui.widget.VisImageTextButton
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisCheckBox
+import com.kotcrab.vis.ui.widget.VisSelectBox
 import com.kotcrab.vis.ui.widget.VisSlider
 import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextButton
@@ -33,6 +35,7 @@ import com.github.alfu32.sketch.plugin.PluginHost
 import com.github.alfu32.sketch.plugin.capabilities.PanelPosition
 import com.github.alfu32.sketch.plugin.capabilities.PluginPanel
 import com.github.alfu32.sketch.tools.ArchitectureSettings
+import com.github.alfu32.sketch.tools.HotspotSettings
 import com.github.alfu32.sketch.tools.HvacSettings
 import com.github.alfu32.sketch.tools.PolylineSettings
 import java.util.Locale
@@ -70,6 +73,7 @@ class SketchUiOverlay(
     private val polylineSettings: PolylineSettings,
     private val architectureSettings: ArchitectureSettings,
     private val hvacSettings: HvacSettings,
+    private val hotspotSettings: HotspotSettings,
     private val architectureElementProvider: () -> ArchitectureElementInfo?,
     private val architectureSelectionSummaryProvider: () -> ArchitectureSelectionSummary,
     private val architectureElementNameChanged: (ArchitectureElementKind, String, String) -> Unit,
@@ -77,6 +81,16 @@ class SketchUiOverlay(
     private val architectureSlabChanged: (String, Float, Color, Color, Color) -> Unit,
     private val architectureStairChanged: (String, Float, Int, Float, Boolean, Boolean, Color, Color) -> Unit,
     private val architectureFrameChanged: (String, Float, Float, Color, Boolean, Color) -> Unit,
+    private val hotspotSelectionProvider: () -> HotspotSelectionInfo,
+    private val hotspotDefaultOperationChanged: (HotspotStore.OperationKind) -> Unit,
+    private val hotspotNameChanged: (String, String) -> Unit,
+    private val hotspotOperationChanged: (String, HotspotStore.OperationKind) -> Unit,
+    private val hotspotAddAtCursor: () -> Unit,
+    private val hotspotDeleteSelected: () -> Unit,
+    private val hotspotAttachSelection: (String) -> Unit,
+    private val hotspotSelectAttached: (String) -> Unit,
+    private val hotspotBeginReferencePick: (String) -> Unit,
+    private val hotspotClearReference: (String) -> Unit,
     private val cameraModeProvider: () -> CameraMode,
     private val cameraModeChanged: (CameraMode) -> Unit
 ) {
@@ -193,6 +207,7 @@ class SketchUiOverlay(
     private val hvacDefaultVentilationHumpHalfSpanKey = "hvac_default_ventilation_hump_half_span"
     private val hvacDefaultVentilationHumpClearanceKey = "hvac_default_ventilation_hump_clearance"
     private val hvacDefaultVentilationColorKey = "hvac_default_ventilation_color"
+    private val hotspotDefaultOperationKey = "hotspot_default_operation"
     private val iconTextures = mutableListOf<Texture>()
     private val iconDrawables = mutableMapOf<String, TextureRegionDrawable>()
     private var iconsTexture: Texture? = null
@@ -239,6 +254,7 @@ class SketchUiOverlay(
     private lateinit var polylineSettingsPanel: CollapsibleWindow
     private lateinit var architectureSettingsPanel: CollapsibleWindow
     private lateinit var hvacSettingsPanel: CollapsibleWindow
+    private lateinit var hotspotSettingsPanel: CollapsibleWindow
     private lateinit var architectureModeLabel: VisLabel
     private lateinit var architectureWallSectionLabel: VisLabel
     private lateinit var architectureSlabSectionLabel: VisLabel
@@ -315,6 +331,19 @@ class SketchUiOverlay(
     private lateinit var hvacVentilationColorField: VisTextField
     private lateinit var hvacVentilationColorButton: VisImageTextButton
     private var updatingHvacFields = false
+    private lateinit var hotspotModeLabel: VisLabel
+    private lateinit var hotspotNameField: VisTextField
+    private lateinit var hotspotOperationSelect: VisSelectBox<HotspotStore.OperationKind>
+    private lateinit var hotspotAttachedLabel: VisLabel
+    private lateinit var hotspotReferenceLabel: VisLabel
+    private lateinit var hotspotAddButton: VisTextButton
+    private lateinit var hotspotDeleteButton: VisTextButton
+    private lateinit var hotspotAttachButton: VisTextButton
+    private lateinit var hotspotSelectAttachedButton: VisTextButton
+    private lateinit var hotspotPickReferenceButton: VisTextButton
+    private lateinit var hotspotClearReferenceButton: VisTextButton
+    private var updatingHotspotFields = false
+    private var selectedHotspotId: String? = null
     private lateinit var architectureSettingsContent: VisTable
     private var updatingArchitectureFields = false
     private val unitNameField = VisTextField()
@@ -353,6 +382,7 @@ class SketchUiOverlay(
         migrateBuiltinToolbarPrefs()
         loadArchitectureDefaults()
         loadHvacDefaults()
+        loadHotspotDefaults()
         val root = Table()
         root.setFillParent(true)
         stage.addActor(root)
@@ -366,6 +396,7 @@ class SketchUiOverlay(
         polylineSettingsPanel = buildPolylineSettingsPanel()
         architectureSettingsPanel = buildArchitectureSettingsPanel()
         hvacSettingsPanel = buildHvacSettingsPanel()
+        hotspotSettingsPanel = buildHotspotSettingsPanel()
         lightingPanel = buildLightingPanel()
         val mainRow = Table()
         mainRow.add().expand().fill()
@@ -380,6 +411,7 @@ class SketchUiOverlay(
         stage.addActor(polylineSettingsPanel)
         stage.addActor(architectureSettingsPanel)
         stage.addActor(hvacSettingsPanel)
+        stage.addActor(hotspotSettingsPanel)
         lightingPanel?.let { stage.addActor(it) }
         positionPanels()
         needsPanelLayout = true
@@ -566,6 +598,7 @@ class SketchUiOverlay(
         updateModelSettingsPanel()
         updateArchitectureSettingsPanel()
         updateHvacSettingsPanel()
+        updateHotspotSettingsPanel()
         refreshPluginToolbar()
         toolButtons[status.activeTool]?.isChecked = true
         updatePluginToolSelection()
@@ -671,6 +704,11 @@ class SketchUiOverlay(
         needsPanelLayout = true
     }
 
+    fun showHotspotSettingsPanel() {
+        hotspotSettingsPanel.isVisible = true
+        needsPanelLayout = true
+    }
+
     fun showPluginManager() {
         pluginManagerPanel?.let {
             it.isVisible = true
@@ -692,6 +730,7 @@ class SketchUiOverlay(
             polylineSettingsPanel.isVisible = false
             architectureSettingsPanel.isVisible = false
             hvacSettingsPanel.isVisible = false
+            hotspotSettingsPanel.isVisible = false
             lightingPanel?.isVisible = false
             pluginManagerPanel?.isVisible = false
             pluginPanels.values.forEach { panel -> panel.isVisible = false }
@@ -2088,6 +2127,146 @@ class SketchUiOverlay(
         uiPrefs.flush()
     }
 
+    private fun loadHotspotDefaults() {
+        val saved = uiPrefs.getString(hotspotDefaultOperationKey, hotspotSettings.defaultOperation.name)
+        hotspotSettings.defaultOperation = try {
+            HotspotStore.OperationKind.valueOf(saved)
+        } catch (_: IllegalArgumentException) {
+            HotspotStore.OperationKind.MOVE
+        }
+    }
+
+    private fun saveHotspotDefaults() {
+        uiPrefs.putString(hotspotDefaultOperationKey, hotspotSettings.defaultOperation.name)
+        uiPrefs.flush()
+    }
+
+    private fun buildHotspotSettingsPanel(): CollapsibleWindow {
+        val panel = CollapsibleWindow("Hotspot Settings")
+        val content = VisTable()
+        content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        content.defaults().pad(4f).left()
+
+        hotspotModeLabel = VisLabel("No hotspot selected")
+        hotspotNameField = VisTextField()
+        hotspotOperationSelect = VisSelectBox()
+        hotspotOperationSelect.setItems(*HotspotStore.OperationKind.entries.toTypedArray())
+        hotspotAttachedLabel = VisLabel("Attached: edges 0 faces 0")
+        hotspotReferenceLabel = VisLabel("Reference: none")
+        hotspotAddButton = VisTextButton("Add At Cursor")
+        hotspotDeleteButton = VisTextButton("Delete Selected")
+        hotspotAttachButton = VisTextButton("Attach Selection")
+        hotspotSelectAttachedButton = VisTextButton("Select Attached")
+        hotspotPickReferenceButton = VisTextButton("Pick Reference")
+        hotspotClearReferenceButton = VisTextButton("Clear Reference")
+
+        content.add(hotspotModeLabel).colspan(2).left().growX().row()
+        content.add(VisLabel("Name")).left()
+        content.add(hotspotNameField).growX().row()
+        content.add(VisLabel("Operation")).left()
+        content.add(hotspotOperationSelect).growX().row()
+        content.add(hotspotAttachedLabel).colspan(2).left().growX().row()
+        content.add(hotspotReferenceLabel).colspan(2).left().growX().row()
+        content.add(hotspotAttachButton).left().growX()
+        content.add(hotspotSelectAttachedButton).left().growX().row()
+        content.add(hotspotPickReferenceButton).left().growX()
+        content.add(hotspotClearReferenceButton).left().growX().row()
+        content.add(hotspotAddButton).left().growX()
+        content.add(hotspotDeleteButton).left().growX().row()
+
+        hotspotNameField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingHotspotFields) {
+                    return
+                }
+                val targetId = selectedHotspotId ?: return
+                hotspotNameChanged(targetId, hotspotNameField.text)
+            }
+        })
+        hotspotOperationSelect.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingHotspotFields) {
+                    return
+                }
+                val operation = hotspotOperationSelect.selected ?: return
+                val targetId = selectedHotspotId
+                if (targetId == null) {
+                    hotspotSettings.defaultOperation = operation
+                    hotspotDefaultOperationChanged(operation)
+                    saveHotspotDefaults()
+                } else {
+                    hotspotOperationChanged(targetId, operation)
+                }
+            }
+        })
+        hotspotAddButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                hotspotAddAtCursor()
+            }
+        })
+        hotspotDeleteButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                hotspotDeleteSelected()
+            }
+        })
+        hotspotAttachButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                selectedHotspotId?.let { hotspotAttachSelection(it) }
+            }
+        })
+        hotspotSelectAttachedButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                selectedHotspotId?.let { hotspotSelectAttached(it) }
+            }
+        })
+        hotspotPickReferenceButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                selectedHotspotId?.let { hotspotBeginReferencePick(it) }
+            }
+        })
+        hotspotClearReferenceButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                selectedHotspotId?.let { hotspotClearReference(it) }
+            }
+        })
+
+        panel.add(content).growX()
+        panel.isVisible = false
+        updateHotspotSettingsPanel()
+        return panel
+    }
+
+    private fun updateHotspotSettingsPanel() {
+        if (!::hotspotModeLabel.isInitialized) {
+            return
+        }
+        val info = hotspotSelectionProvider()
+        selectedHotspotId = info.selectedId
+        val hasSelection = info.selectedId != null
+
+        hotspotModeLabel.setText(
+            if (hasSelection) {
+                "Selected hotspot ${info.selectedName ?: info.selectedId}"
+            } else {
+                "Default hotspot settings"
+            }
+        )
+
+        updatingHotspotFields = true
+        hotspotNameField.text = info.selectedName ?: ""
+        hotspotOperationSelect.selected = info.selectedOperation ?: hotspotSettings.defaultOperation
+        updatingHotspotFields = false
+
+        hotspotNameField.isDisabled = !hasSelection
+        hotspotAttachButton.isDisabled = !hasSelection
+        hotspotSelectAttachedButton.isDisabled = !hasSelection
+        hotspotPickReferenceButton.isDisabled = !hasSelection
+        hotspotClearReferenceButton.isDisabled = !hasSelection
+        hotspotDeleteButton.isDisabled = info.selectedCount <= 0
+        hotspotAttachedLabel.setText("Attached: edges ${info.attachedEdgeCount} faces ${info.attachedFaceCount}")
+        hotspotReferenceLabel.setText(if (info.hasReference) "Reference: set" else "Reference: none")
+    }
+
     private fun updateHvacSettingsPanel() {
         if (!::hvacPlumbingDiameterField.isInitialized) {
             return
@@ -2908,6 +3087,7 @@ class SketchUiOverlay(
         panels.add(polylineSettingsPanel)
         panels.add(architectureSettingsPanel)
         panels.add(hvacSettingsPanel)
+        panels.add(hotspotSettingsPanel)
         lightingPanel?.let { panels.add(it) }
         panels.forEach {
             it.invalidateHierarchy()
@@ -3739,6 +3919,16 @@ class SketchUiOverlay(
         val selectedTextValue: String? = null,
         val selectedTextSize: Float? = null,
         val selectedTextScreen: Boolean? = null
+    )
+
+    data class HotspotSelectionInfo(
+        val selectedCount: Int = 0,
+        val selectedId: String? = null,
+        val selectedName: String? = null,
+        val selectedOperation: HotspotStore.OperationKind? = null,
+        val attachedEdgeCount: Int = 0,
+        val attachedFaceCount: Int = 0,
+        val hasReference: Boolean = false
     )
 
     data class GroupInfo(val id: String, val name: String, val glued: Boolean, val editing: Boolean)

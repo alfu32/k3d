@@ -12,7 +12,7 @@ import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
 object ModelPersistence {
-    private const val VERSION = 11
+    private const val VERSION = 12
 
     fun save(
         file: File,
@@ -273,6 +273,7 @@ object ModelPersistence {
         var architectureFrames: MutableList<ArchitectureFrameDto> = mutableListOf()
         var hvacPlumbingRuns: MutableList<HvacPlumbingDto> = mutableListOf()
         var hvacVentilationDucts: MutableList<HvacVentilationDto> = mutableListOf()
+        var hotspots: MutableList<HotspotDto> = mutableListOf()
         var segments: MutableList<SegmentDto> = mutableListOf()
         var faces: MutableList<FaceDto> = mutableListOf()
         var dimensions: MutableList<DimensionDto> = mutableListOf()
@@ -287,6 +288,7 @@ object ModelPersistence {
             val voxelStore = if (prototypeKind == GroupScene.PrototypeKind.VOXEL) VoxelStore() else null
             val architectureStore = if (prototypeKind == GroupScene.PrototypeKind.ARCHITECTURE) ArchitectureStore() else null
             val hvacStore = if (id == "root") HvacStore() else null
+            val hotspotStore = HotspotStore()
             val prototype = GroupScene.ObjectPrototype(
                 id = id.ifBlank { java.util.UUID.randomUUID().toString() },
                 name = name.ifBlank { "Object" },
@@ -300,6 +302,7 @@ object ModelPersistence {
                 voxelStore = voxelStore,
                 architectureStore = architectureStore,
                 hvacStore = hvacStore,
+                hotspotStore = hotspotStore,
                 lineStore = DraftLineStore(),
                 faceStore = DraftFaceStore(defaultColor),
                 dimensionStore = DraftDimensionStore(),
@@ -307,6 +310,7 @@ object ModelPersistence {
             )
             restoreArchitecture(architectureStore)
             restoreHvac(hvacStore)
+            restoreHotspots(hotspotStore)
             applyGeometry(prototype)
             return prototype
         }
@@ -337,6 +341,8 @@ object ModelPersistence {
             restoreArchitecture(prototype.architectureStore)
             prototype.hvacStore?.clear()
             restoreHvac(prototype.hvacStore)
+            prototype.hotspotStore.clearAll()
+            restoreHotspots(prototype.hotspotStore)
             prototype.lineStore.clearAll()
             prototype.faceStore.clearAll()
             prototype.dimensionStore.clearAll()
@@ -494,6 +500,27 @@ object ModelPersistence {
             }
         }
 
+        private fun restoreHotspots(store: HotspotStore?) {
+            val hotspotsStore = store ?: return
+            hotspots.forEach { hotspot ->
+                val operation = try {
+                    HotspotStore.OperationKind.valueOf(hotspot.operation)
+                } catch (_: IllegalArgumentException) {
+                    HotspotStore.OperationKind.MOVE
+                }
+                hotspotsStore.addHotspot(
+                    position = hotspot.position.toVector3(),
+                    operation = operation,
+                    referencePosition = hotspot.referencePosition?.toVector3(),
+                    attachedSegments = hotspot.attachedSegments.map { it.toSegmentRef() }.toSet(),
+                    attachedTriangles = hotspot.attachedTriangles.map { it.toTriangleRef() }.toSet(),
+                    name = hotspot.name,
+                    id = hotspot.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                )
+            }
+            hotspotsStore.clearSelected()
+        }
+
         companion object {
             fun fromPrototype(prototype: GroupScene.ObjectPrototype): ObjectPrototypeDto {
                 val dto = ObjectPrototypeDto()
@@ -606,6 +633,28 @@ object ModelPersistence {
                         color = ColorDto(duct.color)
                     )
                 }?.toMutableList() ?: mutableListOf()
+                dto.hotspots = prototype.hotspotStore.allHotspots().map { hotspot ->
+                    HotspotDto(
+                        id = hotspot.id,
+                        name = hotspot.name,
+                        position = Vec3Dto(hotspot.position),
+                        operation = hotspot.operation.name,
+                        referencePosition = hotspot.referencePosition?.let { Vec3Dto(it) },
+                        attachedSegments = hotspot.attachedSegments.map { ref ->
+                            HotspotSegmentRefDto(
+                                a = HotspotVertexKeyDto(ref.a.x, ref.a.y, ref.a.z),
+                                b = HotspotVertexKeyDto(ref.b.x, ref.b.y, ref.b.z)
+                            )
+                        }.toMutableList(),
+                        attachedTriangles = hotspot.attachedTriangles.map { ref ->
+                            HotspotTriangleRefDto(
+                                a = HotspotVertexKeyDto(ref.a.x, ref.a.y, ref.a.z),
+                                b = HotspotVertexKeyDto(ref.b.x, ref.b.y, ref.b.z),
+                                c = HotspotVertexKeyDto(ref.c.x, ref.c.y, ref.c.z)
+                            )
+                        }.toMutableList()
+                    )
+                }.toMutableList()
                 dto.segments = prototype.lineStore.getSegments().map { seg ->
                     SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end))
                 }.toMutableList()
@@ -894,6 +943,75 @@ object ModelPersistence {
             this.humpHalfSpan = humpHalfSpan
             this.humpClearance = humpClearance
             this.color = color
+        }
+    }
+
+    class HotspotVertexKeyDto() {
+        var x: Int = 0
+        var y: Int = 0
+        var z: Int = 0
+
+        constructor(x: Int, y: Int, z: Int) : this() {
+            this.x = x
+            this.y = y
+            this.z = z
+        }
+
+        fun toVertexKey(): HotspotStore.VertexKey = HotspotStore.VertexKey(x, y, z)
+    }
+
+    class HotspotSegmentRefDto() {
+        var a: HotspotVertexKeyDto = HotspotVertexKeyDto()
+        var b: HotspotVertexKeyDto = HotspotVertexKeyDto()
+
+        constructor(a: HotspotVertexKeyDto, b: HotspotVertexKeyDto) : this() {
+            this.a = a
+            this.b = b
+        }
+
+        fun toSegmentRef(): HotspotStore.SegmentRef = HotspotStore.SegmentRef(a.toVertexKey(), b.toVertexKey())
+    }
+
+    class HotspotTriangleRefDto() {
+        var a: HotspotVertexKeyDto = HotspotVertexKeyDto()
+        var b: HotspotVertexKeyDto = HotspotVertexKeyDto()
+        var c: HotspotVertexKeyDto = HotspotVertexKeyDto()
+
+        constructor(a: HotspotVertexKeyDto, b: HotspotVertexKeyDto, c: HotspotVertexKeyDto) : this() {
+            this.a = a
+            this.b = b
+            this.c = c
+        }
+
+        fun toTriangleRef(): HotspotStore.TriangleRef =
+            HotspotStore.TriangleRef(a.toVertexKey(), b.toVertexKey(), c.toVertexKey())
+    }
+
+    class HotspotDto() {
+        var id: String = ""
+        var name: String = ""
+        var position: Vec3Dto = Vec3Dto()
+        var operation: String = HotspotStore.OperationKind.MOVE.name
+        var referencePosition: Vec3Dto? = null
+        var attachedSegments: MutableList<HotspotSegmentRefDto> = mutableListOf()
+        var attachedTriangles: MutableList<HotspotTriangleRefDto> = mutableListOf()
+
+        constructor(
+            id: String,
+            name: String,
+            position: Vec3Dto,
+            operation: String,
+            referencePosition: Vec3Dto?,
+            attachedSegments: MutableList<HotspotSegmentRefDto>,
+            attachedTriangles: MutableList<HotspotTriangleRefDto>
+        ) : this() {
+            this.id = id
+            this.name = name
+            this.position = position
+            this.operation = operation
+            this.referencePosition = referencePosition
+            this.attachedSegments = attachedSegments
+            this.attachedTriangles = attachedTriangles
         }
     }
 
