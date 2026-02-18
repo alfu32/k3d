@@ -183,6 +183,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private val hotspotColor = Color(0.2f, 0.55f, 0.95f, 1f)
     private val hotspotReferenceColor = Color(0.25f, 0.9f, 0.35f, 1f)
     private val hotspotSelectedColor = Color(1f, 0.2f, 0.2f, 1f)
+    private val entityHotspotColor = Color(0.05f, 0.05f, 0.05f, 1f)
+    private val entityHotspotAccentColor = Color(0.85f, 0f, 0.85f, 1f)
     private val selectedEntityBoxColor = Color(0.2f, 0.7f, 0.95f, 1f)
     private val editModeBoxColor = Color(1f, 0.6f, 0.2f, 1f)
     private val selectedLineWidth = 8f
@@ -2038,8 +2040,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         drawSelectionHighlights()
         drawDraftLines()
         drawArchitectureHoleGuides()
-        drawArchitectureWallEndpointHitAreas()
-        drawArchitectureConstructionHotspots()
         drawHvacControlPoints()
         drawDimensions()
         toolController.render(shapeRenderer)
@@ -3093,7 +3093,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val markers = hotspotInteractionGroups().flatMap { group ->
             scene.hotspotMarkersWorld(group)
         }
-        if (markers.isEmpty()) {
+        val entityHotspots = collectArchitectureEntityHotspots2D()
+        if (markers.isEmpty() && entityHotspots.isEmpty()) {
             return
         }
         shapeRenderer.projectionMatrix = uiOverlay.stage.camera.combined
@@ -3119,6 +3120,14 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 shapeRenderer.circle(rx, ry, 6f, 20)
             }
         }
+        entityHotspots.forEach { marker ->
+            val screen = activeCamera.project(Vector3(marker.world))
+            if (screen.z < 0f || screen.z > 1f) {
+                return@forEach
+            }
+            shapeRenderer.color = marker.color
+            shapeRenderer.circle(screen.x, screen.y, marker.radiusPx, 20)
+        }
         shapeRenderer.end()
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         markers.forEach { marker ->
@@ -3142,7 +3151,67 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 shapeRenderer.line(x, y, rx, ry)
             }
         }
+        entityHotspots.forEach { marker ->
+            val screen = activeCamera.project(Vector3(marker.world))
+            if (screen.z < 0f || screen.z > 1f) {
+                return@forEach
+            }
+            shapeRenderer.color = Color(0f, 0f, 0f, 0.95f)
+            shapeRenderer.circle(screen.x, screen.y, marker.radiusPx + 1f, 20)
+        }
         shapeRenderer.end()
+    }
+
+    private data class EntityHotspot2D(
+        val world: Vector3,
+        val color: Color,
+        val radiusPx: Float
+    )
+
+    private fun collectArchitectureEntityHotspots2D(): List<EntityHotspot2D> {
+        if (!scene.hasArchitectureElements() || scene.activeGroup() != scene.root) {
+            return emptyList()
+        }
+        val root = scene.root
+        val selected = scene.selectedArchitectureElements(root)
+        if (selected.isEmpty()) {
+            return emptyList()
+        }
+        val wallIds = selected.filter { it.kind == ArchitectureStore.ElementKind.WALL }.map { it.id }
+        val slabIds = selected.filter { it.kind == ArchitectureStore.ElementKind.SLAB }.map { it.id }
+        val frameIds = selected.filter { it.kind == ArchitectureStore.ElementKind.FRAME }.map { it.id }
+
+        val out = mutableListOf<EntityHotspot2D>()
+        scene.architectureWallEndpointHandleMarkersWorld(root).forEach { marker ->
+            out += EntityHotspot2D(Vector3(marker.center), Color(entityHotspotColor), 7f)
+        }
+        scene.architectureSlabEndpointHandleMarkersWorld(root).forEach { marker ->
+            out += EntityHotspot2D(Vector3(marker.center), Color(entityHotspotColor), 7f)
+        }
+        scene.architectureFrameEndpointHandleMarkersWorld(root).forEach { marker ->
+            out += EntityHotspot2D(Vector3(marker.center), Color(entityHotspotColor), 7f)
+        }
+        wallIds.forEach { wallId ->
+            scene.architectureHoleHandleMarkersWorld(root, wallId = wallId).forEach { marker ->
+                out += EntityHotspot2D(Vector3(marker.world), Color(entityHotspotColor), 6f)
+            }
+        }
+        slabIds.forEach { slabId ->
+            scene.architectureSlabConstructionHotspotsWorld(root, slabId = slabId).forEach { marker ->
+                out += EntityHotspot2D(Vector3(marker.world), Color(entityHotspotAccentColor), 6f)
+            }
+        }
+        frameIds.forEach { frameId ->
+            scene.architectureFrameConstructionHotspotsWorld(root, frameId = frameId).forEach { marker ->
+                out += EntityHotspot2D(Vector3(marker.world), Color(entityHotspotAccentColor), 6f)
+            }
+        }
+        wallIds.forEach { wallId ->
+            scene.architectureHoleConstructionHotspotsWorld(root, wallId = wallId).forEach { marker ->
+                out += EntityHotspot2D(Vector3(marker.world), Color(entityHotspotAccentColor), 6f)
+            }
+        }
+        return out
     }
 
     private fun hotspotInteractionGroups(): List<GroupScene.GroupNode> {
