@@ -115,16 +115,23 @@ class GroupScene(
         var instanceAxisV: Vector3,
         var instanceAxisW: Vector3
     ) {
+        var lineStoreOverride: DraftLineStore? = null
+        var faceStoreOverride: DraftFaceStore? = null
+        var dimensionStoreOverride: DraftDimensionStore? = null
+        var textStoreOverride: DraftTextStore? = null
+        val hotspotPositionOverrides: MutableMap<String, Vector3> = linkedMapOf()
+        val hotspotSelectionIds: MutableSet<String> = linkedSetOf()
+
         val children: MutableList<GroupNode> = mutableListOf()
         var parent: GroupNode? = null
         val lineStore: DraftLineStore
-            get() = prototype.lineStore
+            get() = lineStoreOverride ?: prototype.lineStore
         val faceStore: DraftFaceStore
-            get() = prototype.faceStore
+            get() = faceStoreOverride ?: prototype.faceStore
         val dimensionStore: DraftDimensionStore
-            get() = prototype.dimensionStore
+            get() = dimensionStoreOverride ?: prototype.dimensionStore
         val textStore: DraftTextStore
-            get() = prototype.textStore
+            get() = textStoreOverride ?: prototype.textStore
         var name: String
             get() = prototype.name
             set(value) { prototype.name = value }
@@ -155,6 +162,13 @@ class GroupScene(
             get() = prototype.hotspotStore
         val voxelColor: Color
             get() = prototype.voxelColor
+
+        fun hasGeometryOverrides(): Boolean {
+            return lineStoreOverride != null ||
+                faceStoreOverride != null ||
+                dimensionStoreOverride != null ||
+                textStoreOverride != null
+        }
 
         fun addSketchSegment(startLocal: Vector3, endLocal: Vector3) {
             lineStore.addSegment(startLocal, endLocal, autoCleanup = false)
@@ -446,7 +460,7 @@ class GroupScene(
         root.faceStore.clearSelection()
         root.dimensionStore.clearSelection()
         root.textStore.clearSelection()
-        root.hotspotStore.clearSelected()
+        root.hotspotSelectionIds.clear()
         modelArchitectureStore.clearSelectedElement()
         modelHvacStore.clearSelectedElement()
         root.voxelStore?.clearSelection()
@@ -455,7 +469,7 @@ class GroupScene(
             group.faceStore.clearSelection()
             group.dimensionStore.clearSelection()
             group.textStore.clearSelection()
-            group.hotspotStore.clearSelected()
+            group.hotspotSelectionIds.clear()
             group.voxelStore?.clearSelection()
             group.architectureStore?.clearSelectedElement()
             group.hvacStore?.clearSelectedElement()
@@ -779,6 +793,118 @@ class GroupScene(
         return (group ?: activeGroup).hotspotStore
     }
 
+    private fun cloneLineStore(source: DraftLineStore): DraftLineStore {
+        val clone = DraftLineStore()
+        source.getSegments().forEach { segment ->
+            clone.addSegment(segment.start, segment.end, autoCleanup = false)
+        }
+        source.getSelected().forEach { segment ->
+            val matched = clone.getSegments().firstOrNull {
+                it.start.epsilonEquals(segment.start, 1e-6f) && it.end.epsilonEquals(segment.end, 1e-6f)
+            } ?: return@forEach
+            clone.addSelection(matched)
+        }
+        return clone
+    }
+
+    private fun cloneFaceStore(source: DraftFaceStore): DraftFaceStore {
+        val clone = DraftFaceStore(defaultFaceColor)
+        source.getTriangles().forEach { triangle ->
+            clone.addTriangle(triangle.a, triangle.b, triangle.c, source.colorFor(triangle))
+        }
+        source.getSelected().forEach { triangle ->
+            val matched = clone.getTriangles().firstOrNull {
+                it.a.epsilonEquals(triangle.a, 1e-6f) &&
+                    it.b.epsilonEquals(triangle.b, 1e-6f) &&
+                    it.c.epsilonEquals(triangle.c, 1e-6f)
+            } ?: return@forEach
+            clone.addSelection(matched)
+        }
+        return clone
+    }
+
+    private fun cloneDimensionStore(source: DraftDimensionStore): DraftDimensionStore {
+        val clone = DraftDimensionStore()
+        source.getDimensions().forEach { dimension ->
+            clone.addDimension(dimension.start, dimension.end, dimension.offset)
+        }
+        source.getSelected().forEach { dimension ->
+            val matched = clone.getDimensions().firstOrNull {
+                it.start.epsilonEquals(dimension.start, 1e-6f) &&
+                    it.end.epsilonEquals(dimension.end, 1e-6f) &&
+                    it.offset.epsilonEquals(dimension.offset, 1e-6f)
+            } ?: return@forEach
+            clone.addSelection(matched)
+        }
+        return clone
+    }
+
+    private fun cloneTextStore(source: DraftTextStore): DraftTextStore {
+        val clone = DraftTextStore()
+        source.getTexts().forEach { text ->
+            clone.addText(
+                position = text.position,
+                text = text.text,
+                size = text.size,
+                normal = text.normal,
+                axisU = text.axisU,
+                screenText = text.screenText
+            )
+        }
+        source.getSelected().forEach { text ->
+            val matched = clone.getTexts().firstOrNull {
+                it.text == text.text &&
+                    abs(it.size - text.size) <= 1e-6f &&
+                    it.screenText == text.screenText &&
+                    it.position.epsilonEquals(text.position, 1e-6f) &&
+                    it.normal.epsilonEquals(text.normal, 1e-6f) &&
+                    it.axisU.epsilonEquals(text.axisU, 1e-6f)
+            } ?: return@forEach
+            clone.addSelection(matched)
+        }
+        return clone
+    }
+
+    private fun ensureInstanceGeometryOverrides(group: GroupNode) {
+        if (group === root || group === activeGroup) {
+            return
+        }
+        if (group.hasGeometryOverrides()) {
+            return
+        }
+        group.lineStoreOverride = cloneLineStore(group.prototype.lineStore)
+        group.faceStoreOverride = cloneFaceStore(group.prototype.faceStore)
+        group.dimensionStoreOverride = cloneDimensionStore(group.prototype.dimensionStore)
+        group.textStoreOverride = cloneTextStore(group.prototype.textStore)
+        applyChangeListener(group)
+    }
+
+    private fun hotspotVertexKey(point: Vector3): HotspotStore.VertexKey {
+        val eps = 1e-3f
+        return HotspotStore.VertexKey(
+            (point.x / eps).roundToInt(),
+            (point.y / eps).roundToInt(),
+            (point.z / eps).roundToInt()
+        )
+    }
+
+    private fun attachedHotspotVertexKeys(
+        attachedSegments: Set<HotspotStore.SegmentRef>,
+        attachedTriangles: Set<HotspotStore.TriangleRef>
+    ): Set<HotspotStore.VertexKey> {
+        val keys = linkedSetOf<HotspotStore.VertexKey>()
+        attachedSegments.forEach { ref ->
+            keys.add(ref.a)
+            keys.add(ref.b)
+        }
+        attachedTriangles.forEach { ref ->
+            keys.add(ref.a)
+            keys.add(ref.b)
+            keys.add(ref.c)
+        }
+        return keys
+    }
+
     private fun ensureIndependentPrototypeForHotspotGroup(group: GroupNode) {
         if (group === root || group === activeGroup) {
             return
@@ -804,37 +930,10 @@ class GroupScene(
     }
 
     private fun clonePrototypeForInstance(source: ObjectPrototype): ObjectPrototype {
-        val clonedLineStore = DraftLineStore()
-        source.lineStore.getSegments().forEach { segment ->
-            clonedLineStore.addSegment(segment.start, segment.end, autoCleanup = false)
-        }
-
-        val clonedFaceStore = DraftFaceStore(defaultFaceColor)
-        source.faceStore.getTriangles().forEach { triangle ->
-            clonedFaceStore.addTriangle(
-                triangle.a,
-                triangle.b,
-                triangle.c,
-                source.faceStore.colorFor(triangle)
-            )
-        }
-
-        val clonedDimensionStore = DraftDimensionStore()
-        source.dimensionStore.getDimensions().forEach { dimension ->
-            clonedDimensionStore.addDimension(dimension.start, dimension.end, dimension.offset)
-        }
-
-        val clonedTextStore = DraftTextStore()
-        source.textStore.getTexts().forEach { text ->
-            clonedTextStore.addText(
-                position = text.position,
-                text = text.text,
-                size = text.size,
-                normal = text.normal,
-                axisU = text.axisU,
-                screenText = text.screenText
-            )
-        }
+        val clonedLineStore = cloneLineStore(source.lineStore)
+        val clonedFaceStore = cloneFaceStore(source.faceStore)
+        val clonedDimensionStore = cloneDimensionStore(source.dimensionStore)
+        val clonedTextStore = cloneTextStore(source.textStore)
 
         val clonedVoxelStore = source.voxelStore?.let { voxelStore ->
             VoxelStore().also { clone ->
@@ -1399,12 +1498,15 @@ class GroupScene(
     }
 
     fun selectedHotspots(group: GroupNode): Set<HotspotStore.HotspotSelection> {
-        return hotspotStoreFor(group).selectedHotspots()
+        val available = hotspotStoreFor(group).allHotspots().mapTo(mutableSetOf()) { it.id }
+        return group.hotspotSelectionIds
+            .filter { id -> available.contains(id) }
+            .mapTo(linkedSetOf()) { id -> HotspotStore.HotspotSelection(id) }
     }
 
     fun selectedHotspot(group: GroupNode): HotspotStore.Hotspot? {
-        val selection = hotspotStoreFor(group).selectedHotspot() ?: return null
-        return hotspotStoreFor(group).hotspotById(selection.id)
+        val selection = group.hotspotSelectionIds.lastOrNull() ?: return null
+        return hotspotStoreFor(group).hotspotById(selection)
     }
 
     fun hotspotById(group: GroupNode, id: String): HotspotStore.Hotspot? {
@@ -1412,7 +1514,7 @@ class GroupScene(
     }
 
     fun clearHotspotSelection(group: GroupNode) {
-        hotspotStoreFor(group).clearSelected()
+        group.hotspotSelectionIds.clear()
     }
 
     fun addHotspot(
@@ -1420,15 +1522,18 @@ class GroupScene(
         position: Vector3,
         operation: HotspotStore.OperationKind,
         referencePosition: Vector3? = null
-    ): HotspotStore.Hotspot {
-        ensureIndependentPrototypeForHotspotGroup(group)
+    ): HotspotStore.Hotspot? {
+        if (group !== activeGroup) {
+            return null
+        }
         val store = hotspotStoreFor(group)
         val hotspot = store.addHotspot(
             position = Vector3(position),
             operation = operation,
             referencePosition = referencePosition?.let { Vector3(it) }
         )
-        store.setSelected(hotspot.id)
+        group.hotspotSelectionIds.clear()
+        group.hotspotSelectionIds.add(hotspot.id)
         notifyChange()
         return hotspot
     }
@@ -1438,21 +1543,43 @@ class GroupScene(
         id: String,
         mode: HotspotSelectionMode
     ): Boolean {
-        val store = hotspotStoreFor(group)
+        if (hotspotStoreFor(group).hotspotById(id) == null) {
+            if (mode == HotspotSelectionMode.REPLACE) {
+                group.hotspotSelectionIds.clear()
+            }
+            return false
+        }
         return when (mode) {
-            HotspotSelectionMode.REPLACE -> store.setSelected(id)
-            HotspotSelectionMode.ADD -> store.addSelected(id)
-            HotspotSelectionMode.REMOVE -> store.removeSelected(id)
+            HotspotSelectionMode.REPLACE -> {
+                val changed = group.hotspotSelectionIds.size != 1 || !group.hotspotSelectionIds.contains(id)
+                group.hotspotSelectionIds.clear()
+                group.hotspotSelectionIds.add(id)
+                changed
+            }
+            HotspotSelectionMode.ADD -> group.hotspotSelectionIds.add(id)
+            HotspotSelectionMode.REMOVE -> group.hotspotSelectionIds.remove(id)
         }
     }
 
     fun deleteSelectedHotspots(group: GroupNode): Int {
-        val store = hotspotStoreFor(group)
-        if (store.selectedHotspots().isEmpty()) {
+        if (group !== activeGroup) {
             return 0
         }
-        ensureIndependentPrototypeForHotspotGroup(group)
-        val removed = hotspotStoreFor(group).deleteSelected()
+        if (group.hotspotSelectionIds.isEmpty()) {
+            return 0
+        }
+        val store = hotspotStoreFor(group)
+        val selected = group.hotspotSelectionIds.toSet()
+        val removed = store.deleteByIds(selected)
+        group.hotspotSelectionIds.clear()
+        if (removed > 0) {
+            prototypeInstances[group.prototype.id].orEmpty().forEach { instance ->
+                selected.forEach { hotspotId ->
+                    instance.hotspotSelectionIds.remove(hotspotId)
+                    instance.hotspotPositionOverrides.remove(hotspotId)
+                }
+            }
+        }
         if (removed > 0) {
             notifyChange()
         }
@@ -1460,10 +1587,12 @@ class GroupScene(
     }
 
     fun updateHotspotOperation(group: GroupNode, id: String, operation: HotspotStore.OperationKind): Boolean {
+        if (group !== activeGroup) {
+            return false
+        }
         if (hotspotStoreFor(group).hotspotById(id) == null) {
             return false
         }
-        ensureIndependentPrototypeForHotspotGroup(group)
         val updated = hotspotStoreFor(group).updateOperation(id, operation)
         if (updated) {
             notifyChange()
@@ -1472,10 +1601,12 @@ class GroupScene(
     }
 
     fun updateHotspotName(group: GroupNode, id: String, name: String): Boolean {
+        if (group !== activeGroup) {
+            return false
+        }
         if (hotspotStoreFor(group).hotspotById(id) == null) {
             return false
         }
-        ensureIndependentPrototypeForHotspotGroup(group)
         val updated = hotspotStoreFor(group).updateName(id, name)
         if (updated) {
             notifyChange()
@@ -1484,10 +1615,12 @@ class GroupScene(
     }
 
     fun updateHotspotReferencePosition(group: GroupNode, id: String, referencePosition: Vector3?): Boolean {
+        if (group !== activeGroup) {
+            return false
+        }
         if (hotspotStoreFor(group).hotspotById(id) == null) {
             return false
         }
-        ensureIndependentPrototypeForHotspotGroup(group)
         val updated = hotspotStoreFor(group).updateReference(id, referencePosition)
         if (updated) {
             notifyChange()
@@ -1499,7 +1632,12 @@ class GroupScene(
         if (hotspotStoreFor(group).hotspotById(id) == null) {
             return false
         }
-        ensureIndependentPrototypeForHotspotGroup(group)
+        if (group !== activeGroup) {
+            group.hotspotPositionOverrides[id] = Vector3(position)
+            notifyChange()
+            return true
+        }
+        group.hotspotPositionOverrides.remove(id)
         val updated = hotspotStoreFor(group).updatePosition(id, position)
         if (updated) {
             notifyChange()
@@ -1510,20 +1648,23 @@ class GroupScene(
     fun hotspotMarkersWorld(group: GroupNode): List<HotspotMarker> {
         val store = hotspotStoreFor(group)
         return store.allHotspots().map { hotspot ->
+            val localPosition = group.hotspotPositionOverrides[hotspot.id] ?: hotspot.position
             HotspotMarker(
                 id = hotspot.id,
-                world = group.toWorld(hotspot.position),
-                selected = store.isSelected(hotspot.id),
+                world = group.toWorld(localPosition),
+                selected = group.hotspotSelectionIds.contains(hotspot.id),
                 referenceWorld = hotspot.referencePosition?.let { group.toWorld(it) }
             )
         }
     }
 
     fun attachCurrentSelectionToHotspot(group: GroupNode, id: String): Pair<Int, Int>? {
+        if (group !== activeGroup) {
+            return null
+        }
         if (hotspotStoreFor(group).hotspotById(id) == null) {
             return null
         }
-        ensureIndependentPrototypeForHotspotGroup(group)
         val store = hotspotStoreFor(group)
         val hotspot = store.hotspotById(id) ?: return null
         val segmentRefs = group.lineStore.getSelected().map { segment -> store.segmentRef(segment) }.toSet()
@@ -1567,12 +1708,96 @@ class GroupScene(
         if (hotspotStoreFor(group).hotspotById(id) == null) {
             return false
         }
-        ensureIndependentPrototypeForHotspotGroup(group)
+        ensureInstanceGeometryOverrides(group)
         val store = hotspotStoreFor(group)
         val hotspot = store.hotspotById(id) ?: return false
         val targetLocal = group.toLocal(targetWorld)
-        val baseLocal = Vector3(hotspot.position)
+        val baseLocal = Vector3(group.hotspotPositionOverrides[hotspot.id] ?: hotspot.position)
         val referenceLocal = hotspot.referencePosition?.let { Vector3(it) } ?: Vector3()
+        val attachedSegments = hotspot.attachedSegments.toSet()
+        val attachedTriangles = hotspot.attachedTriangles.toSet()
+
+        if (hotspot.operation == HotspotStore.OperationKind.STRETCH) {
+            val delta = Vector3(targetLocal).sub(baseLocal)
+            val hotspotKeys = attachedHotspotVertexKeys(attachedSegments, attachedTriangles)
+            val attachedSegmentObjects = group.lineStore.getSegments()
+                .filter { segment -> attachedSegments.contains(store.segmentRef(segment)) }
+                .toSet()
+            val attachedTriangleObjects = group.faceStore.getTriangles()
+                .filter { triangle -> attachedTriangles.contains(store.triangleRef(triangle)) }
+                .toSet()
+
+            var changed = false
+            val lineStore = group.lineStore
+            lineStore.withChangeSuppressed {
+                lineStore.getSegments().forEach { segment ->
+                    if (attachedSegmentObjects.contains(segment)) {
+                        segment.start.add(delta)
+                        segment.end.add(delta)
+                        changed = true
+                    } else {
+                        val startKey = hotspotVertexKey(segment.start)
+                        if (hotspotKeys.contains(startKey)) {
+                            segment.start.add(delta)
+                            changed = true
+                        }
+                        val endKey = hotspotVertexKey(segment.end)
+                        if (hotspotKeys.contains(endKey)) {
+                            segment.end.add(delta)
+                            changed = true
+                        }
+                    }
+                }
+            }
+
+            val faceStore = group.faceStore
+            faceStore.withChangeSuppressed {
+                faceStore.getTriangles().forEach { tri ->
+                    if (attachedTriangleObjects.contains(tri)) {
+                        tri.a.add(delta)
+                        tri.b.add(delta)
+                        tri.c.add(delta)
+                        changed = true
+                    } else {
+                        val aKey = hotspotVertexKey(tri.a)
+                        if (hotspotKeys.contains(aKey)) {
+                            tri.a.add(delta)
+                            changed = true
+                        }
+                        val bKey = hotspotVertexKey(tri.b)
+                        if (hotspotKeys.contains(bKey)) {
+                            tri.b.add(delta)
+                            changed = true
+                        }
+                        val cKey = hotspotVertexKey(tri.c)
+                        if (hotspotKeys.contains(cKey)) {
+                            tri.c.add(delta)
+                            changed = true
+                        }
+                    }
+                }
+            }
+
+            if (changed) {
+                hotspot.attachedSegments = attachedSegmentObjects.map { segment ->
+                    store.segmentRef(segment)
+                }.toMutableSet()
+                hotspot.attachedTriangles = attachedTriangleObjects.map { triangle ->
+                    store.triangleRef(triangle)
+                }.toMutableSet()
+                lineStore.notifyExternalChange()
+                faceStore.notifyExternalChange()
+            }
+            if (group === activeGroup) {
+                hotspot.position.set(targetLocal)
+            } else {
+                group.hotspotPositionOverrides[hotspot.id] = Vector3(targetLocal)
+            }
+            store.notifyExternalChange()
+            notifyChange()
+            return true
+        }
+
         val transform: (Vector3) -> Vector3 = when (hotspot.operation) {
             HotspotStore.OperationKind.MOVE -> run {
                 val delta = Vector3(targetLocal).sub(baseLocal)
@@ -1588,24 +1813,6 @@ class GroupScene(
                     Vector3(point).sub(referenceLocal).scl(factor).add(referenceLocal)
                 }
             }
-            HotspotStore.OperationKind.STRETCH -> run {
-                val axis = Vector3(baseLocal).sub(referenceLocal)
-                if (axis.len2() <= 1e-8f) {
-                    axis.set(1f, 0f, 0f)
-                } else {
-                    axis.nor()
-                }
-                val baseLen = Vector3(baseLocal).sub(referenceLocal).dot(axis)
-                val targetLen = Vector3(targetLocal).sub(referenceLocal).dot(axis)
-                val factor = if (abs(baseLen) <= 1e-6f) 1f else (targetLen / baseLen).coerceIn(-100f, 100f)
-                return@run { point: Vector3 ->
-                    val delta = Vector3(point).sub(referenceLocal)
-                    val axisLen = delta.dot(axis)
-                    val axial = Vector3(axis).scl(axisLen * factor)
-                    val ortho = delta.sub(Vector3(axis).scl(axisLen))
-                    Vector3(referenceLocal).add(axial).add(ortho)
-                }
-            }
             HotspotStore.OperationKind.ROTATE -> run {
                 val from = Vector3(baseLocal).sub(referenceLocal)
                 val to = Vector3(targetLocal).sub(referenceLocal)
@@ -1619,10 +1826,8 @@ class GroupScene(
                     Vector3(point).sub(referenceLocal).mul(quat).add(referenceLocal)
                 }
             }
+            HotspotStore.OperationKind.STRETCH -> return false
         }
-
-        val attachedSegments = hotspot.attachedSegments.toSet()
-        val attachedTriangles = hotspot.attachedTriangles.toSet()
 
         var changed = false
         if (attachedSegments.isNotEmpty()) {
@@ -1646,7 +1851,11 @@ class GroupScene(
             }
         }
 
-        hotspot.position.set(targetLocal)
+        if (group === activeGroup) {
+            hotspot.position.set(targetLocal)
+        } else {
+            group.hotspotPositionOverrides[hotspot.id] = Vector3(targetLocal)
+        }
         store.notifyExternalChange()
         notifyChange()
         return true
@@ -6389,6 +6598,14 @@ class GroupScene(
             instanceAxisV = Vector3(group.instanceAxisV),
             instanceAxisW = Vector3(group.instanceAxisW)
         )
+        clone.lineStoreOverride = group.lineStoreOverride?.let { cloneLineStore(it) }
+        clone.faceStoreOverride = group.faceStoreOverride?.let { cloneFaceStore(it) }
+        clone.dimensionStoreOverride = group.dimensionStoreOverride?.let { cloneDimensionStore(it) }
+        clone.textStoreOverride = group.textStoreOverride?.let { cloneTextStore(it) }
+        group.hotspotPositionOverrides.forEach { (hotspotId, position) ->
+            clone.hotspotPositionOverrides[hotspotId] = Vector3(position)
+        }
+        clone.hotspotSelectionIds.addAll(group.hotspotSelectionIds)
         group.children.forEach { child ->
             val childClone = cloneGroup(child)
             childClone.parent = clone
@@ -6483,11 +6700,15 @@ class GroupScene(
 
     private fun applyChangeListener(group: GroupNode) {
         val listener = changeListener ?: return
-        group.lineStore.setChangeListener(listener)
-        group.faceStore.setChangeListener(listener)
-        group.dimensionStore.setChangeListener(listener)
-        group.textStore.setChangeListener(listener)
+        group.prototype.lineStore.setChangeListener(listener)
+        group.prototype.faceStore.setChangeListener(listener)
+        group.prototype.dimensionStore.setChangeListener(listener)
+        group.prototype.textStore.setChangeListener(listener)
         group.hotspotStore.setChangeListener(listener)
+        group.lineStoreOverride?.setChangeListener(listener)
+        group.faceStoreOverride?.setChangeListener(listener)
+        group.dimensionStoreOverride?.setChangeListener(listener)
+        group.textStoreOverride?.setChangeListener(listener)
     }
 
     private fun notifyChange() {
@@ -6562,6 +6783,12 @@ class GroupScene(
 
     fun resetScene() {
         root.children.clear()
+        root.lineStoreOverride = null
+        root.faceStoreOverride = null
+        root.dimensionStoreOverride = null
+        root.textStoreOverride = null
+        root.hotspotPositionOverrides.clear()
+        root.hotspotSelectionIds.clear()
         root.lineStore.clearAll()
         root.faceStore.clearAll()
         root.dimensionStore.clearAll()

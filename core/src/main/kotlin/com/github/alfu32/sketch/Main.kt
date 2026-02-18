@@ -3835,6 +3835,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val group = hotspotOwnerGroup(id) ?: scene.activeGroup()
         if (scene.updateHotspotName(group, id, name)) {
             statusModel.message = "Hotspot name updated."
+        } else if (group !== scene.activeGroup()) {
+            statusModel.message = "Enter object editing mode to change hotspot definition."
         }
     }
 
@@ -3842,6 +3844,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val group = hotspotOwnerGroup(id) ?: scene.activeGroup()
         if (scene.updateHotspotOperation(group, id, operation)) {
             statusModel.message = "Hotspot operation updated."
+        } else if (group !== scene.activeGroup()) {
+            statusModel.message = "Enter object editing mode to change hotspot definition."
         }
     }
 
@@ -3853,12 +3857,20 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             return
         }
         val group = hotspotDefaultTargetGroup()
-        scene.addHotspot(
+        if (group !== scene.activeGroup()) {
+            statusModel.message = "Enter object editing mode to add hotspots."
+            return
+        }
+        val hotspot = scene.addHotspot(
             group = group,
             position = group.toLocal(world),
             operation = hotspotSettings.defaultOperation
         )
-        statusModel.message = "Hotspot added."
+        statusModel.message = if (hotspot != null) {
+            "Hotspot added."
+        } else {
+            "Enter object editing mode to add hotspots."
+        }
     }
 
     private fun deleteSelectedHotspots() {
@@ -3873,7 +3885,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private fun deleteSelectedHotspotsAcrossInteractionGroups(): Int {
         var removed = 0
         hotspotInteractionGroups()
-            .distinctBy { it.hotspotStore }
             .forEach { group ->
                 removed += scene.deleteSelectedHotspots(group)
             }
@@ -3885,6 +3896,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val attached = scene.attachCurrentSelectionToHotspot(group, id)
         statusModel.message = if (attached != null) {
             "Attached geometry | edges ${attached.first} faces ${attached.second}"
+        } else if (group !== scene.activeGroup()) {
+            "Enter object editing mode to attach geometry."
         } else {
             "Hotspot not found."
         }
@@ -3904,6 +3917,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val group = hotspotOwnerGroup(id)
         if (group == null) {
             statusModel.message = "Hotspot not found."
+            return
+        }
+        if (group !== scene.activeGroup()) {
+            statusModel.message = "Enter object editing mode to set hotspot reference."
             return
         }
         hotspotReferencePickTargetGroup = group

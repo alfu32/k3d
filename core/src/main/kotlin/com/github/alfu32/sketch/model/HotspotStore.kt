@@ -133,6 +133,20 @@ class HotspotStore {
         return removed
     }
 
+    fun deleteByIds(ids: Set<String>): Int {
+        if (ids.isEmpty()) {
+            return 0
+        }
+        val before = hotspots.size
+        hotspots.removeAll { hotspot -> ids.contains(hotspot.id) }
+        selected.removeAll { selection -> ids.contains(selection.id) }
+        val removed = before - hotspots.size
+        if (removed > 0) {
+            notifyChange()
+        }
+        return removed
+    }
+
     fun clearAll() {
         if (hotspots.isEmpty() && selected.isEmpty()) {
             return

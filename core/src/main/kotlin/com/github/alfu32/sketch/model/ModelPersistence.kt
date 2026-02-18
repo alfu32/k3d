@@ -12,7 +12,7 @@ import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
 object ModelPersistence {
-    private const val VERSION = 12
+    private const val VERSION = 13
 
     fun save(
         file: File,
@@ -1059,6 +1059,11 @@ object ModelPersistence {
         var instanceAxisU: Vec3Dto = Vec3Dto()
         var instanceAxisV: Vec3Dto = Vec3Dto()
         var instanceAxisW: Vec3Dto = Vec3Dto()
+        var hotspotPositions: MutableList<HotspotPositionDto> = mutableListOf()
+        var overrideSegments: MutableList<SegmentDto> = mutableListOf()
+        var overrideFaces: MutableList<FaceDto> = mutableListOf()
+        var overrideDimensions: MutableList<DimensionDto> = mutableListOf()
+        var overrideTexts: MutableList<TextDto> = mutableListOf()
         var children: MutableList<GroupInstanceDto> = mutableListOf()
 
         fun toInstance(
@@ -1089,6 +1094,54 @@ object ModelPersistence {
                 instanceAxisV = instanceAxisV.toVector3(),
                 instanceAxisW = instanceAxisW.toVector3()
             )
+            hotspotPositions.forEach { hotspot ->
+                if (hotspot.id.isNotBlank()) {
+                    group.hotspotPositionOverrides[hotspot.id] = hotspot.position.toVector3()
+                }
+            }
+            if (
+                overrideSegments.isNotEmpty() ||
+                overrideFaces.isNotEmpty() ||
+                overrideDimensions.isNotEmpty() ||
+                overrideTexts.isNotEmpty()
+            ) {
+                val lineOverride = DraftLineStore()
+                overrideSegments.forEach { segment ->
+                    lineOverride.addSegment(segment.start.toVector3(), segment.end.toVector3(), autoCleanup = false)
+                }
+                val faceOverride = DraftFaceStore(defaultColor)
+                overrideFaces.forEach { face ->
+                    faceOverride.addTriangle(
+                        face.a.toVector3(),
+                        face.b.toVector3(),
+                        face.c.toVector3(),
+                        face.color.toColor()
+                    )
+                }
+                val dimensionOverride = DraftDimensionStore()
+                overrideDimensions.forEach { dimension ->
+                    dimensionOverride.addDimension(
+                        dimension.start.toVector3(),
+                        dimension.end.toVector3(),
+                        dimension.offset.toVector3()
+                    )
+                }
+                val textOverride = DraftTextStore()
+                overrideTexts.forEach { text ->
+                    textOverride.addText(
+                        text.position.toVector3(),
+                        text.text,
+                        text.size,
+                        text.normal.toVector3(),
+                        text.axisU.toVector3(),
+                        text.screenText
+                    )
+                }
+                group.lineStoreOverride = lineOverride
+                group.faceStoreOverride = faceOverride
+                group.dimensionStoreOverride = dimensionOverride
+                group.textStoreOverride = textOverride
+            }
             children.forEach { child ->
                 val childGroup = child.toInstance(prototypes, defaultColor)
                 childGroup.parent = group
@@ -1106,9 +1159,48 @@ object ModelPersistence {
                 dto.instanceAxisU = Vec3Dto(group.instanceAxisU)
                 dto.instanceAxisV = Vec3Dto(group.instanceAxisV)
                 dto.instanceAxisW = Vec3Dto(group.instanceAxisW)
+                dto.hotspotPositions = group.hotspotPositionOverrides.map { (hotspotId, position) ->
+                    HotspotPositionDto(hotspotId, Vec3Dto(position))
+                }.toMutableList()
+                if (group.hasGeometryOverrides()) {
+                    dto.overrideSegments = group.lineStore.getSegments().map { seg ->
+                        SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end))
+                    }.toMutableList()
+                    dto.overrideFaces = group.faceStore.getTriangles().map { tri ->
+                        val color = group.faceStore.colorFor(tri)
+                        FaceDto(Vec3Dto(tri.a), Vec3Dto(tri.b), Vec3Dto(tri.c), ColorDto(color))
+                    }.toMutableList()
+                    dto.overrideDimensions = group.dimensionStore.getDimensions().map { dimension ->
+                        DimensionDto(
+                            start = Vec3Dto(dimension.start),
+                            end = Vec3Dto(dimension.end),
+                            offset = Vec3Dto(dimension.offset)
+                        )
+                    }.toMutableList()
+                    dto.overrideTexts = group.textStore.getTexts().map { text ->
+                        TextDto(
+                            position = Vec3Dto(text.position),
+                            text = text.text,
+                            size = text.size,
+                            normal = Vec3Dto(text.normal),
+                            axisU = Vec3Dto(text.axisU),
+                            screenText = text.screenText
+                        )
+                    }.toMutableList()
+                }
                 dto.children = group.children.map { child -> fromInstance(child) }.toMutableList()
                 return dto
             }
+        }
+    }
+
+    class HotspotPositionDto() {
+        var id: String = ""
+        var position: Vec3Dto = Vec3Dto()
+
+        constructor(id: String, position: Vec3Dto) : this() {
+            this.id = id
+            this.position = position
         }
     }
 
