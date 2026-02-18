@@ -109,7 +109,7 @@ class GroupScene(
 
     class GroupNode(
         val id: String,
-        val prototype: ObjectPrototype,
+        var prototype: ObjectPrototype,
         var instanceOrigin: Vector3,
         var instanceAxisU: Vector3,
         var instanceAxisV: Vector3,
@@ -779,6 +779,223 @@ class GroupScene(
         return (group ?: activeGroup).hotspotStore
     }
 
+    private fun ensureIndependentPrototypeForHotspotGroup(group: GroupNode) {
+        if (group === root || group === activeGroup) {
+            return
+        }
+        val currentPrototype = group.prototype
+        val instances = prototypeInstances[currentPrototype.id] ?: return
+        if (instances.size <= 1) {
+            return
+        }
+
+        val newPrototype = clonePrototypeForInstance(currentPrototype)
+        registerPrototype(newPrototype)
+        instances.remove(group)
+        if (instances.isEmpty()) {
+            prototypeInstances.remove(currentPrototype.id)
+            if (currentPrototype.id != rootPrototype.id) {
+                prototypes.remove(currentPrototype.id)
+            }
+        }
+        group.prototype = newPrototype
+        prototypeInstances.getOrPut(newPrototype.id) { mutableSetOf() }.add(group)
+        applyChangeListener(group)
+    }
+
+    private fun clonePrototypeForInstance(source: ObjectPrototype): ObjectPrototype {
+        val clonedLineStore = DraftLineStore()
+        source.lineStore.getSegments().forEach { segment ->
+            clonedLineStore.addSegment(segment.start, segment.end, autoCleanup = false)
+        }
+
+        val clonedFaceStore = DraftFaceStore(defaultFaceColor)
+        source.faceStore.getTriangles().forEach { triangle ->
+            clonedFaceStore.addTriangle(
+                triangle.a,
+                triangle.b,
+                triangle.c,
+                source.faceStore.colorFor(triangle)
+            )
+        }
+
+        val clonedDimensionStore = DraftDimensionStore()
+        source.dimensionStore.getDimensions().forEach { dimension ->
+            clonedDimensionStore.addDimension(dimension.start, dimension.end, dimension.offset)
+        }
+
+        val clonedTextStore = DraftTextStore()
+        source.textStore.getTexts().forEach { text ->
+            clonedTextStore.addText(
+                position = text.position,
+                text = text.text,
+                size = text.size,
+                normal = text.normal,
+                axisU = text.axisU,
+                screenText = text.screenText
+            )
+        }
+
+        val clonedVoxelStore = source.voxelStore?.let { voxelStore ->
+            VoxelStore().also { clone ->
+                voxelStore.all().forEach { voxel ->
+                    clone.set(voxel.x, voxel.y, voxel.z, voxel.color)
+                }
+            }
+        }
+
+        val clonedArchitectureStore = source.architectureStore?.let { architecture ->
+            ArchitectureStore().also { clone ->
+                architecture.allWalls().forEach { wall ->
+                    val addedWall = clone.addWall(
+                        start = wall.start,
+                        end = wall.end,
+                        thickness = wall.thickness,
+                        height = wall.height,
+                        inclinationDeg = wall.inclinationDeg,
+                        exteriorColor = wall.exteriorColor,
+                        interiorColor = wall.interiorColor,
+                        name = wall.name,
+                        id = wall.id
+                    )
+                    wall.holes.forEach { hole ->
+                        clone.addHole(
+                            wallId = addedWall.id,
+                            u0 = hole.u0,
+                            u1 = hole.u1,
+                            v0 = hole.v0,
+                            v1 = hole.v1,
+                            minSize = 0f,
+                            name = hole.name,
+                            id = hole.id
+                        )
+                    }
+                }
+                architecture.allSlabs().forEach { slab ->
+                    val added = clone.addSlab(
+                        minCorner = slab.min,
+                        maxCorner = slab.max,
+                        thickness = slab.thickness,
+                        topColor = slab.topColor,
+                        bottomColor = slab.bottomColor,
+                        sideColor = slab.sideColor,
+                        name = slab.name,
+                        id = slab.id
+                    )
+                    added.axisU.set(slab.axisU)
+                    added.axisV.set(slab.axisV)
+                    added.normal.set(slab.normal)
+                }
+                architecture.allStairs().forEach { stair ->
+                    clone.addStair(
+                        minCorner = stair.min,
+                        maxCorner = stair.max,
+                        contourPoints = stair.contour,
+                        walkingPathPoints = stair.walkingPath,
+                        walkingStart = stair.walkingStart,
+                        walkingEnd = stair.walkingEnd,
+                        height = stair.height,
+                        stepCount = stair.stepCount,
+                        supportThickness = stair.supportThickness,
+                        railLeftEnabled = stair.railLeftEnabled,
+                        railRightEnabled = stair.railRightEnabled,
+                        treadColor = stair.treadColor,
+                        supportColor = stair.supportColor,
+                        name = stair.name,
+                        id = stair.id
+                    )
+                }
+                architecture.allFrames().forEach { frame ->
+                    clone.addFrame(
+                        cornerA = frame.cornerA,
+                        cornerB = frame.cornerB,
+                        normal = frame.normal,
+                        depth = frame.depth,
+                        frameWidth = frame.frameWidth,
+                        kind = frame.kind,
+                        color = frame.color,
+                        glazingEnabled = frame.glazingEnabled,
+                        glazingColor = frame.glazingColor,
+                        name = frame.name,
+                        id = frame.id
+                    )
+                }
+                architecture.selectedElements().forEach { selection ->
+                    clone.addSelectedElement(selection.kind, selection.id)
+                }
+            }
+        }
+
+        val clonedHvacStore = source.hvacStore?.let { hvac ->
+            HvacStore().also { clone ->
+                hvac.allPlumbingRuns().forEach { run ->
+                    clone.addPlumbingRun(
+                        path = run.path,
+                        diameter = run.diameter,
+                        sides = run.sides,
+                        color = run.color,
+                        name = run.name,
+                        id = run.id
+                    )
+                }
+                hvac.allVentilationDucts().forEach { duct ->
+                    clone.addVentilationDuct(
+                        start = duct.start,
+                        end = duct.end,
+                        binormalRef = duct.binormalRef,
+                        autoJoinEnabled = duct.autoJoinEnabled,
+                        width = duct.width,
+                        height = duct.height,
+                        humpHalfSpan = duct.humpHalfSpan,
+                        humpClearance = duct.humpClearance,
+                        color = duct.color,
+                        name = duct.name,
+                        id = duct.id
+                    )
+                }
+                hvac.selectedElements().forEach { selection ->
+                    clone.addSelectedElement(selection.kind, selection.id)
+                }
+            }
+        }
+
+        val clonedHotspotStore = HotspotStore()
+        source.hotspotStore.allHotspots().forEach { hotspot ->
+            clonedHotspotStore.addHotspot(
+                position = hotspot.position,
+                operation = hotspot.operation,
+                referencePosition = hotspot.referencePosition,
+                attachedSegments = hotspot.attachedSegments,
+                attachedTriangles = hotspot.attachedTriangles,
+                name = hotspot.name,
+                id = hotspot.id
+            )
+        }
+        source.hotspotStore.selectedHotspots().forEach { selection ->
+            clonedHotspotStore.addSelected(selection.id)
+        }
+
+        return ObjectPrototype(
+            id = java.util.UUID.randomUUID().toString(),
+            name = source.name,
+            definitionOrigin = Vector3(source.definitionOrigin),
+            definitionAxisU = Vector3(source.definitionAxisU),
+            definitionAxisV = Vector3(source.definitionAxisV),
+            definitionAxisW = Vector3(source.definitionAxisW),
+            gluedToSurface = source.gluedToSurface,
+            kind = source.kind,
+            voxelColor = Color(source.voxelColor),
+            voxelStore = clonedVoxelStore,
+            architectureStore = clonedArchitectureStore,
+            hvacStore = clonedHvacStore,
+            hotspotStore = clonedHotspotStore,
+            lineStore = clonedLineStore,
+            faceStore = clonedFaceStore,
+            dimensionStore = clonedDimensionStore,
+            textStore = clonedTextStore
+        )
+    }
+
     fun addHvacPlumbingRun(
         pathWorld: List<Vector3>,
         diameter: Float,
@@ -1204,6 +1421,7 @@ class GroupScene(
         operation: HotspotStore.OperationKind,
         referencePosition: Vector3? = null
     ): HotspotStore.Hotspot {
+        ensureIndependentPrototypeForHotspotGroup(group)
         val store = hotspotStoreFor(group)
         val hotspot = store.addHotspot(
             position = Vector3(position),
@@ -1229,6 +1447,11 @@ class GroupScene(
     }
 
     fun deleteSelectedHotspots(group: GroupNode): Int {
+        val store = hotspotStoreFor(group)
+        if (store.selectedHotspots().isEmpty()) {
+            return 0
+        }
+        ensureIndependentPrototypeForHotspotGroup(group)
         val removed = hotspotStoreFor(group).deleteSelected()
         if (removed > 0) {
             notifyChange()
@@ -1237,6 +1460,10 @@ class GroupScene(
     }
 
     fun updateHotspotOperation(group: GroupNode, id: String, operation: HotspotStore.OperationKind): Boolean {
+        if (hotspotStoreFor(group).hotspotById(id) == null) {
+            return false
+        }
+        ensureIndependentPrototypeForHotspotGroup(group)
         val updated = hotspotStoreFor(group).updateOperation(id, operation)
         if (updated) {
             notifyChange()
@@ -1245,6 +1472,10 @@ class GroupScene(
     }
 
     fun updateHotspotName(group: GroupNode, id: String, name: String): Boolean {
+        if (hotspotStoreFor(group).hotspotById(id) == null) {
+            return false
+        }
+        ensureIndependentPrototypeForHotspotGroup(group)
         val updated = hotspotStoreFor(group).updateName(id, name)
         if (updated) {
             notifyChange()
@@ -1253,6 +1484,10 @@ class GroupScene(
     }
 
     fun updateHotspotReferencePosition(group: GroupNode, id: String, referencePosition: Vector3?): Boolean {
+        if (hotspotStoreFor(group).hotspotById(id) == null) {
+            return false
+        }
+        ensureIndependentPrototypeForHotspotGroup(group)
         val updated = hotspotStoreFor(group).updateReference(id, referencePosition)
         if (updated) {
             notifyChange()
@@ -1261,6 +1496,10 @@ class GroupScene(
     }
 
     fun updateHotspotPosition(group: GroupNode, id: String, position: Vector3): Boolean {
+        if (hotspotStoreFor(group).hotspotById(id) == null) {
+            return false
+        }
+        ensureIndependentPrototypeForHotspotGroup(group)
         val updated = hotspotStoreFor(group).updatePosition(id, position)
         if (updated) {
             notifyChange()
@@ -1281,6 +1520,10 @@ class GroupScene(
     }
 
     fun attachCurrentSelectionToHotspot(group: GroupNode, id: String): Pair<Int, Int>? {
+        if (hotspotStoreFor(group).hotspotById(id) == null) {
+            return null
+        }
+        ensureIndependentPrototypeForHotspotGroup(group)
         val store = hotspotStoreFor(group)
         val hotspot = store.hotspotById(id) ?: return null
         val segmentRefs = group.lineStore.getSelected().map { segment -> store.segmentRef(segment) }.toSet()
@@ -1321,6 +1564,10 @@ class GroupScene(
     }
 
     fun applyHotspotDrag(group: GroupNode, id: String, targetWorld: Vector3): Boolean {
+        if (hotspotStoreFor(group).hotspotById(id) == null) {
+            return false
+        }
+        ensureIndependentPrototypeForHotspotGroup(group)
         val store = hotspotStoreFor(group)
         val hotspot = store.hotspotById(id) ?: return false
         val targetLocal = group.toLocal(targetWorld)
