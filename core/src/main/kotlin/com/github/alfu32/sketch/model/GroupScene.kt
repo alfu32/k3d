@@ -3532,7 +3532,30 @@ class GroupScene(
             instanceAxisV = Vector3(0f, 1f, 0f),
             instanceAxisW = Vector3(0f, 0f, 1f)
         )
-        val template = prototypeInstances[prototype.id]?.firstOrNull()
+        val template = prototypeInstances[prototype.id]
+            ?.maxByOrNull { candidate ->
+                val attachmentScore =
+                    candidate.hotspotAttachedSegmentOverrides.values.sumOf { refs -> refs.size } +
+                        candidate.hotspotAttachedTriangleOverrides.values.sumOf { refs -> refs.size }
+                val geometryScore = if (candidate.hasGeometryOverrides()) 1000 else 0
+                val childScore = candidate.children.size * 10
+                attachmentScore + geometryScore + childScore
+            }
+        if (template != null) {
+            instance.lineStoreOverride = template.lineStoreOverride?.let { cloneLineStore(it) }
+            instance.faceStoreOverride = template.faceStoreOverride?.let { cloneFaceStore(it) }
+            instance.dimensionStoreOverride = template.dimensionStoreOverride?.let { cloneDimensionStore(it) }
+            instance.textStoreOverride = template.textStoreOverride?.let { cloneTextStore(it) }
+            template.hotspotPositionOverrides.forEach { (hotspotId, position) ->
+                instance.hotspotPositionOverrides[hotspotId] = Vector3(position)
+            }
+            template.hotspotAttachedSegmentOverrides.forEach { (hotspotId, refs) ->
+                instance.hotspotAttachedSegmentOverrides[hotspotId] = refs.toMutableSet()
+            }
+            template.hotspotAttachedTriangleOverrides.forEach { (hotspotId, refs) ->
+                instance.hotspotAttachedTriangleOverrides[hotspotId] = refs.toMutableSet()
+            }
+        }
         template?.children?.forEach { child ->
             val childClone = cloneGroup(child)
             childClone.parent = instance

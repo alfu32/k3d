@@ -237,6 +237,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private var consoleRuntime: ConsoleGroovyRuntime? = null
     private var hotspotReferencePickTargetId: String? = null
     private var hotspotReferencePickTargetGroup: GroupScene.GroupNode? = null
+    private var hotspotAddPickTargetGroup: GroupScene.GroupNode? = null
     private var mcpConsoleRuntime: ConsoleGroovyRuntime? = null
     private var mcpConsoleTui: ConsoleTui? = null
     private var consoleTerminal: TerminalController? = null
@@ -958,6 +959,27 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                     hotspotReferencePickTargetGroup = null
                     return true
                 }
+                val addPickGroup = hotspotAddPickTargetGroup
+                if (addPickGroup != null && button == Input.Buttons.LEFT) {
+                    val snap = distanceOverrideSnap ?: snapper.compute(screenX, screenY)
+                    val world = snap.world
+                    if (snap.valid && world != null) {
+                        val hotspot = scene.addHotspot(
+                            group = addPickGroup,
+                            position = addPickGroup.toLocal(world),
+                            operation = hotspotSettings.defaultOperation
+                        )
+                        statusModel.message = if (hotspot != null) {
+                            "Hotspot added."
+                        } else {
+                            "Failed to add hotspot."
+                        }
+                    } else {
+                        statusModel.message = "Hotspot add canceled: invalid point."
+                    }
+                    hotspotAddPickTargetGroup = null
+                    return true
+                }
                 return false
             }
 
@@ -966,6 +988,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                     hotspotReferencePickTargetId = null
                     hotspotReferencePickTargetGroup = null
                     statusModel.message = "Hotspot reference pick canceled."
+                    return true
+                }
+                if (keycode == Input.Keys.ESCAPE && hotspotAddPickTargetGroup != null) {
+                    hotspotAddPickTargetGroup = null
+                    statusModel.message = "Hotspot add canceled."
                     return true
                 }
                 return uiOverlay.isUiCapturingInputByPointer()
@@ -3788,9 +3815,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val selectedText = if (selectedTexts.size == 1) selectedTexts.first() else null
         val selectedVoxels = scene.selectedVoxels(group).size
         val selectedHotspots = hotspotInteractionGroups()
-            .map { it.hotspotStore }
-            .toSet()
-            .sumOf { it.selectedHotspots().size }
+            .sumOf { target -> scene.selectedHotspots(target).size }
         return SketchUiOverlay.SelectionInfo(
             edgeCount = activeLineStore().getSelected().size,
             faceCount = activeFaceStore().getSelected().size,
@@ -3850,27 +3875,15 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun addHotspotAtCursor() {
-        val snap = lastSnap
-        val world = snap?.world
-        if (snap?.valid != true || world == null) {
-            statusModel.message = "Point at geometry to place hotspot."
-            return
-        }
         val group = hotspotDefaultTargetGroup()
         if (group !== scene.activeGroup()) {
             statusModel.message = "Enter object editing mode to add hotspots."
             return
         }
-        val hotspot = scene.addHotspot(
-            group = group,
-            position = group.toLocal(world),
-            operation = hotspotSettings.defaultOperation
-        )
-        statusModel.message = if (hotspot != null) {
-            "Hotspot added."
-        } else {
-            "Enter object editing mode to add hotspots."
-        }
+        hotspotReferencePickTargetId = null
+        hotspotReferencePickTargetGroup = null
+        hotspotAddPickTargetGroup = group
+        statusModel.message = "Pick hotspot position."
     }
 
     private fun deleteSelectedHotspots() {
@@ -3923,6 +3936,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             statusModel.message = "Enter object editing mode to set hotspot reference."
             return
         }
+        hotspotAddPickTargetGroup = null
         hotspotReferencePickTargetGroup = group
         hotspotReferencePickTargetId = id
         statusModel.message = "Pick reference point for hotspot."
