@@ -1060,6 +1060,8 @@ object ModelPersistence {
         var instanceAxisV: Vec3Dto = Vec3Dto()
         var instanceAxisW: Vec3Dto = Vec3Dto()
         var hotspotPositions: MutableList<HotspotPositionDto> = mutableListOf()
+        var hotspotSegmentAttachments: MutableList<HotspotSegmentAttachmentsDto> = mutableListOf()
+        var hotspotTriangleAttachments: MutableList<HotspotTriangleAttachmentsDto> = mutableListOf()
         var overrideSegments: MutableList<SegmentDto> = mutableListOf()
         var overrideFaces: MutableList<FaceDto> = mutableListOf()
         var overrideDimensions: MutableList<DimensionDto> = mutableListOf()
@@ -1097,6 +1099,16 @@ object ModelPersistence {
             hotspotPositions.forEach { hotspot ->
                 if (hotspot.id.isNotBlank()) {
                     group.hotspotPositionOverrides[hotspot.id] = hotspot.position.toVector3()
+                }
+            }
+            hotspotSegmentAttachments.forEach { dto ->
+                if (dto.id.isNotBlank()) {
+                    group.hotspotAttachedSegmentOverrides[dto.id] = dto.refs.map { it.toSegmentRef() }.toMutableSet()
+                }
+            }
+            hotspotTriangleAttachments.forEach { dto ->
+                if (dto.id.isNotBlank()) {
+                    group.hotspotAttachedTriangleOverrides[dto.id] = dto.refs.map { it.toTriangleRef() }.toMutableSet()
                 }
             }
             if (
@@ -1162,6 +1174,29 @@ object ModelPersistence {
                 dto.hotspotPositions = group.hotspotPositionOverrides.map { (hotspotId, position) ->
                     HotspotPositionDto(hotspotId, Vec3Dto(position))
                 }.toMutableList()
+                dto.hotspotSegmentAttachments = group.hotspotAttachedSegmentOverrides.map { (hotspotId, refs) ->
+                    HotspotSegmentAttachmentsDto(
+                        id = hotspotId,
+                        refs = refs.map { ref ->
+                            HotspotSegmentRefDto(
+                                a = HotspotVertexKeyDto(ref.a.x, ref.a.y, ref.a.z),
+                                b = HotspotVertexKeyDto(ref.b.x, ref.b.y, ref.b.z)
+                            )
+                        }.toMutableList()
+                    )
+                }.toMutableList()
+                dto.hotspotTriangleAttachments = group.hotspotAttachedTriangleOverrides.map { (hotspotId, refs) ->
+                    HotspotTriangleAttachmentsDto(
+                        id = hotspotId,
+                        refs = refs.map { ref ->
+                            HotspotTriangleRefDto(
+                                a = HotspotVertexKeyDto(ref.a.x, ref.a.y, ref.a.z),
+                                b = HotspotVertexKeyDto(ref.b.x, ref.b.y, ref.b.z),
+                                c = HotspotVertexKeyDto(ref.c.x, ref.c.y, ref.c.z)
+                            )
+                        }.toMutableList()
+                    )
+                }.toMutableList()
                 if (group.hasGeometryOverrides()) {
                     dto.overrideSegments = group.lineStore.getSegments().map { seg ->
                         SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end))
@@ -1201,6 +1236,26 @@ object ModelPersistence {
         constructor(id: String, position: Vec3Dto) : this() {
             this.id = id
             this.position = position
+        }
+    }
+
+    class HotspotSegmentAttachmentsDto() {
+        var id: String = ""
+        var refs: MutableList<HotspotSegmentRefDto> = mutableListOf()
+
+        constructor(id: String, refs: MutableList<HotspotSegmentRefDto>) : this() {
+            this.id = id
+            this.refs = refs
+        }
+    }
+
+    class HotspotTriangleAttachmentsDto() {
+        var id: String = ""
+        var refs: MutableList<HotspotTriangleRefDto> = mutableListOf()
+
+        constructor(id: String, refs: MutableList<HotspotTriangleRefDto>) : this() {
+            this.id = id
+            this.refs = refs
         }
     }
 
