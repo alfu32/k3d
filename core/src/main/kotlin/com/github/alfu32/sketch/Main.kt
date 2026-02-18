@@ -406,6 +406,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::deleteSelection,
             ::flipSelectedFaces,
             ::voxelizeSelectedFaces,
+            ::addHotspotAtCursor,
             ::selectionInfo,
             ::updateSelectedText,
             ::updateSelectedTextSize,

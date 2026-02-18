@@ -48,6 +48,7 @@ class SketchUiOverlay(
     private val deleteSelectionAction: () -> Unit,
     private val flipFacesAction: () -> Unit,
     private val voxelizeFacesAction: () -> Unit,
+    private val hotspotCreateAction: () -> Unit,
     private val selectionInfoProvider: () -> SelectionInfo,
     private val selectionTextChanged: (String, String) -> Unit,
     private val selectionTextSizeChanged: (String, Float) -> Unit,
@@ -941,6 +942,13 @@ class SketchUiOverlay(
             flipFacesAction()
         }
 
+        val hotspotButton = createActionButton(
+            label = "Add Hotspot",
+            icon = iconFor("hotspot", createActionIconDrawable(Color(0.2f, 0.55f, 0.95f, 1f)))
+        ) {
+            hotspotCreateAction()
+        }
+
         val lightingButton = createActionButton(
             label = "Lighting",
             icon = iconFor("lighting", createActionIconDrawable(Color(0.95f, 0.85f, 0.2f, 1f)))
@@ -958,7 +966,7 @@ class SketchUiOverlay(
         ) {
             togglePluginManager()
         }
-        val buttons = listOf(cleanupButton, colorButton, deleteButton, flipButton, lightingButton, pluginButton)
+        val buttons = listOf(cleanupButton, colorButton, deleteButton, flipButton, hotspotButton, lightingButton, pluginButton)
         buttons.forEach { button ->
             content.add(button).size(toolbarButtonSize, toolbarButtonSize)
         }
