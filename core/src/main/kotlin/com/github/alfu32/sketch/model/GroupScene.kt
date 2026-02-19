@@ -798,7 +798,7 @@ class GroupScene(
     private fun cloneLineStore(source: DraftLineStore): DraftLineStore {
         val clone = DraftLineStore()
         source.getSegments().forEach { segment ->
-            clone.addSegment(segment.start, segment.end, autoCleanup = false)
+            clone.addSegment(segment.start, segment.end, autoCleanup = false, id = segment.id)
         }
         source.getSelected().forEach { segment ->
             val matched = clone.getSegments().firstOrNull {
@@ -812,7 +812,13 @@ class GroupScene(
     private fun cloneFaceStore(source: DraftFaceStore): DraftFaceStore {
         val clone = DraftFaceStore(defaultFaceColor)
         source.getTriangles().forEach { triangle ->
-            clone.addTriangle(triangle.a, triangle.b, triangle.c, source.colorFor(triangle))
+            clone.addTriangle(
+                triangle.a,
+                triangle.b,
+                triangle.c,
+                source.colorFor(triangle),
+                id = triangle.id
+            )
         }
         source.getSelected().forEach { triangle ->
             val matched = clone.getTriangles().firstOrNull {
@@ -920,6 +926,42 @@ class GroupScene(
     ): Set<HotspotStore.TriangleRef> {
         return group.hotspotAttachedTriangleOverrides[hotspot.id] ?: hotspot.attachedTriangles
     }
+
+    private fun matchesSegmentRef(
+        store: HotspotStore,
+        segment: DraftLineStore.Segment,
+        ref: HotspotStore.SegmentRef
+    ): Boolean {
+        if (ref.id.isNotBlank()) {
+            return segment.id == ref.id
+        }
+        val segmentRef = store.segmentRef(segment)
+        return segmentRef.a == ref.a && segmentRef.b == ref.b
+    }
+
+    private fun matchesTriangleRef(
+        store: HotspotStore,
+        triangle: DraftFaceStore.Triangle,
+        ref: HotspotStore.TriangleRef
+    ): Boolean {
+        if (ref.id.isNotBlank()) {
+            return triangle.id == ref.id
+        }
+        val triangleRef = store.triangleRef(triangle)
+        return triangleRef.a == ref.a && triangleRef.b == ref.b && triangleRef.c == ref.c
+    }
+
+    private fun containsSegmentRef(
+        store: HotspotStore,
+        refs: Set<HotspotStore.SegmentRef>,
+        segment: DraftLineStore.Segment
+    ): Boolean = refs.any { ref -> matchesSegmentRef(store, segment, ref) }
+
+    private fun containsTriangleRef(
+        store: HotspotStore,
+        refs: Set<HotspotStore.TriangleRef>,
+        triangle: DraftFaceStore.Triangle
+    ): Boolean = refs.any { ref -> matchesTriangleRef(store, triangle, ref) }
 
     private fun ensureIndependentPrototypeForHotspotGroup(group: GroupNode) {
         if (group === root || group === activeGroup) {
@@ -1711,8 +1753,7 @@ class GroupScene(
         }
         var lineCount = 0
         group.lineStore.getSegments().forEach { segment ->
-            val ref = store.segmentRef(segment)
-            if (attachedSegments.contains(ref)) {
+            if (containsSegmentRef(store, attachedSegments, segment)) {
                 if (group.lineStore.addSelection(segment)) {
                     lineCount++
                 }
@@ -1720,8 +1761,7 @@ class GroupScene(
         }
         var faceCount = 0
         group.faceStore.getTriangles().forEach { triangle ->
-            val ref = store.triangleRef(triangle)
-            if (attachedTriangles.contains(ref)) {
+            if (containsTriangleRef(store, attachedTriangles, triangle)) {
                 if (group.faceStore.addSelection(triangle)) {
                     faceCount++
                 }
@@ -1745,12 +1785,16 @@ class GroupScene(
 
         if (hotspot.operation == HotspotStore.OperationKind.STRETCH) {
             val delta = Vector3(targetLocal).sub(baseLocal)
-            val hotspotKeys = attachedHotspotVertexKeys(attachedSegments, attachedTriangles)
+            val hotspotKeys = if (attachedSegments.isEmpty() && attachedTriangles.isEmpty()) {
+                linkedSetOf(hotspotVertexKey(baseLocal))
+            } else {
+                attachedHotspotVertexKeys(attachedSegments, attachedTriangles)
+            }
             val attachedSegmentObjects = group.lineStore.getSegments()
-                .filter { segment -> attachedSegments.contains(store.segmentRef(segment)) }
+                .filter { segment -> containsSegmentRef(store, attachedSegments, segment) }
                 .toSet()
             val attachedTriangleObjects = group.faceStore.getTriangles()
-                .filter { triangle -> attachedTriangles.contains(store.triangleRef(triangle)) }
+                .filter { triangle -> containsTriangleRef(store, attachedTriangles, triangle) }
                 .toSet()
 
             var changed = false
@@ -1865,7 +1909,7 @@ class GroupScene(
         var changed = false
         if (attachedSegments.isNotEmpty()) {
             val targetSegments = group.lineStore.getSegments()
-                .filter { segment -> attachedSegments.contains(store.segmentRef(segment)) }
+                .filter { segment -> containsSegmentRef(store, attachedSegments, segment) }
                 .toSet()
             if (targetSegments.isNotEmpty()) {
                 val mapped = group.lineStore.transformSegments(targetSegments, transform)
@@ -1880,7 +1924,7 @@ class GroupScene(
         }
         if (attachedTriangles.isNotEmpty()) {
             val targetTriangles = group.faceStore.getTriangles()
-                .filter { triangle -> attachedTriangles.contains(store.triangleRef(triangle)) }
+                .filter { triangle -> containsTriangleRef(store, attachedTriangles, triangle) }
                 .toSet()
             if (targetTriangles.isNotEmpty()) {
                 val mapped = group.faceStore.transformTriangles(targetTriangles, transform)
@@ -1891,6 +1935,44 @@ class GroupScene(
                     group.hotspotAttachedTriangleOverrides[hotspot.id] = updatedTriangles
                 }
                 changed = true
+            }
+        }
+
+        if (attachedSegments.isEmpty() && attachedTriangles.isEmpty()) {
+            val anchorKey = hotspotVertexKey(baseLocal)
+            val lineStore = group.lineStore
+            lineStore.withChangeSuppressed {
+                lineStore.getSegments().forEach { segment ->
+                    if (hotspotVertexKey(segment.start) == anchorKey) {
+                        segment.start.set(transform(Vector3(segment.start)))
+                        changed = true
+                    }
+                    if (hotspotVertexKey(segment.end) == anchorKey) {
+                        segment.end.set(transform(Vector3(segment.end)))
+                        changed = true
+                    }
+                }
+            }
+            val faceStore = group.faceStore
+            faceStore.withChangeSuppressed {
+                faceStore.getTriangles().forEach { tri ->
+                    if (hotspotVertexKey(tri.a) == anchorKey) {
+                        tri.a.set(transform(Vector3(tri.a)))
+                        changed = true
+                    }
+                    if (hotspotVertexKey(tri.b) == anchorKey) {
+                        tri.b.set(transform(Vector3(tri.b)))
+                        changed = true
+                    }
+                    if (hotspotVertexKey(tri.c) == anchorKey) {
+                        tri.c.set(transform(Vector3(tri.c)))
+                        changed = true
+                    }
+                }
+            }
+            if (changed) {
+                lineStore.notifyExternalChange()
+                faceStore.notifyExternalChange()
             }
         }
 
@@ -3532,32 +3614,11 @@ class GroupScene(
             instanceAxisV = Vector3(0f, 1f, 0f),
             instanceAxisW = Vector3(0f, 0f, 1f)
         )
+        // New instances start from prototype defaults; runtime overrides are per-instance and not copied.
         val template = prototypeInstances[prototype.id]
-            ?.maxByOrNull { candidate ->
-                val attachmentScore =
-                    candidate.hotspotAttachedSegmentOverrides.values.sumOf { refs -> refs.size } +
-                        candidate.hotspotAttachedTriangleOverrides.values.sumOf { refs -> refs.size }
-                val geometryScore = if (candidate.hasGeometryOverrides()) 1000 else 0
-                val childScore = candidate.children.size * 10
-                attachmentScore + geometryScore + childScore
-            }
-        if (template != null) {
-            instance.lineStoreOverride = template.lineStoreOverride?.let { cloneLineStore(it) }
-            instance.faceStoreOverride = template.faceStoreOverride?.let { cloneFaceStore(it) }
-            instance.dimensionStoreOverride = template.dimensionStoreOverride?.let { cloneDimensionStore(it) }
-            instance.textStoreOverride = template.textStoreOverride?.let { cloneTextStore(it) }
-            template.hotspotPositionOverrides.forEach { (hotspotId, position) ->
-                instance.hotspotPositionOverrides[hotspotId] = Vector3(position)
-            }
-            template.hotspotAttachedSegmentOverrides.forEach { (hotspotId, refs) ->
-                instance.hotspotAttachedSegmentOverrides[hotspotId] = refs.toMutableSet()
-            }
-            template.hotspotAttachedTriangleOverrides.forEach { (hotspotId, refs) ->
-                instance.hotspotAttachedTriangleOverrides[hotspotId] = refs.toMutableSet()
-            }
-        }
+            ?.maxByOrNull { candidate -> candidate.children.size }
         template?.children?.forEach { child ->
-            val childClone = cloneGroup(child)
+            val childClone = cloneGroupStructure(child)
             childClone.parent = instance
             instance.children.add(childClone)
         }
@@ -3607,6 +3668,37 @@ class GroupScene(
         }
         root.lineStore.getSegments().forEach { seg ->
             consumer(Vector3(seg.start), Vector3(seg.end))
+        }
+    }
+
+    fun collectActivePrototypeWorldTriangles(consumer: (Vector3, Vector3, Vector3, Color) -> Unit) {
+        if (!isEditing()) {
+            return
+        }
+        val group = activeGroup
+        if (!group.hasGeometryOverrides()) {
+            return
+        }
+        group.prototype.faceStore.getTriangles().forEach { tri ->
+            consumer(
+                group.toWorld(tri.a),
+                group.toWorld(tri.b),
+                group.toWorld(tri.c),
+                group.prototype.faceStore.colorFor(tri)
+            )
+        }
+    }
+
+    fun collectActivePrototypeWorldLines(consumer: (Vector3, Vector3) -> Unit) {
+        if (!isEditing()) {
+            return
+        }
+        val group = activeGroup
+        if (!group.hasGeometryOverrides()) {
+            return
+        }
+        group.prototype.lineStore.getSegments().forEach { seg ->
+            consumer(group.toWorld(seg.start), group.toWorld(seg.end))
         }
     }
 
@@ -6680,6 +6772,24 @@ class GroupScene(
         clone.hotspotSelectionIds.addAll(group.hotspotSelectionIds)
         group.children.forEach { child ->
             val childClone = cloneGroup(child)
+            childClone.parent = clone
+            clone.children.add(childClone)
+        }
+        applyChangeListener(clone)
+        return clone
+    }
+
+    private fun cloneGroupStructure(group: GroupNode): GroupNode {
+        val clone = GroupNode(
+            id = java.util.UUID.randomUUID().toString(),
+            prototype = group.prototype,
+            instanceOrigin = Vector3(group.instanceOrigin),
+            instanceAxisU = Vector3(group.instanceAxisU),
+            instanceAxisV = Vector3(group.instanceAxisV),
+            instanceAxisW = Vector3(group.instanceAxisW)
+        )
+        group.children.forEach { child ->
+            val childClone = cloneGroupStructure(child)
             childClone.parent = clone
             clone.children.add(childClone)
         }

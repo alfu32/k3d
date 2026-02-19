@@ -54,13 +54,13 @@ object ModelPersistence {
                 if (prototype.id == rootPrototypeId) {
                     dto.segments = prototype.lineStore.getSegments()
                         .filterNot { scene.isGeneratedArchitectureSegment(it) || scene.isGeneratedHvacSegment(it) }
-                        .map { seg -> SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end)) }
+                        .map { seg -> SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end), seg.id) }
                         .toMutableList()
                     dto.faces = prototype.faceStore.getTriangles()
                         .filterNot { scene.isGeneratedArchitectureTriangle(it) || scene.isGeneratedHvacTriangle(it) }
                         .map { tri ->
                             val color = prototype.faceStore.colorFor(tri)
-                            FaceDto(Vec3Dto(tri.a), Vec3Dto(tri.b), Vec3Dto(tri.c), ColorDto(color))
+                            FaceDto(Vec3Dto(tri.a), Vec3Dto(tri.b), Vec3Dto(tri.c), ColorDto(color), tri.id)
                         }
                         .toMutableList()
                 }
@@ -167,10 +167,16 @@ object ModelPersistence {
             scene.root.lineStore.clearAll()
             scene.root.faceStore.clearAll()
             loaded.lineStore.getSegments().forEach { seg ->
-                scene.root.lineStore.addSegment(seg.start, seg.end, autoCleanup = false)
+                scene.root.lineStore.addSegment(seg.start, seg.end, autoCleanup = false, id = seg.id)
             }
             loaded.faceStore.getTriangles().forEach { tri ->
-                scene.root.faceStore.addTriangle(tri.a, tri.b, tri.c, loaded.faceStore.colorFor(tri))
+                scene.root.faceStore.addTriangle(
+                    tri.a,
+                    tri.b,
+                    tri.c,
+                    loaded.faceStore.colorFor(tri),
+                    id = tri.id
+                )
             }
             scene.root.children.clear()
             loaded.children.forEach { child ->
@@ -180,14 +186,20 @@ object ModelPersistence {
             }
         } else {
             snapshot.segments.forEach { segment ->
-                scene.root.lineStore.addSegment(segment.start.toVector3(), segment.end.toVector3(), autoCleanup = false)
+                scene.root.lineStore.addSegment(
+                    segment.start.toVector3(),
+                    segment.end.toVector3(),
+                    autoCleanup = false,
+                    id = segment.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                )
             }
             snapshot.faces.forEach { face ->
                 scene.root.faceStore.addTriangle(
                     face.a.toVector3(),
                     face.b.toVector3(),
                     face.c.toVector3(),
-                    face.color.toColor()
+                    face.color.toColor(),
+                    id = face.id.ifBlank { java.util.UUID.randomUUID().toString() }
                 )
             }
         }
@@ -352,14 +364,20 @@ object ModelPersistence {
 
         private fun applyGeometry(prototype: GroupScene.ObjectPrototype, defaultColor: Color? = null) {
             segments.forEach { segment ->
-                prototype.lineStore.addSegment(segment.start.toVector3(), segment.end.toVector3(), autoCleanup = false)
+                prototype.lineStore.addSegment(
+                    segment.start.toVector3(),
+                    segment.end.toVector3(),
+                    autoCleanup = false,
+                    id = segment.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                )
             }
             faces.forEach { face ->
                 prototype.faceStore.addTriangle(
                     face.a.toVector3(),
                     face.b.toVector3(),
                     face.c.toVector3(),
-                    face.color.toColor()
+                    face.color.toColor(),
+                    id = face.id.ifBlank { java.util.UUID.randomUUID().toString() }
                 )
             }
             dimensions.forEach { dimension ->
@@ -642,12 +660,14 @@ object ModelPersistence {
                         referencePosition = hotspot.referencePosition?.let { Vec3Dto(it) },
                         attachedSegments = hotspot.attachedSegments.map { ref ->
                             HotspotSegmentRefDto(
+                                id = ref.id,
                                 a = HotspotVertexKeyDto(ref.a.x, ref.a.y, ref.a.z),
                                 b = HotspotVertexKeyDto(ref.b.x, ref.b.y, ref.b.z)
                             )
                         }.toMutableList(),
                         attachedTriangles = hotspot.attachedTriangles.map { ref ->
                             HotspotTriangleRefDto(
+                                id = ref.id,
                                 a = HotspotVertexKeyDto(ref.a.x, ref.a.y, ref.a.z),
                                 b = HotspotVertexKeyDto(ref.b.x, ref.b.y, ref.b.z),
                                 c = HotspotVertexKeyDto(ref.c.x, ref.c.y, ref.c.z)
@@ -656,11 +676,11 @@ object ModelPersistence {
                     )
                 }.toMutableList()
                 dto.segments = prototype.lineStore.getSegments().map { seg ->
-                    SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end))
+                    SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end), seg.id)
                 }.toMutableList()
                 dto.faces = prototype.faceStore.getTriangles().map { tri ->
                     val color = prototype.faceStore.colorFor(tri)
-                    FaceDto(Vec3Dto(tri.a), Vec3Dto(tri.b), Vec3Dto(tri.c), ColorDto(color))
+                    FaceDto(Vec3Dto(tri.a), Vec3Dto(tri.b), Vec3Dto(tri.c), ColorDto(color), tri.id)
                 }.toMutableList()
                 dto.dimensions = prototype.dimensionStore.getDimensions().map { dim ->
                     DimensionDto(Vec3Dto(dim.start), Vec3Dto(dim.end), Vec3Dto(dim.offset))
@@ -961,30 +981,34 @@ object ModelPersistence {
     }
 
     class HotspotSegmentRefDto() {
+        var id: String = ""
         var a: HotspotVertexKeyDto = HotspotVertexKeyDto()
         var b: HotspotVertexKeyDto = HotspotVertexKeyDto()
 
-        constructor(a: HotspotVertexKeyDto, b: HotspotVertexKeyDto) : this() {
+        constructor(id: String, a: HotspotVertexKeyDto, b: HotspotVertexKeyDto) : this() {
+            this.id = id
             this.a = a
             this.b = b
         }
 
-        fun toSegmentRef(): HotspotStore.SegmentRef = HotspotStore.SegmentRef(a.toVertexKey(), b.toVertexKey())
+        fun toSegmentRef(): HotspotStore.SegmentRef = HotspotStore.SegmentRef(id, a.toVertexKey(), b.toVertexKey())
     }
 
     class HotspotTriangleRefDto() {
+        var id: String = ""
         var a: HotspotVertexKeyDto = HotspotVertexKeyDto()
         var b: HotspotVertexKeyDto = HotspotVertexKeyDto()
         var c: HotspotVertexKeyDto = HotspotVertexKeyDto()
 
-        constructor(a: HotspotVertexKeyDto, b: HotspotVertexKeyDto, c: HotspotVertexKeyDto) : this() {
+        constructor(id: String, a: HotspotVertexKeyDto, b: HotspotVertexKeyDto, c: HotspotVertexKeyDto) : this() {
+            this.id = id
             this.a = a
             this.b = b
             this.c = c
         }
 
         fun toTriangleRef(): HotspotStore.TriangleRef =
-            HotspotStore.TriangleRef(a.toVertexKey(), b.toVertexKey(), c.toVertexKey())
+            HotspotStore.TriangleRef(id, a.toVertexKey(), b.toVertexKey(), c.toVertexKey())
     }
 
     class HotspotDto() {
@@ -1119,7 +1143,12 @@ object ModelPersistence {
             ) {
                 val lineOverride = DraftLineStore()
                 overrideSegments.forEach { segment ->
-                    lineOverride.addSegment(segment.start.toVector3(), segment.end.toVector3(), autoCleanup = false)
+                    lineOverride.addSegment(
+                        segment.start.toVector3(),
+                        segment.end.toVector3(),
+                        autoCleanup = false,
+                        id = segment.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                    )
                 }
                 val faceOverride = DraftFaceStore(defaultColor)
                 overrideFaces.forEach { face ->
@@ -1127,7 +1156,8 @@ object ModelPersistence {
                         face.a.toVector3(),
                         face.b.toVector3(),
                         face.c.toVector3(),
-                        face.color.toColor()
+                        face.color.toColor(),
+                        id = face.id.ifBlank { java.util.UUID.randomUUID().toString() }
                     )
                 }
                 val dimensionOverride = DraftDimensionStore()
@@ -1179,6 +1209,7 @@ object ModelPersistence {
                         id = hotspotId,
                         refs = refs.map { ref ->
                             HotspotSegmentRefDto(
+                                id = ref.id,
                                 a = HotspotVertexKeyDto(ref.a.x, ref.a.y, ref.a.z),
                                 b = HotspotVertexKeyDto(ref.b.x, ref.b.y, ref.b.z)
                             )
@@ -1190,6 +1221,7 @@ object ModelPersistence {
                         id = hotspotId,
                         refs = refs.map { ref ->
                             HotspotTriangleRefDto(
+                                id = ref.id,
                                 a = HotspotVertexKeyDto(ref.a.x, ref.a.y, ref.a.z),
                                 b = HotspotVertexKeyDto(ref.b.x, ref.b.y, ref.b.z),
                                 c = HotspotVertexKeyDto(ref.c.x, ref.c.y, ref.c.z)
@@ -1199,11 +1231,11 @@ object ModelPersistence {
                 }.toMutableList()
                 if (group.hasGeometryOverrides()) {
                     dto.overrideSegments = group.lineStore.getSegments().map { seg ->
-                        SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end))
+                        SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end), seg.id)
                     }.toMutableList()
                     dto.overrideFaces = group.faceStore.getTriangles().map { tri ->
                         val color = group.faceStore.colorFor(tri)
-                        FaceDto(Vec3Dto(tri.a), Vec3Dto(tri.b), Vec3Dto(tri.c), ColorDto(color))
+                        FaceDto(Vec3Dto(tri.a), Vec3Dto(tri.b), Vec3Dto(tri.c), ColorDto(color), tri.id)
                     }.toMutableList()
                     dto.overrideDimensions = group.dimensionStore.getDimensions().map { dimension ->
                         DimensionDto(
@@ -1260,22 +1292,26 @@ object ModelPersistence {
     }
 
     class SegmentDto() {
+        var id: String = ""
         var start: Vec3Dto = Vec3Dto()
         var end: Vec3Dto = Vec3Dto()
 
-        constructor(start: Vec3Dto, end: Vec3Dto) : this() {
+        constructor(start: Vec3Dto, end: Vec3Dto, id: String = "") : this() {
+            this.id = id
             this.start = start
             this.end = end
         }
     }
 
     class FaceDto() {
+        var id: String = ""
         var a: Vec3Dto = Vec3Dto()
         var b: Vec3Dto = Vec3Dto()
         var c: Vec3Dto = Vec3Dto()
         var color: ColorDto = ColorDto()
 
-        constructor(a: Vec3Dto, b: Vec3Dto, c: Vec3Dto, color: ColorDto) : this() {
+        constructor(a: Vec3Dto, b: Vec3Dto, c: Vec3Dto, color: ColorDto, id: String = "") : this() {
+            this.id = id
             this.a = a
             this.b = b
             this.c = c
@@ -1337,14 +1373,20 @@ object ModelPersistence {
                 instanceAxisW = instAxisW
             )
             segments.forEach { segment ->
-                group.lineStore.addSegment(segment.start.toVector3(), segment.end.toVector3(), autoCleanup = false)
+                group.lineStore.addSegment(
+                    segment.start.toVector3(),
+                    segment.end.toVector3(),
+                    autoCleanup = false,
+                    id = segment.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                )
             }
             faces.forEach { face ->
                 group.faceStore.addTriangle(
                     face.a.toVector3(),
                     face.b.toVector3(),
                     face.c.toVector3(),
-                    face.color.toColor()
+                    face.color.toColor(),
+                    id = face.id.ifBlank { java.util.UUID.randomUUID().toString() }
                 )
             }
             children.forEach { child ->
@@ -1374,11 +1416,11 @@ object ModelPersistence {
                 dto.instanceAxisW = Vec3Dto(group.instanceAxisW)
                 dto.gluedToSurface = group.prototype.gluedToSurface
                 dto.segments = group.lineStore.getSegments().map { seg ->
-                    SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end))
+                    SegmentDto(Vec3Dto(seg.start), Vec3Dto(seg.end), seg.id)
                 }.toMutableList()
                 dto.faces = group.faceStore.getTriangles().map { tri ->
                     val color = group.faceStore.colorFor(tri)
-                    FaceDto(Vec3Dto(tri.a), Vec3Dto(tri.b), Vec3Dto(tri.c), ColorDto(color))
+                    FaceDto(Vec3Dto(tri.a), Vec3Dto(tri.b), Vec3Dto(tri.c), ColorDto(color), tri.id)
                 }.toMutableList()
                 dto.children = group.children.map { child -> fromGroup(child) }.toMutableList()
                 return dto

@@ -14,9 +14,18 @@ class HotspotStore {
 
     data class VertexKey(val x: Int, val y: Int, val z: Int)
 
-    data class SegmentRef(val a: VertexKey, val b: VertexKey)
+    data class SegmentRef(
+        val id: String = "",
+        val a: VertexKey = VertexKey(0, 0, 0),
+        val b: VertexKey = VertexKey(0, 0, 0)
+    )
 
-    data class TriangleRef(val a: VertexKey, val b: VertexKey, val c: VertexKey)
+    data class TriangleRef(
+        val id: String = "",
+        val a: VertexKey = VertexKey(0, 0, 0),
+        val b: VertexKey = VertexKey(0, 0, 0),
+        val c: VertexKey = VertexKey(0, 0, 0)
+    )
 
     data class Hotspot(
         val id: String,
@@ -204,13 +213,17 @@ class HotspotStore {
     fun segmentRef(segment: DraftLineStore.Segment): SegmentRef {
         val a = vertexKey(segment.start)
         val b = vertexKey(segment.end)
-        return if (compareVertexKeys(a, b) <= 0) SegmentRef(a, b) else SegmentRef(b, a)
+        return if (compareVertexKeys(a, b) <= 0) {
+            SegmentRef(segment.id, a, b)
+        } else {
+            SegmentRef(segment.id, b, a)
+        }
     }
 
     fun triangleRef(triangle: DraftFaceStore.Triangle): TriangleRef {
         val keys = listOf(vertexKey(triangle.a), vertexKey(triangle.b), vertexKey(triangle.c))
             .sortedWith { a, b -> compareVertexKeys(a, b) }
-        return TriangleRef(keys[0], keys[1], keys[2])
+        return TriangleRef(triangle.id, keys[0], keys[1], keys[2])
     }
 
     private fun nextName(candidate: String, ignoreId: String? = null): String {

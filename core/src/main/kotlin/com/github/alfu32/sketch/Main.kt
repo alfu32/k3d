@@ -185,6 +185,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private val hotspotSelectedColor = Color(1f, 0.2f, 0.2f, 1f)
     private val entityHotspotColor = Color(0.05f, 0.05f, 0.05f, 1f)
     private val entityHotspotAccentColor = Color(0.85f, 0f, 0.85f, 1f)
+    private val prototypeGuideFaceColor = Color(0.2f, 0.65f, 1f, 0.2f)
+    private val prototypeGuideLineColor = Color(0.2f, 0.65f, 1f, 1f)
     private val selectedEntityBoxColor = Color(0.2f, 0.7f, 0.95f, 1f)
     private val editModeBoxColor = Color(1f, 0.6f, 0.2f, 1f)
     private val selectedLineWidth = 8f
@@ -2909,6 +2911,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             drawLineCross(segment.start, crossSize)
             drawLineCross(segment.end, crossSize)
         }
+        scene.collectActivePrototypeWorldLines { start, end ->
+            shapeRenderer.color = prototypeGuideLineColor
+            Gdx.gl.glLineWidth(2f)
+            drawDashedLine(start, end, 0.2f, 0.2f)
+        }
         Gdx.gl.glLineWidth(2f)
     }
 
@@ -5144,6 +5151,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val triangles = mutableListOf<TriangleWorld>()
         scene.collectWorldTriangles { a, b, c, color, selected ->
             triangles.add(TriangleWorld(a, b, c, color, selected))
+        }
+        scene.collectActivePrototypeWorldTriangles { a, b, c, _ ->
+            triangles.add(TriangleWorld(a, b, c, prototypeGuideFaceColor, selected = false))
         }
         val vertexCount = triangles.size * 3
         if (vertexCount == 0) {

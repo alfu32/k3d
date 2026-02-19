@@ -1,9 +1,12 @@
 package com.github.alfu32.sketch.model
 
 import com.badlogic.gdx.math.Vector3
+import java.util.UUID
 
 class DraftLineStore {
-    data class Segment(val start: Vector3, val end: Vector3)
+    data class Segment(val start: Vector3, val end: Vector3) {
+        var id: String = UUID.randomUUID().toString()
+    }
     data class Hit(val segment: Segment, val point: Vector3, val t: Float)
 
     private val segments = mutableListOf<Segment>()
@@ -27,11 +30,11 @@ class DraftLineStore {
         }
     }
 
-    fun addSegment(start: Vector3, end: Vector3, autoCleanup: Boolean = true) {
+    fun addSegment(start: Vector3, end: Vector3, autoCleanup: Boolean = true, id: String = UUID.randomUUID().toString()) {
         if (start.dst2(end) <= epsilonSq) {
             return
         }
-        val changed = addSegmentInternal(start, end)
+        val changed = addSegmentInternal(start, end, id)
         if (autoCleanup) {
             withChangeSuppressed {
                 cleanupJts()
@@ -43,6 +46,8 @@ class DraftLineStore {
     }
 
     fun getSegments(): List<Segment> = segments
+
+    fun segmentById(id: String): Segment? = segments.firstOrNull { it.id == id }
 
     fun getSelected(): Set<Segment> = selected
 
@@ -101,6 +106,7 @@ class DraftLineStore {
                 val a = transform(Vector3(segment.start))
                 val b = transform(Vector3(segment.end))
                 val next = Segment(a, b)
+                next.id = segment.id
                 newSegments.add(next)
                 newSelected.add(next)
             } else {
@@ -132,6 +138,7 @@ class DraftLineStore {
                 val a = transform(Vector3(segment.start))
                 val b = transform(Vector3(segment.end))
                 val next = Segment(a, b)
+                next.id = segment.id
                 newSegments.add(next)
                 mapping[segment] = next
                 if (oldSelected.contains(segment)) {
@@ -493,7 +500,7 @@ class DraftLineStore {
         selected.addAll(newSelected)
     }
 
-    private fun addSegmentInternal(start: Vector3, end: Vector3): Boolean {
+    private fun addSegmentInternal(start: Vector3, end: Vector3, id: String): Boolean {
         if (start.dst2(end) <= epsilonSq) {
             return false
         }
@@ -537,7 +544,11 @@ class DraftLineStore {
             val a = orderedPoints[p]
             val b = orderedPoints[p + 1]
             if (a.dst2(b) > epsilonSq) {
-                segments.add(Segment(Vector3(a), Vector3(b)))
+                val segment = Segment(Vector3(a), Vector3(b))
+                if (orderedPoints.size == 2 && p == 0) {
+                    segment.id = id
+                }
+                segments.add(segment)
             }
         }
 

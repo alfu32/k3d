@@ -13,11 +13,14 @@ import org.locationtech.jts.geom.Polygon
 import org.locationtech.jts.operation.polygonize.Polygonizer
 import org.locationtech.jts.operation.union.UnaryUnionOp
 import org.locationtech.jts.triangulate.DelaunayTriangulationBuilder
+import java.util.UUID
 
 class DraftFaceStore(
     private val defaultColor: com.badlogic.gdx.graphics.Color = com.badlogic.gdx.graphics.Color(0.93f, 0.93f, 0.93f, 1f)
 ) {
-    data class Triangle(val a: Vector3, val b: Vector3, val c: Vector3)
+    data class Triangle(val a: Vector3, val b: Vector3, val c: Vector3) {
+        var id: String = UUID.randomUUID().toString()
+    }
     data class Hit(val triangle: Triangle, val point: Vector3, val normal: Vector3, val t: Float)
 
     private val triangles = mutableListOf<Triangle>()
@@ -46,15 +49,23 @@ class DraftFaceStore(
         }
     }
 
-    fun addTriangle(a: Vector3, b: Vector3, c: Vector3) {
+    fun addTriangle(a: Vector3, b: Vector3, c: Vector3, id: String = UUID.randomUUID().toString()) {
         val triangle = Triangle(Vector3(a), Vector3(b), Vector3(c))
+        triangle.id = id
         triangles.add(triangle)
         colors[triangle] = com.badlogic.gdx.graphics.Color(defaultColor)
         notifyChange()
     }
 
-    fun addTriangle(a: Vector3, b: Vector3, c: Vector3, color: com.badlogic.gdx.graphics.Color) {
+    fun addTriangle(
+        a: Vector3,
+        b: Vector3,
+        c: Vector3,
+        color: com.badlogic.gdx.graphics.Color,
+        id: String = UUID.randomUUID().toString()
+    ) {
         val triangle = Triangle(Vector3(a), Vector3(b), Vector3(c))
+        triangle.id = id
         triangles.add(triangle)
         colors[triangle] = com.badlogic.gdx.graphics.Color(color)
         notifyChange()
@@ -78,6 +89,8 @@ class DraftFaceStore(
     }
 
     fun getTriangles(): List<Triangle> = triangles
+
+    fun triangleById(id: String): Triangle? = triangles.firstOrNull { it.id == id }
 
     fun getSelected(): Set<Triangle> = selected
 
@@ -113,6 +126,7 @@ class DraftFaceStore(
         triangles.forEach { tri ->
             if (oldSelected.contains(tri)) {
                 val flipped = Triangle(Vector3(tri.a), Vector3(tri.c), Vector3(tri.b))
+                flipped.id = tri.id
                 colors[flipped] = colors.remove(tri) ?: com.badlogic.gdx.graphics.Color(defaultColor)
                 newTriangles.add(flipped)
                 newSelected.add(flipped)
@@ -197,6 +211,7 @@ class DraftFaceStore(
                 val b = transform(Vector3(tri.b))
                 val c = transform(Vector3(tri.c))
                 val next = Triangle(a, b, c)
+                next.id = tri.id
                 newTriangles.add(next)
                 newSelected.add(next)
                 newColors[next] = com.badlogic.gdx.graphics.Color(color)
@@ -237,6 +252,7 @@ class DraftFaceStore(
                 val b = transform(Vector3(tri.b))
                 val c = transform(Vector3(tri.c))
                 val next = Triangle(a, b, c)
+                next.id = tri.id
                 newTriangles.add(next)
                 newColors[next] = com.badlogic.gdx.graphics.Color(color)
                 mapping[tri] = next
