@@ -115,6 +115,7 @@ class GroupScene(
         var instanceAxisV: Vector3,
         var instanceAxisW: Vector3
     ) {
+        var editPrototypeMode: Boolean = false
         var lineStoreOverride: DraftLineStore? = null
         var faceStoreOverride: DraftFaceStore? = null
         var dimensionStoreOverride: DraftDimensionStore? = null
@@ -127,13 +128,29 @@ class GroupScene(
         val children: MutableList<GroupNode> = mutableListOf()
         var parent: GroupNode? = null
         val lineStore: DraftLineStore
-            get() = lineStoreOverride ?: prototype.lineStore
+            get() = if (editPrototypeMode) {
+                prototype.lineStore
+            } else {
+                lineStoreOverride ?: prototype.lineStore
+            }
         val faceStore: DraftFaceStore
-            get() = faceStoreOverride ?: prototype.faceStore
+            get() = if (editPrototypeMode) {
+                prototype.faceStore
+            } else {
+                faceStoreOverride ?: prototype.faceStore
+            }
         val dimensionStore: DraftDimensionStore
-            get() = dimensionStoreOverride ?: prototype.dimensionStore
+            get() = if (editPrototypeMode) {
+                prototype.dimensionStore
+            } else {
+                dimensionStoreOverride ?: prototype.dimensionStore
+            }
         val textStore: DraftTextStore
-            get() = textStoreOverride ?: prototype.textStore
+            get() = if (editPrototypeMode) {
+                prototype.textStore
+            } else {
+                textStoreOverride ?: prototype.textStore
+            }
         var name: String
             get() = prototype.name
             set(value) { prototype.name = value }
@@ -404,7 +421,11 @@ class GroupScene(
     fun isEditing(): Boolean = activeGroup != root
 
     fun resetActiveGroup() {
+        if (activeGroup != root) {
+            activeGroup.editPrototypeMode = false
+        }
         activeGroup = root
+        activeGroup.editPrototypeMode = false
     }
 
     fun setChangeListener(listener: () -> Unit) {
@@ -427,14 +448,21 @@ class GroupScene(
         if (group == activeGroup) {
             return false
         }
+        if (activeGroup != root) {
+            activeGroup.editPrototypeMode = false
+        }
         activeGroup = group
+        activeGroup.editPrototypeMode = activeGroup != root
         clearGroupSelection()
         return true
     }
 
     fun exitGroup(): Boolean {
-        val parent = activeGroup.parent ?: return false
+        val current = activeGroup
+        val parent = current.parent ?: return false
+        current.editPrototypeMode = false
         activeGroup = parent
+        activeGroup.editPrototypeMode = activeGroup != root
         clearGroupSelection()
         return true
     }
@@ -3676,6 +3704,9 @@ class GroupScene(
             return
         }
         val group = activeGroup
+        if (group.editPrototypeMode) {
+            return
+        }
         if (!group.hasGeometryOverrides()) {
             return
         }
@@ -3694,6 +3725,9 @@ class GroupScene(
             return
         }
         val group = activeGroup
+        if (group.editPrototypeMode) {
+            return
+        }
         if (!group.hasGeometryOverrides()) {
             return
         }
@@ -6985,7 +7019,11 @@ class GroupScene(
         generatedHvacFaces.clear()
         resolvedHvacVentilation.clear()
         clearGroupSelection()
+        if (activeGroup != root) {
+            activeGroup.editPrototypeMode = false
+        }
         activeGroup = root
+        activeGroup.editPrototypeMode = false
         prototypeInstances.clear()
         prototypes.keys.filter { it != rootPrototype.id }.forEach { prototypes.remove(it) }
         registerPrototype(rootPrototype)
