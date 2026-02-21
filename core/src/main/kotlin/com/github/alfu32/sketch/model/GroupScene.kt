@@ -7,6 +7,7 @@ import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.math.collision.BoundingBox
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
@@ -71,7 +72,9 @@ class GroupScene(
         val id: String,
         val world: Vector3,
         val selected: Boolean,
-        val referenceWorld: Vector3?
+        val referenceWorld: Vector3?,
+        val shape: HotspotStore.ShapeKind,
+        val color: Color
     )
     private data class ResolvedVentilationDuct(
         val id: String,
@@ -1148,6 +1151,10 @@ class GroupScene(
                 }
                 transform
             }
+            HotspotStore.OperationKind.MULTIPLY_LINEAR,
+            HotspotStore.OperationKind.MULTIPLY_VOLUMETRIC,
+            HotspotStore.OperationKind.MULTIPLY_ROTATE_2D,
+            HotspotStore.OperationKind.MULTIPLY_ROTATE_3D -> null
         }
     }
 
@@ -1186,6 +1193,68 @@ class GroupScene(
         return resolved
     }
 
+    private fun signedAngleRadiansAround(a: Vector3, b: Vector3, axis: Vector3): Float {
+        if (a.len2() <= 1e-10f || b.len2() <= 1e-10f || axis.len2() <= 1e-10f) {
+            return 0f
+        }
+        val na = Vector3(a).nor()
+        val nb = Vector3(b).nor()
+        val nAxis = Vector3(axis).nor()
+        val cross = Vector3(na).crs(nb)
+        val sin = cross.dot(nAxis)
+        val cos = na.dot(nb).coerceIn(-1f, 1f)
+        return atan2(sin.toDouble(), cos.toDouble()).toFloat()
+    }
+
+    private fun extentAlongDirection(points: List<Vector3>, direction: Vector3): Float {
+        if (points.isEmpty() || direction.len2() <= 1e-10f) {
+            return 0f
+        }
+        val dir = Vector3(direction).nor()
+        var minProj = Float.POSITIVE_INFINITY
+        var maxProj = Float.NEGATIVE_INFINITY
+        points.forEach { point ->
+            val proj = point.dot(dir)
+            if (proj < minProj) minProj = proj
+            if (proj > maxProj) maxProj = proj
+        }
+        return (maxProj - minProj).coerceAtLeast(0f)
+    }
+
+    private fun duplicateGeometry(
+        lineStore: DraftLineStore,
+        faceStore: DraftFaceStore,
+        sourceSegments: List<DraftLineStore.Segment>,
+        sourceTriangles: List<DraftFaceStore.Triangle>,
+        transform: (Vector3) -> Vector3
+    ): Int {
+        if (sourceSegments.isEmpty() && sourceTriangles.isEmpty()) {
+            return 0
+        }
+        lineStore.withChangeSuppressed {
+            sourceSegments.forEach { segment ->
+                lineStore.addSegment(
+                    start = transform(Vector3(segment.start)),
+                    end = transform(Vector3(segment.end)),
+                    autoCleanup = false
+                )
+            }
+        }
+        faceStore.withChangeSuppressed {
+            sourceTriangles.forEach { triangle ->
+                faceStore.addTriangle(
+                    a = transform(Vector3(triangle.a)),
+                    b = transform(Vector3(triangle.b)),
+                    c = transform(Vector3(triangle.c)),
+                    color = faceStore.colorFor(triangle)
+                )
+            }
+        }
+        lineStore.notifyExternalChange()
+        faceStore.notifyExternalChange()
+        return sourceSegments.size + sourceTriangles.size
+    }
+
     private fun applyHotspotToRuntimeGeometry(
         group: GroupNode,
         hotspotStore: HotspotStore,
@@ -1214,6 +1283,172 @@ class GroupScene(
             vertexIdByHandle
                 .filter { (_, vertexId) -> hotspot.attachedVertexIds.contains(vertexId) }
                 .keys
+        }
+        if (hotspot.operation == HotspotStore.OperationKind.MULTIPLY_LINEAR ||
+            hotspot.operation == HotspotStore.OperationKind.MULTIPLY_VOLUMETRIC ||
+            hotspot.operation == HotspotStore.OperationKind.MULTIPLY_ROTATE_2D ||
+            hotspot.operation == HotspotStore.OperationKind.MULTIPLY_ROTATE_3D
+        ) {
+            if (attachedSegmentObjects.isEmpty() && attachedTriangleObjects.isEmpty()) {
+                return
+            }
+            val sourceSegments = attachedSegmentObjects.toList()
+            val sourceTriangles = attachedTriangleObjects.toList()
+            val sourcePoints = mutableListOf<Vector3>()
+            sourceSegments.forEach { segment ->
+                sourcePoints.add(Vector3(segment.start))
+                sourcePoints.add(Vector3(segment.end))
+            }
+            sourceTriangles.forEach { triangle ->
+                sourcePoints.add(Vector3(triangle.a))
+                sourcePoints.add(Vector3(triangle.b))
+                sourcePoints.add(Vector3(triangle.c))
+            }
+            if (sourcePoints.isEmpty()) {
+                return
+            }
+            val maxCopies = 2048
+            var copyCount = 0
+            val baseLocal = hotspot.position
+            val refLocal = hotspot.referencePosition
+            when (hotspot.operation) {
+                HotspotStore.OperationKind.MULTIPLY_LINEAR -> {
+                    val span = Vector3(targetLocal).sub(baseLocal)
+                    val length = span.len()
+                    if (length <= 1e-6f) return
+                    val dir = Vector3(span).nor()
+                    val stepLength = extentAlongDirection(sourcePoints, dir).coerceAtLeast(1e-3f)
+                    val steps = floor(length / stepLength).toInt().coerceAtMost(maxCopies)
+                    for (i in 1..steps) {
+                        val offset = Vector3(dir).scl(stepLength * i.toFloat())
+                        duplicateGeometry(
+                            lineStore = lineStore,
+                            faceStore = faceStore,
+                            sourceSegments = sourceSegments,
+                            sourceTriangles = sourceTriangles
+                        ) { point ->
+                            Vector3(point).add(offset)
+                        }
+                        copyCount++
+                    }
+                }
+                HotspotStore.OperationKind.MULTIPLY_VOLUMETRIC -> {
+                    val span = Vector3(targetLocal).sub(baseLocal)
+                    val bounds = BoundingBox()
+                    bounds.set(sourcePoints.first(), sourcePoints.first())
+                    sourcePoints.forEach { point -> bounds.ext(point) }
+                    val cellX = (bounds.max.x - bounds.min.x).coerceAtLeast(1e-3f)
+                    val cellY = (bounds.max.y - bounds.min.y).coerceAtLeast(1e-3f)
+                    val cellZ = (bounds.max.z - bounds.min.z).coerceAtLeast(1e-3f)
+                    val nx = floor(abs(span.x) / cellX).toInt()
+                    val ny = floor(abs(span.y) / cellY).toInt()
+                    val nz = floor(abs(span.z) / cellZ).toInt()
+                    val sx = if (span.x < 0f) -1f else 1f
+                    val sy = if (span.y < 0f) -1f else 1f
+                    val sz = if (span.z < 0f) -1f else 1f
+                    loop@ for (ix in 0..nx) {
+                        for (iy in 0..ny) {
+                            for (iz in 0..nz) {
+                                if (ix == 0 && iy == 0 && iz == 0) {
+                                    continue
+                                }
+                                if (copyCount >= maxCopies) {
+                                    break@loop
+                                }
+                                val offset = Vector3(
+                                    ix.toFloat() * cellX * sx,
+                                    iy.toFloat() * cellY * sy,
+                                    iz.toFloat() * cellZ * sz
+                                )
+                                duplicateGeometry(
+                                    lineStore = lineStore,
+                                    faceStore = faceStore,
+                                    sourceSegments = sourceSegments,
+                                    sourceTriangles = sourceTriangles
+                                ) { point ->
+                                    Vector3(point).add(offset)
+                                }
+                                copyCount++
+                            }
+                        }
+                    }
+                }
+                HotspotStore.OperationKind.MULTIPLY_ROTATE_2D -> {
+                    val reference = refLocal ?: return
+                    val fromVec = Vector3(baseLocal).sub(reference)
+                    val toVec = Vector3(targetLocal).sub(reference)
+                    if (fromVec.len2() <= 1e-8f) return
+                    val axis = Vector3(fromVec).crs(toVec).let {
+                        if (it.len2() <= 1e-8f) Vector3(0f, 1f, 0f) else it.nor()
+                    }
+                    val totalAngle = signedAngleRadiansAround(fromVec, toVec, axis)
+                    if (abs(totalAngle) <= 1e-6f) return
+                    val radius = fromVec.len().coerceAtLeast(1e-4f)
+                    val tangent = Vector3(axis).crs(fromVec).nor()
+                    val stepLength = extentAlongDirection(sourcePoints, tangent)
+                        .coerceAtLeast(radius * 0.1f)
+                        .coerceAtLeast(1e-3f)
+                    val stepAngle = (stepLength / radius).coerceAtLeast(1e-5f)
+                    val steps = floor(abs(totalAngle) / stepAngle).toInt().coerceAtMost(maxCopies)
+                    if (steps <= 0) return
+                    for (i in 1..steps) {
+                        var angle = stepAngle * i.toFloat() * if (totalAngle < 0f) -1f else 1f
+                        if (abs(angle) > abs(totalAngle)) {
+                            angle = totalAngle
+                        }
+                        val quat = Quaternion().setFromAxisRad(axis, angle)
+                        duplicateGeometry(
+                            lineStore = lineStore,
+                            faceStore = faceStore,
+                            sourceSegments = sourceSegments,
+                            sourceTriangles = sourceTriangles
+                        ) { point ->
+                            Vector3(point).sub(reference).mul(quat).add(reference)
+                        }
+                        copyCount++
+                    }
+                }
+                HotspotStore.OperationKind.MULTIPLY_ROTATE_3D -> {
+                    val reference = refLocal ?: return
+                    val axis = Vector3(0f, 1f, 0f)
+                    val fromVec = Vector3(baseLocal).sub(reference)
+                    if (fromVec.len2() <= 1e-8f) return
+                    val toVec = Vector3(targetLocal).sub(reference)
+                    val fromRadial = Vector3(fromVec).sub(Vector3(axis).scl(fromVec.dot(axis)))
+                    val toRadial = Vector3(toVec).sub(Vector3(axis).scl(toVec.dot(axis)))
+                    if (fromRadial.len2() <= 1e-8f) return
+                    val totalAngle = signedAngleRadiansAround(fromRadial, toRadial, axis)
+                    val totalHeight = targetLocal.y - reference.y
+                    val radius = fromRadial.len().coerceAtLeast(1e-4f)
+                    val helixLength = sqrt(totalAngle * totalAngle * radius * radius + totalHeight * totalHeight)
+                    if (helixLength <= 1e-6f) return
+                    val tangent = Vector3(axis).crs(fromRadial).nor()
+                    val stepLength = max(
+                        extentAlongDirection(sourcePoints, tangent),
+                        extentAlongDirection(sourcePoints, axis)
+                    ).coerceAtLeast(1e-3f)
+                    val steps = floor(helixLength / stepLength).toInt().coerceAtMost(maxCopies)
+                    if (steps <= 0) return
+                    for (i in 1..steps) {
+                        val distance = (stepLength * i.toFloat()).coerceAtMost(helixLength)
+                        val t = (distance / helixLength).coerceIn(0f, 1f)
+                        val angle = totalAngle * t
+                        val yOffset = totalHeight * t
+                        val quat = Quaternion().setFromAxisRad(axis, angle)
+                        duplicateGeometry(
+                            lineStore = lineStore,
+                            faceStore = faceStore,
+                            sourceSegments = sourceSegments,
+                            sourceTriangles = sourceTriangles
+                        ) { point ->
+                            Vector3(point).sub(reference).mul(quat).add(reference).add(0f, yOffset, 0f)
+                        }
+                        copyCount++
+                    }
+                }
+                else -> Unit
+            }
+            return
         }
 
         if (hotspot.operation == HotspotStore.OperationKind.STRETCH) {
@@ -1583,6 +1818,8 @@ class GroupScene(
             clonedHotspotStore.addHotspot(
                 position = hotspot.position,
                 operation = hotspot.operation,
+                shape = hotspot.shape,
+                color = hotspot.color,
                 referencePosition = hotspot.referencePosition,
                 attachedHotspotIds = hotspot.attachedHotspotIds,
                 attachedVertexIds = hotspot.attachedVertexIds,
@@ -2046,6 +2283,8 @@ class GroupScene(
         group: GroupNode,
         position: Vector3,
         operation: HotspotStore.OperationKind,
+        shape: HotspotStore.ShapeKind = HotspotStore.ShapeKind.CIRCLE,
+        color: Color = Color(0.2f, 0.55f, 0.95f, 1f),
         referencePosition: Vector3? = null
     ): HotspotStore.Hotspot? {
         if (group !== activeGroup) {
@@ -2055,6 +2294,8 @@ class GroupScene(
         val hotspot = store.addHotspot(
             position = Vector3(position),
             operation = operation,
+            shape = shape,
+            color = color,
             referencePosition = referencePosition?.let { Vector3(it) }
         )
         group.hotspotSelectionIds.clear()
@@ -2128,6 +2369,34 @@ class GroupScene(
         return updated
     }
 
+    fun updateHotspotShape(group: GroupNode, id: String, shape: HotspotStore.ShapeKind): Boolean {
+        if (group !== activeGroup) {
+            return false
+        }
+        if (hotspotStoreFor(group).hotspotById(id) == null) {
+            return false
+        }
+        val updated = hotspotStoreFor(group).updateShape(id, shape)
+        if (updated) {
+            notifyChange()
+        }
+        return updated
+    }
+
+    fun updateHotspotColor(group: GroupNode, id: String, color: Color): Boolean {
+        if (group !== activeGroup) {
+            return false
+        }
+        if (hotspotStoreFor(group).hotspotById(id) == null) {
+            return false
+        }
+        val updated = hotspotStoreFor(group).updateColor(id, color)
+        if (updated) {
+            notifyChange()
+        }
+        return updated
+    }
+
     fun updateHotspotName(group: GroupNode, id: String, name: String): Boolean {
         if (group !== activeGroup) {
             return false
@@ -2195,7 +2464,9 @@ class GroupScene(
                 id = hotspot.id,
                 world = group.toWorld(localPosition),
                 selected = group.hotspotSelectionIds.contains(hotspot.id),
-                referenceWorld = hotspot.referencePosition?.let { group.toWorld(it) }
+                referenceWorld = hotspot.referencePosition?.let { group.toWorld(it) },
+                shape = hotspot.shape,
+                color = Color(hotspot.color)
             )
         }
     }

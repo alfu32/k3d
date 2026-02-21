@@ -1,5 +1,6 @@
 package com.github.alfu32.sketch.model
 
+import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.math.Vector3
 import kotlin.math.roundToInt
 import java.util.UUID
@@ -9,7 +10,19 @@ class HotspotStore {
         MOVE,
         SCALE,
         STRETCH,
-        ROTATE
+        ROTATE,
+        MULTIPLY_LINEAR,
+        MULTIPLY_VOLUMETRIC,
+        MULTIPLY_ROTATE_2D,
+        MULTIPLY_ROTATE_3D
+    }
+
+    enum class ShapeKind {
+        TRIANGLE_UP,
+        SQUARE,
+        CIRCLE,
+        DIAMOND,
+        TRIANGLE_DOWN
     }
 
     data class VertexKey(val x: Int, val y: Int, val z: Int)
@@ -32,6 +45,8 @@ class HotspotStore {
         var name: String,
         var position: Vector3,
         var operation: OperationKind,
+        var shape: ShapeKind = ShapeKind.CIRCLE,
+        var color: Color = Color(0.2f, 0.55f, 0.95f, 1f),
         var referencePosition: Vector3? = null,
         var attachedHotspotIds: MutableSet<String> = linkedSetOf(),
         var attachedVertexIds: MutableSet<String> = linkedSetOf(),
@@ -110,6 +125,8 @@ class HotspotStore {
     fun addHotspot(
         position: Vector3,
         operation: OperationKind,
+        shape: ShapeKind = ShapeKind.CIRCLE,
+        color: Color = Color(0.2f, 0.55f, 0.95f, 1f),
         referencePosition: Vector3? = null,
         attachedHotspotIds: Set<String> = emptySet(),
         attachedVertexIds: Set<String> = emptySet(),
@@ -123,6 +140,8 @@ class HotspotStore {
             name = nextName(name),
             position = Vector3(position),
             operation = operation,
+            shape = shape,
+            color = Color(color),
             referencePosition = referencePosition?.let { Vector3(it) },
             attachedHotspotIds = attachedHotspotIds.toMutableSet(),
             attachedVertexIds = attachedVertexIds.toMutableSet(),
@@ -185,6 +204,20 @@ class HotspotStore {
     fun updateOperation(id: String, operation: OperationKind): Boolean {
         val hotspot = hotspotById(id) ?: return false
         hotspot.operation = operation
+        notifyChange()
+        return true
+    }
+
+    fun updateShape(id: String, shape: ShapeKind): Boolean {
+        val hotspot = hotspotById(id) ?: return false
+        hotspot.shape = shape
+        notifyChange()
+        return true
+    }
+
+    fun updateColor(id: String, color: Color): Boolean {
+        val hotspot = hotspotById(id) ?: return false
+        hotspot.color.set(color)
         notifyChange()
         return true
     }

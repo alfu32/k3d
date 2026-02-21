@@ -12,7 +12,7 @@ import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
 object ModelPersistence {
-    private const val VERSION = 14
+    private const val VERSION = 15
 
     fun save(
         file: File,
@@ -535,9 +535,16 @@ object ModelPersistence {
                 } catch (_: IllegalArgumentException) {
                     HotspotStore.OperationKind.MOVE
                 }
+                val shape = try {
+                    HotspotStore.ShapeKind.valueOf(hotspot.shape)
+                } catch (_: IllegalArgumentException) {
+                    HotspotStore.ShapeKind.CIRCLE
+                }
                 hotspotsStore.addHotspot(
                     position = hotspot.position.toVector3(),
                     operation = operation,
+                    shape = shape,
+                    color = hotspot.color.toColor(),
                     referencePosition = hotspot.referencePosition?.toVector3(),
                     attachedHotspotIds = hotspot.attachedHotspotIds.toSet(),
                     attachedVertexIds = hotspot.attachedVertexIds.toSet(),
@@ -668,6 +675,8 @@ object ModelPersistence {
                         name = hotspot.name,
                         position = Vec3Dto(hotspot.position),
                         operation = hotspot.operation.name,
+                        shape = hotspot.shape.name,
+                        color = ColorDto(hotspot.color),
                         referencePosition = hotspot.referencePosition?.let { Vec3Dto(it) },
                         attachedHotspotIds = hotspot.attachedHotspotIds.toMutableList(),
                         attachedVertexIds = hotspot.attachedVertexIds.toMutableList(),
@@ -1037,6 +1046,8 @@ object ModelPersistence {
         var name: String = ""
         var position: Vec3Dto = Vec3Dto()
         var operation: String = HotspotStore.OperationKind.MOVE.name
+        var shape: String = HotspotStore.ShapeKind.CIRCLE.name
+        var color: ColorDto = ColorDto(Color(0.2f, 0.55f, 0.95f, 1f))
         var referencePosition: Vec3Dto? = null
         var attachedHotspotIds: MutableList<String> = mutableListOf()
         var attachedVertexIds: MutableList<String> = mutableListOf()
@@ -1048,6 +1059,8 @@ object ModelPersistence {
             name: String,
             position: Vec3Dto,
             operation: String,
+            shape: String,
+            color: ColorDto,
             referencePosition: Vec3Dto?,
             attachedHotspotIds: MutableList<String>,
             attachedVertexIds: MutableList<String>,
@@ -1058,6 +1071,8 @@ object ModelPersistence {
             this.name = name
             this.position = position
             this.operation = operation
+            this.shape = shape
+            this.color = color
             this.referencePosition = referencePosition
             this.attachedHotspotIds = attachedHotspotIds
             this.attachedVertexIds = attachedVertexIds

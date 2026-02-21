@@ -448,8 +448,12 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::updateArchitectureFrameParameters,
             ::hotspotSelectionInfo,
             ::updateHotspotDefaultOperation,
+            ::updateHotspotDefaultShape,
+            ::updateHotspotDefaultColor,
             ::updateHotspotName,
             ::updateHotspotOperation,
+            ::updateHotspotShape,
+            ::updateHotspotColor,
             ::addHotspotAtCursor,
             ::deleteSelectedHotspots,
             ::attachSelectionToHotspot,
@@ -969,7 +973,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                         val hotspot = scene.addHotspot(
                             group = addPickGroup,
                             position = addPickGroup.toLocal(world),
-                            operation = hotspotSettings.defaultOperation
+                            operation = hotspotSettings.defaultOperation,
+                            shape = hotspotSettings.defaultShape,
+                            color = hotspotSettings.defaultColor
                         )
                         statusModel.message = if (hotspot != null) {
                             "Hotspot added."
@@ -3142,8 +3148,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             }
             val x = screen.x
             val y = screen.y
-            shapeRenderer.color = if (marker.selected) hotspotSelectedColor else hotspotColor
-            shapeRenderer.circle(x, y, 7.5f, 22)
+            shapeRenderer.color = if (marker.selected) hotspotSelectedColor else marker.color
+            drawHotspotShapeFilled(marker.shape, x, y, 7.5f)
             marker.referenceWorld?.let { referenceWorld ->
                 val referenceScreen = activeCamera.project(Vector3(referenceWorld))
                 if (referenceScreen.z < 0f || referenceScreen.z > 1f) {
@@ -3173,7 +3179,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             val x = screen.x
             val y = screen.y
             shapeRenderer.color = Color(0f, 0f, 0f, 0.9f)
-            shapeRenderer.circle(x, y, 8.5f, 22)
+            drawHotspotShapeOutline(marker.shape, x, y, 8.5f)
             marker.referenceWorld?.let { referenceWorld ->
                 val referenceScreen = activeCamera.project(Vector3(referenceWorld))
                 if (referenceScreen.z < 0f || referenceScreen.z > 1f) {
@@ -3195,6 +3201,64 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             shapeRenderer.circle(screen.x, screen.y, marker.radiusPx + 1f, 20)
         }
         shapeRenderer.end()
+    }
+
+    private fun drawHotspotShapeFilled(
+        shape: com.github.alfu32.sketch.model.HotspotStore.ShapeKind,
+        x: Float,
+        y: Float,
+        radius: Float
+    ) {
+        when (shape) {
+            com.github.alfu32.sketch.model.HotspotStore.ShapeKind.CIRCLE -> {
+                shapeRenderer.circle(x, y, radius, 22)
+            }
+            com.github.alfu32.sketch.model.HotspotStore.ShapeKind.SQUARE -> {
+                shapeRenderer.rect(x - radius, y - radius, radius * 2f, radius * 2f)
+            }
+            com.github.alfu32.sketch.model.HotspotStore.ShapeKind.DIAMOND -> {
+                shapeRenderer.triangle(x, y + radius, x + radius, y, x, y - radius)
+                shapeRenderer.triangle(x, y - radius, x - radius, y, x, y + radius)
+            }
+            com.github.alfu32.sketch.model.HotspotStore.ShapeKind.TRIANGLE_UP -> {
+                shapeRenderer.triangle(x - radius, y - radius, x + radius, y - radius, x, y + radius)
+            }
+            com.github.alfu32.sketch.model.HotspotStore.ShapeKind.TRIANGLE_DOWN -> {
+                shapeRenderer.triangle(x - radius, y + radius, x + radius, y + radius, x, y - radius)
+            }
+        }
+    }
+
+    private fun drawHotspotShapeOutline(
+        shape: com.github.alfu32.sketch.model.HotspotStore.ShapeKind,
+        x: Float,
+        y: Float,
+        radius: Float
+    ) {
+        when (shape) {
+            com.github.alfu32.sketch.model.HotspotStore.ShapeKind.CIRCLE -> {
+                shapeRenderer.circle(x, y, radius, 22)
+            }
+            com.github.alfu32.sketch.model.HotspotStore.ShapeKind.SQUARE -> {
+                shapeRenderer.rect(x - radius, y - radius, radius * 2f, radius * 2f)
+            }
+            com.github.alfu32.sketch.model.HotspotStore.ShapeKind.DIAMOND -> {
+                shapeRenderer.line(x, y + radius, x + radius, y)
+                shapeRenderer.line(x + radius, y, x, y - radius)
+                shapeRenderer.line(x, y - radius, x - radius, y)
+                shapeRenderer.line(x - radius, y, x, y + radius)
+            }
+            com.github.alfu32.sketch.model.HotspotStore.ShapeKind.TRIANGLE_UP -> {
+                shapeRenderer.line(x - radius, y - radius, x + radius, y - radius)
+                shapeRenderer.line(x + radius, y - radius, x, y + radius)
+                shapeRenderer.line(x, y + radius, x - radius, y - radius)
+            }
+            com.github.alfu32.sketch.model.HotspotStore.ShapeKind.TRIANGLE_DOWN -> {
+                shapeRenderer.line(x - radius, y + radius, x + radius, y + radius)
+                shapeRenderer.line(x + radius, y + radius, x, y - radius)
+                shapeRenderer.line(x, y - radius, x - radius, y + radius)
+            }
+        }
     }
 
     private data class EntityHotspot2D(
@@ -3854,6 +3918,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             selectedId = hotspot.id,
             selectedName = hotspot.name,
             selectedOperation = hotspot.operation,
+            selectedShape = hotspot.shape,
+            selectedColor = Color(hotspot.color),
             attachedEdgeCount = hotspot.attachedSegments.size,
             attachedFaceCount = hotspot.attachedTriangles.size,
             hasReference = hotspot.referencePosition != null
@@ -3862,6 +3928,14 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun updateHotspotDefaultOperation(operation: com.github.alfu32.sketch.model.HotspotStore.OperationKind) {
         hotspotSettings.defaultOperation = operation
+    }
+
+    private fun updateHotspotDefaultShape(shape: com.github.alfu32.sketch.model.HotspotStore.ShapeKind) {
+        hotspotSettings.defaultShape = shape
+    }
+
+    private fun updateHotspotDefaultColor(color: Color) {
+        hotspotSettings.defaultColor.set(color)
     }
 
     private fun updateHotspotName(id: String, name: String) {
@@ -3877,6 +3951,24 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val group = hotspotOwnerGroup(id) ?: scene.activeGroup()
         if (scene.updateHotspotOperation(group, id, operation)) {
             statusModel.message = "Hotspot operation updated."
+        } else if (group !== scene.activeGroup()) {
+            statusModel.message = "Enter object editing mode to change hotspot definition."
+        }
+    }
+
+    private fun updateHotspotShape(id: String, shape: com.github.alfu32.sketch.model.HotspotStore.ShapeKind) {
+        val group = hotspotOwnerGroup(id) ?: scene.activeGroup()
+        if (scene.updateHotspotShape(group, id, shape)) {
+            statusModel.message = "Hotspot shape updated."
+        } else if (group !== scene.activeGroup()) {
+            statusModel.message = "Enter object editing mode to change hotspot definition."
+        }
+    }
+
+    private fun updateHotspotColor(id: String, color: Color) {
+        val group = hotspotOwnerGroup(id) ?: scene.activeGroup()
+        if (scene.updateHotspotColor(group, id, color)) {
+            statusModel.message = "Hotspot color updated."
         } else if (group !== scene.activeGroup()) {
             statusModel.message = "Enter object editing mode to change hotspot definition."
         }

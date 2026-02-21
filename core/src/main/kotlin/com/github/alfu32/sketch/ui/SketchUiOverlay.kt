@@ -84,8 +84,12 @@ class SketchUiOverlay(
     private val architectureFrameChanged: (String, Float, Float, Color, Boolean, Color) -> Unit,
     private val hotspotSelectionProvider: () -> HotspotSelectionInfo,
     private val hotspotDefaultOperationChanged: (HotspotStore.OperationKind) -> Unit,
+    private val hotspotDefaultShapeChanged: (HotspotStore.ShapeKind) -> Unit,
+    private val hotspotDefaultColorChanged: (Color) -> Unit,
     private val hotspotNameChanged: (String, String) -> Unit,
     private val hotspotOperationChanged: (String, HotspotStore.OperationKind) -> Unit,
+    private val hotspotShapeChanged: (String, HotspotStore.ShapeKind) -> Unit,
+    private val hotspotColorChanged: (String, Color) -> Unit,
     private val hotspotAddAtCursor: () -> Unit,
     private val hotspotDeleteSelected: () -> Unit,
     private val hotspotAttachSelection: (String) -> Unit,
@@ -209,6 +213,8 @@ class SketchUiOverlay(
     private val hvacDefaultVentilationHumpClearanceKey = "hvac_default_ventilation_hump_clearance"
     private val hvacDefaultVentilationColorKey = "hvac_default_ventilation_color"
     private val hotspotDefaultOperationKey = "hotspot_default_operation"
+    private val hotspotDefaultShapeKey = "hotspot_default_shape"
+    private val hotspotDefaultColorKey = "hotspot_default_color"
     private val iconTextures = mutableListOf<Texture>()
     private val iconDrawables = mutableMapOf<String, TextureRegionDrawable>()
     private var iconsTexture: Texture? = null
@@ -336,6 +342,9 @@ class SketchUiOverlay(
     private lateinit var hotspotModeLabel: VisLabel
     private lateinit var hotspotNameField: VisTextField
     private lateinit var hotspotOperationSelect: VisSelectBox<HotspotStore.OperationKind>
+    private lateinit var hotspotShapeSelect: VisSelectBox<HotspotStore.ShapeKind>
+    private lateinit var hotspotColorField: VisTextField
+    private lateinit var hotspotColorButton: VisImageTextButton
     private lateinit var hotspotAttachedLabel: VisLabel
     private lateinit var hotspotReferenceLabel: VisLabel
     private lateinit var hotspotAddButton: VisTextButton
@@ -2141,16 +2150,25 @@ class SketchUiOverlay(
     }
 
     private fun loadHotspotDefaults() {
-        val saved = uiPrefs.getString(hotspotDefaultOperationKey, hotspotSettings.defaultOperation.name)
+        val savedOperation = uiPrefs.getString(hotspotDefaultOperationKey, hotspotSettings.defaultOperation.name)
         hotspotSettings.defaultOperation = try {
-            HotspotStore.OperationKind.valueOf(saved)
+            HotspotStore.OperationKind.valueOf(savedOperation)
         } catch (_: IllegalArgumentException) {
             HotspotStore.OperationKind.MOVE
         }
+        val savedShape = uiPrefs.getString(hotspotDefaultShapeKey, hotspotSettings.defaultShape.name)
+        hotspotSettings.defaultShape = try {
+            HotspotStore.ShapeKind.valueOf(savedShape)
+        } catch (_: IllegalArgumentException) {
+            HotspotStore.ShapeKind.CIRCLE
+        }
+        hotspotSettings.defaultColor.set(loadColorPref(hotspotDefaultColorKey, hotspotSettings.defaultColor))
     }
 
     private fun saveHotspotDefaults() {
         uiPrefs.putString(hotspotDefaultOperationKey, hotspotSettings.defaultOperation.name)
+        uiPrefs.putString(hotspotDefaultShapeKey, hotspotSettings.defaultShape.name)
+        uiPrefs.putString(hotspotDefaultColorKey, formatColorField(hotspotSettings.defaultColor))
         uiPrefs.flush()
     }
 
@@ -2164,6 +2182,10 @@ class SketchUiOverlay(
         hotspotNameField = VisTextField()
         hotspotOperationSelect = VisSelectBox()
         hotspotOperationSelect.setItems(*HotspotStore.OperationKind.entries.toTypedArray())
+        hotspotShapeSelect = VisSelectBox()
+        hotspotShapeSelect.setItems(*HotspotStore.ShapeKind.entries.toTypedArray())
+        hotspotColorField = VisTextField()
+        hotspotColorButton = createArchitectureColorButton("Hotspot color", hotspotColorField)
         hotspotAttachedLabel = VisLabel("Attached: edges 0 faces 0")
         hotspotReferenceLabel = VisLabel("Reference: none")
         hotspotAddButton = VisTextButton("Add At Cursor")
@@ -2173,13 +2195,18 @@ class SketchUiOverlay(
         hotspotPickReferenceButton = VisTextButton("Pick Reference")
         hotspotClearReferenceButton = VisTextButton("Clear Reference")
 
-        content.add(hotspotModeLabel).colspan(2).left().growX().row()
+        content.add(hotspotModeLabel).colspan(3).left().growX().row()
         content.add(VisLabel("Name")).left()
         content.add(hotspotNameField).growX().row()
         content.add(VisLabel("Operation")).left()
         content.add(hotspotOperationSelect).growX().row()
-        content.add(hotspotAttachedLabel).colspan(2).left().growX().row()
-        content.add(hotspotReferenceLabel).colspan(2).left().growX().row()
+        content.add(VisLabel("Shape")).left()
+        content.add(hotspotShapeSelect).growX().row()
+        content.add(VisLabel("Color")).left()
+        content.add(hotspotColorField).growX()
+        content.add(hotspotColorButton).size(30f, 24f).left().row()
+        content.add(hotspotAttachedLabel).colspan(3).left().growX().row()
+        content.add(hotspotReferenceLabel).colspan(3).left().growX().row()
         content.add(hotspotAttachButton).left().growX()
         content.add(hotspotSelectAttachedButton).left().growX().row()
         content.add(hotspotPickReferenceButton).left().growX()
@@ -2209,6 +2236,59 @@ class SketchUiOverlay(
                     saveHotspotDefaults()
                 } else {
                     hotspotOperationChanged(targetId, operation)
+                }
+            }
+        })
+        hotspotShapeSelect.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingHotspotFields) {
+                    return
+                }
+                val shape = hotspotShapeSelect.selected ?: return
+                val targetId = selectedHotspotId
+                if (targetId == null) {
+                    hotspotSettings.defaultShape = shape
+                    hotspotDefaultShapeChanged(shape)
+                    saveHotspotDefaults()
+                } else {
+                    hotspotShapeChanged(targetId, shape)
+                }
+            }
+        })
+        hotspotColorField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingHotspotFields) {
+                    return
+                }
+                val parsed = parseColorField(hotspotColorField.text) ?: return
+                val targetId = selectedHotspotId
+                if (targetId == null) {
+                    hotspotSettings.defaultColor.set(parsed)
+                    hotspotDefaultColorChanged(Color(parsed))
+                    updateArchitectureColorButtonSwatch(hotspotColorButton, parsed)
+                    saveHotspotDefaults()
+                } else {
+                    hotspotColorChanged(targetId, Color(parsed))
+                    updateArchitectureColorButtonSwatch(hotspotColorButton, parsed)
+                }
+            }
+        })
+        hotspotColorButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                val current = parseColorField(hotspotColorField.text) ?: hotspotSettings.defaultColor
+                showArchitectureColorPicker("Hotspot color", current) { picked ->
+                    updatingHotspotFields = true
+                    hotspotColorField.text = formatColorField(picked)
+                    updateArchitectureColorButtonSwatch(hotspotColorButton, picked)
+                    updatingHotspotFields = false
+                    val targetId = selectedHotspotId
+                    if (targetId == null) {
+                        hotspotSettings.defaultColor.set(picked)
+                        hotspotDefaultColorChanged(Color(picked))
+                        saveHotspotDefaults()
+                    } else {
+                        hotspotColorChanged(targetId, Color(picked))
+                    }
                 }
             }
         })
@@ -2268,9 +2348,17 @@ class SketchUiOverlay(
         updatingHotspotFields = true
         hotspotNameField.text = info.selectedName ?: ""
         hotspotOperationSelect.selected = info.selectedOperation ?: hotspotSettings.defaultOperation
+        hotspotShapeSelect.selected = info.selectedShape ?: hotspotSettings.defaultShape
+        hotspotColorField.text = formatColorField(info.selectedColor ?: hotspotSettings.defaultColor)
+        updateArchitectureColorButtonSwatch(
+            hotspotColorButton,
+            parseColorField(hotspotColorField.text) ?: hotspotSettings.defaultColor
+        )
         updatingHotspotFields = false
 
         hotspotNameField.isDisabled = !hasSelection
+        hotspotShapeSelect.isDisabled = false
+        hotspotColorField.isDisabled = false
         hotspotAttachButton.isDisabled = !hasSelection
         hotspotSelectAttachedButton.isDisabled = !hasSelection
         hotspotPickReferenceButton.isDisabled = !hasSelection
@@ -3942,6 +4030,8 @@ class SketchUiOverlay(
         val selectedId: String? = null,
         val selectedName: String? = null,
         val selectedOperation: HotspotStore.OperationKind? = null,
+        val selectedShape: HotspotStore.ShapeKind? = null,
+        val selectedColor: Color? = null,
         val attachedEdgeCount: Int = 0,
         val attachedFaceCount: Int = 0,
         val hasReference: Boolean = false
