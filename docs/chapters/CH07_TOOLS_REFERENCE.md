@@ -80,6 +80,18 @@ Example grouped object/prototype state:
 
 ![Chapter 07 - Object workflow](../../examples/mcp.demo_20260213_145026.png)
 
+## Hotspot-Driven Object Behavior
+
+- Add hotspot placement via the **Hotspot** action, then click in viewport to place.
+- Hotspots are configured in the **Hotspot Settings** panel.
+- Available operation classes:
+  - transform operators (`MOVE`, `STRETCH`, `SCALE`, `ROTATE`),
+  - multiply operators (`MULTIPLY_LINEAR`, `MULTIPLY_VOLUMETRIC`, `MULTIPLY_ROTATE_2D`, `MULTIPLY_ROTATE_3D`).
+- Hotspots can bind to selected geometry and to other hotspots for cascading behavior.
+- Runtime expectation:
+  - edit mode changes prototype definitions,
+  - instance mode changes per-instance hotspot state and recomputes runtime geometry.
+
 ## Key Interactions (Tool-Specific)
 From `docs/SHORTCUTS.md`:
 - `Enter`: commit/finalize/reset draft depending on active tool.

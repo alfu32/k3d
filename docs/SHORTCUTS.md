@@ -33,6 +33,7 @@ This is a quick reference for keyboard and mouse shortcuts.
 - `Line`: `Enter` finishes the current chain, `Esc` exits to Select.
 - `Construction Line`: `Enter` clears current segment draft, `Esc` exits to Select.
 - `Polyline` / `Double Line`: `Esc` cancel, `Enter` finalize, `Backspace` remove last segment.
+- `Hotspot` (action workflow): no default keybinding; use Actions toolbar button or command palette.
 - `Wall`: `Enter` finishes current wall chain, `Esc` exits to Select.
 - `Slab` / `Stair` / `Add Hole` / `Window Frame` / `Door Frame`: `Enter` resets current draft, `Esc` exits to Select.
 

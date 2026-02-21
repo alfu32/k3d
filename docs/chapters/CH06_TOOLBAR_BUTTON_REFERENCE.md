@@ -92,7 +92,7 @@ Source: `core/src/main/kotlin/com/github/alfu32/sketch/ui/SketchUiOverlay.kt`.
 - `Voxel`, `Voxel Volume`, `Voxel Frame`, action `Voxelize Faces`
 
 ### Actions
-- `Cleanup`, `Color`, `Delete`, `Flip Faces`, `Lighting`, `Plugin Manager`
+- `Cleanup`, `Color`, `Delete`, `Flip Faces`, `Hotspot`, `Lighting`, `Plugin Manager`
 
 ### Camera
 - `Orbit`, `Walk`, `Ortho`

@@ -11,12 +11,14 @@ K3D is a Kotlin + libGDX desktop modeler for fast, direct 3D sketching. It focus
 - User Manual: [`USER_MANUAL.md`](USER_MANUAL.md)
 - Shortcuts: [`SHORTCUTS.md`](SHORTCUTS.md)
 - Plugin Development: [`PLUGIN_DEVELOPMENT.md`](PLUGIN_DEVELOPMENT.md)
+- Release Notes 3.1.0: [`specification/RELEASE_NOTES-3.1.0.md`](specification/RELEASE_NOTES-3.1.0.md)
 - Release Notes 2.9.0: [`specification/RELEASE_NOTES-2.9.0.md`](specification/RELEASE_NOTES-2.9.0.md)
 - Privacy Policy: [`PRIVACY_POLICY.md`](PRIVACY_POLICY.md)
 - License: [`LICENSE.md`](LICENSE.md)
 
 ## Release notes archive
 
+- 3.1.0: [`specification/RELEASE_NOTES-3.1.0.md`](specification/RELEASE_NOTES-3.1.0.md)
 - 2.9.0: [`specification/RELEASE_NOTES-2.9.0.md`](specification/RELEASE_NOTES-2.9.0.md)
 - 2.7.5: [`specification/RELEASE_NOTES-2.7.5.md`](specification/RELEASE_NOTES-2.7.5.md)
 - 1.7.10: [`specification/RELEASE_NOTES-1.7.10.md`](specification/RELEASE_NOTES-1.7.10.md)

@@ -14,6 +14,7 @@ K3D is a Kotlin + libGDX desktop modeler for fast, direct 3D sketching. It focus
 - Direct modeling: draw edges, create faces, and push/pull solids.
 - Precision: snapping to grid, endpoints, midpoints, lines, faces, and guides.
 - Object workflow: group geometry into reusable object prototypes and instances.
+- Hotspot-driven visual programming for dynamic per-instance geometry behaviors.
 - Measurements: linear dimensions, numeric input, and unit-aware modeling.
 - Custom lighting and shadows with real-time controls.
 - Groovy-powered dev console and plugin system.
@@ -100,6 +101,7 @@ help                                     Show help
 
 ## Release notes
 
+- 3.1.0: [`docs/specification/RELEASE_NOTES-3.1.0.md`](docs/specification/RELEASE_NOTES-3.1.0.md)
 - 2.9.0: [`docs/specification/RELEASE_NOTES-2.9.0.md`](docs/specification/RELEASE_NOTES-2.9.0.md)
 - 2.7.5: [`docs/specification/RELEASE_NOTES-2.7.5.md`](docs/specification/RELEASE_NOTES-2.7.5.md)
 - 1.7.10: [`docs/specification/RELEASE_NOTES-1.7.10.md`](docs/specification/RELEASE_NOTES-1.7.10.md)

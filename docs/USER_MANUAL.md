@@ -156,6 +156,57 @@ Objects let you reuse geometry and isolate edits.
 
 ![Screenshot placeholder: Objects panel](images/img_10.png)
 
+## Hotspots and visual programming (dynamic objects)
+
+Hotspots are parametric control handles used inside object prototypes and on object instances.
+
+- A prototype defines geometry + hotspots + hotspot bindings.
+- Each instance stores its own hotspot positions.
+- Instance geometry is recomputed from the prototype baseline using per-instance hotspot values.
+
+### Core workflow
+
+1. Enter object edit mode (double-click an instance).
+2. Use the **Hotspot** action button, then click in the viewport to place a hotspot.
+3. In **Hotspot Settings**, choose:
+   - name,
+   - operation,
+   - shape,
+   - color.
+4. Select geometry and click **Attach Selection** to bind it to the selected hotspot.
+5. (Optional) Select multiple hotspots, then click **Attach Selection** on one hotspot to bind hotspot-to-hotspot dependencies.
+6. (Optional) Click **Pick Reference** for operations that need a center/reference.
+7. Exit object edit mode, then drag hotspot handles on instances to drive per-instance deformation.
+
+### Hotspot operations
+
+- `MOVE`: translate attached geometry.
+- `STRETCH`: stretch attached geometry with vertex-aware behavior.
+- `SCALE`: scale around reference (or origin when no reference is set).
+- `ROTATE`: rotate around reference.
+- `MULTIPLY_LINEAR`: replicate attached geometry along hotspot span.
+- `MULTIPLY_VOLUMETRIC`: replicate attached geometry in a filled extent volume.
+- `MULTIPLY_ROTATE_2D`: replicate along an arc around reference.
+- `MULTIPLY_ROTATE_3D`: replicate along a spiral-like path around reference with height progression.
+
+### Hotspot shapes and colors
+
+Available shapes:
+
+- triangle up,
+- square,
+- circle,
+- diamond,
+- triangle down.
+
+You can set shape/color globally as defaults (no hotspot selected) or per selected hotspot.
+
+### Notes
+
+- Multiply operations generate derived instance geometry at runtime from bindings.
+- For predictable results, bind explicit geometry (edges/faces) before using multiply operations.
+- Hotspot binding state is saved with the model and restored on reopen.
+
 ## Tools
 
 ### Select
@@ -453,6 +504,7 @@ Objects let you reuse geometry and isolate edits.
 - **Delete**: delete current selection.
 - **Flip Faces**: reverse the orientation of selected faces.
 - **Color**: open the paint color picker.
+- **Hotspot**: start hotspot placement (click in viewport to place).
 - **Voxelize Faces**: convert selected mesh faces into voxels.
   - Works from any mesh context.
   - If no voxel group is active, K3D creates one and enters it.
@@ -463,7 +515,7 @@ Shortcut notes: `Ctrl+L` runs Cleanup; `Delete` removes selection; flip/color/vo
 
 ### Selection panel
 
-- Counts for edges, faces, objects, dimensions, and texts.
+- Counts for edges, faces, voxels, hotspots, objects, dimensions, and texts.
 - Text fields to edit text content and size.
 - Toggle for screen-aligned vs model-aligned text.
 Input: click fields to edit; checkbox toggles screen-aligned text.
@@ -487,6 +539,26 @@ Input: double-click to place; Delete Prototype button removes selection (when al
 - Grid size (spacing).
 - Snap radius (snap tolerance).
 Input: type values in fields; drag Snap radius slider.
+
+### Hotspot Settings panel
+
+- Shows either:
+  - default hotspot settings (when no hotspot is selected), or
+  - selected hotspot settings.
+- Controls:
+  - hotspot name,
+  - operation,
+  - shape,
+  - color (text field + picker),
+  - attached geometry counters,
+  - reference state.
+- Actions:
+  - **Attach Selection**
+  - **Select Attached**
+  - **Pick Reference**
+  - **Clear Reference**
+  - **Add At Cursor**
+  - **Delete Selected**
 
 ### Lighting panel
 

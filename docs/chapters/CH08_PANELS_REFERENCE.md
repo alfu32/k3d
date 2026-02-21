@@ -8,7 +8,7 @@ Document each right-side panel, what it controls, and its command ID.
 
 ## Selection Panel
 - Command: `view.selection`
-- Shows counts for selected edges/faces/voxels/objects/dimensions/texts.
+- Shows counts for selected edges/faces/voxels/hotspots/objects/dimensions/texts.
 - Useful for validating selection operations during testing.
 
 ## Object Info Panel
@@ -35,6 +35,18 @@ Document each right-side panel, what it controls, and its command ID.
   - wall thickness/height/inclination,
   - slab/stair/frame dimensions,
   - colors and related architecture parameters.
+
+## Hotspot Settings Panel
+- Command: `view.hotspot_settings`
+- Supports default and per-selected-hotspot editing.
+- Main controls:
+  - name,
+  - operation,
+  - shape,
+  - color,
+  - reference pick/clear,
+  - attach/select attached geometry.
+- Used to build dynamic object behavior through hotspot-driven instance recompute.
 
 ## Lighting Panel
 - Command: `view.lighting`
