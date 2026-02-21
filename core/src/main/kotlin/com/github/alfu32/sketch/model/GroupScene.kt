@@ -991,6 +991,214 @@ class GroupScene(
         triangle: DraftFaceStore.Triangle
     ): Boolean = refs.any { ref -> matchesTriangleRef(store, triangle, ref) }
 
+    private fun transformRuntimeGeometry(
+        lineStore: DraftLineStore,
+        faceStore: DraftFaceStore,
+        segments: Set<DraftLineStore.Segment>,
+        triangles: Set<DraftFaceStore.Triangle>,
+        transform: (Vector3) -> Vector3
+    ) {
+        lineStore.withChangeSuppressed {
+            lineStore.getSegments().forEach { segment ->
+                if (!segments.contains(segment)) {
+                    return@forEach
+                }
+                segment.start.set(transform(Vector3(segment.start)))
+                segment.end.set(transform(Vector3(segment.end)))
+            }
+        }
+        faceStore.withChangeSuppressed {
+            faceStore.getTriangles().forEach { triangle ->
+                if (!triangles.contains(triangle)) {
+                    return@forEach
+                }
+                triangle.a.set(transform(Vector3(triangle.a)))
+                triangle.b.set(transform(Vector3(triangle.b)))
+                triangle.c.set(transform(Vector3(triangle.c)))
+            }
+        }
+    }
+
+    private fun applyHotspotToRuntimeGeometry(
+        group: GroupNode,
+        hotspotStore: HotspotStore,
+        hotspot: HotspotStore.Hotspot,
+        lineStore: DraftLineStore,
+        faceStore: DraftFaceStore
+    ) {
+        val baseLocal = hotspot.position
+        val targetLocal = group.hotspotPositionOverrides[hotspot.id] ?: hotspot.position
+        if (targetLocal.epsilonEquals(baseLocal, 1e-6f)) {
+            return
+        }
+        val referenceLocal = hotspot.referencePosition ?: Vector3()
+        val attachedSegments = attachedSegmentsFor(group, hotspot).toSet()
+        val attachedTriangles = attachedTrianglesFor(group, hotspot).toSet()
+        val attachedSegmentObjects = lineStore.getSegments()
+            .filter { segment -> containsSegmentRef(hotspotStore, attachedSegments, segment) }
+            .toSet()
+        val attachedTriangleObjects = faceStore.getTriangles()
+            .filter { triangle -> containsTriangleRef(hotspotStore, attachedTriangles, triangle) }
+            .toSet()
+
+        if (hotspot.operation == HotspotStore.OperationKind.STRETCH) {
+            val delta = Vector3(targetLocal).sub(baseLocal)
+            val hotspotKeys = if (attachedSegments.isEmpty() && attachedTriangles.isEmpty()) {
+                linkedSetOf(hotspotVertexKey(baseLocal))
+            } else {
+                attachedHotspotVertexKeys(attachedSegments, attachedTriangles)
+            }
+            lineStore.withChangeSuppressed {
+                lineStore.getSegments().forEach { segment ->
+                    if (attachedSegmentObjects.contains(segment)) {
+                        segment.start.add(delta)
+                        segment.end.add(delta)
+                    } else {
+                        if (hotspotKeys.contains(hotspotVertexKey(segment.start))) {
+                            segment.start.add(delta)
+                        }
+                        if (hotspotKeys.contains(hotspotVertexKey(segment.end))) {
+                            segment.end.add(delta)
+                        }
+                    }
+                }
+            }
+            faceStore.withChangeSuppressed {
+                faceStore.getTriangles().forEach { triangle ->
+                    if (attachedTriangleObjects.contains(triangle)) {
+                        triangle.a.add(delta)
+                        triangle.b.add(delta)
+                        triangle.c.add(delta)
+                    } else {
+                        if (hotspotKeys.contains(hotspotVertexKey(triangle.a))) {
+                            triangle.a.add(delta)
+                        }
+                        if (hotspotKeys.contains(hotspotVertexKey(triangle.b))) {
+                            triangle.b.add(delta)
+                        }
+                        if (hotspotKeys.contains(hotspotVertexKey(triangle.c))) {
+                            triangle.c.add(delta)
+                        }
+                    }
+                }
+            }
+            return
+        }
+
+        val transform: (Vector3) -> Vector3 = when (hotspot.operation) {
+            HotspotStore.OperationKind.MOVE -> run {
+                val delta = Vector3(targetLocal).sub(baseLocal)
+                return@run { point: Vector3 -> Vector3(point).add(delta) }
+            }
+            HotspotStore.OperationKind.SCALE -> run {
+                val baseVec = Vector3(baseLocal).sub(referenceLocal)
+                val targetVec = Vector3(targetLocal).sub(referenceLocal)
+                val baseLen = baseVec.len()
+                val targetLen = targetVec.len()
+                val factor = if (baseLen <= 1e-6f) 1f else (targetLen / baseLen).coerceIn(0.01f, 100f)
+                return@run { point: Vector3 -> Vector3(point).sub(referenceLocal).scl(factor).add(referenceLocal) }
+            }
+            HotspotStore.OperationKind.ROTATE -> run {
+                val from = Vector3(baseLocal).sub(referenceLocal)
+                val to = Vector3(targetLocal).sub(referenceLocal)
+                val quat = Quaternion()
+                if (from.len2() <= 1e-8f || to.len2() <= 1e-8f) {
+                    quat.idt()
+                } else {
+                    quat.setFromCross(Vector3(from).nor(), Vector3(to).nor())
+                }
+                return@run { point: Vector3 -> Vector3(point).sub(referenceLocal).mul(quat).add(referenceLocal) }
+            }
+            HotspotStore.OperationKind.STRETCH -> { point: Vector3 -> Vector3(point) }
+        }
+
+        if (attachedSegmentObjects.isNotEmpty() || attachedTriangleObjects.isNotEmpty()) {
+            transformRuntimeGeometry(
+                lineStore = lineStore,
+                faceStore = faceStore,
+                segments = attachedSegmentObjects,
+                triangles = attachedTriangleObjects,
+                transform = transform
+            )
+            return
+        }
+
+        val anchorKey = hotspotVertexKey(baseLocal)
+        lineStore.withChangeSuppressed {
+            lineStore.getSegments().forEach { segment ->
+                if (hotspotVertexKey(segment.start) == anchorKey) {
+                    segment.start.set(transform(Vector3(segment.start)))
+                }
+                if (hotspotVertexKey(segment.end) == anchorKey) {
+                    segment.end.set(transform(Vector3(segment.end)))
+                }
+            }
+        }
+        faceStore.withChangeSuppressed {
+            faceStore.getTriangles().forEach { triangle ->
+                if (hotspotVertexKey(triangle.a) == anchorKey) {
+                    triangle.a.set(transform(Vector3(triangle.a)))
+                }
+                if (hotspotVertexKey(triangle.b) == anchorKey) {
+                    triangle.b.set(transform(Vector3(triangle.b)))
+                }
+                if (hotspotVertexKey(triangle.c) == anchorKey) {
+                    triangle.c.set(transform(Vector3(triangle.c)))
+                }
+            }
+        }
+    }
+
+    private fun recomputeInstanceGeometryFromPrototype(group: GroupNode) {
+        if (group === root || group.editPrototypeMode) {
+            return
+        }
+        val selectedSegmentIds = group.lineStoreOverride?.getSelected()?.map { segment -> segment.id }?.toSet().orEmpty()
+        val selectedFaceIds = group.faceStoreOverride?.getSelected()?.map { triangle -> triangle.id }?.toSet().orEmpty()
+
+        val lineStore = cloneLineStore(group.prototype.lineStore)
+        val faceStore = cloneFaceStore(group.prototype.faceStore)
+        val dimensionStore = cloneDimensionStore(group.prototype.dimensionStore)
+        val textStore = cloneTextStore(group.prototype.textStore)
+
+        val hotspotStore = group.prototype.hotspotStore
+        hotspotStore.allHotspots().forEach { hotspot ->
+            applyHotspotToRuntimeGeometry(
+                group = group,
+                hotspotStore = hotspotStore,
+                hotspot = hotspot,
+                lineStore = lineStore,
+                faceStore = faceStore
+            )
+        }
+
+        if (selectedSegmentIds.isNotEmpty()) {
+            lineStore.getSegments().forEach { segment ->
+                if (selectedSegmentIds.contains(segment.id)) {
+                    lineStore.addSelection(segment)
+                }
+            }
+        }
+        if (selectedFaceIds.isNotEmpty()) {
+            faceStore.getTriangles().forEach { triangle ->
+                if (selectedFaceIds.contains(triangle.id)) {
+                    faceStore.addSelection(triangle)
+                }
+            }
+        }
+
+        group.lineStoreOverride = lineStore
+        group.faceStoreOverride = faceStore
+        group.dimensionStoreOverride = dimensionStore
+        group.textStoreOverride = textStore
+    }
+
+    fun recomputeAllInstanceGeometryFromPrototypes() {
+        walkGroups(root) { group ->
+            recomputeInstanceGeometryFromPrototype(group)
+        }
+    }
+
     private fun ensureIndependentPrototypeForHotspotGroup(group: GroupNode) {
         if (group === root || group === activeGroup) {
             return
@@ -1802,210 +2010,14 @@ class GroupScene(
         if (hotspotStoreFor(group).hotspotById(id) == null) {
             return false
         }
-        ensureInstanceGeometryOverrides(group)
         val store = hotspotStoreFor(group)
         val hotspot = store.hotspotById(id) ?: return false
         val targetLocal = group.toLocal(targetWorld)
-        val baseLocal = Vector3(group.hotspotPositionOverrides[hotspot.id] ?: hotspot.position)
-        val referenceLocal = hotspot.referencePosition?.let { Vector3(it) } ?: Vector3()
-        val attachedSegments = attachedSegmentsFor(group, hotspot).toSet()
-        val attachedTriangles = attachedTrianglesFor(group, hotspot).toSet()
-
-        if (hotspot.operation == HotspotStore.OperationKind.STRETCH) {
-            val delta = Vector3(targetLocal).sub(baseLocal)
-            val hotspotKeys = if (attachedSegments.isEmpty() && attachedTriangles.isEmpty()) {
-                linkedSetOf(hotspotVertexKey(baseLocal))
-            } else {
-                attachedHotspotVertexKeys(attachedSegments, attachedTriangles)
-            }
-            val attachedSegmentObjects = group.lineStore.getSegments()
-                .filter { segment -> containsSegmentRef(store, attachedSegments, segment) }
-                .toSet()
-            val attachedTriangleObjects = group.faceStore.getTriangles()
-                .filter { triangle -> containsTriangleRef(store, attachedTriangles, triangle) }
-                .toSet()
-
-            var changed = false
-            val lineStore = group.lineStore
-            lineStore.withChangeSuppressed {
-                lineStore.getSegments().forEach { segment ->
-                    if (attachedSegmentObjects.contains(segment)) {
-                        segment.start.add(delta)
-                        segment.end.add(delta)
-                        changed = true
-                    } else {
-                        val startKey = hotspotVertexKey(segment.start)
-                        if (hotspotKeys.contains(startKey)) {
-                            segment.start.add(delta)
-                            changed = true
-                        }
-                        val endKey = hotspotVertexKey(segment.end)
-                        if (hotspotKeys.contains(endKey)) {
-                            segment.end.add(delta)
-                            changed = true
-                        }
-                    }
-                }
-            }
-
-            val faceStore = group.faceStore
-            faceStore.withChangeSuppressed {
-                faceStore.getTriangles().forEach { tri ->
-                    if (attachedTriangleObjects.contains(tri)) {
-                        tri.a.add(delta)
-                        tri.b.add(delta)
-                        tri.c.add(delta)
-                        changed = true
-                    } else {
-                        val aKey = hotspotVertexKey(tri.a)
-                        if (hotspotKeys.contains(aKey)) {
-                            tri.a.add(delta)
-                            changed = true
-                        }
-                        val bKey = hotspotVertexKey(tri.b)
-                        if (hotspotKeys.contains(bKey)) {
-                            tri.b.add(delta)
-                            changed = true
-                        }
-                        val cKey = hotspotVertexKey(tri.c)
-                        if (hotspotKeys.contains(cKey)) {
-                            tri.c.add(delta)
-                            changed = true
-                        }
-                    }
-                }
-            }
-
-            if (changed) {
-                val updatedSegments = attachedSegmentObjects.map { segment ->
-                    store.segmentRef(segment)
-                }.toMutableSet()
-                val updatedTriangles = attachedTriangleObjects.map { triangle ->
-                    store.triangleRef(triangle)
-                }.toMutableSet()
-                if (group === activeGroup) {
-                    hotspot.attachedSegments = updatedSegments
-                    hotspot.attachedTriangles = updatedTriangles
-                } else {
-                    group.hotspotAttachedSegmentOverrides[hotspot.id] = updatedSegments
-                    group.hotspotAttachedTriangleOverrides[hotspot.id] = updatedTriangles
-                }
-                lineStore.notifyExternalChange()
-                faceStore.notifyExternalChange()
-            }
-            if (group === activeGroup) {
-                hotspot.position.set(targetLocal)
-            } else {
-                group.hotspotPositionOverrides[hotspot.id] = Vector3(targetLocal)
-            }
-            store.notifyExternalChange()
-            notifyChange()
-            return true
-        }
-
-        val transform: (Vector3) -> Vector3 = when (hotspot.operation) {
-            HotspotStore.OperationKind.MOVE -> run {
-                val delta = Vector3(targetLocal).sub(baseLocal)
-                return@run { point: Vector3 -> Vector3(point).add(delta) }
-            }
-            HotspotStore.OperationKind.SCALE -> run {
-                val baseVec = Vector3(baseLocal).sub(referenceLocal)
-                val targetVec = Vector3(targetLocal).sub(referenceLocal)
-                val baseLen = baseVec.len()
-                val targetLen = targetVec.len()
-                val factor = if (baseLen <= 1e-6f) 1f else (targetLen / baseLen).coerceIn(0.01f, 100f)
-                return@run { point: Vector3 ->
-                    Vector3(point).sub(referenceLocal).scl(factor).add(referenceLocal)
-                }
-            }
-            HotspotStore.OperationKind.ROTATE -> run {
-                val from = Vector3(baseLocal).sub(referenceLocal)
-                val to = Vector3(targetLocal).sub(referenceLocal)
-                val quat = Quaternion()
-                if (from.len2() <= 1e-8f || to.len2() <= 1e-8f) {
-                    quat.idt()
-                } else {
-                    quat.setFromCross(Vector3(from).nor(), Vector3(to).nor())
-                }
-                return@run { point: Vector3 ->
-                    Vector3(point).sub(referenceLocal).mul(quat).add(referenceLocal)
-                }
-            }
-            HotspotStore.OperationKind.STRETCH -> return false
-        }
-
-        var changed = false
-        if (attachedSegments.isNotEmpty()) {
-            val targetSegments = group.lineStore.getSegments()
-                .filter { segment -> containsSegmentRef(store, attachedSegments, segment) }
-                .toSet()
-            if (targetSegments.isNotEmpty()) {
-                val mapped = group.lineStore.transformSegments(targetSegments, transform)
-                val updatedSegments = mapped.values.map { segment -> store.segmentRef(segment) }.toMutableSet()
-                if (group === activeGroup) {
-                    hotspot.attachedSegments = updatedSegments
-                } else {
-                    group.hotspotAttachedSegmentOverrides[hotspot.id] = updatedSegments
-                }
-                changed = true
-            }
-        }
-        if (attachedTriangles.isNotEmpty()) {
-            val targetTriangles = group.faceStore.getTriangles()
-                .filter { triangle -> containsTriangleRef(store, attachedTriangles, triangle) }
-                .toSet()
-            if (targetTriangles.isNotEmpty()) {
-                val mapped = group.faceStore.transformTriangles(targetTriangles, transform)
-                val updatedTriangles = mapped.values.map { triangle -> store.triangleRef(triangle) }.toMutableSet()
-                if (group === activeGroup) {
-                    hotspot.attachedTriangles = updatedTriangles
-                } else {
-                    group.hotspotAttachedTriangleOverrides[hotspot.id] = updatedTriangles
-                }
-                changed = true
-            }
-        }
-
-        if (attachedSegments.isEmpty() && attachedTriangles.isEmpty()) {
-            val anchorKey = hotspotVertexKey(baseLocal)
-            val lineStore = group.lineStore
-            lineStore.withChangeSuppressed {
-                lineStore.getSegments().forEach { segment ->
-                    if (hotspotVertexKey(segment.start) == anchorKey) {
-                        segment.start.set(transform(Vector3(segment.start)))
-                        changed = true
-                    }
-                    if (hotspotVertexKey(segment.end) == anchorKey) {
-                        segment.end.set(transform(Vector3(segment.end)))
-                        changed = true
-                    }
-                }
-            }
-            val faceStore = group.faceStore
-            faceStore.withChangeSuppressed {
-                faceStore.getTriangles().forEach { tri ->
-                    if (hotspotVertexKey(tri.a) == anchorKey) {
-                        tri.a.set(transform(Vector3(tri.a)))
-                        changed = true
-                    }
-                    if (hotspotVertexKey(tri.b) == anchorKey) {
-                        tri.b.set(transform(Vector3(tri.b)))
-                        changed = true
-                    }
-                    if (hotspotVertexKey(tri.c) == anchorKey) {
-                        tri.c.set(transform(Vector3(tri.c)))
-                        changed = true
-                    }
-                }
-            }
-            if (changed) {
-                lineStore.notifyExternalChange()
-                faceStore.notifyExternalChange()
-            }
-        }
-
-        if (group === activeGroup) {
+        if (group === activeGroup && group.editPrototypeMode) {
             hotspot.position.set(targetLocal)
+        } else if (targetLocal.epsilonEquals(hotspot.position, 1e-6f)) {
+            // Keep instance state compact: equal-to-default values are not persisted as overrides.
+            group.hotspotPositionOverrides.remove(hotspot.id)
         } else {
             group.hotspotPositionOverrides[hotspot.id] = Vector3(targetLocal)
         }

@@ -2034,6 +2034,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         undoManager.update()
         pluginHost.dispatchUpdate(Gdx.graphics.deltaTime)
         toolController.update(Gdx.graphics.deltaTime)
+        scene.recomputeAllInstanceGeometryFromPrototypes()
 
         updateFaceMesh()
         shadowLight.update(activeCamera)
