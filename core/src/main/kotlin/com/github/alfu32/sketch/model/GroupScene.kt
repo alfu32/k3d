@@ -105,7 +105,8 @@ class GroupScene(
         val lineStore: DraftLineStore,
         val faceStore: DraftFaceStore,
         val dimensionStore: DraftDimensionStore,
-        val textStore: DraftTextStore
+        val textStore: DraftTextStore,
+        val prototypeVertexIds: MutableMap<HotspotStore.VertexKey, String> = linkedMapOf()
     )
 
     class GroupNode(
@@ -925,6 +926,35 @@ class GroupScene(
         )
     }
 
+    private fun collectPrototypeVertexKeys(prototype: ObjectPrototype): Set<HotspotStore.VertexKey> {
+        val keys = linkedSetOf<HotspotStore.VertexKey>()
+        prototype.lineStore.getSegments().forEach { segment ->
+            keys.add(hotspotVertexKey(segment.start))
+            keys.add(hotspotVertexKey(segment.end))
+        }
+        prototype.faceStore.getTriangles().forEach { triangle ->
+            keys.add(hotspotVertexKey(triangle.a))
+            keys.add(hotspotVertexKey(triangle.b))
+            keys.add(hotspotVertexKey(triangle.c))
+        }
+        return keys
+    }
+
+    private fun refreshPrototypeVertexIds(prototype: ObjectPrototype) {
+        val keys = collectPrototypeVertexKeys(prototype)
+        val next = linkedMapOf<HotspotStore.VertexKey, String>()
+        keys.forEach { key ->
+            val existing = prototype.prototypeVertexIds[key]
+            next[key] = existing ?: java.util.UUID.randomUUID().toString()
+        }
+        prototype.prototypeVertexIds.clear()
+        prototype.prototypeVertexIds.putAll(next)
+    }
+
+    private fun vertexIdForPrototypePoint(prototype: ObjectPrototype, point: Vector3): String? {
+        return prototype.prototypeVertexIds[hotspotVertexKey(point)]
+    }
+
     private fun attachedHotspotVertexKeys(
         attachedSegments: Set<HotspotStore.SegmentRef>,
         attachedTriangles: Set<HotspotStore.TriangleRef>
@@ -1020,6 +1050,34 @@ class GroupScene(
         return out
     }
 
+    private fun buildVertexIdByHandle(
+        lineStore: DraftLineStore,
+        faceStore: DraftFaceStore,
+        prototype: ObjectPrototype
+    ): Map<VertexHandle, String> {
+        val out = linkedMapOf<VertexHandle, String>()
+        lineStore.getSegments().forEach { segment ->
+            vertexIdForPrototypePoint(prototype, segment.start)?.let { id ->
+                out[VertexHandle(0, segment.id, 0)] = id
+            }
+            vertexIdForPrototypePoint(prototype, segment.end)?.let { id ->
+                out[VertexHandle(0, segment.id, 1)] = id
+            }
+        }
+        faceStore.getTriangles().forEach { triangle ->
+            vertexIdForPrototypePoint(prototype, triangle.a)?.let { id ->
+                out[VertexHandle(1, triangle.id, 0)] = id
+            }
+            vertexIdForPrototypePoint(prototype, triangle.b)?.let { id ->
+                out[VertexHandle(1, triangle.id, 1)] = id
+            }
+            vertexIdForPrototypePoint(prototype, triangle.c)?.let { id ->
+                out[VertexHandle(1, triangle.id, 2)] = id
+            }
+        }
+        return out
+    }
+
     private fun transformRuntimeGeometry(
         lineStore: DraftLineStore,
         faceStore: DraftFaceStore,
@@ -1053,7 +1111,8 @@ class GroupScene(
         hotspotStore: HotspotStore,
         hotspot: HotspotStore.Hotspot,
         lineStore: DraftLineStore,
-        faceStore: DraftFaceStore
+        faceStore: DraftFaceStore,
+        vertexIdByHandle: Map<VertexHandle, String>
     ) {
         val baseLocal = hotspot.position
         val targetLocal = group.hotspotPositionOverrides[hotspot.id] ?: hotspot.position
@@ -1069,15 +1128,30 @@ class GroupScene(
         val attachedTriangleObjects = faceStore.getTriangles()
             .filter { triangle -> containsTriangleRef(hotspotStore, attachedTriangles, triangle) }
             .toSet()
+        val explicitVertexHandles = if (hotspot.attachedVertexIds.isEmpty()) {
+            emptySet()
+        } else {
+            vertexIdByHandle
+                .filter { (_, vertexId) -> hotspot.attachedVertexIds.contains(vertexId) }
+                .keys
+        }
 
         if (hotspot.operation == HotspotStore.OperationKind.STRETCH) {
             val delta = Vector3(targetLocal).sub(baseLocal)
-            val anchorHandles = if (attachedSegments.isEmpty() && attachedTriangles.isEmpty()) {
+            val anchorHandles = if (
+                attachedSegments.isEmpty() &&
+                attachedTriangles.isEmpty() &&
+                explicitVertexHandles.isEmpty()
+            ) {
                 captureVertexHandlesAtPoint(lineStore, faceStore, baseLocal)
             } else {
                 emptySet()
             }
-            val hotspotKeys = if (attachedSegments.isEmpty() && attachedTriangles.isEmpty()) {
+            val hotspotKeys = if (
+                attachedSegments.isEmpty() &&
+                attachedTriangles.isEmpty() &&
+                explicitVertexHandles.isEmpty()
+            ) {
                 emptySet()
             } else {
                 attachedHotspotVertexKeys(attachedSegments, attachedTriangles)
@@ -1088,12 +1162,14 @@ class GroupScene(
                         segment.start.add(delta)
                         segment.end.add(delta)
                     } else {
-                        if (anchorHandles.contains(VertexHandle(0, segment.id, 0)) ||
+                        if (explicitVertexHandles.contains(VertexHandle(0, segment.id, 0)) ||
+                            anchorHandles.contains(VertexHandle(0, segment.id, 0)) ||
                             hotspotKeys.contains(hotspotVertexKey(segment.start))
                         ) {
                             segment.start.add(delta)
                         }
-                        if (anchorHandles.contains(VertexHandle(0, segment.id, 1)) ||
+                        if (explicitVertexHandles.contains(VertexHandle(0, segment.id, 1)) ||
+                            anchorHandles.contains(VertexHandle(0, segment.id, 1)) ||
                             hotspotKeys.contains(hotspotVertexKey(segment.end))
                         ) {
                             segment.end.add(delta)
@@ -1108,17 +1184,20 @@ class GroupScene(
                         triangle.b.add(delta)
                         triangle.c.add(delta)
                     } else {
-                        if (anchorHandles.contains(VertexHandle(1, triangle.id, 0)) ||
+                        if (explicitVertexHandles.contains(VertexHandle(1, triangle.id, 0)) ||
+                            anchorHandles.contains(VertexHandle(1, triangle.id, 0)) ||
                             hotspotKeys.contains(hotspotVertexKey(triangle.a))
                         ) {
                             triangle.a.add(delta)
                         }
-                        if (anchorHandles.contains(VertexHandle(1, triangle.id, 1)) ||
+                        if (explicitVertexHandles.contains(VertexHandle(1, triangle.id, 1)) ||
+                            anchorHandles.contains(VertexHandle(1, triangle.id, 1)) ||
                             hotspotKeys.contains(hotspotVertexKey(triangle.b))
                         ) {
                             triangle.b.add(delta)
                         }
-                        if (anchorHandles.contains(VertexHandle(1, triangle.id, 2)) ||
+                        if (explicitVertexHandles.contains(VertexHandle(1, triangle.id, 2)) ||
+                            anchorHandles.contains(VertexHandle(1, triangle.id, 2)) ||
                             hotspotKeys.contains(hotspotVertexKey(triangle.c))
                         ) {
                             triangle.c.add(delta)
@@ -1164,41 +1243,64 @@ class GroupScene(
                 triangles = attachedTriangleObjects,
                 transform = transform
             )
-            return
-        }
-
-        val anchorHandles = captureVertexHandlesAtPoint(lineStore, faceStore, baseLocal)
-        val anchorKey = hotspotVertexKey(baseLocal)
-        lineStore.withChangeSuppressed {
-            lineStore.getSegments().forEach { segment ->
-                if (anchorHandles.contains(VertexHandle(0, segment.id, 0)) ||
-                    hotspotVertexKey(segment.start) == anchorKey
-                ) {
-                    segment.start.set(transform(Vector3(segment.start)))
-                }
-                if (anchorHandles.contains(VertexHandle(0, segment.id, 1)) ||
-                    hotspotVertexKey(segment.end) == anchorKey
-                ) {
-                    segment.end.set(transform(Vector3(segment.end)))
+        } else if (explicitVertexHandles.isNotEmpty()) {
+            lineStore.withChangeSuppressed {
+                lineStore.getSegments().forEach { segment ->
+                    if (explicitVertexHandles.contains(VertexHandle(0, segment.id, 0))) {
+                        segment.start.set(transform(Vector3(segment.start)))
+                    }
+                    if (explicitVertexHandles.contains(VertexHandle(0, segment.id, 1))) {
+                        segment.end.set(transform(Vector3(segment.end)))
+                    }
                 }
             }
-        }
-        faceStore.withChangeSuppressed {
-            faceStore.getTriangles().forEach { triangle ->
-                if (anchorHandles.contains(VertexHandle(1, triangle.id, 0)) ||
-                    hotspotVertexKey(triangle.a) == anchorKey
-                ) {
-                    triangle.a.set(transform(Vector3(triangle.a)))
+            faceStore.withChangeSuppressed {
+                faceStore.getTriangles().forEach { triangle ->
+                    if (explicitVertexHandles.contains(VertexHandle(1, triangle.id, 0))) {
+                        triangle.a.set(transform(Vector3(triangle.a)))
+                    }
+                    if (explicitVertexHandles.contains(VertexHandle(1, triangle.id, 1))) {
+                        triangle.b.set(transform(Vector3(triangle.b)))
+                    }
+                    if (explicitVertexHandles.contains(VertexHandle(1, triangle.id, 2))) {
+                        triangle.c.set(transform(Vector3(triangle.c)))
+                    }
                 }
-                if (anchorHandles.contains(VertexHandle(1, triangle.id, 1)) ||
-                    hotspotVertexKey(triangle.b) == anchorKey
-                ) {
-                    triangle.b.set(transform(Vector3(triangle.b)))
+            }
+        } else {
+            val anchorHandles = captureVertexHandlesAtPoint(lineStore, faceStore, baseLocal)
+            val anchorKey = hotspotVertexKey(baseLocal)
+            lineStore.withChangeSuppressed {
+                lineStore.getSegments().forEach { segment ->
+                    if (anchorHandles.contains(VertexHandle(0, segment.id, 0)) ||
+                        hotspotVertexKey(segment.start) == anchorKey
+                    ) {
+                        segment.start.set(transform(Vector3(segment.start)))
+                    }
+                    if (anchorHandles.contains(VertexHandle(0, segment.id, 1)) ||
+                        hotspotVertexKey(segment.end) == anchorKey
+                    ) {
+                        segment.end.set(transform(Vector3(segment.end)))
+                    }
                 }
-                if (anchorHandles.contains(VertexHandle(1, triangle.id, 2)) ||
-                    hotspotVertexKey(triangle.c) == anchorKey
-                ) {
-                    triangle.c.set(transform(Vector3(triangle.c)))
+            }
+            faceStore.withChangeSuppressed {
+                faceStore.getTriangles().forEach { triangle ->
+                    if (anchorHandles.contains(VertexHandle(1, triangle.id, 0)) ||
+                        hotspotVertexKey(triangle.a) == anchorKey
+                    ) {
+                        triangle.a.set(transform(Vector3(triangle.a)))
+                    }
+                    if (anchorHandles.contains(VertexHandle(1, triangle.id, 1)) ||
+                        hotspotVertexKey(triangle.b) == anchorKey
+                    ) {
+                        triangle.b.set(transform(Vector3(triangle.b)))
+                    }
+                    if (anchorHandles.contains(VertexHandle(1, triangle.id, 2)) ||
+                        hotspotVertexKey(triangle.c) == anchorKey
+                    ) {
+                        triangle.c.set(transform(Vector3(triangle.c)))
+                    }
                 }
             }
         }
@@ -1208,6 +1310,7 @@ class GroupScene(
         if (group === root || group.editPrototypeMode) {
             return
         }
+        refreshPrototypeVertexIds(group.prototype)
         val selectedSegmentIds = group.lineStoreOverride?.getSelected()?.map { segment -> segment.id }?.toSet().orEmpty()
         val selectedFaceIds = group.faceStoreOverride?.getSelected()?.map { triangle -> triangle.id }?.toSet().orEmpty()
 
@@ -1215,6 +1318,7 @@ class GroupScene(
         val faceStore = cloneFaceStore(group.prototype.faceStore)
         val dimensionStore = cloneDimensionStore(group.prototype.dimensionStore)
         val textStore = cloneTextStore(group.prototype.textStore)
+        val vertexIdByHandle = buildVertexIdByHandle(lineStore, faceStore, group.prototype)
 
         val hotspotStore = group.prototype.hotspotStore
         hotspotStore.allHotspots().forEach { hotspot ->
@@ -1223,7 +1327,8 @@ class GroupScene(
                 hotspotStore = hotspotStore,
                 hotspot = hotspot,
                 lineStore = lineStore,
-                faceStore = faceStore
+                faceStore = faceStore,
+                vertexIdByHandle = vertexIdByHandle
             )
         }
 
@@ -1249,6 +1354,9 @@ class GroupScene(
     }
 
     fun recomputeAllInstanceGeometryFromPrototypes() {
+        prototypes.values.forEach { prototype ->
+            refreshPrototypeVertexIds(prototype)
+        }
         walkGroups(root) { group ->
             recomputeInstanceGeometryFromPrototype(group)
         }
@@ -1413,6 +1521,7 @@ class GroupScene(
                 position = hotspot.position,
                 operation = hotspot.operation,
                 referencePosition = hotspot.referencePosition,
+                attachedVertexIds = hotspot.attachedVertexIds,
                 attachedSegments = hotspot.attachedSegments,
                 attachedTriangles = hotspot.attachedTriangles,
                 name = hotspot.name,
@@ -1440,7 +1549,10 @@ class GroupScene(
             lineStore = clonedLineStore,
             faceStore = clonedFaceStore,
             dimensionStore = clonedDimensionStore,
-            textStore = clonedTextStore
+            textStore = clonedTextStore,
+            prototypeVertexIds = linkedMapOf<HotspotStore.VertexKey, String>().also { map ->
+                source.prototypeVertexIds.forEach { (key, id) -> map[key] = id }
+            }
         )
     }
 
@@ -2018,8 +2130,24 @@ class GroupScene(
         }
         val store = hotspotStoreFor(group)
         val hotspot = store.hotspotById(id) ?: return null
+        refreshPrototypeVertexIds(group.prototype)
         val segmentRefs = group.lineStore.getSelected().map { segment -> store.segmentRef(segment) }.toSet()
         val triangleRefs = group.faceStore.getSelected().map { tri -> store.triangleRef(tri) }.toSet()
+        val vertexIds = linkedSetOf<String>()
+        group.lineStore.getSelected().forEach { segment ->
+            vertexIdForPrototypePoint(group.prototype, segment.start)?.let { vertexIds.add(it) }
+            vertexIdForPrototypePoint(group.prototype, segment.end)?.let { vertexIds.add(it) }
+        }
+        group.faceStore.getSelected().forEach { triangle ->
+            vertexIdForPrototypePoint(group.prototype, triangle.a)?.let { vertexIds.add(it) }
+            vertexIdForPrototypePoint(group.prototype, triangle.b)?.let { vertexIds.add(it) }
+            vertexIdForPrototypePoint(group.prototype, triangle.c)?.let { vertexIds.add(it) }
+        }
+        if (vertexIds.isEmpty()) {
+            // Fallback: if selection is empty and hotspot sits on a prototype vertex, bind to that vertex.
+            vertexIdForPrototypePoint(group.prototype, hotspot.position)?.let { vertexIds.add(it) }
+        }
+        hotspot.attachedVertexIds = vertexIds
         hotspot.attachedSegments = segmentRefs.toMutableSet()
         hotspot.attachedTriangles = triangleRefs.toMutableSet()
         prototypeInstances[group.prototype.id].orEmpty().forEach { instance ->
@@ -7078,6 +7206,7 @@ class GroupScene(
         root.faceStore.clearAll()
         root.dimensionStore.clearAll()
         root.textStore.clearAll()
+        rootPrototype.prototypeVertexIds.clear()
         modelArchitectureStore.clear()
         modelHvacStore.clear()
         generatedArchitectureLines.clear()

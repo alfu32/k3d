@@ -12,7 +12,7 @@ import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
 object ModelPersistence {
-    private const val VERSION = 13
+    private const val VERSION = 14
 
     fun save(
         file: File,
@@ -286,6 +286,7 @@ object ModelPersistence {
         var hvacPlumbingRuns: MutableList<HvacPlumbingDto> = mutableListOf()
         var hvacVentilationDucts: MutableList<HvacVentilationDto> = mutableListOf()
         var hotspots: MutableList<HotspotDto> = mutableListOf()
+        var prototypeVertices: MutableList<PrototypeVertexDto> = mutableListOf()
         var segments: MutableList<SegmentDto> = mutableListOf()
         var faces: MutableList<FaceDto> = mutableListOf()
         var dimensions: MutableList<DimensionDto> = mutableListOf()
@@ -324,6 +325,10 @@ object ModelPersistence {
             restoreHvac(hvacStore)
             restoreHotspots(hotspotStore)
             applyGeometry(prototype)
+            prototype.prototypeVertexIds.clear()
+            prototypeVertices.forEach { vertex ->
+                prototype.prototypeVertexIds[vertex.toVertexKey()] = vertex.id.ifBlank { java.util.UUID.randomUUID().toString() }
+            }
             return prototype
         }
 
@@ -359,6 +364,10 @@ object ModelPersistence {
             prototype.faceStore.clearAll()
             prototype.dimensionStore.clearAll()
             prototype.textStore.clearAll()
+            prototype.prototypeVertexIds.clear()
+            prototypeVertices.forEach { vertex ->
+                prototype.prototypeVertexIds[vertex.toVertexKey()] = vertex.id.ifBlank { java.util.UUID.randomUUID().toString() }
+            }
             applyGeometry(prototype, defaultColor)
         }
 
@@ -530,6 +539,7 @@ object ModelPersistence {
                     position = hotspot.position.toVector3(),
                     operation = operation,
                     referencePosition = hotspot.referencePosition?.toVector3(),
+                    attachedVertexIds = hotspot.attachedVertexIds.toSet(),
                     attachedSegments = hotspot.attachedSegments.map { it.toSegmentRef() }.toSet(),
                     attachedTriangles = hotspot.attachedTriangles.map { it.toTriangleRef() }.toSet(),
                     name = hotspot.name,
@@ -658,6 +668,7 @@ object ModelPersistence {
                         position = Vec3Dto(hotspot.position),
                         operation = hotspot.operation.name,
                         referencePosition = hotspot.referencePosition?.let { Vec3Dto(it) },
+                        attachedVertexIds = hotspot.attachedVertexIds.toMutableList(),
                         attachedSegments = hotspot.attachedSegments.map { ref ->
                             HotspotSegmentRefDto(
                                 id = ref.id,
@@ -673,6 +684,14 @@ object ModelPersistence {
                                 c = HotspotVertexKeyDto(ref.c.x, ref.c.y, ref.c.z)
                             )
                         }.toMutableList()
+                    )
+                }.toMutableList()
+                dto.prototypeVertices = prototype.prototypeVertexIds.map { (key, id) ->
+                    PrototypeVertexDto(
+                        id = id,
+                        x = key.x,
+                        y = key.y,
+                        z = key.z
                     )
                 }.toMutableList()
                 dto.segments = prototype.lineStore.getSegments().map { seg ->
@@ -1017,6 +1036,7 @@ object ModelPersistence {
         var position: Vec3Dto = Vec3Dto()
         var operation: String = HotspotStore.OperationKind.MOVE.name
         var referencePosition: Vec3Dto? = null
+        var attachedVertexIds: MutableList<String> = mutableListOf()
         var attachedSegments: MutableList<HotspotSegmentRefDto> = mutableListOf()
         var attachedTriangles: MutableList<HotspotTriangleRefDto> = mutableListOf()
 
@@ -1026,6 +1046,7 @@ object ModelPersistence {
             position: Vec3Dto,
             operation: String,
             referencePosition: Vec3Dto?,
+            attachedVertexIds: MutableList<String>,
             attachedSegments: MutableList<HotspotSegmentRefDto>,
             attachedTriangles: MutableList<HotspotTriangleRefDto>
         ) : this() {
@@ -1034,6 +1055,7 @@ object ModelPersistence {
             this.position = position
             this.operation = operation
             this.referencePosition = referencePosition
+            this.attachedVertexIds = attachedVertexIds
             this.attachedSegments = attachedSegments
             this.attachedTriangles = attachedTriangles
         }
@@ -1289,6 +1311,22 @@ object ModelPersistence {
             this.id = id
             this.refs = refs
         }
+    }
+
+    class PrototypeVertexDto() {
+        var id: String = ""
+        var x: Int = 0
+        var y: Int = 0
+        var z: Int = 0
+
+        constructor(id: String, x: Int, y: Int, z: Int) : this() {
+            this.id = id
+            this.x = x
+            this.y = y
+            this.z = z
+        }
+
+        fun toVertexKey(): HotspotStore.VertexKey = HotspotStore.VertexKey(x, y, z)
     }
 
     class SegmentDto() {

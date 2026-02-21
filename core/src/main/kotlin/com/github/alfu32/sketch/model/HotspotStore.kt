@@ -33,6 +33,7 @@ class HotspotStore {
         var position: Vector3,
         var operation: OperationKind,
         var referencePosition: Vector3? = null,
+        var attachedVertexIds: MutableSet<String> = linkedSetOf(),
         var attachedSegments: MutableSet<SegmentRef> = linkedSetOf(),
         var attachedTriangles: MutableSet<TriangleRef> = linkedSetOf()
     )
@@ -109,6 +110,7 @@ class HotspotStore {
         position: Vector3,
         operation: OperationKind,
         referencePosition: Vector3? = null,
+        attachedVertexIds: Set<String> = emptySet(),
         attachedSegments: Set<SegmentRef> = emptySet(),
         attachedTriangles: Set<TriangleRef> = emptySet(),
         name: String = "",
@@ -120,6 +122,7 @@ class HotspotStore {
             position = Vector3(position),
             operation = operation,
             referencePosition = referencePosition?.let { Vector3(it) },
+            attachedVertexIds = attachedVertexIds.toMutableSet(),
             attachedSegments = attachedSegments.toMutableSet(),
             attachedTriangles = attachedTriangles.toMutableSet()
         )
@@ -189,14 +192,24 @@ class HotspotStore {
 
     fun updateAttachments(
         id: String,
+        vertexIds: Set<String>,
         segmentRefs: Set<SegmentRef>,
         triangleRefs: Set<TriangleRef>
     ): Boolean {
         val hotspot = hotspotById(id) ?: return false
+        hotspot.attachedVertexIds = vertexIds.toMutableSet()
         hotspot.attachedSegments = segmentRefs.toMutableSet()
         hotspot.attachedTriangles = triangleRefs.toMutableSet()
         notifyChange()
         return true
+    }
+
+    fun updateAttachments(
+        id: String,
+        segmentRefs: Set<SegmentRef>,
+        triangleRefs: Set<TriangleRef>
+    ): Boolean {
+        return updateAttachments(id, emptySet(), segmentRefs, triangleRefs)
     }
 
     fun updateName(id: String, name: String): Boolean {
