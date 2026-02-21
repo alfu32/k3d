@@ -33,6 +33,7 @@ class HotspotStore {
         var position: Vector3,
         var operation: OperationKind,
         var referencePosition: Vector3? = null,
+        var attachedHotspotIds: MutableSet<String> = linkedSetOf(),
         var attachedVertexIds: MutableSet<String> = linkedSetOf(),
         var attachedSegments: MutableSet<SegmentRef> = linkedSetOf(),
         var attachedTriangles: MutableSet<TriangleRef> = linkedSetOf()
@@ -110,6 +111,7 @@ class HotspotStore {
         position: Vector3,
         operation: OperationKind,
         referencePosition: Vector3? = null,
+        attachedHotspotIds: Set<String> = emptySet(),
         attachedVertexIds: Set<String> = emptySet(),
         attachedSegments: Set<SegmentRef> = emptySet(),
         attachedTriangles: Set<TriangleRef> = emptySet(),
@@ -122,6 +124,7 @@ class HotspotStore {
             position = Vector3(position),
             operation = operation,
             referencePosition = referencePosition?.let { Vector3(it) },
+            attachedHotspotIds = attachedHotspotIds.toMutableSet(),
             attachedVertexIds = attachedVertexIds.toMutableSet(),
             attachedSegments = attachedSegments.toMutableSet(),
             attachedTriangles = attachedTriangles.toMutableSet()
@@ -151,6 +154,9 @@ class HotspotStore {
         }
         val before = hotspots.size
         hotspots.removeAll { hotspot -> ids.contains(hotspot.id) }
+        hotspots.forEach { hotspot ->
+            hotspot.attachedHotspotIds.removeAll(ids)
+        }
         selected.removeAll { selection -> ids.contains(selection.id) }
         val removed = before - hotspots.size
         if (removed > 0) {
@@ -192,11 +198,13 @@ class HotspotStore {
 
     fun updateAttachments(
         id: String,
+        hotspotIds: Set<String>,
         vertexIds: Set<String>,
         segmentRefs: Set<SegmentRef>,
         triangleRefs: Set<TriangleRef>
     ): Boolean {
         val hotspot = hotspotById(id) ?: return false
+        hotspot.attachedHotspotIds = hotspotIds.filterNot { it == id }.toMutableSet()
         hotspot.attachedVertexIds = vertexIds.toMutableSet()
         hotspot.attachedSegments = segmentRefs.toMutableSet()
         hotspot.attachedTriangles = triangleRefs.toMutableSet()
@@ -209,7 +217,7 @@ class HotspotStore {
         segmentRefs: Set<SegmentRef>,
         triangleRefs: Set<TriangleRef>
     ): Boolean {
-        return updateAttachments(id, emptySet(), segmentRefs, triangleRefs)
+        return updateAttachments(id, emptySet(), emptySet(), segmentRefs, triangleRefs)
     }
 
     fun updateName(id: String, name: String): Boolean {

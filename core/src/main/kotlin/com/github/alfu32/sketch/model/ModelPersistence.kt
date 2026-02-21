@@ -539,6 +539,7 @@ object ModelPersistence {
                     position = hotspot.position.toVector3(),
                     operation = operation,
                     referencePosition = hotspot.referencePosition?.toVector3(),
+                    attachedHotspotIds = hotspot.attachedHotspotIds.toSet(),
                     attachedVertexIds = hotspot.attachedVertexIds.toSet(),
                     attachedSegments = hotspot.attachedSegments.map { it.toSegmentRef() }.toSet(),
                     attachedTriangles = hotspot.attachedTriangles.map { it.toTriangleRef() }.toSet(),
@@ -668,6 +669,7 @@ object ModelPersistence {
                         position = Vec3Dto(hotspot.position),
                         operation = hotspot.operation.name,
                         referencePosition = hotspot.referencePosition?.let { Vec3Dto(it) },
+                        attachedHotspotIds = hotspot.attachedHotspotIds.toMutableList(),
                         attachedVertexIds = hotspot.attachedVertexIds.toMutableList(),
                         attachedSegments = hotspot.attachedSegments.map { ref ->
                             HotspotSegmentRefDto(
@@ -1036,6 +1038,7 @@ object ModelPersistence {
         var position: Vec3Dto = Vec3Dto()
         var operation: String = HotspotStore.OperationKind.MOVE.name
         var referencePosition: Vec3Dto? = null
+        var attachedHotspotIds: MutableList<String> = mutableListOf()
         var attachedVertexIds: MutableList<String> = mutableListOf()
         var attachedSegments: MutableList<HotspotSegmentRefDto> = mutableListOf()
         var attachedTriangles: MutableList<HotspotTriangleRefDto> = mutableListOf()
@@ -1046,6 +1049,7 @@ object ModelPersistence {
             position: Vec3Dto,
             operation: String,
             referencePosition: Vec3Dto?,
+            attachedHotspotIds: MutableList<String>,
             attachedVertexIds: MutableList<String>,
             attachedSegments: MutableList<HotspotSegmentRefDto>,
             attachedTriangles: MutableList<HotspotTriangleRefDto>
@@ -1055,6 +1059,7 @@ object ModelPersistence {
             this.position = position
             this.operation = operation
             this.referencePosition = referencePosition
+            this.attachedHotspotIds = attachedHotspotIds
             this.attachedVertexIds = attachedVertexIds
             this.attachedSegments = attachedSegments
             this.attachedTriangles = attachedTriangles
