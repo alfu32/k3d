@@ -142,6 +142,10 @@ class SketchUiOverlay(
                 return getTitleTable().prefHeight
             }
             val pref = super.getPrefHeight()
+            val dockedInRightPanel = ::rightSidePanelContent.isInitialized && isDescendantOf(rightSidePanelContent)
+            if (dockedInRightPanel) {
+                return pref
+            }
             return fixedHeight?.let { kotlin.math.max(pref, it) } ?: pref
         }
 
