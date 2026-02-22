@@ -17,6 +17,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.Cell
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.scenes.scene2d.ui.HorizontalGroup
 import com.badlogic.gdx.scenes.scene2d.ui.Image
+import com.badlogic.gdx.scenes.scene2d.ui.WidgetGroup
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
@@ -128,6 +129,13 @@ class SketchUiOverlay(
 
         override fun close() {
             isVisible = false
+        }
+
+        fun setCollapsedState(value: Boolean) {
+            if (collapsed == value) {
+                return
+            }
+            toggleCollapsed()
         }
 
         override fun getPrefWidth(): Float {
@@ -275,10 +283,9 @@ class SketchUiOverlay(
     private lateinit var objectsDeleteButton: VisTextButton
     private lateinit var modelSettingsPanel: CollapsibleWindow
     private lateinit var rightSidePanel: CollapsibleWindow
-    private lateinit var rightSidePanelContent: VisTable
+    private lateinit var rightSidePanelContent: WidgetGroup
     private lateinit var rightSidePanelScroll: VisScrollPane
     private lateinit var rightSidePanelScrollCell: Cell<VisScrollPane>
-    private val rightDockPanelCells = linkedMapOf<CollapsibleWindow, Cell<CollapsibleWindow>>()
     private lateinit var helpPanel: CollapsibleWindow
     private lateinit var polylineSettingsPanel: CollapsibleWindow
     private lateinit var architectureSettingsPanel: CollapsibleWindow
@@ -432,6 +439,7 @@ class SketchUiOverlay(
         hvacSettingsPanel = buildHvacSettingsPanel()
         hotspotSettingsPanel = buildHotspotSettingsPanel()
         lightingPanel = buildLightingPanel()
+        rightSidePanel = buildRightSidePanel()
         val mainRow = Table()
         mainRow.add().expand().fill()
 
@@ -441,13 +449,7 @@ class SketchUiOverlay(
         stage.addActor(selectionPanel)
         stage.addActor(groupPanel)
         stage.addActor(objectsPanel)
-        stage.addActor(modelSettingsPanel)
-        stage.addActor(helpPanel)
-        stage.addActor(polylineSettingsPanel)
-        stage.addActor(architectureSettingsPanel)
-        stage.addActor(hvacSettingsPanel)
-        stage.addActor(hotspotSettingsPanel)
-        lightingPanel?.let { stage.addActor(it) }
+        stage.addActor(rightSidePanel)
         positionPanels()
         needsPanelLayout = true
 
@@ -3295,9 +3297,6 @@ class SketchUiOverlay(
 
     private fun rightDockPanels(): List<CollapsibleWindow> {
         val panels = mutableListOf(
-            selectionPanel,
-            groupPanel,
-            objectsPanel,
             modelSettingsPanel,
             helpPanel,
             polylineSettingsPanel,
@@ -3312,21 +3311,15 @@ class SketchUiOverlay(
     private fun buildRightSidePanel(): CollapsibleWindow {
         val panel = CollapsibleWindow("Panels", showCloseButton = false)
         panel.isResizable = false
-        rightDockPanelCells.clear()
-
-        rightSidePanelContent = VisTable().apply {
-            defaults().padBottom(6f).left().growX().fillX()
-            top()
-        }
+        rightSidePanelContent = WidgetGroup()
 
         rightDockPanels().forEach { child ->
             child.isMovable = false
             child.isResizable = false
             child.setKeepWithinParent(true)
             child.isVisible = true
-            val cell = rightSidePanelContent.add(child).growX().fillX()
-            rightDockPanelCells[child] = cell
-            rightSidePanelContent.row()
+            child.setCollapsedState(true)
+            rightSidePanelContent.addActor(child)
         }
 
         rightSidePanelScroll = VisScrollPane(rightSidePanelContent).apply {
@@ -3344,6 +3337,7 @@ class SketchUiOverlay(
         }
         val panels = rightDockPanels()
         var maxChildWidth = 320f
+        val panelGap = 6f
         panels.forEach { panel ->
             panel.isMovable = false
             panel.isResizable = false
@@ -3362,6 +3356,7 @@ class SketchUiOverlay(
         val titleHeight = rightSidePanel.getTitleTable().prefHeight
         val scrollHeight = (stageHeight - 2f * outerMargin - titleHeight - 12f).coerceAtLeast(120f)
         val innerPanelWidth = (scrollWidth - 10f).coerceAtLeast(220f)
+        var contentHeight = 0f
 
         panels.forEach { panel ->
             panel.isMovable = false
@@ -3373,49 +3368,58 @@ class SketchUiOverlay(
             val computedHeight = panel.prefHeight.coerceAtLeast(panel.getTitleTable().prefHeight + 4f)
             panel.setSize(innerPanelWidth, computedHeight)
             panel.validate()
-            rightDockPanelCells[panel]?.apply {
-                width(innerPanelWidth)
-                minWidth(innerPanelWidth)
-                prefWidth(innerPanelWidth)
-                maxWidth(innerPanelWidth)
-                height(panel.height)
-                minHeight(panel.height)
-                prefHeight(panel.height)
-            }
+            contentHeight += panel.height + panelGap
         }
+        if (contentHeight > 0f) {
+            contentHeight -= panelGap
+        }
+
+        var y = contentHeight
+        panels.forEach { panel ->
+            if (!panel.isVisible) {
+                return@forEach
+            }
+            y -= panel.height
+            panel.setPosition(0f, y)
+            y -= panelGap
+        }
+        rightSidePanelContent.setSize(innerPanelWidth, contentHeight.coerceAtLeast(1f))
 
         rightSidePanelScrollCell.width(scrollWidth).height(scrollHeight)
         rightSidePanelContent.invalidateHierarchy()
-        rightSidePanelContent.pack()
         rightSidePanelScroll.invalidateHierarchy()
         rightSidePanel.invalidateHierarchy()
         rightSidePanel.pack()
-        rightSidePanelContent.validate()
         rightSidePanelScroll.validate()
         rightSidePanel.validate()
     }
 
     private fun positionPanels() {
+        updateRightSidePanelLayout()
         val panels = mutableListOf<CollapsibleWindow>()
         panels.add(selectionPanel)
         panels.add(groupPanel)
         panels.add(objectsPanel)
-        panels.add(modelSettingsPanel)
-        panels.add(helpPanel)
-        panels.add(polylineSettingsPanel)
-        panels.add(architectureSettingsPanel)
-        panels.add(hvacSettingsPanel)
-        panels.add(hotspotSettingsPanel)
-        lightingPanel?.let { panels.add(it) }
         if (!automationHidePanels) {
             panels.forEach { it.isVisible = true }
+            rightDockPanels().forEach { it.isVisible = true }
+            rightSidePanel.isVisible = true
         }
         panels.forEach {
             it.invalidateHierarchy()
             it.pack()
             it.toFront()
         }
-        positionPanelStack(panels, 8f, 8f, 6f)
+        if (rightSidePanel.isVisible) {
+            rightSidePanel.invalidateHierarchy()
+            rightSidePanel.pack()
+            val width = if (stage.viewport.screenWidth > 0) stage.viewport.screenWidth.toFloat() else Gdx.graphics.width.toFloat()
+            val height = if (stage.viewport.screenHeight > 0) stage.viewport.screenHeight.toFloat() else Gdx.graphics.height.toFloat()
+            rightSidePanel.setPosition(width - 8f - rightSidePanel.width, height - 8f - rightSidePanel.height)
+            rightSidePanel.toFront()
+        }
+        val dockWidth = if (rightSidePanel.isVisible) rightSidePanel.width + 14f else 8f
+        positionPanelStack(panels, dockWidth, 8f, 6f)
         if (!toolbarsPositioned) {
             positionTopFlowToolbars()
             toolbarsPositioned = true
