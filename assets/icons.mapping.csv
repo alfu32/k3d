@@ -26,7 +26,7 @@ order|name|line|col|start_x|end_x|start_y|end_y
 25|flip_faces|4|4|96|127|96|127
 26|voxel_frame|4|5|128|159|96|127
 27|swipe_surface|4|6|160|191|96|127
-28|unused|4|7|192|224|96|127
+28|face_outline|4|7|192|224|96|127
 29|lighting|5|1|0|31|128|159
 30|plugins|5|2|32|63|128|159
 31|text|5|3|64|95|128|159

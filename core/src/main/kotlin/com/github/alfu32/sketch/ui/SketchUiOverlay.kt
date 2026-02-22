@@ -181,7 +181,7 @@ class SketchUiOverlay(
     private var toolbarsPositioned = false
     private val uiPrefs by lazy { Gdx.app.getPreferences("k3d-ui-layout") }
     private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
-    private val toolbarLayoutVersion = 7
+    private val toolbarLayoutVersion = 8
     private val toolbarButtonSize = 32f
     private val archDefaultWallThicknessKey = "arch_default_wall_thickness"
     private val archDefaultWallHeightKey = "arch_default_wall_height"
@@ -781,27 +781,29 @@ class SketchUiOverlay(
         toolGroup.setMinCheckCount(1)
         toolGroup.setUncheckLast(false)
 
-        val constructionTools = listOf(
+        val pointConstructionTools = listOf(
             ToolId.LINE,
             ToolId.CONSTRUCTION_LINE,
             ToolId.POLYLINE,
             ToolId.DOUBLE_LINE,
             ToolId.RECTANGLE,
             ToolId.SURFACE_RECTANGLE,
+            ToolId.FACE_OUTLINE,
             ToolId.QUAD,
-            ToolId.CIRCLE,
+            ToolId.CIRCLE
+        )
+        val entityConstructionTools = listOf(
             ToolId.LINEAR_DIMENSION,
             ToolId.TEXT,
-            ToolId.FACE_OUTLINE,
             ToolId.LINE_OFFSET,
             ToolId.CUT_OUT_3,
+            ToolId.PUSH_PULL,
             ToolId.EXTRUDE_SWIPE,
             ToolId.PLANE_SECTION,
             ToolId.MESH_INTERSECTION
         )
         val modificationTools = listOf(
             ToolId.SELECT,
-            ToolId.PUSH_PULL,
             ToolId.MOVE,
             ToolId.ROTATE,
             ToolId.SCALE,
@@ -826,10 +828,23 @@ class SketchUiOverlay(
             ToolId.HVAC_VENTILATION
         )
 
-        val construction = buildToolsToolbarWindow(
-            title = "Construction",
-            toolbarId = "builtin_toolbar_construction",
-            toolIds = constructionTools,
+        val pointConstruction = buildToolsToolbarWindow(
+            title = "Point Construction",
+            toolbarId = "builtin_toolbar_construction_points",
+            toolIds = pointConstructionTools,
+            group = toolGroup
+            ,
+            leadingButtons = listOf(
+                createActionButton(
+                    label = "Add Hotspot",
+                    icon = iconFor("hotspot", createActionIconDrawable(Color(0.2f, 0.55f, 0.95f, 1f)))
+                ) { hotspotCreateAction() }
+            )
+        )
+        val entityConstruction = buildToolsToolbarWindow(
+            title = "Entity Construction",
+            toolbarId = "builtin_toolbar_construction_entities",
+            toolIds = entityConstructionTools,
             group = toolGroup
         )
         val modification = buildToolsToolbarWindow(
@@ -872,7 +887,8 @@ class SketchUiOverlay(
         )
 
         builtInToolbars.clear()
-        builtInToolbars["builtin_toolbar_construction"] = construction
+        builtInToolbars["builtin_toolbar_construction_points"] = pointConstruction
+        builtInToolbars["builtin_toolbar_construction_entities"] = entityConstruction
         builtInToolbars["builtin_toolbar_modification"] = modification
         builtInToolbars["builtin_toolbar_architecture"] = architecture
         builtInToolbars["builtin_toolbar_hvac"] = hvac
@@ -880,7 +896,7 @@ class SketchUiOverlay(
         builtInToolbars["builtin_toolbar_actions"] = actions
         builtInToolbars["builtin_toolbar_camera"] = camera
         toolbarsPositioned = false
-        return listOf(construction, modification, architecture, hvac, voxel, actions, camera)
+        return listOf(pointConstruction, entityConstruction, modification, architecture, hvac, voxel, actions, camera)
     }
 
     private fun buildToolsToolbarWindow(
@@ -888,12 +904,16 @@ class SketchUiOverlay(
         toolbarId: String,
         toolIds: List<ToolId>,
         group: ButtonGroup<VisImageTextButton>,
+        leadingButtons: List<VisImageTextButton> = emptyList(),
         extraButtons: List<VisImageTextButton> = emptyList()
     ): CollapsibleWindow {
         val window = CollapsibleWindow(title, showCloseButton = false)
         window.isResizable = false
         val content = VisTable()
         content.defaults().pad(2f).left()
+        leadingButtons.forEach { button ->
+            content.add(button).size(toolbarButtonSize, toolbarButtonSize)
+        }
         toolIds.forEach { toolId ->
             val button = createToolButton(toolId, group)
             content.add(button).size(toolbarButtonSize, toolbarButtonSize)
@@ -964,13 +984,6 @@ class SketchUiOverlay(
             flipFacesAction()
         }
 
-        val hotspotButton = createActionButton(
-            label = "Add Hotspot",
-            icon = iconFor("hotspot", createActionIconDrawable(Color(0.2f, 0.55f, 0.95f, 1f)))
-        ) {
-            hotspotCreateAction()
-        }
-
         val lightingButton = createActionButton(
             label = "Lighting",
             icon = iconFor("lighting", createActionIconDrawable(Color(0.95f, 0.85f, 0.2f, 1f)))
@@ -988,7 +1001,7 @@ class SketchUiOverlay(
         ) {
             togglePluginManager()
         }
-        val buttons = listOf(cleanupButton, colorButton, deleteButton, flipButton, hotspotButton, lightingButton, pluginButton)
+        val buttons = listOf(cleanupButton, colorButton, deleteButton, flipButton, lightingButton, pluginButton)
         buttons.forEach { button ->
             content.add(button).size(toolbarButtonSize, toolbarButtonSize)
         }
@@ -3718,7 +3731,7 @@ class SketchUiOverlay(
         val iconName = when (toolId) {
             ToolId.SELECT -> "select"
             ToolId.LINE -> "line"
-            ToolId.CONSTRUCTION_LINE -> "line"
+            ToolId.CONSTRUCTION_LINE -> "construction_line"
             ToolId.POLYLINE -> "polyline"
             ToolId.DOUBLE_LINE -> "double_line"
             ToolId.VOXEL -> "voxel"
@@ -3732,7 +3745,7 @@ class SketchUiOverlay(
             ToolId.ARCH_DOOR_FRAME -> "arch_door"
             ToolId.HVAC_PLUMBING -> "hvac_plumbing"
             ToolId.HVAC_VENTILATION -> "hvac_ventilation"
-            ToolId.FACE_OUTLINE -> "line"
+            ToolId.FACE_OUTLINE -> "face_outline"
             ToolId.LINE_OFFSET -> "offset"
             ToolId.CUT_HOLES -> "cleanup"
             ToolId.CUT_HOLES_2 -> "cleanup"
