@@ -49,6 +49,14 @@ android {
   }
 }
 
+tasks.register("bundleAndroidApk", Copy) {
+  dependsOn "assembleRelease"
+  from(layout.buildDirectory.dir("outputs/apk/release"))
+  include("*-release-*.apk", "*-release.apk")
+  rename { "k3d-${rootProject.ext.projectVersion}.apk" }
+  into(rootProject.layout.projectDirectory.dir("dist"))
+}
+
 dependencies {
   implementation project(':core')
   implementation "com.badlogicgames.gdx:gdx-backend-android:$gdxVersion"

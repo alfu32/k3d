@@ -282,13 +282,13 @@ jobs:
       - name: Install Android SDK components
         run: |
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
-      - name: Build Android APK (release, unsigned)
-        run: ./gradlew :android:assembleRelease -PreleaseNumber="${{ inputs.tag }}"
+      - name: Build Android APK bundle
+        run: ./gradlew :android:bundleAndroidApk -PreleaseNumber="${{ inputs.tag }}"
       - uses: actions/upload-artifact@v4
         with:
           name: k3d-android
           path: |
-            android/build/outputs/apk/release/*.apk
+            dist/k3d-*.apk
 
   release:
     runs-on: ubuntu-latest
