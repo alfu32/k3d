@@ -432,14 +432,22 @@ class SketchUiOverlay(
         hvacSettingsPanel = buildHvacSettingsPanel()
         hotspotSettingsPanel = buildHotspotSettingsPanel()
         lightingPanel = buildLightingPanel()
-        rightSidePanel = buildRightSidePanel()
         val mainRow = Table()
         mainRow.add().expand().fill()
 
         root.add(mainRow).expand().fill().row()
         root.add(buildStatusBar()).expandX().fillX().bottom().pad(0f)
 
-        stage.addActor(rightSidePanel)
+        stage.addActor(selectionPanel)
+        stage.addActor(groupPanel)
+        stage.addActor(objectsPanel)
+        stage.addActor(modelSettingsPanel)
+        stage.addActor(helpPanel)
+        stage.addActor(polylineSettingsPanel)
+        stage.addActor(architectureSettingsPanel)
+        stage.addActor(hvacSettingsPanel)
+        stage.addActor(hotspotSettingsPanel)
+        lightingPanel?.let { stage.addActor(it) }
         positionPanels()
         needsPanelLayout = true
 
@@ -3388,18 +3396,26 @@ class SketchUiOverlay(
     }
 
     private fun positionPanels() {
-        rightDockPanels().forEach {
-            it.isVisible = true
-        }
-        updateRightSidePanelLayout()
+        val panels = mutableListOf<CollapsibleWindow>()
+        panels.add(selectionPanel)
+        panels.add(groupPanel)
+        panels.add(objectsPanel)
+        panels.add(modelSettingsPanel)
+        panels.add(helpPanel)
+        panels.add(polylineSettingsPanel)
+        panels.add(architectureSettingsPanel)
+        panels.add(hvacSettingsPanel)
+        panels.add(hotspotSettingsPanel)
+        lightingPanel?.let { panels.add(it) }
         if (!automationHidePanels) {
-            val width = if (stage.viewport.screenWidth > 0) stage.viewport.screenWidth.toFloat() else Gdx.graphics.width.toFloat()
-            val height = if (stage.viewport.screenHeight > 0) stage.viewport.screenHeight.toFloat() else Gdx.graphics.height.toFloat()
-            rightSidePanel.setPosition(width - 8f - rightSidePanel.width, height - 8f - rightSidePanel.height)
-            rightSidePanel.toFront()
-        } else if (::rightSidePanel.isInitialized) {
-            rightSidePanel.isVisible = false
+            panels.forEach { it.isVisible = true }
         }
+        panels.forEach {
+            it.invalidateHierarchy()
+            it.pack()
+            it.toFront()
+        }
+        positionPanelStack(panels, 8f, 8f, 6f)
         if (!toolbarsPositioned) {
             positionTopFlowToolbars()
             toolbarsPositioned = true
