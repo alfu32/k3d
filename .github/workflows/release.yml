@@ -270,9 +270,29 @@ jobs:
           name: k3d-mac
           path: dist/*.tar.gz
 
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK components
+        run: |
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Build Android APK (release, unsigned)
+        run: ./gradlew :android:assembleRelease -PreleaseNumber="${{ inputs.tag }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: k3d-android
+          path: |
+            android/build/outputs/apk/release/*.apk
+
   release:
     runs-on: ubuntu-latest
-    needs: [build-linux, build-windows, build-mac]
+    needs: [build-linux, build-windows, build-mac, build-android]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -292,7 +312,7 @@ jobs:
           else
             gh release edit "$TAG" --draft="$DRAFT" --prerelease="$PRERELEASE"
           fi
-          files=$(find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.msi" -o -name "*.msix" \))
+          files=$(find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.msi" -o -name "*.msix" -o -name "*.apk" \))
           if [ -z "$files" ]; then
             echo "No release artifacts found."
             exit 1
