@@ -4,11 +4,16 @@ import com.badlogic.gdx.InputAdapter
 import com.badlogic.gdx.InputProcessor
 
 class CameraScrollForwarder(
-    private val processorProvider: () -> InputProcessor
+    private val processorProvider: () -> InputProcessor,
+    private val shouldForward: () -> Boolean = { true }
 ) : InputAdapter() {
     override fun scrolled(amountX: Float, amountY: Float): Boolean {
+        if (!shouldForward()) {
+            return false
+        }
         processorProvider().scrolled(amountX, amountY)
-        return false
+        // When camera consumes wheel input we must stop propagation so UI scroll panes do not scroll too.
+        return true
     }
 }
 

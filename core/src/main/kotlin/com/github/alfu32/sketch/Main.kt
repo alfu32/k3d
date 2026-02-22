@@ -1030,7 +1030,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 return uiOverlay.isUiCapturingInputByPointer()
             }
         }
-        val cameraScrollForwarder = CameraScrollForwarder { activeCameraInputProcessor }
+        val cameraScrollForwarder = CameraScrollForwarder(
+            processorProvider = { activeCameraInputProcessor },
+            shouldForward = { !uiOverlay.isUiHit(Gdx.input.x, Gdx.input.y) }
+        )
         val cameraEventRouter = CameraEventRouter { activeCameraInputProcessor }
         Gdx.input.inputProcessor = InputMultiplexer(
             cameraScrollForwarder,

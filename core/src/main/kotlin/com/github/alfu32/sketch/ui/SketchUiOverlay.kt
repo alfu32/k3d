@@ -102,7 +102,7 @@ class SketchUiOverlay(
     private val cameraModeProvider: () -> CameraMode,
     private val cameraModeChanged: (CameraMode) -> Unit
 ) {
-    private open class CollapsibleWindow(
+    private inner open class CollapsibleWindow(
         title: String,
         private val fixedHeight: Float? = null,
         showCloseButton: Boolean = true
@@ -156,7 +156,15 @@ class SketchUiOverlay(
             }
             invalidateHierarchy()
             pack()
-            setY(top - height)
+            val dockedInRightPanel = ::rightSidePanelContent.isInitialized && isDescendantOf(rightSidePanelContent)
+            if (dockedInRightPanel) {
+                rightSidePanelContent.invalidateHierarchy()
+                rightSidePanelScroll.invalidateHierarchy()
+                rightSidePanel.invalidateHierarchy()
+                needsPanelLayout = true
+            } else {
+                setY(top - height)
+            }
         }
     }
 
@@ -643,6 +651,9 @@ class SketchUiOverlay(
 
     fun act(delta: Float) {
         updateFromStatus()
+        if (stage.scrollFocus != null && !isUiHit(Gdx.input.x, Gdx.input.y)) {
+            stage.scrollFocus = null
+        }
         if (!automationHidePanels && ::rightSidePanel.isInitialized) {
             var changed = false
             rightDockPanels().forEach { panel ->
@@ -3290,7 +3301,7 @@ class SketchUiOverlay(
         panel.isResizable = false
 
         rightSidePanelContent = VisTable().apply {
-            defaults().padBottom(6f).left().growX()
+            defaults().padBottom(6f).left().growX().fillX()
             top()
         }
 
@@ -3299,7 +3310,7 @@ class SketchUiOverlay(
             child.isResizable = false
             child.setKeepWithinParent(true)
             child.isVisible = true
-            rightSidePanelContent.add(child).growX().row()
+            rightSidePanelContent.add(child).growX().fillX().row()
         }
 
         rightSidePanelScroll = VisScrollPane(rightSidePanelContent).apply {
@@ -3340,6 +3351,9 @@ class SketchUiOverlay(
         rightSidePanelScroll.invalidateHierarchy()
         rightSidePanel.invalidateHierarchy()
         rightSidePanel.pack()
+        rightSidePanelContent.validate()
+        rightSidePanelScroll.validate()
+        rightSidePanel.validate()
     }
 
     private fun positionPanels() {
