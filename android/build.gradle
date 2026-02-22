@@ -1,0 +1,63 @@
+apply plugin: 'com.android.application'
+
+android {
+  namespace = "com.github.alfu32.sketch.android"
+  compileSdk = 36
+
+  defaultConfig {
+    applicationId "com.github.alfu32.sketch"
+    minSdk = 26
+    targetSdk = 34
+    versionCode 1
+    versionName rootProject.ext.projectVersion.toString()
+    multiDexEnabled true
+  }
+
+  buildTypes {
+    debug {
+      minifyEnabled false
+    }
+    release {
+      minifyEnabled false
+      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+    }
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+
+  sourceSets {
+    main {
+      manifest.srcFile "src/main/AndroidManifest.xml"
+      java.srcDirs = ["src/main/kotlin"]
+      assets.srcDirs = [rootProject.file("assets").path]
+      res.srcDirs = ["src/main/res"]
+    }
+  }
+
+  packaging {
+    resources {
+      excludes += [
+        'META-INF/INDEX.LIST',
+        'META-INF/*.SF',
+        'META-INF/*.DSA',
+        'META-INF/*.RSA'
+      ]
+    }
+  }
+}
+
+dependencies {
+  implementation project(':core')
+  implementation "com.badlogicgames.gdx:gdx-backend-android:$gdxVersion"
+  implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-armeabi-v7a"
+  implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-arm64-v8a"
+  implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-x86"
+  implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-x86_64"
+  implementation "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-armeabi-v7a"
+  implementation "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-arm64-v8a"
+  implementation "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-x86"
+  implementation "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-x86_64"
+}

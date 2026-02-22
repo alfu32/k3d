@@ -1,6 +1,7 @@
 package com.github.alfu32.sketch.ui
 
 import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.Application
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.Texture
@@ -259,6 +260,7 @@ class SketchUiOverlay(
     private var objectPrototypeItems: List<ObjectPrototypeInfo> = emptyList()
     private lateinit var objectsDeleteButton: VisTextButton
     private lateinit var modelSettingsPanel: CollapsibleWindow
+    private lateinit var helpPanel: CollapsibleWindow
     private lateinit var polylineSettingsPanel: CollapsibleWindow
     private lateinit var architectureSettingsPanel: CollapsibleWindow
     private lateinit var hvacSettingsPanel: CollapsibleWindow
@@ -405,6 +407,7 @@ class SketchUiOverlay(
         groupPanel = buildGroupPanel()
         objectsPanel = buildObjectsPanel()
         modelSettingsPanel = buildModelSettingsPanel()
+        helpPanel = buildHelpPanel()
         polylineSettingsPanel = buildPolylineSettingsPanel()
         architectureSettingsPanel = buildArchitectureSettingsPanel()
         hvacSettingsPanel = buildHvacSettingsPanel()
@@ -420,6 +423,7 @@ class SketchUiOverlay(
         stage.addActor(groupPanel)
         stage.addActor(objectsPanel)
         stage.addActor(modelSettingsPanel)
+        stage.addActor(helpPanel)
         stage.addActor(polylineSettingsPanel)
         stage.addActor(architectureSettingsPanel)
         stage.addActor(hvacSettingsPanel)
@@ -702,6 +706,11 @@ class SketchUiOverlay(
         needsPanelLayout = true
     }
 
+    fun showHelpPanel() {
+        helpPanel.isVisible = true
+        needsPanelLayout = true
+    }
+
     fun showPolylineSettingsPanel() {
         polylineSettingsPanel.isVisible = true
         needsPanelLayout = true
@@ -740,6 +749,7 @@ class SketchUiOverlay(
             groupPanel.isVisible = false
             objectsPanel.isVisible = false
             modelSettingsPanel.isVisible = false
+            helpPanel.isVisible = false
             polylineSettingsPanel.isVisible = false
             architectureSettingsPanel.isVisible = false
             hvacSettingsPanel.isVisible = false
@@ -1259,6 +1269,43 @@ class SketchUiOverlay(
                 applyWalkthroughTuningFromFields()
             }
         })
+        return panel
+    }
+
+    private fun buildHelpPanel(): CollapsibleWindow {
+        val panel = CollapsibleWindow("Help / About", fixedHeight = 220f)
+        val content = VisTable()
+        content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        content.defaults().pad(4f).left().growX()
+
+        val title = VisLabel("K3D")
+        val platformLabel = VisLabel(
+            "Platform: " + when (Gdx.app?.type) {
+                Application.ApplicationType.Android -> "Android"
+                Application.ApplicationType.Desktop -> "Desktop"
+                else -> (Gdx.app?.type?.name ?: "Unknown")
+            }
+        )
+        val warning = VisLabel(
+            "Android input note:\n" +
+                "K3D is currently optimized for an external mouse and keyboard.\n" +
+                "Touch-only use is limited (hover, right-click, wheel, modifier keys and precise picking are reduced).\n" +
+                "Use a tablet/Chromebook/DeX setup with mouse + keyboard for the best experience."
+        ).apply {
+            setWrap(true)
+        }
+        val pluginsNote = VisLabel(
+            "Android also supports user plugins from the app plugin folder in app storage."
+        ).apply {
+            setWrap(true)
+        }
+
+        content.add(title).left().row()
+        content.add(platformLabel).left().row()
+        content.add(warning).width(320f).left().padTop(6f).row()
+        content.add(pluginsNote).width(320f).left().padTop(4f).row()
+        panel.add(content).growX()
+        panel.isVisible = false
         return panel
     }
 
@@ -3187,6 +3234,7 @@ class SketchUiOverlay(
         panels.add(groupPanel)
         panels.add(objectsPanel)
         panels.add(modelSettingsPanel)
+        panels.add(helpPanel)
         panels.add(polylineSettingsPanel)
         panels.add(architectureSettingsPanel)
         panels.add(hvacSettingsPanel)

@@ -6,6 +6,8 @@
 
 K3D is a Kotlin + libGDX desktop modeler for fast, direct 3D sketching. It focuses on edges, planar faces, and tool-driven workflows with precise snapping, groups (objects), and a live Groovy console for power users.
 
+Android builds are available, but the Android experience is currently optimized for external mouse + keyboard (touch-only use is limited).
+
 ![Screenshot placeholder: Main UI](docs/images/img_1.png)
 ![Screenshot placeholder: Console TUI](docs/images/img_1c.png)
 
@@ -96,6 +98,7 @@ help                                     Show help
 - User manual: [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md)
 - Shortcuts: [`SHORTCUTS.md`](SHORTCUTS.md)
 - Plugin development: [`docs/PLUGIN_DEVELOPMENT.md`](docs/PLUGIN_DEVELOPMENT.md)
+- Android store description text (Play/F-Droid): [`docs/specification/ANDROID_STORE_DESCRIPTION.md`](docs/specification/ANDROID_STORE_DESCRIPTION.md)
 - Specs: [`docs/specification/`](docs/specification/)
 - Detailed roadmap: [`docs/specification/ROADMAP.md`](docs/specification/ROADMAP.md)
 

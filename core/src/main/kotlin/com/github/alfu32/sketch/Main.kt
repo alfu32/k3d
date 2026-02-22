@@ -1,6 +1,7 @@
 package com.github.alfu32.sketch
 
 import com.badlogic.gdx.ApplicationAdapter
+import com.badlogic.gdx.Application
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
 import com.badlogic.gdx.InputMultiplexer
@@ -606,6 +607,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         )
         pluginHost.getCommandPalette().registerCommand(
             com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.help_about",
+                name = "View> Help / About",
+                description = "Show help and platform notes panel",
+                icon = "view",
+                category = "View",
+                tags = listOf("help", "about", "android", "input"),
+                priority = 1,
+                execute = {
+                    uiOverlay.showHelpPanel()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
                 id = "view.plugin_manager",
                 name = "View> Plugin Manager",
                 description = "Show plugin manager panel",
@@ -1044,6 +1060,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         setupMeshes()
         setupRenderables()
         setupMcpServer()
+        maybeShowAndroidFirstRunInputDialog()
         startConsoleIfRequested()
     }
 
@@ -2786,6 +2803,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun shouldStartConsole(): Boolean {
+        if (isAndroidRuntime()) {
+            return false
+        }
         return System.getProperty("k3d.devConsole") == "true"
     }
 
@@ -2837,6 +2857,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun openTerminal() {
+        if (isAndroidRuntime()) {
+            println("Terminal shell is not available on Android.")
+            return
+        }
         val terminal = consoleTerminal ?: return
         terminal.restore()
         println("Entering shell. Type 'exit' to return to the K3D console.")
@@ -3869,6 +3893,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun resolveInstallDir(): java.io.File {
+        if (isAndroidRuntime()) {
+            return try {
+                Gdx.files.local("").file().absoluteFile
+            } catch (_: Exception) {
+                java.io.File(System.getProperty("user.dir", ".")).absoluteFile
+            }
+        }
         return try {
             val location = java.io.File(Main::class.java.protectionDomain.codeSource.location.toURI())
             if (location.isFile) {
@@ -3879,6 +3910,75 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         } catch (_: Exception) {
             java.io.File(System.getProperty("user.dir"))
         }
+    }
+
+    private fun isAndroidRuntime(): Boolean {
+        return try {
+            Gdx.app?.type == Application.ApplicationType.Android
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun maybeShowAndroidFirstRunInputDialog() {
+        if (!isAndroidRuntime()) {
+            return
+        }
+        val prefs = try {
+            Gdx.app.getPreferences("k3d-android")
+        } catch (_: Exception) {
+            return
+        }
+        if (prefs.getBoolean("hardware_input_notice_ack", false)) {
+            return
+        }
+        showAndroidInputNoticeDialog {
+            prefs.putBoolean("hardware_input_notice_ack", true)
+            prefs.flush()
+        }
+    }
+
+    private fun showAndroidInputNoticeDialog(onAcknowledge: () -> Unit) {
+        val stage = uiOverlay.stage
+        val dialog = com.kotcrab.vis.ui.widget.VisWindow("Android Input Notice", true).apply {
+            isModal = true
+            isMovable = true
+            isResizable = false
+            setKeepWithinParent(true)
+        }
+        val content = com.kotcrab.vis.ui.widget.VisTable().apply {
+            defaults().pad(6f).left().growX()
+        }
+        val message = com.kotcrab.vis.ui.widget.VisLabel(
+            "K3D on Android is currently optimized for an external mouse and keyboard.\n" +
+                "Touch-only use is limited.\n\n" +
+                "For the best experience use a tablet, Chromebook or DeX setup with mouse + keyboard.\n" +
+                "User plugins remain supported from the app plugins folder."
+        ).apply {
+            setWrap(true)
+        }
+        val okButton = com.kotcrab.vis.ui.widget.VisTextButton("OK")
+        okButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(
+                event: com.badlogic.gdx.scenes.scene2d.InputEvent?,
+                x: Float,
+                y: Float
+            ) {
+                onAcknowledge()
+                dialog.remove()
+            }
+        })
+
+        content.add(message).width(360f).row()
+        dialog.add(content).growX().row()
+        dialog.add(okButton).right().pad(8f)
+        dialog.pack()
+        val sw = stage.viewport.worldWidth.takeIf { it > 0f } ?: Gdx.graphics.width.toFloat()
+        val sh = stage.viewport.worldHeight.takeIf { it > 0f } ?: Gdx.graphics.height.toFloat()
+        dialog.setPosition((sw - dialog.width) * 0.5f, (sh - dialog.height) * 0.5f)
+        stage.addActor(dialog)
+        stage.keyboardFocus = okButton
+        stage.scrollFocus = dialog
     }
 
     private fun selectionInfo(): SketchUiOverlay.SelectionInfo {

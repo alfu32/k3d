@@ -1,6 +1,12 @@
 [compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
 eclipse.project.name = appName + '-core'
 
+java.sourceCompatibility = 17
+java.targetCompatibility = 17
+if (JavaVersion.current().isJava9Compatible()) {
+  compileJava.options.release.set(17)
+}
+
 dependencies {
   api "com.badlogicgames.gdx:gdx-freetype:$gdxVersion"
   api "com.badlogicgames.gdx:gdx:$gdxVersion"
@@ -68,10 +74,15 @@ data class K3DVersion(
 
 tasks.named('compileKotlin') {
   dependsOn 'generateK3DVersion'
+  compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
 }
 
 tasks.named('compileJava') {
   dependsOn 'generateK3DVersion'
+}
+
+tasks.named('compileTestKotlin') {
+  compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
 }
 
 tasks.register('copyPluginApiJar', Copy) {

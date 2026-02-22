@@ -34,6 +34,7 @@ buildscript {
   }
   dependencies {
     classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion"
+    classpath "com.android.tools.build:gradle:$androidGradlePluginVersion"
 
   }
 }
@@ -51,7 +52,7 @@ allprojects {
   }
 }
 
-configure(subprojects) {
+configure(subprojects.findAll { it.name != 'android' }) {
   apply plugin: 'java-library'
   apply plugin: 'kotlin'
   java.sourceCompatibility = 21
@@ -88,6 +89,7 @@ subprojects {
   version = bundleVersion
   ext.appName = 'k3d'
   repositories {
+    google()
     mavenCentral()
     // You may want to remove the following line if you have errors downloading dependencies.
     mavenLocal()
