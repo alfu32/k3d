@@ -180,6 +180,111 @@ class SketchUiOverlay(
         }
     }
 
+    private inner class DockStackGroup : WidgetGroup() {
+        private var prefW = 0f
+        private var prefH = 0f
+
+        fun setPreferredContentSize(width: Float, height: Float) {
+            prefW = width
+            prefH = height
+            setSize(width, height)
+            invalidateHierarchy()
+        }
+
+        override fun getPrefWidth(): Float = prefW
+
+        override fun getPrefHeight(): Float = prefH
+    }
+
+    private inner class DockSection(
+        private val titleText: String,
+        private val body: Actor
+    ) : WidgetGroup() {
+        private val headerTable = VisTable()
+        private val titleLabel = VisLabel()
+        private var collapsed = false
+        private val headerHeight = 28f
+        private val padding = 4f
+
+        init {
+            touchable = Touchable.enabled
+            headerTable.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+            headerTable.add(titleLabel).left().padLeft(6f).growX()
+            addActor(headerTable)
+            addActor(body)
+            updateHeaderTitle()
+            headerTable.addListener(object : ClickListener() {
+                override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                    if (tapCount >= 1) {
+                        toggleCollapsed()
+                    }
+                }
+            })
+        }
+
+        fun setCollapsedState(value: Boolean) {
+            if (collapsed == value) return
+            toggleCollapsed()
+        }
+
+        fun isCollapsed(): Boolean = collapsed
+
+        private fun toggleCollapsed() {
+            collapsed = !collapsed
+            body.isVisible = !collapsed
+            updateHeaderTitle()
+            invalidateHierarchy()
+            pack()
+            needsPanelLayout = true
+        }
+
+        private fun updateHeaderTitle() {
+            titleLabel.setText((if (collapsed) "▶ " else "▼ ") + titleText)
+        }
+
+        override fun getPrefWidth(): Float {
+            if (!isVisible) return 0f
+            val headerPref = headerTable.prefWidth
+            val bodyLayout = body as? com.badlogic.gdx.scenes.scene2d.utils.Layout
+            val bodyPref = bodyLayout?.prefWidth ?: body.width
+            return kotlin.math.max(headerPref, bodyPref + padding * 2f)
+        }
+
+        override fun getPrefHeight(): Float {
+            if (!isVisible) return 0f
+            val bodyLayout = body as? com.badlogic.gdx.scenes.scene2d.utils.Layout
+            if (body.isVisible && bodyLayout != null && width > 0f) {
+                val bodyW = (width - padding * 2f).coerceAtLeast(1f)
+                body.setSize(bodyW, body.height.coerceAtLeast(1f))
+                bodyLayout.invalidate()
+                bodyLayout.validate()
+            }
+            val bodyPref = if (body.isVisible) {
+                (bodyLayout?.prefHeight ?: body.height).coerceAtLeast(0f)
+            } else {
+                0f
+            }
+            return headerHeight + if (body.isVisible) (padding + bodyPref + padding) else 0f
+        }
+
+        override fun layout() {
+            val w = width.coerceAtLeast(1f)
+            headerTable.setBounds(0f, height - headerHeight, w, headerHeight)
+            if (body.isVisible) {
+                val bodyY = padding
+                val bodyW = (w - padding * 2f).coerceAtLeast(1f)
+                val bodyH = (height - headerHeight - padding * 2f).coerceAtLeast(1f)
+                body.setBounds(padding, bodyY, bodyW, bodyH)
+                (body as? com.badlogic.gdx.scenes.scene2d.utils.Layout)?.let {
+                    it.invalidate()
+                    it.validate()
+                }
+            }
+            headerTable.invalidate()
+            headerTable.validate()
+        }
+    }
+
     val stage: Stage = Stage(ScreenViewport())
     private val toolButtons = mutableMapOf<ToolId, VisImageTextButton>()
     private val toolButtonByWidget = mutableMapOf<VisImageTextButton, ToolId>()
@@ -264,7 +369,7 @@ class SketchUiOverlay(
     private var updatingSelectionFields = false
     private var selectionTextId: String? = null
     private var lastPluginTools: List<String> = emptyList()
-    private lateinit var groupPanel: CollapsibleWindow
+    private lateinit var groupPanel: DockSection
     private val groupStatusLabel = VisLabel()
     private val groupNameField = VisTextField()
     private val groupGlueCheck = VisCheckBox("Glue to surface")
@@ -276,21 +381,24 @@ class SketchUiOverlay(
     private var paintColorButton: VisImageTextButton? = null
     private var lastPaintColor = Color(-1f, -1f, -1f, -1f)
     private var colorPicker: ColorPicker? = null
-    private var lightingPanel: CollapsibleWindow? = null
-    private lateinit var objectsPanel: CollapsibleWindow
+    private var lightingPanel: DockSection? = null
+    private lateinit var objectsPanel: DockSection
     private val objectsList = com.kotcrab.vis.ui.widget.VisList<String>()
     private var objectPrototypeItems: List<ObjectPrototypeInfo> = emptyList()
     private lateinit var objectsDeleteButton: VisTextButton
-    private lateinit var modelSettingsPanel: CollapsibleWindow
+    private lateinit var modelSettingsPanel: DockSection
     private lateinit var rightSidePanel: CollapsibleWindow
-    private lateinit var rightSidePanelContent: WidgetGroup
+    private lateinit var rightSidePanelContent: DockStackGroup
     private lateinit var rightSidePanelScroll: VisScrollPane
     private lateinit var rightSidePanelScrollCell: Cell<VisScrollPane>
-    private lateinit var helpPanel: CollapsibleWindow
-    private lateinit var polylineSettingsPanel: CollapsibleWindow
-    private lateinit var architectureSettingsPanel: CollapsibleWindow
-    private lateinit var hvacSettingsPanel: CollapsibleWindow
-    private lateinit var hotspotSettingsPanel: CollapsibleWindow
+    private lateinit var helpPanel: DockSection
+    private lateinit var polylineSettingsPanel: DockSection
+    private lateinit var architectureWallsPanel: DockSection
+    private lateinit var architectureSlabsPanel: DockSection
+    private lateinit var architectureStairsPanel: DockSection
+    private lateinit var architectureFramesPanel: DockSection
+    private lateinit var hvacSettingsPanel: DockSection
+    private lateinit var hotspotSettingsPanel: DockSection
     private lateinit var architectureModeLabel: VisLabel
     private lateinit var architectureWallSectionLabel: VisLabel
     private lateinit var architectureSlabSectionLabel: VisLabel
@@ -383,7 +491,10 @@ class SketchUiOverlay(
     private lateinit var hotspotClearReferenceButton: VisTextButton
     private var updatingHotspotFields = false
     private var selectedHotspotId: String? = null
-    private lateinit var architectureSettingsContent: VisTable
+    private lateinit var architectureWallsContent: VisTable
+    private lateinit var architectureSlabsContent: VisTable
+    private lateinit var architectureStairsContent: VisTable
+    private lateinit var architectureFramesContent: VisTable
     private var updatingArchitectureFields = false
     private val unitNameField = VisTextField()
     private val unitSizeField = VisTextField()
@@ -404,8 +515,9 @@ class SketchUiOverlay(
     private var lastWalkGravity = -1f
     private var lastWalkHeightAdjust = -1f
     private val lightingRefreshers = mutableListOf<() -> Unit>()
-    private lateinit var selectionPanel: CollapsibleWindow
+    private lateinit var selectionPanel: DockSection
     private var needsPanelLayout = true
+    private var rightDockStableMinContentWidth = 0f
     private var pluginManagerPanel: PluginManagerPanel? = null
     private var commandPaletteUI: CommandPaletteUI? = null
     private var pluginHost: PluginHost? = null
@@ -435,7 +547,7 @@ class SketchUiOverlay(
         modelSettingsPanel = buildModelSettingsPanel()
         helpPanel = buildHelpPanel()
         polylineSettingsPanel = buildPolylineSettingsPanel()
-        architectureSettingsPanel = buildArchitectureSettingsPanel()
+        buildArchitectureSettingsPanels()
         hvacSettingsPanel = buildHvacSettingsPanel()
         hotspotSettingsPanel = buildHotspotSettingsPanel()
         lightingPanel = buildLightingPanel()
@@ -446,9 +558,6 @@ class SketchUiOverlay(
         root.add(mainRow).expand().fill().row()
         root.add(buildStatusBar()).expandX().fillX().bottom().pad(0f)
 
-        stage.addActor(selectionPanel)
-        stage.addActor(groupPanel)
-        stage.addActor(objectsPanel)
         stage.addActor(rightSidePanel)
         positionPanels()
         needsPanelLayout = true
@@ -722,12 +831,14 @@ class SketchUiOverlay(
 
     fun showSelectionPanel() {
         selectionPanel.isVisible = true
+        selectionPanel.setCollapsedState(false)
         if (::rightSidePanel.isInitialized) rightSidePanel.isVisible = true
         needsPanelLayout = true
     }
 
     fun showGroupPanel() {
         groupPanel.isVisible = true
+        groupPanel.setCollapsedState(false)
         if (::rightSidePanel.isInitialized) rightSidePanel.isVisible = true
         needsPanelLayout = true
     }
@@ -735,6 +846,7 @@ class SketchUiOverlay(
     fun showLightingPanel() {
         lightingPanel?.let {
             it.isVisible = true
+            it.setCollapsedState(false)
             if (::rightSidePanel.isInitialized) rightSidePanel.isVisible = true
             needsPanelLayout = true
         }
@@ -742,36 +854,55 @@ class SketchUiOverlay(
 
     fun showModelSettingsPanel() {
         modelSettingsPanel.isVisible = true
+        modelSettingsPanel.setCollapsedState(false)
         if (::rightSidePanel.isInitialized) rightSidePanel.isVisible = true
         needsPanelLayout = true
     }
 
     fun showHelpPanel() {
         helpPanel.isVisible = true
+        helpPanel.setCollapsedState(false)
         if (::rightSidePanel.isInitialized) rightSidePanel.isVisible = true
         needsPanelLayout = true
     }
 
     fun showPolylineSettingsPanel() {
         polylineSettingsPanel.isVisible = true
+        polylineSettingsPanel.setCollapsedState(false)
         if (::rightSidePanel.isInitialized) rightSidePanel.isVisible = true
         needsPanelLayout = true
     }
 
     fun showArchitectureSettingsPanel() {
-        architectureSettingsPanel.isVisible = true
+        val selection = architectureElementProvider()
+        val sections = listOf(
+            architectureWallsPanel,
+            architectureSlabsPanel,
+            architectureStairsPanel,
+            architectureFramesPanel
+        )
+        sections.forEach { it.isVisible = true }
+        sections.forEach { it.setCollapsedState(true) }
+        when (selection?.kind) {
+            ArchitectureElementKind.SLAB -> architectureSlabsPanel.setCollapsedState(false)
+            ArchitectureElementKind.STAIR -> architectureStairsPanel.setCollapsedState(false)
+            ArchitectureElementKind.FRAME -> architectureFramesPanel.setCollapsedState(false)
+            else -> architectureWallsPanel.setCollapsedState(false)
+        }
         if (::rightSidePanel.isInitialized) rightSidePanel.isVisible = true
         needsPanelLayout = true
     }
 
     fun showHvacSettingsPanel() {
         hvacSettingsPanel.isVisible = true
+        hvacSettingsPanel.setCollapsedState(false)
         if (::rightSidePanel.isInitialized) rightSidePanel.isVisible = true
         needsPanelLayout = true
     }
 
     fun showHotspotSettingsPanel() {
         hotspotSettingsPanel.isVisible = true
+        hotspotSettingsPanel.setCollapsedState(false)
         if (::rightSidePanel.isInitialized) rightSidePanel.isVisible = true
         needsPanelLayout = true
     }
@@ -799,7 +930,10 @@ class SketchUiOverlay(
             modelSettingsPanel.isVisible = false
             helpPanel.isVisible = false
             polylineSettingsPanel.isVisible = false
-            architectureSettingsPanel.isVisible = false
+            architectureWallsPanel.isVisible = false
+            architectureSlabsPanel.isVisible = false
+            architectureStairsPanel.isVisible = false
+            architectureFramesPanel.isVisible = false
             hvacSettingsPanel.isVisible = false
             hotspotSettingsPanel.isVisible = false
             lightingPanel?.isVisible = false
@@ -1141,8 +1275,7 @@ class SketchUiOverlay(
         return bar
     }
 
-    private fun buildSelectionPanel(): CollapsibleWindow {
-        val panel = CollapsibleWindow("Selection", showCloseButton = false)
+    private fun buildSelectionPanel(): DockSection {
         val content = VisTable()
         content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         content.defaults().pad(4f).left()
@@ -1158,7 +1291,7 @@ class SketchUiOverlay(
         content.add(selectionTextSizeLabel).left().padTop(4f).row()
         content.add(selectionTextSizeField).growX().row()
         content.add(selectionTextScreenCheck).left().padTop(4f).row()
-        panel.add(content).grow()
+        val panel = buildDockSection("Selection", content, visible = true, collapsed = false)
 
         selectionTextField.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
@@ -1193,8 +1326,7 @@ class SketchUiOverlay(
         return panel
     }
 
-    private fun buildGroupPanel(): CollapsibleWindow {
-        val panel = CollapsibleWindow("Object", showCloseButton = false)
+    private fun buildGroupPanel(): DockSection {
         val content = VisTable()
         content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         content.defaults().pad(4f).left().growX()
@@ -1202,8 +1334,7 @@ class SketchUiOverlay(
         content.add(VisLabel("Name")).left().row()
         content.add(groupNameField).growX().row()
         content.add(groupGlueCheck).left().row()
-        panel.add(content).growX()
-        panel.isVisible = true
+        val panel = buildDockSection("Object", content, visible = true, collapsed = false)
 
         groupNameField.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
@@ -1224,8 +1355,7 @@ class SketchUiOverlay(
         return panel
     }
 
-    private fun buildObjectsPanel(): CollapsibleWindow {
-        val panel = CollapsibleWindow("Objects", fixedHeight = 240f, showCloseButton = false)
+    private fun buildObjectsPanel(): DockSection {
         val content = VisTable()
         content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         content.defaults().pad(4f).left().growX()
@@ -1250,13 +1380,17 @@ class SketchUiOverlay(
             }
         })
         content.add(objectsDeleteButton).left().padTop(4f).row()
-        panel.add(content).growX()
-        panel.isVisible = true
-        return panel
+        return buildDockSection("Objects", content, visible = true, collapsed = false)
     }
 
-    private fun buildModelSettingsPanel(): CollapsibleWindow {
-        val panel = CollapsibleWindow("Model Settings", showCloseButton = false)
+    private fun buildDockSection(title: String, body: Actor, visible: Boolean = true, collapsed: Boolean = true): DockSection {
+        val section = DockSection(title, body)
+        section.isVisible = visible
+        section.setCollapsedState(collapsed)
+        return section
+    }
+
+    private fun buildModelSettingsPanel(): DockSection {
         val content = VisTable()
         content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         content.defaults().pad(4f).left().growX()
@@ -1275,8 +1409,7 @@ class SketchUiOverlay(
         content.add(walkthroughGravityField).growX().row()
         content.add(VisLabel("Walk height adjust speed")).left().padTop(4f).row()
         content.add(walkthroughHeightAdjustField).growX().row()
-        panel.add(content).growX()
-        panel.isVisible = true
+        val panel = buildDockSection("Model Settings", content, visible = true, collapsed = true)
 
         unitNameField.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
@@ -1339,8 +1472,7 @@ class SketchUiOverlay(
         return panel
     }
 
-    private fun buildHelpPanel(): CollapsibleWindow {
-        val panel = CollapsibleWindow("Help / About", fixedHeight = 220f, showCloseButton = false)
+    private fun buildHelpPanel(): DockSection {
         val content = VisTable()
         content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         content.defaults().pad(4f).left().growX()
@@ -1371,13 +1503,10 @@ class SketchUiOverlay(
         content.add(platformLabel).left().row()
         content.add(warning).width(320f).left().padTop(6f).row()
         content.add(pluginsNote).width(320f).left().padTop(4f).row()
-        panel.add(content).growX()
-        panel.isVisible = false
-        return panel
+        return buildDockSection("Help / About", content, visible = false, collapsed = true)
     }
 
-    private fun buildPolylineSettingsPanel(): CollapsibleWindow {
-        val panel = CollapsibleWindow("Polyline Settings", showCloseButton = false)
+    private fun buildPolylineSettingsPanel(): DockSection {
         val content = VisTable()
         content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         content.defaults().pad(4f).left().growX()
@@ -1390,8 +1519,7 @@ class SketchUiOverlay(
         content.add(sizeField).growX().row()
         content.add(VisLabel("Double line offset")).left().padTop(4f).row()
         content.add(offsetField).growX().row()
-        panel.add(content).growX()
-        panel.isVisible = false
+        val panel = buildDockSection("Polyline Settings", content, visible = false, collapsed = true)
 
         arcField.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
@@ -1414,11 +1542,18 @@ class SketchUiOverlay(
         return panel
     }
 
-    private fun buildArchitectureSettingsPanel(): CollapsibleWindow {
-        val panel = CollapsibleWindow("Architecture Settings", showCloseButton = false)
-        architectureSettingsContent = VisTable()
-        architectureSettingsContent.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
-        architectureSettingsContent.defaults().pad(4f).left().top()
+    private fun newArchitectureDockContentTable(): VisTable {
+        return VisTable().apply {
+            background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+            defaults().pad(4f).left().top()
+        }
+    }
+
+    private fun buildArchitectureSettingsPanels() {
+        architectureWallsContent = newArchitectureDockContentTable()
+        architectureSlabsContent = newArchitectureDockContentTable()
+        architectureStairsContent = newArchitectureDockContentTable()
+        architectureFramesContent = newArchitectureDockContentTable()
         architectureModeLabel = VisLabel()
         architectureWallSectionLabel = VisLabel("Walls")
         architectureSlabSectionLabel = VisLabel("Slabs")
@@ -1484,8 +1619,10 @@ class SketchUiOverlay(
         architectureFrameGlazingColorField = VisTextField()
         architectureFrameGlazingColorButton = createArchitectureColorButton("Frame Glazing Color", architectureFrameGlazingColorField)
 
-        panel.add(architectureSettingsContent).growX()
-        panel.isVisible = true
+        architectureWallsPanel = buildDockSection("Architecture - Walls", architectureWallsContent, visible = true, collapsed = true)
+        architectureSlabsPanel = buildDockSection("Architecture - Slabs", architectureSlabsContent, visible = true, collapsed = true)
+        architectureStairsPanel = buildDockSection("Architecture - Stairs", architectureStairsContent, visible = true, collapsed = true)
+        architectureFramesPanel = buildDockSection("Architecture - Frames", architectureFramesContent, visible = true, collapsed = true)
 
         architectureWallNameField.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: Actor?) {
@@ -1994,7 +2131,7 @@ class SketchUiOverlay(
 
         rebuildArchitectureSettingsContent(null)
         updateArchitectureSettingsPanel()
-        return panel
+        rebuildArchitectureSettingsContent(null)
     }
 
     private fun loadArchitectureDefaults() {
@@ -2046,8 +2183,7 @@ class SketchUiOverlay(
         uiPrefs.flush()
     }
 
-    private fun buildHvacSettingsPanel(): CollapsibleWindow {
-        val panel = CollapsibleWindow("HVAC Settings", showCloseButton = false)
+    private fun buildHvacSettingsPanel(): DockSection {
         val content = VisTable()
         content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         content.defaults().pad(4f).left()
@@ -2190,8 +2326,7 @@ class SketchUiOverlay(
             }
         })
 
-        panel.add(content).growX()
-        panel.isVisible = false
+        val panel = buildDockSection("HVAC Settings", content, visible = false, collapsed = true)
         updateHvacSettingsPanel()
         return panel
     }
@@ -2286,8 +2421,7 @@ class SketchUiOverlay(
         uiPrefs.flush()
     }
 
-    private fun buildHotspotSettingsPanel(): CollapsibleWindow {
-        val panel = CollapsibleWindow("Hotspot Settings", showCloseButton = false)
+    private fun buildHotspotSettingsPanel(): DockSection {
         val content = VisTable()
         content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         content.defaults().pad(4f).left()
@@ -2437,8 +2571,7 @@ class SketchUiOverlay(
             }
         })
 
-        panel.add(content).growX()
-        panel.isVisible = false
+        val panel = buildDockSection("Hotspot Settings", content, visible = false, collapsed = true)
         updateHotspotSettingsPanel()
         return panel
     }
@@ -2524,10 +2657,18 @@ class SketchUiOverlay(
     }
 
     private fun rebuildArchitectureSettingsContent(mode: ArchitectureElementKind?) {
-        architectureSettingsContent.clearChildren()
-        architectureSettingsContent.add(architectureModeLabel).left().colspan(2).growX().row()
-        addArchitectureSection(
-            architectureWallSectionLabel,
+        if (!::architectureWallsContent.isInitialized) {
+            return
+        }
+        architectureWallsContent.clearChildren()
+        architectureSlabsContent.clearChildren()
+        architectureStairsContent.clearChildren()
+        architectureFramesContent.clearChildren()
+
+        architectureWallsContent.add(architectureModeLabel).left().colspan(2).growX().row()
+        architectureWallsContent.add(architectureWallSectionLabel).left().colspan(2).growX().padTop(8f).row()
+        addArchitectureFieldGrid(
+            architectureWallsContent,
             listOf(
                 ArchitectureFieldEntry(architectureWallNameLabel, architectureWallNameField),
                 ArchitectureFieldEntry(architectureWallThicknessLabel, architectureWallThicknessField),
@@ -2545,8 +2686,10 @@ class SketchUiOverlay(
                 )
             )
         )
-        addArchitectureSection(
-            architectureSlabSectionLabel,
+
+        architectureSlabsContent.add(architectureSlabSectionLabel).left().colspan(2).growX().padTop(8f).row()
+        addArchitectureFieldGrid(
+            architectureSlabsContent,
             listOf(
                 ArchitectureFieldEntry(architectureSlabNameLabel, architectureSlabNameField),
                 ArchitectureFieldEntry(architectureSlabThicknessLabel, architectureSlabThicknessField),
@@ -2567,8 +2710,10 @@ class SketchUiOverlay(
                 )
             )
         )
-        addArchitectureSection(
-            architectureStairSectionLabel,
+
+        architectureStairsContent.add(architectureStairSectionLabel).left().colspan(2).growX().padTop(8f).row()
+        addArchitectureFieldGrid(
+            architectureStairsContent,
             listOf(
                 ArchitectureFieldEntry(architectureStairNameLabel, architectureStairNameField),
                 ArchitectureFieldEntry(architectureStairHeightLabel, architectureStairHeightField),
@@ -2588,8 +2733,10 @@ class SketchUiOverlay(
                 )
             )
         )
-        addArchitectureSection(
-            architectureFrameSectionLabel,
+
+        architectureFramesContent.add(architectureFrameSectionLabel).left().colspan(2).growX().padTop(8f).row()
+        addArchitectureFieldGrid(
+            architectureFramesContent,
             listOf(
                 ArchitectureFieldEntry(architectureFrameNameLabel, architectureFrameNameField),
                 ArchitectureFieldEntry(architectureFrameDepthLabel, architectureFrameDepthField),
@@ -2607,9 +2754,13 @@ class SketchUiOverlay(
                 )
             )
         )
-        if (::architectureSettingsPanel.isInitialized) {
-            architectureSettingsPanel.pack()
-        }
+
+        listOf(
+            architectureWallsPanel,
+            architectureSlabsPanel,
+            architectureStairsPanel,
+            architectureFramesPanel
+        ).forEach { it.pack() }
     }
 
     private data class ArchitectureFieldEntry(
@@ -2619,23 +2770,18 @@ class SketchUiOverlay(
         val checkBox: VisCheckBox? = null
     )
 
-    private fun addArchitectureFieldGrid(entries: List<ArchitectureFieldEntry>) {
+    private fun addArchitectureFieldGrid(target: VisTable, entries: List<ArchitectureFieldEntry>) {
         var index = 0
         while (index < entries.size) {
-            architectureSettingsContent.add(architectureFieldCell(entries[index])).growX().top().padTop(2f)
+            target.add(architectureFieldCell(entries[index])).growX().top().padTop(2f)
             if (index + 1 < entries.size) {
-                architectureSettingsContent.add(architectureFieldCell(entries[index + 1])).growX().top().padTop(2f)
+                target.add(architectureFieldCell(entries[index + 1])).growX().top().padTop(2f)
             } else {
-                architectureSettingsContent.add().growX()
+                target.add().growX()
             }
-            architectureSettingsContent.row()
+            target.row()
             index += 2
         }
-    }
-
-    private fun addArchitectureSection(header: VisLabel, entries: List<ArchitectureFieldEntry>) {
-        architectureSettingsContent.add(header).left().colspan(2).growX().padTop(8f).row()
-        addArchitectureFieldGrid(entries)
     }
 
     private fun architectureFieldCell(entry: ArchitectureFieldEntry): VisTable {
@@ -2657,7 +2803,7 @@ class SketchUiOverlay(
     }
 
     private fun updateArchitectureSettingsPanel() {
-        if (!::architectureSettingsContent.isInitialized) {
+        if (!::architectureWallsContent.isInitialized) {
             return
         }
         val selection = architectureElementProvider()
@@ -3210,12 +3356,14 @@ class SketchUiOverlay(
 
     fun toggleObjectsPanel() {
         objectsPanel.isVisible = !objectsPanel.isVisible
+        if (objectsPanel.isVisible) {
+            objectsPanel.setCollapsedState(false)
+        }
         needsPanelLayout = true
     }
 
 
-    private fun buildLightingPanel(): CollapsibleWindow {
-        val panel = CollapsibleWindow("Lighting", showCloseButton = false)
+    private fun buildLightingPanel(): DockSection {
         val content = VisTable()
         content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         content.defaults().pad(4f).left().growX()
@@ -3289,18 +3437,23 @@ class SketchUiOverlay(
         content.add(
             buildShadowToggles()
         ).growX().row()
-        panel.add(content).growX()
-        panel.isVisible = false
+        val panel = buildDockSection("Lighting", content, visible = false, collapsed = true)
         lightingPanel = panel
         return panel
     }
 
-    private fun rightDockPanels(): List<CollapsibleWindow> {
+    private fun rightDockPanels(): List<DockSection> {
         val panels = mutableListOf(
+            selectionPanel,
+            groupPanel,
+            objectsPanel,
             modelSettingsPanel,
             helpPanel,
             polylineSettingsPanel,
-            architectureSettingsPanel,
+            architectureWallsPanel,
+            architectureSlabsPanel,
+            architectureStairsPanel,
+            architectureFramesPanel,
             hvacSettingsPanel,
             hotspotSettingsPanel
         )
@@ -3311,14 +3464,10 @@ class SketchUiOverlay(
     private fun buildRightSidePanel(): CollapsibleWindow {
         val panel = CollapsibleWindow("Panels", showCloseButton = false)
         panel.isResizable = false
-        rightSidePanelContent = WidgetGroup()
+        rightSidePanelContent = DockStackGroup()
 
         rightDockPanels().forEach { child ->
-            child.isMovable = false
-            child.isResizable = false
-            child.setKeepWithinParent(true)
             child.isVisible = true
-            child.setCollapsedState(true)
             rightSidePanelContent.addActor(child)
         }
 
@@ -3339,14 +3488,14 @@ class SketchUiOverlay(
         var maxChildWidth = 320f
         val panelGap = 6f
         panels.forEach { panel ->
-            panel.isMovable = false
-            panel.isResizable = false
             panel.invalidateHierarchy()
             panel.pack()
             if (panel.isVisible) {
-                maxChildWidth = kotlin.math.max(maxChildWidth, panel.width)
+                maxChildWidth = kotlin.math.max(maxChildWidth, panel.prefWidth)
             }
         }
+        rightDockStableMinContentWidth = kotlin.math.max(rightDockStableMinContentWidth, maxChildWidth)
+        maxChildWidth = kotlin.math.max(maxChildWidth, rightDockStableMinContentWidth)
 
         val stageWidth = if (stage.viewport.screenWidth > 0) stage.viewport.screenWidth.toFloat() else Gdx.graphics.width.toFloat()
         val stageHeight = if (stage.viewport.screenHeight > 0) stage.viewport.screenHeight.toFloat() else Gdx.graphics.height.toFloat()
@@ -3355,35 +3504,28 @@ class SketchUiOverlay(
             .coerceAtLeast(240f)
         val titleHeight = rightSidePanel.getTitleTable().prefHeight
         val scrollHeight = (stageHeight - 2f * outerMargin - titleHeight - 12f).coerceAtLeast(120f)
-        val innerPanelWidth = (scrollWidth - 10f).coerceAtLeast(220f)
-        var contentHeight = 0f
+        val initialInnerPanelWidth = (scrollWidth - 10f).coerceAtLeast(220f)
 
-        panels.forEach { panel ->
-            panel.isMovable = false
-            panel.isResizable = false
-            panel.setKeepWithinParent(true)
-            panel.width = innerPanelWidth
-            panel.invalidateHierarchy()
-            panel.validate()
-            val computedHeight = panel.prefHeight.coerceAtLeast(panel.getTitleTable().prefHeight + 4f)
-            panel.setSize(innerPanelWidth, computedHeight)
-            panel.validate()
-            contentHeight += panel.height + panelGap
-        }
-        if (contentHeight > 0f) {
-            contentHeight -= panelGap
-        }
-
-        var y = contentHeight
-        panels.forEach { panel ->
-            if (!panel.isVisible) {
-                return@forEach
+        fun layoutDockChildrenAtWidth(targetWidth: Float): Float {
+            var totalHeight = 0f
+            panels.forEach { panel ->
+                if (!panel.isVisible) {
+                    return@forEach
+                }
+                panel.width = targetWidth
+                panel.invalidateHierarchy()
+                panel.validate()
+                val computedHeight = panel.prefHeight.coerceAtLeast(24f)
+                panel.setSize(targetWidth, computedHeight)
+                panel.validate()
+                totalHeight += panel.height + panelGap
             }
-            y -= panel.height
-            panel.setPosition(0f, y)
-            y -= panelGap
+            if (totalHeight > 0f) totalHeight -= panelGap
+            rightSidePanelContent.setPreferredContentSize(targetWidth, totalHeight.coerceAtLeast(1f))
+            return totalHeight
         }
-        rightSidePanelContent.setSize(innerPanelWidth, contentHeight.coerceAtLeast(1f))
+
+        var contentHeight = layoutDockChildrenAtWidth(initialInnerPanelWidth)
 
         rightSidePanelScrollCell.width(scrollWidth).height(scrollHeight)
         rightSidePanelContent.invalidateHierarchy()
@@ -3392,16 +3534,37 @@ class SketchUiOverlay(
         rightSidePanel.pack()
         rightSidePanelScroll.validate()
         rightSidePanel.validate()
+
+        // When vertical scrolling kicks in, ScrollPane narrows the content viewport (due to scrollbar).
+        // Recompute child heights at the actual content width to keep wrapping/pref-heights consistent.
+        val actualContentWidth = rightSidePanelContent.width.coerceAtLeast(220f)
+        if (kotlin.math.abs(actualContentWidth - initialInnerPanelWidth) > 0.5f) {
+            contentHeight = layoutDockChildrenAtWidth(actualContentWidth)
+            rightSidePanelContent.invalidateHierarchy()
+            rightSidePanelScroll.invalidateHierarchy()
+            rightSidePanel.invalidateHierarchy()
+            rightSidePanel.pack()
+            rightSidePanelScroll.validate()
+            rightSidePanel.validate()
+        }
+
+        // ScrollPane may stretch the content actor to the viewport height when content is shorter.
+        // Anchor children to the top of the actual content actor height to avoid bottom stacking.
+        var y = rightSidePanelContent.height
+        panels.forEach { panel ->
+            if (!panel.isVisible) {
+                return@forEach
+            }
+            y -= panel.height
+            panel.setPosition(0f, y)
+            y -= panelGap
+        }
     }
 
     private fun positionPanels() {
         updateRightSidePanelLayout()
         val panels = mutableListOf<CollapsibleWindow>()
-        panels.add(selectionPanel)
-        panels.add(groupPanel)
-        panels.add(objectsPanel)
         if (!automationHidePanels) {
-            panels.forEach { it.isVisible = true }
             rightDockPanels().forEach { it.isVisible = true }
             rightSidePanel.isVisible = true
         }
