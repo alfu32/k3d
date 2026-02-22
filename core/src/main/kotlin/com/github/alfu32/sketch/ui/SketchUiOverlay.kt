@@ -142,7 +142,7 @@ class SketchUiOverlay(
                 return getTitleTable().prefHeight
             }
             val pref = super.getPrefHeight()
-            return fixedHeight ?: pref
+            return fixedHeight?.let { kotlin.math.max(pref, it) } ?: pref
         }
 
         private fun toggleCollapsed() {
@@ -274,6 +274,7 @@ class SketchUiOverlay(
     private lateinit var rightSidePanelContent: VisTable
     private lateinit var rightSidePanelScroll: VisScrollPane
     private lateinit var rightSidePanelScrollCell: Cell<VisScrollPane>
+    private val rightDockPanelCells = linkedMapOf<CollapsibleWindow, Cell<CollapsibleWindow>>()
     private lateinit var helpPanel: CollapsibleWindow
     private lateinit var polylineSettingsPanel: CollapsibleWindow
     private lateinit var architectureSettingsPanel: CollapsibleWindow
@@ -3299,6 +3300,7 @@ class SketchUiOverlay(
     private fun buildRightSidePanel(): CollapsibleWindow {
         val panel = CollapsibleWindow("Panels", showCloseButton = false)
         panel.isResizable = false
+        rightDockPanelCells.clear()
 
         rightSidePanelContent = VisTable().apply {
             defaults().padBottom(6f).left().growX().fillX()
@@ -3310,7 +3312,9 @@ class SketchUiOverlay(
             child.isResizable = false
             child.setKeepWithinParent(true)
             child.isVisible = true
-            rightSidePanelContent.add(child).growX().fillX().row()
+            val cell = rightSidePanelContent.add(child).growX().fillX()
+            rightDockPanelCells[child] = cell
+            rightSidePanelContent.row()
         }
 
         rightSidePanelScroll = VisScrollPane(rightSidePanelContent).apply {
@@ -3345,9 +3349,32 @@ class SketchUiOverlay(
             .coerceAtLeast(240f)
         val titleHeight = rightSidePanel.getTitleTable().prefHeight
         val scrollHeight = (stageHeight - 2f * outerMargin - titleHeight - 12f).coerceAtLeast(120f)
+        val innerPanelWidth = (scrollWidth - 10f).coerceAtLeast(220f)
+
+        panels.forEach { panel ->
+            panel.isMovable = false
+            panel.isResizable = false
+            panel.setKeepWithinParent(true)
+            panel.width = innerPanelWidth
+            panel.invalidateHierarchy()
+            panel.validate()
+            val computedHeight = panel.prefHeight.coerceAtLeast(panel.getTitleTable().prefHeight + 4f)
+            panel.setSize(innerPanelWidth, computedHeight)
+            panel.validate()
+            rightDockPanelCells[panel]?.apply {
+                width(innerPanelWidth)
+                minWidth(innerPanelWidth)
+                prefWidth(innerPanelWidth)
+                maxWidth(innerPanelWidth)
+                height(panel.height)
+                minHeight(panel.height)
+                prefHeight(panel.height)
+            }
+        }
 
         rightSidePanelScrollCell.width(scrollWidth).height(scrollHeight)
         rightSidePanelContent.invalidateHierarchy()
+        rightSidePanelContent.pack()
         rightSidePanelScroll.invalidateHierarchy()
         rightSidePanel.invalidateHierarchy()
         rightSidePanel.pack()
