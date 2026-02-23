@@ -2055,9 +2055,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     override fun render() {
         updateActiveCamera(Gdx.graphics.deltaTime)
-        if (::toolPointer.isInitialized) {
-            toolPointer.pollPointer(Gdx.input.x, Gdx.input.y)
-        }
         handleGlobalDistanceShortcut()
         updateCursorStatus()
         undoManager.update()
@@ -2655,7 +2652,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun updateCursorStatus() {
-        lastSnap = snapper.compute(Gdx.input.x, Gdx.input.y)
+        val pointerPos = if (::toolPointer.isInitialized) toolPointer.lastPointerScreenPosition() else null
+        val screenX = pointerPos?.first ?: Gdx.input.x
+        val screenY = pointerPos?.second ?: Gdx.input.y
+        lastSnap = snapper.compute(screenX, screenY)
         val snap = lastSnap
         if (snap != null && snap.valid && snap.world != null) {
             statusModel.cursorScreenX = snap.screenX
@@ -2663,8 +2663,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             statusModel.cursorWorld = String.format("%.2f, %.2f, %.2f", snap.world.x, snap.world.y, snap.world.z)
             statusModel.cursorSnapLabel = snap.type.label
         } else {
-            statusModel.cursorScreenX = Gdx.input.x
-            statusModel.cursorScreenY = Gdx.input.y
+            statusModel.cursorScreenX = screenX
+            statusModel.cursorScreenY = screenY
             statusModel.cursorWorld = "--"
             statusModel.cursorSnapLabel = "No hit"
         }

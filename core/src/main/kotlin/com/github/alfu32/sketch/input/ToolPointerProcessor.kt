@@ -8,35 +8,43 @@ class ToolPointerProcessor(
     private val snapper: Snapper,
     private val overrideSnapProvider: () -> SnapResult?
 ) : InputAdapter() {
-    private var lastPolledX = Int.MIN_VALUE
-    private var lastPolledY = Int.MIN_VALUE
+    private var lastScreenX = Int.MIN_VALUE
+    private var lastScreenY = Int.MIN_VALUE
 
-    fun pollPointer(screenX: Int, screenY: Int) {
-        if (screenX == lastPolledX && screenY == lastPolledY) {
-            return
+    fun lastPointerScreenPosition(): Pair<Int, Int>? {
+        if (lastScreenX == Int.MIN_VALUE || lastScreenY == Int.MIN_VALUE) {
+            return null
         }
-        lastPolledX = screenX
-        lastPolledY = screenY
-        val snap = overrideSnapProvider() ?: snapper.compute(screenX, screenY)
-        controller.pointerMoved(snap.world, snap.normal, snap.valid)
+        return Pair(lastScreenX, lastScreenY)
+    }
+
+    private fun rememberPointer(screenX: Int, screenY: Int) {
+        lastScreenX = screenX
+        lastScreenY = screenY
     }
 
     override fun mouseMoved(screenX: Int, screenY: Int): Boolean {
-        pollPointer(screenX, screenY)
+        rememberPointer(screenX, screenY)
+        val snap = overrideSnapProvider() ?: snapper.compute(screenX, screenY)
+        controller.pointerMoved(snap.world, snap.normal, snap.valid)
         return false
     }
 
     override fun touchDragged(screenX: Int, screenY: Int, pointer: Int): Boolean {
-        pollPointer(screenX, screenY)
+        rememberPointer(screenX, screenY)
+        val snap = overrideSnapProvider() ?: snapper.compute(screenX, screenY)
+        controller.pointerMoved(snap.world, snap.normal, snap.valid)
         return false
     }
 
     override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
+        rememberPointer(screenX, screenY)
         val snap = overrideSnapProvider() ?: snapper.compute(screenX, screenY)
         return controller.pointerDown(snap.world, snap.normal, snap.valid, button)
     }
 
     override fun touchUp(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
+        rememberPointer(screenX, screenY)
         val snap = overrideSnapProvider() ?: snapper.compute(screenX, screenY)
         return controller.pointerUp(snap.world, snap.normal, snap.valid, button)
     }
