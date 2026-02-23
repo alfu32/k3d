@@ -1,5 +1,9 @@
 apply plugin: 'com.android.application'
 
+configurations {
+  natives
+}
+
 android {
   namespace = "com.github.alfu32.sketch.android"
   compileSdk = 36
@@ -34,6 +38,7 @@ android {
       java.srcDirs = ["src/main/kotlin"]
       assets.srcDirs = [rootProject.file("assets").path]
       res.srcDirs = ["src/main/res"]
+      jniLibs.srcDirs = ["${buildDir}/androidNatives"]
     }
   }
 
@@ -49,23 +54,79 @@ android {
   }
 }
 
-tasks.register("bundleAndroidApk", Copy) {
-  dependsOn "assembleRelease"
-  from(layout.buildDirectory.dir("outputs/apk/release"))
-  include("*-release-*.apk", "*-release.apk")
-  rename { "k3d-${rootProject.ext.projectVersion}.apk" }
-  into(rootProject.layout.projectDirectory.dir("dist"))
+def registerRenamedApkTask = { String taskName, String assembleTask, String variantDir, String outputName ->
+  tasks.register(taskName, Copy) {
+    dependsOn assembleTask
+    from(layout.buildDirectory.dir("outputs/apk/${variantDir}"))
+    include("*-${variantDir}-*.apk", "*-${variantDir}.apk")
+    rename { outputName }
+    into(rootProject.layout.projectDirectory.dir("dist"))
+  }
+}
+
+tasks.register("copyAndroidNatives") {
+  doLast {
+    def outDir = layout.buildDirectory.dir("androidNatives").get().asFile
+    delete(outDir)
+    outDir.mkdirs()
+    configurations.natives.files.each { jarFile ->
+      def name = jarFile.name
+      def abi = (
+        name.contains("natives-arm64-v8a") ? "arm64-v8a" :
+        name.contains("natives-armeabi-v7a") ? "armeabi-v7a" :
+        name.contains("natives-x86_64") ? "x86_64" :
+        name.contains("natives-x86") ? "x86" :
+        null
+      )
+      if (abi == null) {
+        return
+      }
+      copy {
+        from zipTree(jarFile)
+        include "**/*.so"
+        into new File(outDir, abi)
+        includeEmptyDirs = false
+        eachFile { details ->
+          details.path = details.name
+        }
+      }
+    }
+  }
+}
+
+tasks.matching { it.name == "preBuild" }.configureEach {
+  dependsOn "copyAndroidNatives"
+}
+
+registerRenamedApkTask(
+  "bundleAndroidApk",
+  "assembleRelease",
+  "release",
+  "k3d-${rootProject.ext.projectVersion}.apk"
+)
+
+registerRenamedApkTask(
+  "bundleAndroidDebugApk",
+  "assembleDebug",
+  "debug",
+  "k3d-${rootProject.ext.projectVersion}-debug.apk"
+)
+
+tasks.register("bundleAndroidLocalTestApk") {
+  group = "distribution"
+  description = "Builds a locally signed debug APK for device testing and copies it to dist/."
+  dependsOn "bundleAndroidDebugApk"
 }
 
 dependencies {
   implementation project(':core')
   implementation "com.badlogicgames.gdx:gdx-backend-android:$gdxVersion"
-  implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-armeabi-v7a"
-  implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-arm64-v8a"
-  implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-x86"
-  implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-x86_64"
-  implementation "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-armeabi-v7a"
-  implementation "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-arm64-v8a"
-  implementation "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-x86"
-  implementation "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-x86_64"
+  natives "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-armeabi-v7a"
+  natives "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-arm64-v8a"
+  natives "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-x86"
+  natives "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-x86_64"
+  natives "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-armeabi-v7a"
+  natives "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-arm64-v8a"
+  natives "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-x86"
+  natives "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-x86_64"
 }
