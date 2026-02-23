@@ -1,6 +1,8 @@
 package com.github.alfu32.sketch.android
 
 import android.os.Bundle
+import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.Input
 import com.badlogic.gdx.backends.android.AndroidApplication
 import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
 import com.github.alfu32.sketch.Main
@@ -32,6 +34,7 @@ class AndroidLauncher : AndroidApplication() {
         )
 
         initialize(Main(args), cfg)
+        Gdx.input.setCatchKey(Input.Keys.BACK, true)
+        Gdx.input.setCatchKey(Input.Keys.ESCAPE, true)
     }
 }
-

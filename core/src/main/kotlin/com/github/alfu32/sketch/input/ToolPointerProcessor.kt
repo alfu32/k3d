@@ -8,16 +8,26 @@ class ToolPointerProcessor(
     private val snapper: Snapper,
     private val overrideSnapProvider: () -> SnapResult?
 ) : InputAdapter() {
+    private var lastPolledX = Int.MIN_VALUE
+    private var lastPolledY = Int.MIN_VALUE
 
-    override fun mouseMoved(screenX: Int, screenY: Int): Boolean {
+    fun pollPointer(screenX: Int, screenY: Int) {
+        if (screenX == lastPolledX && screenY == lastPolledY) {
+            return
+        }
+        lastPolledX = screenX
+        lastPolledY = screenY
         val snap = overrideSnapProvider() ?: snapper.compute(screenX, screenY)
         controller.pointerMoved(snap.world, snap.normal, snap.valid)
+    }
+
+    override fun mouseMoved(screenX: Int, screenY: Int): Boolean {
+        pollPointer(screenX, screenY)
         return false
     }
 
     override fun touchDragged(screenX: Int, screenY: Int, pointer: Int): Boolean {
-        val snap = overrideSnapProvider() ?: snapper.compute(screenX, screenY)
-        controller.pointerMoved(snap.world, snap.normal, snap.valid)
+        pollPointer(screenX, screenY)
         return false
     }
 

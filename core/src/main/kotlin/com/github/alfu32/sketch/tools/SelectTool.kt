@@ -2059,7 +2059,8 @@ class SelectTool(
         val shift = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) ||
             Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT)
         val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
-            Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+            Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT) ||
+            Gdx.input.isKeyPressed(Input.Keys.SYM)
         return when {
             ctrl -> SelectionMode.REMOVE
             shift -> SelectionMode.ADD

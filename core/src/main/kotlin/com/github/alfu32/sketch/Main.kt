@@ -1008,13 +1008,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             }
 
             override fun keyDown(keycode: Int): Boolean {
-                if (keycode == Input.Keys.ESCAPE && hotspotReferencePickTargetId != null) {
+                if ((keycode == Input.Keys.ESCAPE || keycode == Input.Keys.BACK) && hotspotReferencePickTargetId != null) {
                     hotspotReferencePickTargetId = null
                     hotspotReferencePickTargetGroup = null
                     statusModel.message = "Hotspot reference pick canceled."
                     return true
                 }
-                if (keycode == Input.Keys.ESCAPE && hotspotAddPickTargetGroup != null) {
+                if ((keycode == Input.Keys.ESCAPE || keycode == Input.Keys.BACK) && hotspotAddPickTargetGroup != null) {
                     hotspotAddPickTargetGroup = null
                     statusModel.message = "Hotspot add canceled."
                     return true
@@ -2055,6 +2055,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     override fun render() {
         updateActiveCamera(Gdx.graphics.deltaTime)
+        if (::toolPointer.isInitialized) {
+            toolPointer.pollPointer(Gdx.input.x, Gdx.input.y)
+        }
         handleGlobalDistanceShortcut()
         updateCursorStatus()
         undoManager.update()
@@ -2687,7 +2690,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun handleGlobalDistanceShortcut() {
         val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
-            Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+            Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT) ||
+            Gdx.input.isKeyPressed(Input.Keys.SYM)
         if (ctrl && Gdx.input.isKeyJustPressed(Input.Keys.N)) {
             startDistanceInput()
         }
@@ -3956,7 +3960,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             "K3D on Android is currently optimized for an external mouse and keyboard.\n" +
                 "Touch-only use is limited.\n\n" +
                 "For the best experience use a tablet, Chromebook or DeX setup with mouse + keyboard.\n" +
-                "User plugins remain supported from the app plugins folder."
+                "User plugins remain supported from the app plugins folder.\n\n" +
+                "Tap OK to continue."
         ).apply {
             setWrap(true)
         }

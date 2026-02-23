@@ -23,6 +23,12 @@ class ToolInputProcessor(
     private val showDistanceInput: () -> Unit,
     private val uiCapturesInput: () -> Boolean
 ) : InputAdapter() {
+    private fun ctrlPressed(): Boolean {
+        return Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
+            Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT) ||
+            Gdx.input.isKeyPressed(Input.Keys.SYM)
+    }
+
     override fun keyDown(keycode: Int): Boolean {
         if (uiCapturesInput()) {
             return true
@@ -37,8 +43,7 @@ class ToolInputProcessor(
                 }
             }
             Input.Keys.Z -> {
-                val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
-                    Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+                val ctrl = ctrlPressed()
                 val shift = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) ||
                     Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT)
                 if (ctrl && shift) {
@@ -51,14 +56,13 @@ class ToolInputProcessor(
                 }
             }
             Input.Keys.Y -> {
-                val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
-                    Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+                val ctrl = ctrlPressed()
                 if (ctrl) {
                     redoAction()
                     return true
                 }
             }
-            Input.Keys.ESCAPE -> {
+            Input.Keys.ESCAPE, Input.Keys.BACK -> {
                 if (controller.activeToolId() == ToolId.SELECT) {
                     guideManager.clear()
                 }
@@ -88,8 +92,7 @@ class ToolInputProcessor(
                 return true
             }
             Input.Keys.G -> {
-                val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
-                    Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+                val ctrl = ctrlPressed()
                 val shift = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) ||
                     Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT)
                 if (ctrl && shift) {
@@ -108,24 +111,21 @@ class ToolInputProcessor(
                 return true
             }
             Input.Keys.L -> {
-                val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
-                    Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+                val ctrl = ctrlPressed()
                 if (ctrl) {
                     cleanupAction()
                     return true
                 }
             }
             Input.Keys.O -> {
-                val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
-                    Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+                val ctrl = ctrlPressed()
                 if (ctrl) {
                     objectPrototypeSelectionAction()
                     return true
                 }
             }
             Input.Keys.N -> {
-                val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
-                    Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
+                val ctrl = ctrlPressed()
                 if (ctrl) {
                     showDistanceInput()
                     return true

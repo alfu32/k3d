@@ -133,9 +133,17 @@ class CommandPaletteUI(
     
     private fun setupShortcuts() {
         stage.addListener(object : InputListener() {
+            private fun ctrlPressed(): Boolean {
+                return Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
+                    Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT) ||
+                    Gdx.input.isKeyPressed(Input.Keys.SYM)
+            }
+
             override fun keyDown(event: InputEvent?, keycode: Int): Boolean {
-                if (Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) &&
-                    Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) &&
+                val shift = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) ||
+                    Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT)
+                if (ctrlPressed() &&
+                    shift &&
                     keycode == Input.Keys.P) {
                     
                     toggleVisibility()
