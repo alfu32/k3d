@@ -1,6 +1,6 @@
 # K3D
+![splash.3.png](splash.3.png)
 
-![K3D app icon](assets/appicon.png)
 
 K3D is a Kotlin + libGDX desktop modeler for fast, direct 3D sketching. It focuses on edges, planar faces, tool-driven workflows, and precise snapping with an extensible plugin system.
 

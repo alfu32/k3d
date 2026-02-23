@@ -48,6 +48,8 @@ import kotlin.math.abs
 class SketchUiOverlay(
     private val controller: ToolController,
     private val status: StatusModel,
+    private val openModelAction: () -> Unit,
+    private val saveAsModelAction: () -> Unit,
     private val cleanupAction: () -> Unit,
     private val deleteSelectionAction: () -> Unit,
     private val flipFacesAction: () -> Unit,
@@ -208,11 +210,10 @@ class SketchUiOverlay(
 
         init {
             touchable = Touchable.enabled
-            headerTable.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
             headerTable.add(titleLabel).left().padLeft(6f).growX()
             addActor(headerTable)
             addActor(body)
-            updateHeaderTitle()
+            updateHeaderState()
             headerTable.addListener(object : ClickListener() {
                 override fun clicked(event: InputEvent?, x: Float, y: Float) {
                     if (tapCount >= 1) {
@@ -232,13 +233,25 @@ class SketchUiOverlay(
         private fun toggleCollapsed() {
             collapsed = !collapsed
             body.isVisible = !collapsed
-            updateHeaderTitle()
+            updateHeaderState()
             invalidateHierarchy()
             pack()
             needsPanelLayout = true
         }
 
-        private fun updateHeaderTitle() {
+        private fun updateHeaderState() {
+            headerTable.background = if (collapsed) {
+                dockSectionHeaderClosedDrawable ?: createDockSectionHeaderDrawable(
+                    fill = Color.valueOf("3c4650"),
+                    border = Color.valueOf("657380")
+                ).also { dockSectionHeaderClosedDrawable = it }
+            } else {
+                dockSectionHeaderOpenDrawable ?: createDockSectionHeaderDrawable(
+                    fill = Color.valueOf("21445f"),
+                    border = Color.valueOf("3ba7ff")
+                ).also { dockSectionHeaderOpenDrawable = it }
+            }
+            titleLabel.color = if (collapsed) Color.valueOf("d8dee5") else Color.WHITE
             titleLabel.setText((if (collapsed) "▶ " else "▼ ") + titleText)
         }
 
@@ -309,7 +322,9 @@ class SketchUiOverlay(
     private val uiPrefs by lazy { Gdx.app.getPreferences("k3d-ui-layout") }
     private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
     private val toolbarLayoutVersion = 8
-    private val toolbarButtonSize = 32f
+    private val uiToolbarButtonSizeKey = "ui_toolbar_button_size_px"
+    private var toolbarButtonSize = 32f
+    private var toolbarIconSizePx = 32
     private val archDefaultWallThicknessKey = "arch_default_wall_thickness"
     private val archDefaultWallHeightKey = "arch_default_wall_height"
     private val archDefaultWallInclinationKey = "arch_default_wall_inclination"
@@ -349,6 +364,8 @@ class SketchUiOverlay(
     private var buttonUpDrawable: TextureRegionDrawable? = null
     private var markerDrawable: TextureRegionDrawable? = null
     private var darkBarDrawable: TextureRegionDrawable? = null
+    private var dockSectionHeaderOpenDrawable: TextureRegionDrawable? = null
+    private var dockSectionHeaderClosedDrawable: TextureRegionDrawable? = null
     private val toolLabel = VisLabel()
     private val messageLabel = VisLabel()
     private val copyLabel = VisLabel()
@@ -387,6 +404,7 @@ class SketchUiOverlay(
     private var objectPrototypeItems: List<ObjectPrototypeInfo> = emptyList()
     private lateinit var objectsDeleteButton: VisTextButton
     private lateinit var modelSettingsPanel: DockSection
+    private lateinit var uiSettingsPanel: DockSection
     private lateinit var rightSidePanel: CollapsibleWindow
     private lateinit var rightSidePanelContent: DockStackGroup
     private lateinit var rightSidePanelScroll: VisScrollPane
@@ -506,6 +524,9 @@ class SketchUiOverlay(
     private val walkthroughJumpField = VisTextField()
     private val walkthroughGravityField = VisTextField()
     private val walkthroughHeightAdjustField = VisTextField()
+    private val walkthroughMoveSpeedField = VisTextField()
+    private lateinit var uiToolbarSizeSelect: VisSelectBox<String>
+    private var updatingUiSettingsFields = false
     private var updatingModelSettingsFields = false
     private var lastUnitName = ""
     private var lastUnitSize = -1f
@@ -514,6 +535,7 @@ class SketchUiOverlay(
     private var lastWalkJump = -1f
     private var lastWalkGravity = -1f
     private var lastWalkHeightAdjust = -1f
+    private var lastWalkMoveSpeed = -1f
     private val lightingRefreshers = mutableListOf<() -> Unit>()
     private lateinit var selectionPanel: DockSection
     private var needsPanelLayout = true
@@ -530,6 +552,7 @@ class SketchUiOverlay(
     private var distanceCancelHandler: (() -> Unit)? = null
 
     init {
+        loadUiVisualSettings()
         iconDrawables.putAll(loadIconDrawables())
         migrateBuiltinToolbarPrefs()
         loadArchitectureDefaults()
@@ -545,6 +568,7 @@ class SketchUiOverlay(
         groupPanel = buildGroupPanel()
         objectsPanel = buildObjectsPanel()
         modelSettingsPanel = buildModelSettingsPanel()
+        uiSettingsPanel = buildUiSettingsPanel()
         helpPanel = buildHelpPanel()
         polylineSettingsPanel = buildPolylineSettingsPanel()
         buildArchitectureSettingsPanels()
@@ -960,7 +984,6 @@ class SketchUiOverlay(
     fun dispose() {
         stage.dispose()
         iconTextures.forEach { it.dispose() }
-        iconsTexture?.dispose()
     }
 
     private fun buildStandardToolbars(): List<CollapsibleWindow> {
@@ -1143,6 +1166,20 @@ class SketchUiOverlay(
         val content = VisTable()
         content.defaults().pad(2f).left()
 
+        val openButton = createActionButton(
+            label = "Open",
+            icon = iconFor("file_open", createActionIconDrawable(Color(0.65f, 0.8f, 0.95f, 1f)))
+        ) {
+            openModelAction()
+        }
+
+        val saveAsButton = createActionButton(
+            label = "Save As",
+            icon = iconFor("file_save", createActionIconDrawable(Color(0.6f, 0.9f, 0.6f, 1f)))
+        ) {
+            saveAsModelAction()
+        }
+
         val cleanupButton = createActionButton(
             label = "Cleanup",
             icon = iconFor("cleanup", createActionIconDrawable(Color(0.55f, 0.85f, 0.65f, 1f)))
@@ -1189,7 +1226,7 @@ class SketchUiOverlay(
         ) {
             togglePluginManager()
         }
-        val buttons = listOf(cleanupButton, colorButton, deleteButton, flipButton, lightingButton, pluginButton)
+        val buttons = listOf(openButton, saveAsButton, cleanupButton, colorButton, deleteButton, flipButton, lightingButton, pluginButton)
         buttons.forEach { button ->
             content.add(button).size(toolbarButtonSize, toolbarButtonSize)
         }
@@ -1403,6 +1440,8 @@ class SketchUiOverlay(
         content.add(gridSpacingField).growX().row()
         content.add(VisLabel("Snap radius")).left().padTop(6f).row()
         content.add(snapEpsilonSlider).growX().row()
+        content.add(VisLabel("Walk move speed")).left().padTop(6f).row()
+        content.add(walkthroughMoveSpeedField).growX().row()
         content.add(VisLabel("Walk jump velocity")).left().padTop(6f).row()
         content.add(walkthroughJumpField).growX().row()
         content.add(VisLabel("Walk gravity")).left().padTop(4f).row()
@@ -1459,6 +1498,11 @@ class SketchUiOverlay(
                 applyWalkthroughTuningFromFields()
             }
         })
+        walkthroughMoveSpeedField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                applyWalkthroughTuningFromFields()
+            }
+        })
         walkthroughGravityField.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
                 applyWalkthroughTuningFromFields()
@@ -1470,6 +1514,37 @@ class SketchUiOverlay(
             }
         })
         return panel
+    }
+
+    private fun buildUiSettingsPanel(): DockSection {
+        val content = VisTable()
+        content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        content.defaults().pad(4f).left().growX()
+        content.add(VisLabel("Toolbar icon/button size")).left().row()
+        uiToolbarSizeSelect = VisSelectBox<String>().apply {
+            setItems("32 x 32 px", "48 x 48 px", "64 x 64 px")
+        }
+        content.add(uiToolbarSizeSelect).growX().row()
+        val uiInfoLabel = VisLabel("Affects built-in and mapped toolbar icons.").apply {
+            setWrap(true)
+        }
+        content.add(uiInfoLabel).left().width(250f).padTop(2f).row()
+
+        syncUiSettingsPanel()
+
+        uiToolbarSizeSelect.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingUiSettingsFields) return
+                val size = when (uiToolbarSizeSelect.selected) {
+                    "48 x 48 px" -> 48
+                    "64 x 64 px" -> 64
+                    else -> 32
+                }
+                setToolbarIconAndButtonSize(size)
+            }
+        })
+
+        return buildDockSection("UI Settings", content, visible = true, collapsed = true)
     }
 
     private fun buildHelpPanel(): DockSection {
@@ -3289,6 +3364,7 @@ class SketchUiOverlay(
         val unitSize = unit.size
         if (
             unitName != lastUnitName || unitSize != lastUnitSize || gridSpacing != lastGridSpacing || snapEpsilon != lastSnapEpsilon ||
+            walk.moveSpeed != lastWalkMoveSpeed ||
             walk.jumpVelocity != lastWalkJump || walk.gravity != lastWalkGravity || walk.heightAdjustSpeed != lastWalkHeightAdjust
         ) {
             updatingModelSettingsFields = true
@@ -3302,6 +3378,10 @@ class SketchUiOverlay(
             val gridText = String.format(Locale.US, "%.4f", gridSpacing)
             if (gridText != gridSpacingField.text || !gridSpacingField.hasKeyboardFocus()) {
                 gridSpacingField.text = gridText
+            }
+            val walkMoveText = String.format(Locale.US, "%.3f", walk.moveSpeed)
+            if (walkMoveText != walkthroughMoveSpeedField.text || !walkthroughMoveSpeedField.hasKeyboardFocus()) {
+                walkthroughMoveSpeedField.text = walkMoveText
             }
             val walkJumpText = String.format(Locale.US, "%.3f", walk.jumpVelocity)
             if (walkJumpText != walkthroughJumpField.text || !walkthroughJumpField.hasKeyboardFocus()) {
@@ -3321,6 +3401,7 @@ class SketchUiOverlay(
             lastUnitSize = unitSize
             lastGridSpacing = gridSpacing
             lastSnapEpsilon = snapEpsilon
+            lastWalkMoveSpeed = walk.moveSpeed
             lastWalkJump = walk.jumpVelocity
             lastWalkGravity = walk.gravity
             lastWalkHeightAdjust = walk.heightAdjustSpeed
@@ -3331,14 +3412,16 @@ class SketchUiOverlay(
         if (updatingModelSettingsFields) {
             return
         }
+        val moveSpeed = walkthroughMoveSpeedField.text.toFloatOrNull() ?: return
         val jump = walkthroughJumpField.text.toFloatOrNull() ?: return
         val gravity = walkthroughGravityField.text.toFloatOrNull() ?: return
         val adjust = walkthroughHeightAdjustField.text.toFloatOrNull() ?: return
-        if (jump <= 0f || gravity <= 0f || adjust <= 0f) {
+        if (moveSpeed <= 0f || jump <= 0f || gravity <= 0f || adjust <= 0f) {
             return
         }
         walkthroughTuningChanged(
             WalkthroughTuning(
+                moveSpeed = moveSpeed,
                 jumpVelocity = jump,
                 gravity = gravity,
                 heightAdjustSpeed = adjust
@@ -3352,6 +3435,73 @@ class SketchUiOverlay(
             return null
         }
         return objectPrototypeItems[index]
+    }
+
+    private fun loadUiVisualSettings() {
+        val saved = uiPrefs.getInteger(uiToolbarButtonSizeKey, 32)
+        val normalized = when (saved) {
+            48, 64 -> saved
+            else -> 32
+        }
+        toolbarIconSizePx = normalized
+        toolbarButtonSize = normalized.toFloat()
+    }
+
+    private fun syncUiSettingsPanel() {
+        if (!::uiToolbarSizeSelect.isInitialized) return
+        updatingUiSettingsFields = true
+        uiToolbarSizeSelect.selected = when (toolbarIconSizePx) {
+            48 -> "48 x 48 px"
+            64 -> "64 x 64 px"
+            else -> "32 x 32 px"
+        }
+        updatingUiSettingsFields = false
+    }
+
+    private fun setToolbarIconAndButtonSize(sizePx: Int) {
+        val normalized = when (sizePx) {
+            48, 64 -> sizePx
+            else -> 32
+        }
+        if (normalized == toolbarIconSizePx) {
+            syncUiSettingsPanel()
+            return
+        }
+        toolbarIconSizePx = normalized
+        toolbarButtonSize = normalized.toFloat()
+        uiPrefs.putInteger(uiToolbarButtonSizeKey, normalized)
+        uiPrefs.flush()
+        syncUiSettingsPanel()
+        rebuildToolbarsForUiScaleChange()
+    }
+
+    private fun rebuildToolbarsForUiScaleChange() {
+        hideHoverPopover()
+        hoverPopoverTarget = null
+        hoverPopoverText = ""
+        hoverPopoverElapsed = 0f
+        hoveredButtons.clear()
+        buttonLabels.clear()
+        buttonMarkers.clear()
+        toolButtons.clear()
+        toolButtonByWidget.clear()
+        pluginToolButtons.clear()
+        pluginToolByWidget.clear()
+
+        builtInToolbars.values.forEach { it.remove() }
+        builtInToolbars.clear()
+        pluginToolbars.values.forEach { it.remove() }
+        pluginToolbars.clear()
+
+        iconDrawables.clear()
+        iconDrawables.putAll(loadIconDrawables())
+
+        buildStandardToolbars().forEach { stage.addActor(it) }
+        lastPluginTools = emptyList()
+        refreshPluginToolbar()
+        toolbarsPositioned = false
+        pluginPanelsPositioned = false
+        needsPanelLayout = true
     }
 
     fun toggleObjectsPanel() {
@@ -3448,6 +3598,7 @@ class SketchUiOverlay(
             groupPanel,
             objectsPanel,
             modelSettingsPanel,
+            uiSettingsPanel,
             helpPanel,
             polylineSettingsPanel,
             architectureWallsPanel,
@@ -4137,7 +4288,7 @@ class SketchUiOverlay(
             ToolId.PLUGIN -> Color(0.75f, 0.85f, 0.95f, 1f)
         }
 
-        val size = 16
+        val size = toolbarIconSizePx.coerceAtLeast(16)
         val pixmap = Pixmap(size, size, Pixmap.Format.RGBA8888)
         pixmap.setColor(Color(0.1f, 0.1f, 0.1f, 1f))
         pixmap.fill()
@@ -4151,7 +4302,7 @@ class SketchUiOverlay(
     }
 
     private fun createActionIconDrawable(color: Color): TextureRegionDrawable {
-        val size = 16
+        val size = toolbarIconSizePx.coerceAtLeast(16)
         val pixmap = Pixmap(size, size, Pixmap.Format.RGBA8888)
         pixmap.setColor(Color(0.1f, 0.1f, 0.1f, 1f))
         pixmap.fill()
@@ -4243,6 +4394,8 @@ class SketchUiOverlay(
         style.imageChecked = icon
         style.imageOver = icon
         button.image?.drawable = icon
+        val iconCellSize = (toolbarButtonSize - 4f).coerceAtLeast(12f)
+        button.imageCell?.size(iconCellSize, iconCellSize)
     }
 
     private fun attachButtonMarker(button: VisImageTextButton) {
@@ -4254,7 +4407,8 @@ class SketchUiOverlay(
             }
         }.apply {
             color = Color(0.35f, 0.35f, 0.35f, 0.8f)
-            setSize(4f, 4f)
+            val markerSize = (toolbarButtonSize * 0.125f).coerceIn(4f, 8f)
+            setSize(markerSize, markerSize)
             touchable = Touchable.disabled
         }
         button.addActor(marker)
@@ -4366,6 +4520,10 @@ class SketchUiOverlay(
         return TextureRegionDrawable(TextureRegion(texture))
     }
 
+    private fun createDockSectionHeaderDrawable(fill: Color, border: Color): TextureRegionDrawable {
+        return createButtonBackgroundDrawable(fill, border)
+    }
+
     private fun iconFor(name: String, fallback: com.badlogic.gdx.scenes.scene2d.utils.Drawable?): TextureRegionDrawable {
         return iconDrawables[name] ?: (fallback as? TextureRegionDrawable)
             ?: createActionIconDrawable(Color(0.3f, 0.3f, 0.3f, 1f))
@@ -4374,23 +4532,35 @@ class SketchUiOverlay(
     private fun loadIconDrawables(): Map<String, TextureRegionDrawable> {
         val mapping = mutableMapOf<String, TextureRegionDrawable>()
         val mappingFile = Gdx.files.internal("icons.mapping.csv")
-        val textureFile = Gdx.files.internal("icons.png")
+        val textureFile = when (toolbarIconSizePx) {
+            48 -> Gdx.files.internal("icons.48.png")
+            64 -> Gdx.files.internal("icons.64.png")
+            else -> Gdx.files.internal("icons.png")
+        }.let { preferred ->
+            if (preferred.exists()) preferred else Gdx.files.internal("icons.png")
+        }
         if (!mappingFile.exists() || !textureFile.exists()) {
             return mapping
         }
         val texture = Texture(textureFile)
         iconsTexture = texture
+        iconTextures.add(texture)
         val lines = mappingFile.readString("UTF-8").lines().filter { it.isNotBlank() }
+        val coordStartIndex = when (toolbarIconSizePx) {
+            48 -> 8
+            64 -> 12
+            else -> 4
+        }
         lines.drop(1).forEach { line ->
             val parts = line.split('|')
-            if (parts.size < 8) {
+            if (parts.size < coordStartIndex + 4) {
                 return@forEach
             }
             val name = parts[1].trim()
-            val startX = parts[4].trim().toInt()
-            val endX = parts[5].trim().toInt()
-            val startY = parts[6].trim().toInt()
-            val endY = parts[7].trim().toInt()
+            val startX = parts[coordStartIndex].trim().toIntOrNull() ?: return@forEach
+            val endX = parts[coordStartIndex + 1].trim().toIntOrNull() ?: return@forEach
+            val startY = parts[coordStartIndex + 2].trim().toIntOrNull() ?: return@forEach
+            val endY = parts[coordStartIndex + 3].trim().toIntOrNull() ?: return@forEach
             val width = endX - startX + 1
             val height = endY - startY + 1
             val region = TextureRegion(texture, startX, startY, width, height)

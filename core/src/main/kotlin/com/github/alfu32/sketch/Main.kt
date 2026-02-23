@@ -229,6 +229,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var pluginHost: PluginHost
     private lateinit var installDir: java.io.File
     private lateinit var objectPlaceTool: ObjectPlaceTool
+    private val runtimePrefs by lazy { Gdx.app.getPreferences("k3d-runtime") }
+    private val walkMoveSpeedPrefKey = "walk.moveSpeed"
+    private val walkJumpVelocityPrefKey = "walk.jumpVelocity"
+    private val walkGravityPrefKey = "walk.gravity"
+    private val walkHeightAdjustSpeedPrefKey = "walk.heightAdjustSpeed"
     private val cameraTarget = Vector3(0f, 0f, 0f)
     private val screenshotTimestampFormatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
     private var mcpPort = 8765
@@ -289,6 +294,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             this::walkSupportHeightAt,
             eyeHeight = 6f
         )
+        loadWalkthroughTuningPrefs()
         orthoCameraController = OrthographicCameraController(orthoCamera, cameraTarget)
         setCameraMode(CameraMode.ORBIT)
         installDir = resolveInstallDir()
@@ -409,6 +415,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         uiOverlay = SketchUiOverlay(
             toolController,
             statusModel,
+            ::showOpenModelDialog,
+            ::showSaveAsModelDialog,
             ::runCleanup,
             ::deleteSelection,
             ::flipSelectedFaces,
@@ -2170,6 +2178,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         ) {
             saveModel()
         }
+        if (::walkCameraController.isInitialized) {
+            saveWalkthroughTuningPrefs()
+        }
         if (::pluginHost.isInitialized) {
             pluginHost.dispatchClose()
         }
@@ -2401,7 +2412,76 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 exportSvgView(target)
             }
         })
-        uiOverlay.stage.addActor(chooser)
+        showFileChooser(chooser)
+    }
+
+    private fun modelFileChooserDirectory(): String {
+        val currentParent = if (::modelFile.isInitialized) modelFile.parentFile else null
+        if (currentParent != null && currentParent.exists()) {
+            return currentParent.absolutePath
+        }
+        if (::installDir.isInitialized && installDir.exists()) {
+            return installDir.absolutePath
+        }
+        return System.getProperty("user.dir") ?: "."
+    }
+
+    private fun toK3dTargetFile(handle: FileHandle): File {
+        val file = handle.file()
+        return if (handle.extension().lowercase() == "k3d") {
+            file
+        } else {
+            File(file.parentFile, "${file.name}.k3d")
+        }
+    }
+
+    private fun showOpenModelDialog() {
+        val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.OPEN)
+        chooser.getTitleLabel().setText("Open K3D Model")
+        chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
+        val filter = FileTypeFilter(true)
+        filter.addRule("K3D", "k3d")
+        chooser.setFileTypeFilter(filter)
+        chooser.setListener(object : FileChooserAdapter() {
+            override fun selected(files: Array<FileHandle>?) {
+                if (files == null || files.size == 0) return
+                val handle = files.first()
+                if (!handle.exists()) return
+                if (::scene.isInitialized && ::camera.isInitialized && ::modelFile.isInitialized) {
+                    saveModel()
+                }
+                modelFile = handle.file().absoluteFile
+                loadModel()
+                updateWindowTitle()
+            }
+        })
+        showFileChooser(chooser)
+    }
+
+    private fun showSaveAsModelDialog() {
+        val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.SAVE)
+        chooser.getTitleLabel().setText("Save K3D Model As")
+        chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
+        if (::modelFile.isInitialized) {
+            chooser.setDefaultFileName(modelFile.name)
+        } else {
+            chooser.setDefaultFileName("sketch3d.k3d")
+        }
+        val filter = FileTypeFilter(true)
+        filter.addRule("K3D", "k3d")
+        chooser.setFileTypeFilter(filter)
+        chooser.setListener(object : FileChooserAdapter() {
+            override fun selected(files: Array<FileHandle>?) {
+                if (files == null || files.size == 0) return
+                val target = toK3dTargetFile(files.first()).absoluteFile
+                target.parentFile?.mkdirs()
+                modelFile = target
+                saveModel()
+                updateWindowTitle()
+                statusModel.message = "Saved ${target.name}"
+            }
+        })
+        showFileChooser(chooser)
     }
 
     private fun showIfcExportDialog() {
@@ -2423,7 +2503,15 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 exportIfcModel(target)
             }
         })
+        showFileChooser(chooser)
+    }
+
+    private fun showFileChooser(chooser: FileChooser) {
         uiOverlay.stage.addActor(chooser)
+        chooser.pack()
+        chooser.centerWindow()
+        chooser.toFront()
+        chooser.fadeIn()
     }
 
     private fun exportIfcModel(file: File) {
@@ -4785,19 +4873,44 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun walkthroughTuningInfo(): WalkthroughTuning {
         return WalkthroughTuning(
+            moveSpeed = walkCameraController.moveSpeed,
             jumpVelocity = walkCameraController.jumpVelocity,
             gravity = walkCameraController.gravity,
             heightAdjustSpeed = walkCameraController.heightAdjustSpeed
         )
     }
 
+    private fun loadWalkthroughTuningPrefs() {
+        if (!::walkCameraController.isInitialized) return
+        walkCameraController.moveSpeed =
+            runtimePrefs.getFloat(walkMoveSpeedPrefKey, walkCameraController.moveSpeed).coerceAtLeast(0.1f)
+        walkCameraController.jumpVelocity =
+            runtimePrefs.getFloat(walkJumpVelocityPrefKey, walkCameraController.jumpVelocity).coerceAtLeast(0.1f)
+        walkCameraController.gravity =
+            runtimePrefs.getFloat(walkGravityPrefKey, walkCameraController.gravity).coerceAtLeast(0.1f)
+        walkCameraController.heightAdjustSpeed =
+            runtimePrefs.getFloat(walkHeightAdjustSpeedPrefKey, walkCameraController.heightAdjustSpeed).coerceAtLeast(0.1f)
+    }
+
+    private fun saveWalkthroughTuningPrefs() {
+        if (!::walkCameraController.isInitialized) return
+        runtimePrefs.putFloat(walkMoveSpeedPrefKey, walkCameraController.moveSpeed)
+        runtimePrefs.putFloat(walkJumpVelocityPrefKey, walkCameraController.jumpVelocity)
+        runtimePrefs.putFloat(walkGravityPrefKey, walkCameraController.gravity)
+        runtimePrefs.putFloat(walkHeightAdjustSpeedPrefKey, walkCameraController.heightAdjustSpeed)
+        runtimePrefs.flush()
+    }
+
     private fun updateWalkthroughTuning(tuning: WalkthroughTuning) {
+        val moveSpeed = tuning.moveSpeed.coerceAtLeast(0.1f)
         val jump = tuning.jumpVelocity.coerceAtLeast(0.1f)
         val gravity = tuning.gravity.coerceAtLeast(0.1f)
         val adjust = tuning.heightAdjustSpeed.coerceAtLeast(0.1f)
+        walkCameraController.moveSpeed = moveSpeed
         walkCameraController.jumpVelocity = jump
         walkCameraController.gravity = gravity
         walkCameraController.heightAdjustSpeed = adjust
+        saveWalkthroughTuningPrefs()
         statusModel.message = "Walkthrough tuning updated."
     }
 
