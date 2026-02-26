@@ -13,6 +13,8 @@ class DraftLineStore {
     private val selected = mutableSetOf<Segment>()
     private var onChange: (() -> Unit)? = null
     private var suppressChange = false
+    private var suppressAutoSplitDepth = 0
+    private var autoProcessingIgnorePredicate: ((Segment) -> Boolean)? = null
     private val epsilon = 1e-3f
     private val epsilonSq = epsilon * epsilon
 
@@ -28,6 +30,19 @@ class DraftLineStore {
         } finally {
             suppressChange = prev
         }
+    }
+
+    fun withAutoSplitSuppressed(block: () -> Unit) {
+        suppressAutoSplitDepth++
+        try {
+            block()
+        } finally {
+            suppressAutoSplitDepth--
+        }
+    }
+
+    fun setAutoProcessingIgnorePredicate(predicate: ((Segment) -> Boolean)?) {
+        autoProcessingIgnorePredicate = predicate
     }
 
     fun addSegment(start: Vector3, end: Vector3, autoCleanup: Boolean = true, id: String = UUID.randomUUID().toString()) {
@@ -373,8 +388,11 @@ class DraftLineStore {
         return clamp(Vector3(p).sub(a).dot(ab) / lenSq)
     }
 
-    private fun snapToExistingEndpoint(point: Vector3): Vector3? {
+    private fun snapToExistingEndpoint(point: Vector3, include: (Segment) -> Boolean = { true }): Vector3? {
         segments.forEach { segment ->
+            if (!include(segment)) {
+                return@forEach
+            }
             if (segment.start.dst2(point) <= epsilonSq) {
                 return Vector3(segment.start)
             }
@@ -412,7 +430,37 @@ class DraftLineStore {
         if (segments.isEmpty()) {
             return
         }
-        val grouped = segments.groupBy { lineKey(it) }
+        val ignore = autoProcessingIgnorePredicate
+        if (ignore != null) {
+            val excluded = segments.filter(ignore)
+            if (excluded.isNotEmpty()) {
+                val included = segments.filterNot(ignore)
+                if (included.isEmpty()) {
+                    return
+                }
+                val excludedSelected = selected.filterTo(mutableSetOf(), ignore)
+                val (cleanedSegments, cleanedSelected) = cleanupSegmentsJts(included, selected)
+                segments.clear()
+                segments.addAll(cleanedSegments)
+                segments.addAll(excluded)
+                selected.clear()
+                selected.addAll(cleanedSelected)
+                selected.addAll(excludedSelected)
+                return
+            }
+        }
+        val (newSegments, newSelected) = cleanupSegmentsJts(segments, selected)
+        segments.clear()
+        segments.addAll(newSegments)
+        selected.clear()
+        selected.addAll(newSelected)
+    }
+
+    private fun cleanupSegmentsJts(
+        sourceSegments: List<Segment>,
+        selectedSource: Set<Segment>
+    ): Pair<List<Segment>, Set<Segment>> {
+        val grouped = sourceSegments.groupBy { lineKey(it) }
         val newSegments = mutableListOf<Segment>()
         val newSelected = mutableSetOf<Segment>()
 
@@ -429,7 +477,7 @@ class DraftLineStore {
 
             val forcedTs = mutableListOf<Float>()
             group.forEach { seg ->
-                segments.forEach { other ->
+                sourceSegments.forEach { other ->
                     if (group.contains(other)) {
                         return@forEach
                     }
@@ -452,7 +500,7 @@ class DraftLineStore {
                     if (t0 <= t1) Interval(t0, t1) else Interval(t1, t0)
                 }
             }.sortedBy { it.start }
-            val hadSelection = group.any { selected.contains(it) }
+            val hadSelection = group.any { selectedSource.contains(it) }
             val mergedIntervals = mergeIntervals(intervals)
             mergedIntervals.forEach { interval ->
                 val splits = forcedSplit.filter { it > interval.start + epsilon && it < interval.end - epsilon }
@@ -494,29 +542,38 @@ class DraftLineStore {
             }
         }
 
-        segments.clear()
-        segments.addAll(newSegments)
-        selected.clear()
-        selected.addAll(newSelected)
+        return newSegments to newSelected
     }
 
     private fun addSegmentInternal(start: Vector3, end: Vector3, id: String): Boolean {
         if (start.dst2(end) <= epsilonSq) {
             return false
         }
+        if (suppressAutoSplitDepth > 0) {
+            val raw = Segment(Vector3(start), Vector3(end))
+            raw.id = id
+            segments.add(raw)
+            return true
+        }
         val before = segments.size
-        val newStart = snapToExistingEndpoint(start) ?: Vector3(start)
-        val newEnd = snapToExistingEndpoint(end) ?: Vector3(end)
+        val ignore = autoProcessingIgnorePredicate
+        fun include(segment: Segment): Boolean = ignore?.invoke(segment) != true
+        val newStart = snapToExistingEndpoint(start, ::include) ?: Vector3(start)
+        val newEnd = snapToExistingEndpoint(end, ::include) ?: Vector3(end)
         val splitPoints = mutableListOf(PointOnSegment(0f, newStart), PointOnSegment(1f, newEnd))
 
         var i = 0
         while (i < segments.size) {
             val existing = segments[i]
+            if (!include(existing)) {
+                i++
+                continue
+            }
             val intersection = intersectSegments(newStart, newEnd, existing.start, existing.end) ?: run {
                 i++
                 continue
             }
-            val snapped = snapToExistingEndpoint(intersection.point)
+            val snapped = snapToExistingEndpoint(intersection.point, ::include)
             val point = snapped ?: intersection.point
             val t = paramAlong(newStart, newEnd, point)
             val u = paramAlong(existing.start, existing.end, point)

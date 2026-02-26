@@ -438,8 +438,15 @@ class GroupScene(
     private var changeListener: (() -> Unit)? = null
 
     init {
+        configureRootLineStoreAutoProcessingFilters()
         registerPrototype(rootPrototype)
         registerInstance(root)
+    }
+
+    private fun configureRootLineStoreAutoProcessingFilters() {
+        rootPrototype.lineStore.setAutoProcessingIgnorePredicate { segment ->
+            generatedArchitectureLines.contains(segment) || generatedHvacLines.contains(segment)
+        }
     }
 
     fun activeGroup(): GroupNode = activeGroup
@@ -4767,44 +4774,46 @@ class GroupScene(
         val wallJoinShifts = computeWallJoinShifts(store.allWalls())
         faceStore.withChangeSuppressed {
             lineStore.withChangeSuppressed {
-                store.allWalls().forEach { wall ->
-                    val lineSizeBefore = lineStore.getSegments().size
-                    val faceSizeBefore = faceStore.getTriangles().size
-                    appendWallGeometry(
-                        faceStore = faceStore,
-                        lineStore = lineStore,
-                        wall = wall,
-                        exteriorColor = wall.exteriorColor,
-                        interiorColor = wall.interiorColor,
-                        joinShift = wallJoinShifts[wall.id] ?: WallJoinShift()
-                    )
-                    val owner = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.WALL, wall.id)
-                    lineStore.getSegments().drop(lineSizeBefore).forEach { generatedArchitectureLineOwners[it] = owner }
-                    faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedArchitectureFaceOwners[it] = owner }
-                }
-                store.allSlabs().forEach { slab ->
-                    val lineSizeBefore = lineStore.getSegments().size
-                    val faceSizeBefore = faceStore.getTriangles().size
-                    appendSlabGeometry(faceStore, lineStore, slab, slab.topColor, slab.bottomColor, slab.sideColor)
-                    val owner = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.SLAB, slab.id)
-                    lineStore.getSegments().drop(lineSizeBefore).forEach { generatedArchitectureLineOwners[it] = owner }
-                    faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedArchitectureFaceOwners[it] = owner }
-                }
-                store.allStairs().forEach { stair ->
-                    val lineSizeBefore = lineStore.getSegments().size
-                    val faceSizeBefore = faceStore.getTriangles().size
-                    appendStairGeometry(faceStore, lineStore, stair, stair.treadColor, stair.supportColor)
-                    val owner = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.STAIR, stair.id)
-                    lineStore.getSegments().drop(lineSizeBefore).forEach { generatedArchitectureLineOwners[it] = owner }
-                    faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedArchitectureFaceOwners[it] = owner }
-                }
-                store.allFrames().forEach { frame ->
-                    val lineSizeBefore = lineStore.getSegments().size
-                    val faceSizeBefore = faceStore.getTriangles().size
-                    appendFrameGeometry(faceStore, lineStore, frame, frame.color)
-                    val owner = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.FRAME, frame.id)
-                    lineStore.getSegments().drop(lineSizeBefore).forEach { generatedArchitectureLineOwners[it] = owner }
-                    faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedArchitectureFaceOwners[it] = owner }
+                lineStore.withAutoSplitSuppressed {
+                    store.allWalls().forEach { wall ->
+                        val lineSizeBefore = lineStore.getSegments().size
+                        val faceSizeBefore = faceStore.getTriangles().size
+                        appendWallGeometry(
+                            faceStore = faceStore,
+                            lineStore = lineStore,
+                            wall = wall,
+                            exteriorColor = wall.exteriorColor,
+                            interiorColor = wall.interiorColor,
+                            joinShift = wallJoinShifts[wall.id] ?: WallJoinShift()
+                        )
+                        val owner = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.WALL, wall.id)
+                        lineStore.getSegments().drop(lineSizeBefore).forEach { generatedArchitectureLineOwners[it] = owner }
+                        faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedArchitectureFaceOwners[it] = owner }
+                    }
+                    store.allSlabs().forEach { slab ->
+                        val lineSizeBefore = lineStore.getSegments().size
+                        val faceSizeBefore = faceStore.getTriangles().size
+                        appendSlabGeometry(faceStore, lineStore, slab, slab.topColor, slab.bottomColor, slab.sideColor)
+                        val owner = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.SLAB, slab.id)
+                        lineStore.getSegments().drop(lineSizeBefore).forEach { generatedArchitectureLineOwners[it] = owner }
+                        faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedArchitectureFaceOwners[it] = owner }
+                    }
+                    store.allStairs().forEach { stair ->
+                        val lineSizeBefore = lineStore.getSegments().size
+                        val faceSizeBefore = faceStore.getTriangles().size
+                        appendStairGeometry(faceStore, lineStore, stair, stair.treadColor, stair.supportColor)
+                        val owner = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.STAIR, stair.id)
+                        lineStore.getSegments().drop(lineSizeBefore).forEach { generatedArchitectureLineOwners[it] = owner }
+                        faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedArchitectureFaceOwners[it] = owner }
+                    }
+                    store.allFrames().forEach { frame ->
+                        val lineSizeBefore = lineStore.getSegments().size
+                        val faceSizeBefore = faceStore.getTriangles().size
+                        appendFrameGeometry(faceStore, lineStore, frame, frame.color)
+                        val owner = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.FRAME, frame.id)
+                        lineStore.getSegments().drop(lineSizeBefore).forEach { generatedArchitectureLineOwners[it] = owner }
+                        faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedArchitectureFaceOwners[it] = owner }
+                    }
                 }
             }
         }
@@ -4832,24 +4841,26 @@ class GroupScene(
         val wallJoinShifts = computeWallJoinShifts(store.allWalls())
         expectedFaceStore.withChangeSuppressed {
             expectedLineStore.withChangeSuppressed {
-                store.allWalls().forEach { wall ->
-                    appendWallGeometry(
-                        faceStore = expectedFaceStore,
-                        lineStore = expectedLineStore,
-                        wall = wall,
-                        exteriorColor = wall.exteriorColor,
-                        interiorColor = wall.interiorColor,
-                        joinShift = wallJoinShifts[wall.id] ?: WallJoinShift()
-                    )
-                }
-                store.allSlabs().forEach { slab ->
-                    appendSlabGeometry(expectedFaceStore, expectedLineStore, slab, slab.topColor, slab.bottomColor, slab.sideColor)
-                }
-                store.allStairs().forEach { stair ->
-                    appendStairGeometry(expectedFaceStore, expectedLineStore, stair, stair.treadColor, stair.supportColor)
-                }
-                store.allFrames().forEach { frame ->
-                    appendFrameGeometry(expectedFaceStore, expectedLineStore, frame, frame.color)
+                expectedLineStore.withAutoSplitSuppressed {
+                    store.allWalls().forEach { wall ->
+                        appendWallGeometry(
+                            faceStore = expectedFaceStore,
+                            lineStore = expectedLineStore,
+                            wall = wall,
+                            exteriorColor = wall.exteriorColor,
+                            interiorColor = wall.interiorColor,
+                            joinShift = wallJoinShifts[wall.id] ?: WallJoinShift()
+                        )
+                    }
+                    store.allSlabs().forEach { slab ->
+                        appendSlabGeometry(expectedFaceStore, expectedLineStore, slab, slab.topColor, slab.bottomColor, slab.sideColor)
+                    }
+                    store.allStairs().forEach { stair ->
+                        appendStairGeometry(expectedFaceStore, expectedLineStore, stair, stair.treadColor, stair.supportColor)
+                    }
+                    store.allFrames().forEach { frame ->
+                        appendFrameGeometry(expectedFaceStore, expectedLineStore, frame, frame.color)
+                    }
                 }
             }
         }
@@ -4935,21 +4946,23 @@ class GroupScene(
         val faceBaseline = faceStore.getTriangles().toSet()
         faceStore.withChangeSuppressed {
             lineStore.withChangeSuppressed {
-                store.allPlumbingRuns().forEach { run ->
-                    val lineSizeBefore = lineStore.getSegments().size
-                    val faceSizeBefore = faceStore.getTriangles().size
-                    appendHvacPlumbingGeometry(faceStore, lineStore, run)
-                    val owner = HvacStore.ElementSelection(HvacStore.ElementKind.PLUMBING, run.id)
-                    lineStore.getSegments().drop(lineSizeBefore).forEach { generatedHvacLineOwners[it] = owner }
-                    faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedHvacFaceOwners[it] = owner }
-                }
-                store.allVentilationDucts().forEach { duct ->
-                    val lineSizeBefore = lineStore.getSegments().size
-                    val faceSizeBefore = faceStore.getTriangles().size
-                    appendHvacVentilationGeometry(faceStore, lineStore, duct)
-                    val owner = HvacStore.ElementSelection(HvacStore.ElementKind.VENTILATION, duct.id)
-                    lineStore.getSegments().drop(lineSizeBefore).forEach { generatedHvacLineOwners[it] = owner }
-                    faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedHvacFaceOwners[it] = owner }
+                lineStore.withAutoSplitSuppressed {
+                    store.allPlumbingRuns().forEach { run ->
+                        val lineSizeBefore = lineStore.getSegments().size
+                        val faceSizeBefore = faceStore.getTriangles().size
+                        appendHvacPlumbingGeometry(faceStore, lineStore, run)
+                        val owner = HvacStore.ElementSelection(HvacStore.ElementKind.PLUMBING, run.id)
+                        lineStore.getSegments().drop(lineSizeBefore).forEach { generatedHvacLineOwners[it] = owner }
+                        faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedHvacFaceOwners[it] = owner }
+                    }
+                    store.allVentilationDucts().forEach { duct ->
+                        val lineSizeBefore = lineStore.getSegments().size
+                        val faceSizeBefore = faceStore.getTriangles().size
+                        appendHvacVentilationGeometry(faceStore, lineStore, duct)
+                        val owner = HvacStore.ElementSelection(HvacStore.ElementKind.VENTILATION, duct.id)
+                        lineStore.getSegments().drop(lineSizeBefore).forEach { generatedHvacLineOwners[it] = owner }
+                        faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedHvacFaceOwners[it] = owner }
+                    }
                 }
             }
         }
