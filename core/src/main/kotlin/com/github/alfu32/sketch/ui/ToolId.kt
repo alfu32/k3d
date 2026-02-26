@@ -18,6 +18,7 @@ enum class ToolId(val displayName: String) {
     HVAC_PLUMBING("HVAC Plumbing"),
     HVAC_VENTILATION("HVAC Ventilation"),
     FACE_OUTLINE("Face Outline"),
+    MESH("Mesh"),
     LINE_OFFSET("Line Offset"),
     CUT_HOLES("Cut Holes"),
     CUT_HOLES_2("Cut Holes 2"),

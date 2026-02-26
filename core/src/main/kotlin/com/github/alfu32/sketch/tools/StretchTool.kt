@@ -122,7 +122,38 @@ class StretchTool(
         }
         faceStore.notifyExternalChange()
 
-        val movedDimensions = group.dimensionStore.transformSelected { point -> Vector3(point).add(localDelta) }
+        var movedDimensions = 0
+        group.dimensionStore.getDimensions().forEach { dimension ->
+            var changed = false
+            if (group.dimensionStore.isSelected(dimension)) {
+                dimension.start.add(localDelta)
+                dimension.end.add(localDelta)
+                dimension.offset.add(localDelta)
+                changed = true
+            } else {
+                val startKey = vertexKey(dimension.start)
+                if (selectedKeys.contains(startKey)) {
+                    dimension.start.add(localDelta)
+                    changed = true
+                }
+                val endKey = vertexKey(dimension.end)
+                if (selectedKeys.contains(endKey)) {
+                    dimension.end.add(localDelta)
+                    changed = true
+                }
+                val offsetKey = vertexKey(dimension.offset)
+                if (selectedKeys.contains(offsetKey)) {
+                    dimension.offset.add(localDelta)
+                    changed = true
+                }
+            }
+            if (changed) {
+                movedDimensions++
+            }
+        }
+        if (movedDimensions > 0) {
+            group.dimensionStore.notifyExternalChange()
+        }
         val movedTexts = group.textStore.transformSelected { point -> Vector3(point).add(localDelta) }
         val movedGroups = scene.transformSelectedGroups(
             { point -> Vector3(point).add(deltaWorld) },

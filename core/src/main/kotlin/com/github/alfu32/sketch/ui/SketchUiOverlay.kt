@@ -56,6 +56,7 @@ class SketchUiOverlay(
     private val voxelizeFacesAction: () -> Unit,
     private val hotspotCreateAction: () -> Unit,
     private val selectionInfoProvider: () -> SelectionInfo,
+    private val selectionFilterChanged: (SelectionFilterKind, Boolean, Boolean, Boolean) -> Unit,
     private val selectionTextChanged: (String, String) -> Unit,
     private val selectionTextSizeChanged: (String, Float) -> Unit,
     private val selectionTextScreenChanged: (String, Boolean) -> Unit,
@@ -378,12 +379,24 @@ class SketchUiOverlay(
     private val selectionGroupsLabel = VisLabel()
     private val selectionDimensionsLabel = VisLabel()
     private val selectionTextsLabel = VisLabel()
+    private val selectionCountTotalLabels = mutableMapOf<String, VisLabel>()
+    private val selectionCountSelectedLabels = mutableMapOf<String, VisLabel>()
+    private data class SelectionFilterRowWidgets(
+        val totalLabel: VisLabel,
+        val selectedLabel: VisLabel,
+        val drawCheck: VisCheckBox,
+        val modifyCheck: VisCheckBox,
+        val wireframeCheck: VisCheckBox
+    )
+    private val selectionGenericRows = mutableMapOf<SelectionFilterKind, SelectionFilterRowWidgets>()
+    private val selectionArchitectureRows = mutableMapOf<ArchitectureElementKind, SelectionFilterRowWidgets>()
     private val selectionTextLabel = VisLabel("Text")
     private val selectionTextField = VisTextField()
     private val selectionTextSizeLabel = VisLabel("Text size")
     private val selectionTextSizeField = VisTextField()
     private val selectionTextScreenCheck = VisCheckBox("Screen text")
     private var updatingSelectionFields = false
+    private var updatingSelectionFilters = false
     private var selectionTextId: String? = null
     private var lastPluginTools: List<String> = emptyList()
     private lateinit var groupPanel: DockSection
@@ -752,6 +765,93 @@ class SketchUiOverlay(
         selectionGroupsLabel.setText("Objects: ${selection.groupCount}")
         selectionDimensionsLabel.setText("Dimensions: ${selection.dimensionCount}")
         selectionTextsLabel.setText("Texts: ${selection.textCount}")
+        selectionCountTotalLabels["edges"]?.setText(selection.edgeTotalCount.toString())
+        selectionCountSelectedLabels["edges"]?.setText(selection.edgeCount.toString())
+        selectionCountTotalLabels["faces"]?.setText(selection.faceTotalCount.toString())
+        selectionCountSelectedLabels["faces"]?.setText(selection.faceCount.toString())
+        selectionCountTotalLabels["voxels"]?.setText(selection.voxelTotalCount.toString())
+        selectionCountSelectedLabels["voxels"]?.setText(selection.voxelCount.toString())
+        selectionCountTotalLabels["hotspots"]?.setText(selection.hotspotTotalCount.toString())
+        selectionCountSelectedLabels["hotspots"]?.setText(selection.hotspotCount.toString())
+        selectionCountTotalLabels["objects"]?.setText(selection.groupTotalCount.toString())
+        selectionCountSelectedLabels["objects"]?.setText(selection.groupCount.toString())
+        selectionCountTotalLabels["dimensions"]?.setText(selection.dimensionTotalCount.toString())
+        selectionCountSelectedLabels["dimensions"]?.setText(selection.dimensionCount.toString())
+        selectionCountTotalLabels["texts"]?.setText(selection.textTotalCount.toString())
+        selectionCountSelectedLabels["texts"]?.setText(selection.textCount.toString())
+        updatingSelectionFilters = true
+        selectionGenericRows[SelectionFilterKind.EDGE]?.let { row ->
+            row.drawCheck.isChecked = selection.edgeDrawEnabled
+            row.modifyCheck.isChecked = selection.edgeModifyEnabled
+            row.modifyCheck.isDisabled = !selection.edgeDrawEnabled
+            row.wireframeCheck.isChecked = selection.edgeWireframe
+            row.wireframeCheck.isDisabled = true
+        }
+        selectionGenericRows[SelectionFilterKind.FACE]?.let { row ->
+            row.drawCheck.isChecked = selection.faceDrawEnabled
+            row.modifyCheck.isChecked = selection.faceModifyEnabled
+            row.modifyCheck.isDisabled = !selection.faceDrawEnabled
+            row.wireframeCheck.isChecked = selection.faceWireframe
+            row.wireframeCheck.isDisabled = !selection.faceDrawEnabled
+        }
+        selectionGenericRows[SelectionFilterKind.VOXEL]?.let { row ->
+            row.drawCheck.isChecked = selection.voxelDrawEnabled
+            row.modifyCheck.isChecked = selection.voxelModifyEnabled
+            row.modifyCheck.isDisabled = !selection.voxelDrawEnabled
+            row.wireframeCheck.isChecked = selection.voxelWireframe
+            row.wireframeCheck.isDisabled = !selection.voxelDrawEnabled
+        }
+        selectionGenericRows[SelectionFilterKind.HOTSPOT]?.let { row ->
+            row.drawCheck.isChecked = selection.hotspotDrawEnabled
+            row.modifyCheck.isChecked = selection.hotspotModifyEnabled
+            row.modifyCheck.isDisabled = !selection.hotspotDrawEnabled
+            row.wireframeCheck.isChecked = selection.hotspotWireframe
+            row.wireframeCheck.isDisabled = true
+        }
+        selectionGenericRows[SelectionFilterKind.OBJECT]?.let { row ->
+            row.drawCheck.isChecked = selection.objectDrawEnabled
+            row.modifyCheck.isChecked = selection.objectModifyEnabled
+            row.modifyCheck.isDisabled = !selection.objectDrawEnabled
+            row.wireframeCheck.isChecked = selection.objectWireframe
+            row.wireframeCheck.isDisabled = true
+        }
+        selectionArchitectureRows[ArchitectureElementKind.WALL]?.let { row ->
+            row.totalLabel.setText(selection.wallTotalCount.toString())
+            row.selectedLabel.setText(selection.wallSelectedCount.toString())
+            row.drawCheck.isChecked = selection.wallDrawEnabled
+            row.modifyCheck.isChecked = selection.wallModifyEnabled
+            row.modifyCheck.isDisabled = !selection.wallDrawEnabled
+            row.wireframeCheck.isChecked = selection.wallWireframe
+            row.wireframeCheck.isDisabled = !selection.wallDrawEnabled
+        }
+        selectionArchitectureRows[ArchitectureElementKind.SLAB]?.let { row ->
+            row.totalLabel.setText(selection.slabTotalCount.toString())
+            row.selectedLabel.setText(selection.slabSelectedCount.toString())
+            row.drawCheck.isChecked = selection.slabDrawEnabled
+            row.modifyCheck.isChecked = selection.slabModifyEnabled
+            row.modifyCheck.isDisabled = !selection.slabDrawEnabled
+            row.wireframeCheck.isChecked = selection.slabWireframe
+            row.wireframeCheck.isDisabled = !selection.slabDrawEnabled
+        }
+        selectionArchitectureRows[ArchitectureElementKind.STAIR]?.let { row ->
+            row.totalLabel.setText(selection.stairTotalCount.toString())
+            row.selectedLabel.setText(selection.stairSelectedCount.toString())
+            row.drawCheck.isChecked = selection.stairDrawEnabled
+            row.modifyCheck.isChecked = selection.stairModifyEnabled
+            row.modifyCheck.isDisabled = !selection.stairDrawEnabled
+            row.wireframeCheck.isChecked = selection.stairWireframe
+            row.wireframeCheck.isDisabled = !selection.stairDrawEnabled
+        }
+        selectionArchitectureRows[ArchitectureElementKind.FRAME]?.let { row ->
+            row.totalLabel.setText(selection.frameTotalCount.toString())
+            row.selectedLabel.setText(selection.frameSelectedCount.toString())
+            row.drawCheck.isChecked = selection.frameDrawEnabled
+            row.modifyCheck.isChecked = selection.frameModifyEnabled
+            row.modifyCheck.isDisabled = !selection.frameDrawEnabled
+            row.wireframeCheck.isChecked = selection.frameWireframe
+            row.wireframeCheck.isDisabled = !selection.frameDrawEnabled
+        }
+        updatingSelectionFilters = false
         val hasTextSelection = selection.selectedTextId != null
         selectionTextLabel.isVisible = hasTextSelection
         selectionTextField.isVisible = hasTextSelection
@@ -1000,6 +1100,7 @@ class SketchUiOverlay(
             ToolId.RECTANGLE,
             ToolId.SURFACE_RECTANGLE,
             ToolId.FACE_OUTLINE,
+            ToolId.MESH,
             ToolId.QUAD,
             ToolId.CIRCLE
         )
@@ -1315,14 +1416,112 @@ class SketchUiOverlay(
     private fun buildSelectionPanel(): DockSection {
         val content = VisTable()
         content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
-        content.defaults().pad(4f).left()
-        content.add(selectionEdgesLabel).row()
-        content.add(selectionFacesLabel).row()
-        content.add(selectionVoxelsLabel).row()
-        content.add(selectionHotspotsLabel).row()
-        content.add(selectionGroupsLabel).row()
-        content.add(selectionDimensionsLabel).row()
-        content.add(selectionTextsLabel).row()
+        content.defaults().pad(4f).left().growX()
+
+        val countsTable = VisTable()
+        countsTable.defaults().pad(2f).left()
+        countsTable.add(VisLabel("Type")).left().width(96f)
+        countsTable.add(VisLabel("T")).center().width(34f)
+        countsTable.add(VisLabel("S")).center().width(34f)
+        countsTable.add(VisLabel("D")).center().width(28f)
+        countsTable.add(VisLabel("M")).center().width(28f)
+        countsTable.add(VisLabel("W")).center().width(28f).row()
+
+        fun addCountRow(label: String, key: String) {
+            val totalLabel = VisLabel("0")
+            val selectedLabel = VisLabel("0")
+            selectionCountTotalLabels[key] = totalLabel
+            selectionCountSelectedLabels[key] = selectedLabel
+            countsTable.add(VisLabel(label)).left()
+            countsTable.add(totalLabel).center()
+            countsTable.add(selectedLabel).center()
+            countsTable.add(VisLabel("")).width(28f)
+            countsTable.add(VisLabel("")).width(28f)
+            countsTable.add(VisLabel("")).width(28f).row()
+        }
+
+        fun addFilterRow(label: String, key: String, kind: SelectionFilterKind) {
+            val totalLabel = VisLabel("0")
+            val selectedLabel = VisLabel("0")
+            val drawCheck = VisCheckBox("")
+            val modifyCheck = VisCheckBox("")
+            val wireframeCheck = VisCheckBox("")
+            selectionCountTotalLabels[key] = totalLabel
+            selectionCountSelectedLabels[key] = selectedLabel
+            selectionGenericRows[kind] = SelectionFilterRowWidgets(totalLabel, selectedLabel, drawCheck, modifyCheck, wireframeCheck)
+            fun fireChange() {
+                if (updatingSelectionFilters) return
+                selectionFilterChanged(kind, drawCheck.isChecked, modifyCheck.isChecked, wireframeCheck.isChecked)
+            }
+            drawCheck.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) = fireChange()
+            })
+            modifyCheck.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) = fireChange()
+            })
+            wireframeCheck.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) = fireChange()
+            })
+            countsTable.add(VisLabel(label)).left()
+            countsTable.add(totalLabel).center()
+            countsTable.add(selectedLabel).center()
+            countsTable.add(drawCheck).center().width(28f)
+            countsTable.add(modifyCheck).center().width(28f)
+            countsTable.add(wireframeCheck).center().width(28f).row()
+        }
+
+        fun addArchitectureRow(label: String, kind: ArchitectureElementKind) {
+            val totalLabel = VisLabel("0")
+            val selectedLabel = VisLabel("0")
+            val drawCheck = VisCheckBox("")
+            val modifyCheck = VisCheckBox("")
+            val wireframeCheck = VisCheckBox("")
+            selectionArchitectureRows[kind] = SelectionFilterRowWidgets(totalLabel, selectedLabel, drawCheck, modifyCheck, wireframeCheck)
+            fun fireChange() {
+                if (updatingSelectionFilters) return
+                selectionFilterChanged(
+                    when (kind) {
+                        ArchitectureElementKind.WALL -> SelectionFilterKind.WALL
+                        ArchitectureElementKind.SLAB -> SelectionFilterKind.SLAB
+                        ArchitectureElementKind.STAIR -> SelectionFilterKind.STAIR
+                        ArchitectureElementKind.FRAME -> SelectionFilterKind.FRAME
+                    },
+                    drawCheck.isChecked,
+                    modifyCheck.isChecked,
+                    wireframeCheck.isChecked
+                )
+            }
+            drawCheck.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) = fireChange()
+            })
+            modifyCheck.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) = fireChange()
+            })
+            wireframeCheck.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) = fireChange()
+            })
+
+            countsTable.add(VisLabel(label)).left()
+            countsTable.add(totalLabel).center()
+            countsTable.add(selectedLabel).center()
+            countsTable.add(drawCheck).center().width(28f)
+            countsTable.add(modifyCheck).center().width(28f)
+            countsTable.add(wireframeCheck).center().width(28f).row()
+        }
+
+        addFilterRow("Edges", "edges", SelectionFilterKind.EDGE)
+        addFilterRow("Faces", "faces", SelectionFilterKind.FACE)
+        addFilterRow("Voxels", "voxels", SelectionFilterKind.VOXEL)
+        addFilterRow("Hotspots", "hotspots", SelectionFilterKind.HOTSPOT)
+        addFilterRow("Objects", "objects", SelectionFilterKind.OBJECT)
+        addCountRow("Dimensions", "dimensions")
+        addCountRow("Texts", "texts")
+        addArchitectureRow("Walls", ArchitectureElementKind.WALL)
+        addArchitectureRow("Slabs", ArchitectureElementKind.SLAB)
+        addArchitectureRow("Stairs", ArchitectureElementKind.STAIR)
+        addArchitectureRow("Frames", ArchitectureElementKind.FRAME)
+
+        content.add(countsTable).growX().row()
         content.add(selectionTextLabel).left().padTop(4f).row()
         content.add(selectionTextField).growX().row()
         content.add(selectionTextSizeLabel).left().padTop(4f).row()
@@ -4224,6 +4423,7 @@ class SketchUiOverlay(
             ToolId.HVAC_PLUMBING -> "hvac_plumbing"
             ToolId.HVAC_VENTILATION -> "hvac_ventilation"
             ToolId.FACE_OUTLINE -> "face_outline"
+            ToolId.MESH -> "mesh"
             ToolId.LINE_OFFSET -> "offset"
             ToolId.CUT_HOLES -> "cleanup"
             ToolId.CUT_HOLES_2 -> "cleanup"
@@ -4265,6 +4465,7 @@ class SketchUiOverlay(
             ToolId.HVAC_PLUMBING -> Color(0.55f, 0.8f, 0.95f, 1f)
             ToolId.HVAC_VENTILATION -> Color(0.82f, 0.82f, 0.82f, 1f)
             ToolId.FACE_OUTLINE -> Color(0.95f, 0.75f, 0.25f, 1f)
+            ToolId.MESH -> Color(0.55f, 0.85f, 0.95f, 1f)
             ToolId.LINE_OFFSET -> Color(0.35f, 0.75f, 0.95f, 1f)
             ToolId.CUT_HOLES -> Color(0.85f, 0.55f, 0.35f, 1f)
             ToolId.CUT_HOLES_2 -> Color(0.85f, 0.55f, 0.35f, 1f)
@@ -4571,12 +4772,54 @@ class SketchUiOverlay(
 
     data class SelectionInfo(
         val edgeCount: Int,
+        val edgeTotalCount: Int = 0,
+        val edgeDrawEnabled: Boolean = true,
+        val edgeModifyEnabled: Boolean = true,
+        val edgeWireframe: Boolean = false,
         val faceCount: Int,
+        val faceTotalCount: Int = 0,
+        val faceDrawEnabled: Boolean = true,
+        val faceModifyEnabled: Boolean = true,
+        val faceWireframe: Boolean = false,
         val voxelCount: Int,
+        val voxelTotalCount: Int = 0,
+        val voxelDrawEnabled: Boolean = true,
+        val voxelModifyEnabled: Boolean = true,
+        val voxelWireframe: Boolean = false,
         val hotspotCount: Int,
+        val hotspotTotalCount: Int = 0,
+        val hotspotDrawEnabled: Boolean = true,
+        val hotspotModifyEnabled: Boolean = true,
+        val hotspotWireframe: Boolean = false,
         val groupCount: Int,
+        val groupTotalCount: Int = 0,
+        val objectDrawEnabled: Boolean = true,
+        val objectModifyEnabled: Boolean = true,
+        val objectWireframe: Boolean = false,
         val dimensionCount: Int,
+        val dimensionTotalCount: Int = 0,
         val textCount: Int,
+        val textTotalCount: Int = 0,
+        val wallTotalCount: Int = 0,
+        val wallSelectedCount: Int = 0,
+        val wallDrawEnabled: Boolean = true,
+        val wallModifyEnabled: Boolean = true,
+        val wallWireframe: Boolean = false,
+        val slabTotalCount: Int = 0,
+        val slabSelectedCount: Int = 0,
+        val slabDrawEnabled: Boolean = true,
+        val slabModifyEnabled: Boolean = true,
+        val slabWireframe: Boolean = false,
+        val stairTotalCount: Int = 0,
+        val stairSelectedCount: Int = 0,
+        val stairDrawEnabled: Boolean = true,
+        val stairModifyEnabled: Boolean = true,
+        val stairWireframe: Boolean = false,
+        val frameTotalCount: Int = 0,
+        val frameSelectedCount: Int = 0,
+        val frameDrawEnabled: Boolean = true,
+        val frameModifyEnabled: Boolean = true,
+        val frameWireframe: Boolean = false,
         val selectedTextId: String? = null,
         val selectedTextValue: String? = null,
         val selectedTextSize: Float? = null,
@@ -4600,6 +4843,18 @@ class SketchUiOverlay(
     data class ObjectPrototypeInfo(val id: String, val name: String, val instanceCount: Int)
 
     enum class ArchitectureElementKind {
+        WALL,
+        SLAB,
+        STAIR,
+        FRAME
+    }
+
+    enum class SelectionFilterKind {
+        EDGE,
+        FACE,
+        VOXEL,
+        HOTSPOT,
+        OBJECT,
         WALL,
         SLAB,
         STAIR,

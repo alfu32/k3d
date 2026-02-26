@@ -6,6 +6,7 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.InputListener
+import com.github.alfu32.sketch.InputModifiers
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.kotcrab.vis.ui.widget.Separator
@@ -134,9 +135,7 @@ class CommandPaletteUI(
     private fun setupShortcuts() {
         stage.addListener(object : InputListener() {
             private fun ctrlPressed(): Boolean {
-                return Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
-                    Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT) ||
-                    Gdx.input.isKeyPressed(Input.Keys.SYM)
+                return InputModifiers.isCtrlPressed()
             }
 
             override fun keyDown(event: InputEvent?, keycode: Int): Boolean {

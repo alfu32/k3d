@@ -12,7 +12,7 @@ import kotlin.math.sqrt
 
 class ShiftCameraController(
     camera: PerspectiveCamera,
-    private val pickWorldPoint: (screenX: Int, screenY: Int) -> Vector3?
+    private val pickModelPoint: (screenX: Int, screenY: Int) -> Vector3?
 ) : CameraInputController(camera) {
     private var translating = false
     private val panStartPos = Vector3()
@@ -24,6 +24,8 @@ class ShiftCameraController(
     private val tmpDir = Vector3()
     private val zoomDir = Vector3()
     private var zoomSpeed = 1f
+    private val targetGlueDistanceThresholdZoomIn = 1f
+    private val targetGlueDistanceThresholdZoomOut = 30f
 
     init {
         forwardKey = -1
@@ -89,10 +91,46 @@ class ShiftCameraController(
         zoomDir.scl(1f / distance)
         var step = amount * zoomSpeed
         val minDistance = 0.1f
-        if (distance - step < minDistance) {
-            step = distance - minDistance
+        val allowTargetGlue =
+            (step > 0f && distance > targetGlueDistanceThresholdZoomIn) ||
+                (step < 0f && distance < targetGlueDistanceThresholdZoomOut)
+
+        val projectedTarget = Vector3(target)
+        camera.project(
+            projectedTarget,
+            0f,
+            0f,
+            Gdx.graphics.width.toFloat(),
+            Gdx.graphics.height.toFloat()
+        )
+        val targetScreenX = projectedTarget.x.toInt()
+        val targetScreenY = (Gdx.graphics.height - projectedTarget.y).toInt()
+        val lockHit = if (
+            allowTargetGlue &&
+            projectedTarget.z in 0f..1f &&
+            targetScreenX in 0 until Gdx.graphics.width &&
+            targetScreenY in 0 until Gdx.graphics.height
+        ) {
+            pickModelPoint(targetScreenX, targetScreenY)?.takeIf { hit ->
+                hit.dst(camera.position) <= distance + 1e-2f
+            }
+        } else {
+            null
+        }
+
+        if (lockHit != null) {
+            val lockDistance = lockHit.dst(camera.position)
+            if (lockDistance - step < minDistance) {
+                step = lockDistance - minDistance
+            }
         }
         camera.position.mulAdd(zoomDir, step)
+        if (lockHit == null) {
+            target.mulAdd(zoomDir, step)
+        } else {
+            target.set(lockHit)
+            camera.lookAt(target)
+        }
         camera.update()
         return true
     }

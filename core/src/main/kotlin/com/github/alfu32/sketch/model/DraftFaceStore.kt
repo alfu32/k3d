@@ -28,6 +28,7 @@ class DraftFaceStore(
     private val colors = mutableMapOf<Triangle, com.badlogic.gdx.graphics.Color>()
     private var onChange: (() -> Unit)? = null
     private var suppressChange = false
+    private var visualVersion = 0L
     private val epsilon = 1e-4f
     private val epsilonSq = epsilon * epsilon
     private val jtsScale = 10000.0
@@ -100,20 +101,32 @@ class DraftFaceStore(
 
     fun isSelected(triangle: Triangle): Boolean = selected.contains(triangle)
 
-    fun addSelection(triangle: Triangle): Boolean = selected.add(triangle)
+    fun addSelection(triangle: Triangle): Boolean {
+        val added = selected.add(triangle)
+        if (added) {
+            markVisualChanged()
+        }
+        return added
+    }
 
     fun removeSelection(triangle: Triangle) {
-        selected.remove(triangle)
+        if (selected.remove(triangle)) {
+            markVisualChanged()
+        }
     }
 
     fun toggleSelection(triangle: Triangle) {
         if (!selected.add(triangle)) {
             selected.remove(triangle)
         }
+        markVisualChanged()
     }
 
     fun clearSelection() {
-        selected.clear()
+        if (selected.isNotEmpty()) {
+            selected.clear()
+            markVisualChanged()
+        }
     }
 
     fun flipSelected(): Int {
@@ -318,6 +331,23 @@ class DraftFaceStore(
     fun pickTriangle(ray: com.badlogic.gdx.math.collision.Ray): Hit? {
         var best: Hit? = null
         triangles.forEach { tri ->
+            val hit = intersectRayTriangle(ray, tri) ?: return@forEach
+            if (best == null || hit.t < best!!.t) {
+                best = hit
+            }
+        }
+        return best
+    }
+
+    fun pickTriangle(
+        ray: com.badlogic.gdx.math.collision.Ray,
+        predicate: (Triangle) -> Boolean
+    ): Hit? {
+        var best: Hit? = null
+        triangles.forEach { tri ->
+            if (!predicate(tri)) {
+                return@forEach
+            }
             val hit = intersectRayTriangle(ray, tri) ?: return@forEach
             if (best == null || hit.t < best!!.t) {
                 best = hit
@@ -2150,6 +2180,7 @@ class DraftFaceStore(
     }
 
     private fun notifyChange() {
+        markVisualChanged()
         if (!suppressChange) {
             onChange?.invoke()
         }
@@ -2157,5 +2188,11 @@ class DraftFaceStore(
 
     fun notifyExternalChange() {
         notifyChange()
+    }
+
+    fun visualVersion(): Long = visualVersion
+
+    private fun markVisualChanged() {
+        visualVersion++
     }
 }

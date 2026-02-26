@@ -54,7 +54,8 @@ class ArchitectureStore {
         var thickness: Float,
         var topColor: Color,
         var bottomColor: Color,
-        var sideColor: Color
+        var sideColor: Color,
+        val holes: MutableList<RectHole> = mutableListOf()
     )
 
     data class Stair(
@@ -264,6 +265,36 @@ class ArchitectureStore {
         return slab
     }
 
+    fun addSlabHole(
+        slabId: String,
+        u0: Float,
+        u1: Float,
+        v0: Float,
+        v1: Float,
+        minSize: Float = 0.05f,
+        name: String = "",
+        id: String = UUID.randomUUID().toString()
+    ): RectHole? {
+        val slab = slabs.firstOrNull { it.id == slabId } ?: return null
+        val holeU0 = min(u0, u1)
+        val holeU1 = max(u0, u1)
+        val holeV0 = min(v0, v1)
+        val holeV1 = max(v0, v1)
+        if (holeU1 - holeU0 < minSize || holeV1 - holeV0 < minSize) {
+            return null
+        }
+        val hole = RectHole(
+            id = id,
+            name = nextHoleName(name),
+            u0 = holeU0,
+            u1 = holeU1,
+            v0 = holeV0,
+            v1 = holeV1
+        )
+        slab.holes.add(hole)
+        return hole
+    }
+
     fun addStair(
         minCorner: Vector3,
         maxCorner: Vector3,
@@ -394,6 +425,13 @@ class ArchitectureStore {
         return wall.holes.size != before
     }
 
+    fun removeSlabHole(slabId: String, holeId: String): Boolean {
+        val slab = slabs.firstOrNull { it.id == slabId } ?: return false
+        val before = slab.holes.size
+        slab.holes.removeAll { it.id == holeId }
+        return slab.holes.size != before
+    }
+
     fun updateHole(
         wallId: String,
         holeId: String,
@@ -419,12 +457,47 @@ class ArchitectureStore {
         return true
     }
 
+    fun updateSlabHole(
+        slabId: String,
+        holeId: String,
+        u0: Float,
+        u1: Float,
+        v0: Float,
+        v1: Float,
+        minSize: Float = 0.05f
+    ): Boolean {
+        val slab = slabs.firstOrNull { it.id == slabId } ?: return false
+        val hole = slab.holes.firstOrNull { it.id == holeId } ?: return false
+        val nextU0 = min(u0, u1)
+        val nextU1 = max(u0, u1)
+        val nextV0 = min(v0, v1)
+        val nextV1 = max(v0, v1)
+        if (nextU1 - nextU0 < minSize || nextV1 - nextV0 < minSize) {
+            return false
+        }
+        hole.u0 = nextU0
+        hole.u1 = nextU1
+        hole.v0 = nextV0
+        hole.v1 = nextV1
+        return true
+    }
+
     fun removeHoles(predicate: (wall: WallSegment, hole: RectHole) -> Boolean): Int {
         var removed = 0
         walls.forEach { wall ->
             val before = wall.holes.size
             wall.holes.removeIf { hole -> predicate(wall, hole) }
             removed += before - wall.holes.size
+        }
+        return removed
+    }
+
+    fun removeSlabHoles(predicate: (slab: Slab, hole: RectHole) -> Boolean): Int {
+        var removed = 0
+        slabs.forEach { slab ->
+            val before = slab.holes.size
+            slab.holes.removeIf { hole -> predicate(slab, hole) }
+            removed += before - slab.holes.size
         }
         return removed
     }
@@ -565,6 +638,13 @@ class ArchitectureStore {
         return true
     }
 
+    fun updateSlabHoleName(slabId: String, holeId: String, name: String): Boolean {
+        val slab = slabs.firstOrNull { it.id == slabId } ?: return false
+        val hole = slab.holes.firstOrNull { it.id == holeId } ?: return false
+        hole.name = name.trim().ifBlank { hole.name }
+        return true
+    }
+
     private fun nextWallName(candidate: String): String = nextName(candidate, "WALL_") { proposed ->
         walls.none { it.name == proposed }
     }
@@ -583,7 +663,8 @@ class ArchitectureStore {
 
     private fun nextHoleName(candidate: String): String {
         return nextName(candidate, "HOLE_") { proposed ->
-            walls.none { wall -> wall.holes.any { it.name == proposed } }
+            walls.none { wall -> wall.holes.any { it.name == proposed } } &&
+                slabs.none { slab -> slab.holes.any { it.name == proposed } }
         }
     }
 

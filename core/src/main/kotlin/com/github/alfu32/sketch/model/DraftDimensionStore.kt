@@ -139,6 +139,10 @@ class DraftDimensionStore {
         return count
     }
 
+    fun notifyExternalChange() {
+        notifyChange()
+    }
+
     private fun notifyChange() {
         changeListener?.invoke()
     }

@@ -272,7 +272,7 @@ class ArchitectureAddHoleTool(
         if (button != Input.Buttons.LEFT || !valid || world == null) {
             return false
         }
-        val group = resolveWallTargetGroup(status) ?: return true
+        val group = resolveHoleTargetGroup(status) ?: return true
         if (firstCornerWorld == null) {
             firstCornerWorld = Vector3(world)
             firstNormalWorld = normal?.let { Vector3(it).nor() } ?: Vector3(0f, 1f, 0f)
@@ -282,18 +282,19 @@ class ArchitectureAddHoleTool(
         val first = firstCornerWorld ?: return true
         val localA = group.toLocal(first)
         val localB = group.toLocal(world)
-        val selectedWallId = scene.selectedArchitectureElement(group)
-            ?.takeIf { it.kind == ArchitectureStore.ElementKind.WALL }
-            ?.id
-        val created = if (selectedWallId != null) {
-            scene.addArchitectureHoleToWall(group, selectedWallId, localA, localB)
-        } else {
-            scene.addArchitectureHoleToNearestWall(group, localA, localB)
+        val selected = scene.selectedArchitectureElement(group)
+        val created = when (selected?.kind) {
+            ArchitectureStore.ElementKind.WALL -> scene.addArchitectureHoleToWall(group, selected.id, localA, localB)
+            ArchitectureStore.ElementKind.SLAB -> scene.addArchitectureHoleToSlab(group, selected.id, localA, localB)
+            else -> {
+                scene.addArchitectureHoleToNearestWall(group, localA, localB) ||
+                    scene.addArchitectureHoleToNearestSlab(group, localA, localB)
+            }
         }
         if (created) {
-            status.message = "Wall hole added."
+            status.message = "Hole added."
         } else {
-            status.message = "No compatible wall found for hole."
+            status.message = "No compatible wall/slab found for hole."
         }
         clear()
         return true
@@ -340,9 +341,9 @@ class ArchitectureAddHoleTool(
         hasHover = false
     }
 
-    private fun resolveWallTargetGroup(status: StatusModel): GroupScene.GroupNode? {
+    private fun resolveHoleTargetGroup(status: StatusModel): GroupScene.GroupNode? {
         if (!scene.hasArchitectureElements()) {
-            status.message = "No walls available for hole creation."
+            status.message = "No architecture elements available for hole creation."
             return null
         }
         return ensureArchitectureGroup?.invoke() ?: scene.activeGroup()

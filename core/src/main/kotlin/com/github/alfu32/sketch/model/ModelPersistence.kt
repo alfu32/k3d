@@ -27,6 +27,10 @@ object ModelPersistence {
         undoHistory: UndoHistoryDto? = null
     ) {
         val snapshot = snapshot(scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilon, gridSpacing, undoHistory)
+        saveSnapshot(file, snapshot)
+    }
+
+    fun saveSnapshot(file: File, snapshot: ModelSnapshot) {
         val json = Json().apply {
             setOutputType(JsonWriter.OutputType.json)
         }
@@ -456,6 +460,18 @@ object ModelPersistence {
                 created.axisU.set(slab.axisU.toVector3())
                 created.axisV.set(slab.axisV.toVector3())
                 created.normal.set(slab.normal.toVector3())
+                slab.holes.forEach { hole ->
+                    architecture.addSlabHole(
+                        slabId = created.id,
+                        u0 = hole.u0,
+                        u1 = hole.u1,
+                        v0 = hole.v0,
+                        v1 = hole.v1,
+                        minSize = 0f,
+                        name = hole.name,
+                        id = hole.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                    )
+                }
             }
             architectureStairs.forEach { stair ->
                 architecture.addStair(
@@ -607,7 +623,17 @@ object ModelPersistence {
                         thickness = slab.thickness,
                         topColor = ColorDto(slab.topColor),
                         bottomColor = ColorDto(slab.bottomColor),
-                        sideColor = ColorDto(slab.sideColor)
+                        sideColor = ColorDto(slab.sideColor),
+                        holes = slab.holes.map { hole ->
+                            ArchitectureHoleDto(
+                                id = hole.id,
+                                name = hole.name,
+                                u0 = hole.u0,
+                                u1 = hole.u1,
+                                v0 = hole.v0,
+                                v1 = hole.v1
+                            )
+                        }.toMutableList()
                     )
                 }?.toMutableList() ?: mutableListOf()
                 dto.architectureStairs = prototype.architectureStore?.allStairs()?.map { stair ->
@@ -811,6 +837,7 @@ object ModelPersistence {
         var topColor: ColorDto = ColorDto(Color(0.93f, 0.93f, 0.93f, 1f))
         var bottomColor: ColorDto = ColorDto(Color(0.84f, 0.84f, 0.84f, 1f))
         var sideColor: ColorDto = ColorDto(Color(0.88f, 0.88f, 0.88f, 1f))
+        var holes: MutableList<ArchitectureHoleDto> = mutableListOf()
 
         constructor(
             id: String,
@@ -823,7 +850,8 @@ object ModelPersistence {
             thickness: Float,
             topColor: ColorDto,
             bottomColor: ColorDto,
-            sideColor: ColorDto
+            sideColor: ColorDto,
+            holes: MutableList<ArchitectureHoleDto>
         ) : this() {
             this.id = id
             this.name = name
@@ -836,6 +864,7 @@ object ModelPersistence {
             this.topColor = topColor
             this.bottomColor = bottomColor
             this.sideColor = sideColor
+            this.holes = holes
         }
     }
 

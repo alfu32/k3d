@@ -36,6 +36,12 @@ class GroupScene(
         val kind: HoleHandleKind,
         val world: Vector3
     )
+    data class SlabHoleHandleMarker(
+        val slabId: String,
+        val holeId: String,
+        val kind: HoleHandleKind,
+        val world: Vector3
+    )
     data class WallEndpointHandleMarker(
         val wallId: String,
         val draggingStart: Boolean,
@@ -53,6 +59,14 @@ class GroupScene(
         val kind: ArchitectureStore.ElementKind,
         val id: String,
         val world: Vector3
+    )
+    data class ArchitectureHoleSelection(
+        val wallId: String,
+        val holeId: String
+    )
+    data class ArchitectureSlabHoleSelection(
+        val slabId: String,
+        val holeId: String
     )
     data class HvacControlHandleMarker(
         val kind: HvacStore.ElementKind,
@@ -384,8 +398,12 @@ class GroupScene(
     private val modelHvacStore = HvacStore()
     private val generatedArchitectureLines = mutableSetOf<DraftLineStore.Segment>()
     private val generatedArchitectureFaces = mutableSetOf<DraftFaceStore.Triangle>()
+    private val generatedArchitectureLineOwners = mutableMapOf<DraftLineStore.Segment, ArchitectureStore.ElementSelection>()
+    private val generatedArchitectureFaceOwners = mutableMapOf<DraftFaceStore.Triangle, ArchitectureStore.ElementSelection>()
     private val generatedHvacLines = mutableSetOf<DraftLineStore.Segment>()
     private val generatedHvacFaces = mutableSetOf<DraftFaceStore.Triangle>()
+    private val generatedHvacLineOwners = mutableMapOf<DraftLineStore.Segment, HvacStore.ElementSelection>()
+    private val generatedHvacFaceOwners = mutableMapOf<DraftFaceStore.Triangle, HvacStore.ElementSelection>()
     private val resolvedHvacVentilation = mutableMapOf<String, ResolvedVentilationDuct>()
     private val rootPrototype = ObjectPrototype(
         id = "root",
@@ -415,6 +433,8 @@ class GroupScene(
     )
     private val selectedGroups = mutableSetOf<GroupNode>()
     private var activeGroup: GroupNode = root
+    private var selectedArchitectureHole: ArchitectureHoleSelection? = null
+    private var selectedArchitectureSlabHole: ArchitectureSlabHoleSelection? = null
     private var changeListener: (() -> Unit)? = null
 
     init {
@@ -498,6 +518,8 @@ class GroupScene(
         root.textStore.clearSelection()
         root.hotspotSelectionIds.clear()
         modelArchitectureStore.clearSelectedElement()
+        selectedArchitectureHole = null
+        selectedArchitectureSlabHole = null
         modelHvacStore.clearSelectedElement()
         root.voxelStore?.clearSelection()
         walkGroups(root) { group ->
@@ -668,12 +690,28 @@ class GroupScene(
         return generatedArchitectureFaces.contains(triangle)
     }
 
+    fun generatedArchitectureOwner(segment: DraftLineStore.Segment): ArchitectureStore.ElementSelection? {
+        return generatedArchitectureLineOwners[segment]
+    }
+
+    fun generatedArchitectureOwner(triangle: DraftFaceStore.Triangle): ArchitectureStore.ElementSelection? {
+        return generatedArchitectureFaceOwners[triangle]
+    }
+
     fun isGeneratedHvacSegment(segment: DraftLineStore.Segment): Boolean {
         return generatedHvacLines.contains(segment)
     }
 
     fun isGeneratedHvacTriangle(triangle: DraftFaceStore.Triangle): Boolean {
         return generatedHvacFaces.contains(triangle)
+    }
+
+    fun generatedHvacOwner(segment: DraftLineStore.Segment): HvacStore.ElementSelection? {
+        return generatedHvacLineOwners[segment]
+    }
+
+    fun generatedHvacOwner(triangle: DraftFaceStore.Triangle): HvacStore.ElementSelection? {
+        return generatedHvacFaceOwners[triangle]
     }
 
     fun voxelColor(group: GroupNode): Color? {
@@ -2680,11 +2718,139 @@ class GroupScene(
 
     fun clearArchitectureElementSelection(group: GroupNode): Boolean {
         val store = architectureStoreFor(group)
+        val hadHole = if (group == root && selectedArchitectureHole != null) {
+            selectedArchitectureHole = null
+            true
+        } else {
+            false
+        }
+        val hadSlabHole = if (group == root && selectedArchitectureSlabHole != null) {
+            selectedArchitectureSlabHole = null
+            true
+        } else {
+            false
+        }
         if (store.selectedElement() == null) {
-            return false
+            return hadHole || hadSlabHole
         }
         store.clearSelectedElement()
         return true
+    }
+
+    fun selectedArchitectureHole(group: GroupNode): ArchitectureHoleSelection? {
+        if (group != root) {
+            return null
+        }
+        val sel = selectedArchitectureHole ?: return null
+        val wall = architectureStoreFor(group).wallById(sel.wallId) ?: run {
+            selectedArchitectureHole = null
+            return null
+        }
+        if (wall.holes.none { it.id == sel.holeId }) {
+            selectedArchitectureHole = null
+            return null
+        }
+        return sel
+    }
+
+    fun clearArchitectureHoleSelection(group: GroupNode): Boolean {
+        if (group != root || selectedArchitectureHole == null) {
+            return false
+        }
+        selectedArchitectureHole = null
+        return true
+    }
+
+    fun selectedArchitectureSlabHole(group: GroupNode): ArchitectureSlabHoleSelection? {
+        if (group != root) {
+            return null
+        }
+        val sel = selectedArchitectureSlabHole ?: return null
+        val slab = architectureStoreFor(group).allSlabs().firstOrNull { it.id == sel.slabId } ?: run {
+            selectedArchitectureSlabHole = null
+            return null
+        }
+        if (slab.holes.none { it.id == sel.holeId }) {
+            selectedArchitectureSlabHole = null
+            return null
+        }
+        return sel
+    }
+
+    fun clearArchitectureSlabHoleSelection(group: GroupNode): Boolean {
+        if (group != root || selectedArchitectureSlabHole == null) {
+            return false
+        }
+        selectedArchitectureSlabHole = null
+        return true
+    }
+
+    fun selectArchitectureHole(
+        group: GroupNode,
+        wallId: String,
+        holeId: String,
+        mode: ArchitectureSelectionMode = ArchitectureSelectionMode.REPLACE
+    ): Boolean {
+        if (group != root) {
+            return false
+        }
+        val store = architectureStoreFor(group)
+        val wall = store.wallById(wallId) ?: return false
+        if (wall.holes.none { it.id == holeId }) {
+            return false
+        }
+        val sel = ArchitectureHoleSelection(wallId, holeId)
+        return when (mode) {
+            ArchitectureSelectionMode.REPLACE, ArchitectureSelectionMode.ADD -> {
+                val changed = selectedArchitectureHole != sel
+                selectedArchitectureHole = sel
+                if (mode == ArchitectureSelectionMode.REPLACE) {
+                    selectedArchitectureSlabHole = null
+                }
+                changed || mode == ArchitectureSelectionMode.REPLACE
+            }
+            ArchitectureSelectionMode.REMOVE -> {
+                val removed = selectedArchitectureHole == sel
+                if (removed) {
+                    selectedArchitectureHole = null
+                }
+                removed
+            }
+        }
+    }
+
+    fun selectArchitectureSlabHole(
+        group: GroupNode,
+        slabId: String,
+        holeId: String,
+        mode: ArchitectureSelectionMode = ArchitectureSelectionMode.REPLACE
+    ): Boolean {
+        if (group != root) {
+            return false
+        }
+        val store = architectureStoreFor(group)
+        val slab = store.allSlabs().firstOrNull { it.id == slabId } ?: return false
+        if (slab.holes.none { it.id == holeId }) {
+            return false
+        }
+        val sel = ArchitectureSlabHoleSelection(slabId, holeId)
+        return when (mode) {
+            ArchitectureSelectionMode.REPLACE, ArchitectureSelectionMode.ADD -> {
+                val changed = selectedArchitectureSlabHole != sel
+                selectedArchitectureSlabHole = sel
+                if (mode == ArchitectureSelectionMode.REPLACE) {
+                    selectedArchitectureHole = null
+                }
+                changed || mode == ArchitectureSelectionMode.REPLACE
+            }
+            ArchitectureSelectionMode.REMOVE -> {
+                val removed = selectedArchitectureSlabHole == sel
+                if (removed) {
+                    selectedArchitectureSlabHole = null
+                }
+                removed
+            }
+        }
     }
 
     fun deleteSelectedArchitectureElements(group: GroupNode): Int {
@@ -2693,6 +2859,8 @@ class GroupScene(
         if (removed <= 0) {
             return 0
         }
+        selectedArchitectureHole(group)
+        selectedArchitectureSlabHole(group)
         rebuildArchitectureGeometry(rootPrototype)
         notifyChange()
         return removed
@@ -2709,11 +2877,16 @@ class GroupScene(
         mode: ArchitectureSelectionMode = ArchitectureSelectionMode.REPLACE
     ): Boolean {
         val store = architectureStoreFor(group)
-        return when (mode) {
+        val changed = when (mode) {
             ArchitectureSelectionMode.REPLACE -> store.setSelectedElement(kind, id)
             ArchitectureSelectionMode.ADD -> store.addSelectedElement(kind, id)
             ArchitectureSelectionMode.REMOVE -> store.removeSelectedElement(kind, id)
         }
+        if (group == root && mode == ArchitectureSelectionMode.REPLACE) {
+            selectedArchitectureHole = null
+            selectedArchitectureSlabHole = null
+        }
+        return changed
     }
 
     fun selectArchitectureElementNearWorldPoint(
@@ -3026,6 +3199,16 @@ class GroupScene(
                     if (nextNormal.len2() > 1e-6f) {
                         copiedSlab.normal.set(nextNormal.nor())
                     }
+                    slab.holes.forEach { hole ->
+                        store.addSlabHole(
+                            slabId = copiedSlab.id,
+                            u0 = hole.u0,
+                            u1 = hole.u1,
+                            v0 = hole.v0,
+                            v1 = hole.v1,
+                            minSize = 0f
+                        )
+                    }
                     copiedSelections.add(
                         ArchitectureStore.ElementSelection(
                             ArchitectureStore.ElementKind.SLAB,
@@ -3191,6 +3374,32 @@ class GroupScene(
         return true
     }
 
+    fun addArchitectureHoleToSlab(
+        group: GroupNode,
+        slabId: String,
+        cornerA: Vector3,
+        cornerB: Vector3
+    ): Boolean {
+        val store = architectureStoreFor(group)
+        val cornerAWorld = group.toWorld(cornerA)
+        val cornerBWorld = group.toWorld(cornerB)
+        val slab = store.allSlabs().firstOrNull { it.id == slabId } ?: return false
+        val candidate = slabHoleCandidate(slab, cornerAWorld, cornerBWorld) ?: return false
+        val added = store.addSlabHole(
+            slabId = slab.id,
+            u0 = candidate.u0,
+            u1 = candidate.u1,
+            v0 = candidate.v0,
+            v1 = candidate.v1
+        ) ?: return false
+        if (added.u1 - added.u0 <= 1e-4f || added.v1 - added.v0 <= 1e-4f) {
+            return false
+        }
+        rebuildArchitectureGeometry(rootPrototype)
+        notifyChange()
+        return true
+    }
+
     fun addArchitectureHoleToNearestWall(
         group: GroupNode,
         cornerA: Vector3,
@@ -3206,6 +3415,21 @@ class GroupScene(
         return addArchitectureHoleToWall(group, candidate.wall.id, cornerA, cornerB)
     }
 
+    fun addArchitectureHoleToNearestSlab(
+        group: GroupNode,
+        cornerA: Vector3,
+        cornerB: Vector3
+    ): Boolean {
+        val store = architectureStoreFor(group)
+        val cornerAWorld = group.toWorld(cornerA)
+        val cornerBWorld = group.toWorld(cornerB)
+        if (store.allSlabs().isEmpty()) {
+            return false
+        }
+        val candidate = findNearestSlabHoleCandidate(store, cornerAWorld, cornerBWorld) ?: return false
+        return addArchitectureHoleToSlab(group, candidate.slab.id, cornerA, cornerB)
+    }
+
     fun architectureHoleGuideSegmentsWorld(
         group: GroupNode,
         includeDiagonals: Boolean = true,
@@ -3219,6 +3443,24 @@ class GroupScene(
             }
             wall.holes.forEach { hole ->
                 guides.addAll(holeContourSegments(wall, hole, includeDiagonals = includeDiagonals))
+            }
+        }
+        return guides
+    }
+
+    fun architectureSlabHoleGuideSegmentsWorld(
+        group: GroupNode,
+        includeDiagonals: Boolean = true,
+        slabId: String? = null
+    ): List<Pair<Vector3, Vector3>> {
+        val store = architectureStoreFor(group)
+        val guides = mutableListOf<Pair<Vector3, Vector3>>()
+        store.allSlabs().forEach { slab ->
+            if (slabId != null && slab.id != slabId) {
+                return@forEach
+            }
+            slab.holes.forEach { hole ->
+                guides.addAll(slabHoleContourSegments(slab, hole, includeDiagonals = includeDiagonals))
             }
         }
         return guides
@@ -3240,24 +3482,31 @@ class GroupScene(
                 val p1 = wallPoint(basis, wall, hole.u1, hole.v0, 1f, 0.002f)
                 val p2 = wallPoint(basis, wall, hole.u1, hole.v1, 1f, 0.002f)
                 val p3 = wallPoint(basis, wall, hole.u0, hole.v1, 1f, 0.002f)
-                val e0 = Vector3(p0).lerp(p1, 0.5f)
-                val e1 = Vector3(p1).lerp(p2, 0.5f)
-                val e2 = Vector3(p2).lerp(p3, 0.5f)
-                val e3 = Vector3(p3).lerp(p0, 0.5f)
-                val center = Vector3(
-                    (p0.x + p1.x + p2.x + p3.x) * 0.25f,
-                    (p0.y + p1.y + p2.y + p3.y) * 0.25f,
-                    (p0.z + p1.z + p2.z + p3.z) * 0.25f
-                )
-                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.CORNER_0, p0))
-                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.CORNER_1, p1))
-                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.CORNER_2, p2))
+                // Minimal hole editing handles: top-left and bottom-right only.
+                // In wall-local UV, top-left is (u0,v1)=CORNER_3 and bottom-right is (u1,v0)=CORNER_1.
                 handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.CORNER_3, p3))
-                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.EDGE_0, e0))
-                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.EDGE_1, e1))
-                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.EDGE_2, e2))
-                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.EDGE_3, e3))
-                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.CENTER, center))
+                handles.add(HoleHandleMarker(wall.id, hole.id, HoleHandleKind.CORNER_1, p1))
+            }
+        }
+        return handles
+    }
+
+    fun architectureSlabHoleHandleMarkersWorld(
+        group: GroupNode,
+        slabId: String? = null
+    ): List<SlabHoleHandleMarker> {
+        val store = architectureStoreFor(group)
+        val handles = mutableListOf<SlabHoleHandleMarker>()
+        store.allSlabs().forEach { slab ->
+            if (slabId != null && slab.id != slabId) {
+                return@forEach
+            }
+            val basis = slabBasis(slab) ?: return@forEach
+            slab.holes.forEach { hole ->
+                val p1 = slabPoint(basis, hole.u1, hole.v0, basis.thickness + 0.002f)
+                val p3 = slabPoint(basis, hole.u0, hole.v1, basis.thickness + 0.002f)
+                handles.add(SlabHoleHandleMarker(slab.id, hole.id, HoleHandleKind.CORNER_3, p3))
+                handles.add(SlabHoleHandleMarker(slab.id, hole.id, HoleHandleKind.CORNER_1, p1))
             }
         }
         return handles
@@ -3691,9 +3940,122 @@ class GroupScene(
         if (!store.updateHole(wallId, holeId, u0, u1, v0, v1)) {
             return false
         }
+        selectedArchitectureHole = ArchitectureHoleSelection(wallId, holeId)
         rebuildArchitectureGeometry(rootPrototype)
         notifyChange()
         return true
+    }
+
+    fun updateArchitectureSlabHoleByHandle(
+        group: GroupNode,
+        slabId: String,
+        holeId: String,
+        handleKind: HoleHandleKind,
+        targetWorld: Vector3
+    ): Boolean {
+        val store = architectureStoreFor(group)
+        val slab = store.allSlabs().firstOrNull { it.id == slabId } ?: return false
+        val hole = slab.holes.firstOrNull { it.id == holeId } ?: return false
+        val basis = slabBasis(slab) ?: return false
+        val projected = projectToSlab(basis, targetWorld)
+        val uMin = min(0f, basis.sizeU)
+        val uMax = max(0f, basis.sizeU)
+        val vMin = min(0f, basis.sizeV)
+        val vMax = max(0f, basis.sizeV)
+
+        var u0 = hole.u0
+        var u1 = hole.u1
+        var v0 = hole.v0
+        var v1 = hole.v1
+
+        when (handleKind) {
+            HoleHandleKind.CENTER -> {
+                val width = (hole.u1 - hole.u0).coerceAtLeast(0.05f)
+                val height = (hole.v1 - hole.v0).coerceAtLeast(0.05f)
+                val safeWidth = width.coerceAtMost((uMax - uMin - 0.02f).coerceAtLeast(0.05f))
+                val safeHeight = height.coerceAtMost((vMax - vMin - 0.02f).coerceAtLeast(0.05f))
+                val centerU = projected.x.coerceIn(uMin + safeWidth * 0.5f, uMax - safeWidth * 0.5f)
+                val centerV = projected.y.coerceIn(vMin + safeHeight * 0.5f, vMax - safeHeight * 0.5f)
+                u0 = centerU - safeWidth * 0.5f
+                u1 = centerU + safeWidth * 0.5f
+                v0 = centerV - safeHeight * 0.5f
+                v1 = centerV + safeHeight * 0.5f
+            }
+            HoleHandleKind.CORNER_0 -> {
+                u0 = projected.x.coerceIn(uMin, uMax)
+                v0 = projected.y.coerceIn(vMin, vMax)
+            }
+            HoleHandleKind.CORNER_1 -> {
+                u1 = projected.x.coerceIn(uMin, uMax)
+                v0 = projected.y.coerceIn(vMin, vMax)
+            }
+            HoleHandleKind.CORNER_2 -> {
+                u1 = projected.x.coerceIn(uMin, uMax)
+                v1 = projected.y.coerceIn(vMin, vMax)
+            }
+            HoleHandleKind.CORNER_3 -> {
+                u0 = projected.x.coerceIn(uMin, uMax)
+                v1 = projected.y.coerceIn(vMin, vMax)
+            }
+            HoleHandleKind.EDGE_0 -> v0 = projected.y.coerceIn(vMin, vMax)
+            HoleHandleKind.EDGE_1 -> u1 = projected.x.coerceIn(uMin, uMax)
+            HoleHandleKind.EDGE_2 -> v1 = projected.y.coerceIn(vMin, vMax)
+            HoleHandleKind.EDGE_3 -> u0 = projected.x.coerceIn(uMin, uMax)
+        }
+
+        if (!store.updateSlabHole(slabId, holeId, u0, u1, v0, v1)) {
+            return false
+        }
+        selectedArchitectureSlabHole = ArchitectureSlabHoleSelection(slabId, holeId)
+        rebuildArchitectureGeometry(rootPrototype)
+        notifyChange()
+        return true
+    }
+
+    fun architectureHoleForContourSegment(
+        group: GroupNode,
+        segment: DraftLineStore.Segment,
+        wallIdFilter: String? = null
+    ): Pair<String, String>? {
+        val store = architectureStoreFor(group)
+        store.allWalls().forEach { wall ->
+            if (wallIdFilter != null && wall.id != wallIdFilter) {
+                return@forEach
+            }
+            wall.holes.forEach { hole ->
+                val contours = holeContourSegments(wall, hole, includeDiagonals = true)
+                val matches = contours.any { contour ->
+                    segmentsApproxEqual(segment.start, segment.end, contour.first, contour.second)
+                }
+                if (matches) {
+                    return wall.id to hole.id
+                }
+            }
+        }
+        return null
+    }
+
+    fun architectureSlabHoleForContourSegment(
+        group: GroupNode,
+        segment: DraftLineStore.Segment,
+        slabIdFilter: String? = null
+    ): Pair<String, String>? {
+        val store = architectureStoreFor(group)
+        store.allSlabs().forEach { slab ->
+            if (slabIdFilter != null && slab.id != slabIdFilter) {
+                return@forEach
+            }
+            slab.holes.forEach { hole ->
+                val contours = slabHoleContourSegments(slab, hole, includeDiagonals = true)
+                val matches = contours.any { contour ->
+                    segmentsApproxEqual(segment.start, segment.end, contour.first, contour.second)
+                }
+                if (matches) {
+                    return slab.id to hole.id
+                }
+            }
+        }
+        return null
     }
 
     fun deleteSelectedArchitectureHoleContours(group: GroupNode): Int {
@@ -3702,7 +4064,7 @@ class GroupScene(
         if (selected.isEmpty()) {
             return 0
         }
-        val removed = store.removeHoles { wall, hole ->
+        val removedWalls = store.removeHoles { wall, hole ->
             val contours = holeContourSegments(wall, hole, includeDiagonals = true)
             contours.any { contour ->
                 selected.any { seg ->
@@ -3710,7 +4072,44 @@ class GroupScene(
                 }
             }
         }
+        val removedSlabs = store.removeSlabHoles { slab, hole ->
+            val contours = slabHoleContourSegments(slab, hole, includeDiagonals = true)
+            contours.any { contour ->
+                selected.any { seg ->
+                    segmentsApproxEqual(seg.start, seg.end, contour.first, contour.second)
+                }
+            }
+        }
+        val removed = removedWalls + removedSlabs
         if (removed > 0) {
+            rebuildArchitectureGeometry(rootPrototype)
+            notifyChange()
+        }
+        return removed
+    }
+
+    fun deleteSelectedArchitectureHoles(group: GroupNode): Int {
+        if (group != root) {
+            return 0
+        }
+        val sel = selectedArchitectureHole(group) ?: return 0
+        val removed = if (architectureStoreFor(group).removeHole(sel.wallId, sel.holeId)) 1 else 0
+        if (removed > 0) {
+            selectedArchitectureHole = null
+            rebuildArchitectureGeometry(rootPrototype)
+            notifyChange()
+        }
+        return removed
+    }
+
+    fun deleteSelectedArchitectureSlabHoles(group: GroupNode): Int {
+        if (group != root) {
+            return 0
+        }
+        val sel = selectedArchitectureSlabHole(group) ?: return 0
+        val removed = if (architectureStoreFor(group).removeSlabHole(sel.slabId, sel.holeId)) 1 else 0
+        if (removed > 0) {
+            selectedArchitectureSlabHole = null
             rebuildArchitectureGeometry(rootPrototype)
             notifyChange()
         }
@@ -4350,6 +4749,8 @@ class GroupScene(
         }
         generatedArchitectureLines.clear()
         generatedArchitectureFaces.clear()
+        generatedArchitectureLineOwners.clear()
+        generatedArchitectureFaceOwners.clear()
 
         if (store.allWalls().isEmpty() &&
             store.allSlabs().isEmpty() &&
@@ -4367,6 +4768,8 @@ class GroupScene(
         faceStore.withChangeSuppressed {
             lineStore.withChangeSuppressed {
                 store.allWalls().forEach { wall ->
+                    val lineSizeBefore = lineStore.getSegments().size
+                    val faceSizeBefore = faceStore.getTriangles().size
                     appendWallGeometry(
                         faceStore = faceStore,
                         lineStore = lineStore,
@@ -4375,15 +4778,33 @@ class GroupScene(
                         interiorColor = wall.interiorColor,
                         joinShift = wallJoinShifts[wall.id] ?: WallJoinShift()
                     )
+                    val owner = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.WALL, wall.id)
+                    lineStore.getSegments().drop(lineSizeBefore).forEach { generatedArchitectureLineOwners[it] = owner }
+                    faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedArchitectureFaceOwners[it] = owner }
                 }
                 store.allSlabs().forEach { slab ->
+                    val lineSizeBefore = lineStore.getSegments().size
+                    val faceSizeBefore = faceStore.getTriangles().size
                     appendSlabGeometry(faceStore, lineStore, slab, slab.topColor, slab.bottomColor, slab.sideColor)
+                    val owner = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.SLAB, slab.id)
+                    lineStore.getSegments().drop(lineSizeBefore).forEach { generatedArchitectureLineOwners[it] = owner }
+                    faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedArchitectureFaceOwners[it] = owner }
                 }
                 store.allStairs().forEach { stair ->
+                    val lineSizeBefore = lineStore.getSegments().size
+                    val faceSizeBefore = faceStore.getTriangles().size
                     appendStairGeometry(faceStore, lineStore, stair, stair.treadColor, stair.supportColor)
+                    val owner = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.STAIR, stair.id)
+                    lineStore.getSegments().drop(lineSizeBefore).forEach { generatedArchitectureLineOwners[it] = owner }
+                    faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedArchitectureFaceOwners[it] = owner }
                 }
                 store.allFrames().forEach { frame ->
+                    val lineSizeBefore = lineStore.getSegments().size
+                    val faceSizeBefore = faceStore.getTriangles().size
                     appendFrameGeometry(faceStore, lineStore, frame, frame.color)
+                    val owner = ArchitectureStore.ElementSelection(ArchitectureStore.ElementKind.FRAME, frame.id)
+                    lineStore.getSegments().drop(lineSizeBefore).forEach { generatedArchitectureLineOwners[it] = owner }
+                    faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedArchitectureFaceOwners[it] = owner }
                 }
             }
         }
@@ -4500,6 +4921,8 @@ class GroupScene(
         }
         generatedHvacLines.clear()
         generatedHvacFaces.clear()
+        generatedHvacLineOwners.clear()
+        generatedHvacFaceOwners.clear()
 
         if (store.allPlumbingRuns().isEmpty() && store.allVentilationDucts().isEmpty()) {
             resolvedHvacVentilation.clear()
@@ -4513,10 +4936,20 @@ class GroupScene(
         faceStore.withChangeSuppressed {
             lineStore.withChangeSuppressed {
                 store.allPlumbingRuns().forEach { run ->
+                    val lineSizeBefore = lineStore.getSegments().size
+                    val faceSizeBefore = faceStore.getTriangles().size
                     appendHvacPlumbingGeometry(faceStore, lineStore, run)
+                    val owner = HvacStore.ElementSelection(HvacStore.ElementKind.PLUMBING, run.id)
+                    lineStore.getSegments().drop(lineSizeBefore).forEach { generatedHvacLineOwners[it] = owner }
+                    faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedHvacFaceOwners[it] = owner }
                 }
                 store.allVentilationDucts().forEach { duct ->
+                    val lineSizeBefore = lineStore.getSegments().size
+                    val faceSizeBefore = faceStore.getTriangles().size
                     appendHvacVentilationGeometry(faceStore, lineStore, duct)
+                    val owner = HvacStore.ElementSelection(HvacStore.ElementKind.VENTILATION, duct.id)
+                    lineStore.getSegments().drop(lineSizeBefore).forEach { generatedHvacLineOwners[it] = owner }
+                    faceStore.getTriangles().drop(faceSizeBefore).forEach { generatedHvacFaceOwners[it] = owner }
                 }
             }
         }
@@ -4603,6 +5036,15 @@ class GroupScene(
         val planeDistance: Float
     )
 
+    private data class SlabHoleCandidate(
+        val slab: ArchitectureStore.Slab,
+        val u0: Float,
+        val u1: Float,
+        val v0: Float,
+        val v1: Float,
+        val planeDistance: Float
+    )
+
     private fun findNearestWallHoleCandidate(
         store: ArchitectureStore,
         cornerA: Vector3,
@@ -4640,11 +5082,63 @@ class GroupScene(
         return HoleCandidate(wall, u0, u1, v0, v1, dist)
     }
 
+    private fun findNearestSlabHoleCandidate(
+        store: ArchitectureStore,
+        cornerA: Vector3,
+        cornerB: Vector3
+    ): SlabHoleCandidate? {
+        var best: SlabHoleCandidate? = null
+        store.allSlabs().forEach { slab ->
+            val candidate = slabHoleCandidate(slab, cornerA, cornerB) ?: return@forEach
+            if (best == null || candidate.planeDistance < best!!.planeDistance) {
+                best = candidate
+            }
+        }
+        return best
+    }
+
+    private fun slabHoleCandidate(
+        slab: ArchitectureStore.Slab,
+        cornerA: Vector3,
+        cornerB: Vector3
+    ): SlabHoleCandidate? {
+        val basis = slabBasis(slab) ?: return null
+        val pa = projectToSlab(basis, cornerA)
+        val pb = projectToSlab(basis, cornerB)
+        val uMin = min(0f, basis.sizeU)
+        val uMax = max(0f, basis.sizeU)
+        val vMin = min(0f, basis.sizeV)
+        val vMax = max(0f, basis.sizeV)
+        val marginU = min(0.01f, ((uMax - uMin) * 0.45f).coerceAtLeast(0f))
+        val marginV = min(0.01f, ((vMax - vMin) * 0.45f).coerceAtLeast(0f))
+        val u0 = min(pa.x, pb.x).coerceIn(uMin + marginU, uMax - marginU)
+        val u1 = max(pa.x, pb.x).coerceIn(uMin + marginU, uMax - marginU)
+        val v0 = min(pa.y, pb.y).coerceIn(vMin + marginV, vMax - marginV)
+        val v1 = max(pa.y, pb.y).coerceIn(vMin + marginV, vMax - marginV)
+        if (u1 - u0 <= 0.05f || v1 - v0 <= 0.05f) {
+            return null
+        }
+        val dist = min(
+            min(abs(pa.z), abs(pa.z - basis.thickness)),
+            min(abs(pb.z), abs(pb.z - basis.thickness))
+        )
+        return SlabHoleCandidate(slab, u0, u1, v0, v1, dist)
+    }
+
     private fun projectToWall(basis: WallBasis, point: Vector3): Vector3 {
         val rel = Vector3(point).sub(basis.start)
         return Vector3(
             rel.dot(basis.dir),
             rel.dot(basis.up),
+            rel.dot(basis.normal)
+        )
+    }
+
+    private fun projectToSlab(basis: SlabBasis, point: Vector3): Vector3 {
+        val rel = Vector3(point).sub(basis.origin)
+        return Vector3(
+            rel.dot(basis.axisU),
+            rel.dot(basis.axisV),
             rel.dot(basis.normal)
         )
     }
@@ -4660,6 +5154,42 @@ class GroupScene(
         val p1 = wallPoint(basis, wall, hole.u1, hole.v0, 1f, eps)
         val p2 = wallPoint(basis, wall, hole.u1, hole.v1, 1f, eps)
         val p3 = wallPoint(basis, wall, hole.u0, hole.v1, 1f, eps)
+        val segments = mutableListOf(
+            p0 to p1,
+            p1 to p2,
+            p2 to p3,
+            p3 to p0
+        )
+        if (includeDiagonals) {
+            segments.add(p0 to p2)
+            segments.add(p1 to p3)
+        }
+        return segments
+    }
+
+    private fun slabPoint(
+        basis: SlabBasis,
+        u: Float,
+        v: Float,
+        depth: Float
+    ): Vector3 {
+        return Vector3(basis.origin)
+            .mulAdd(basis.axisU, u)
+            .mulAdd(basis.axisV, v)
+            .mulAdd(basis.normal, depth)
+    }
+
+    private fun slabHoleContourSegments(
+        slab: ArchitectureStore.Slab,
+        hole: ArchitectureStore.RectHole,
+        includeDiagonals: Boolean = false
+    ): List<Pair<Vector3, Vector3>> {
+        val basis = slabBasis(slab) ?: return emptyList()
+        val eps = 0.0015f
+        val p0 = slabPoint(basis, hole.u0, hole.v0, basis.thickness + eps)
+        val p1 = slabPoint(basis, hole.u1, hole.v0, basis.thickness + eps)
+        val p2 = slabPoint(basis, hole.u1, hole.v1, basis.thickness + eps)
+        val p3 = slabPoint(basis, hole.u0, hole.v1, basis.thickness + eps)
         val segments = mutableListOf(
             p0 to p1,
             p1 to p2,
@@ -5297,27 +5827,102 @@ class GroupScene(
         sideColor: Color
     ) {
         val basis = slabBasis(slab) ?: return
-        val corners = slabCorners(slab)
-        if (corners.size < 8) {
+        val uMin = min(0f, basis.sizeU)
+        val uMax = max(0f, basis.sizeU)
+        val vMin = min(0f, basis.sizeV)
+        val vMax = max(0f, basis.sizeV)
+        if (uMax - uMin <= 1e-4f || vMax - vMin <= 1e-4f) {
             return
         }
-        val p000 = corners[0]
-        val p100 = corners[1]
-        val p110 = corners[2]
-        val p010 = corners[3]
-        val p001 = corners[4]
-        val p101 = corners[5]
-        val p111 = corners[6]
-        val p011 = corners[7]
+        val holes = slab.holes.map { hole ->
+            val hu0 = min(hole.u0, hole.u1).coerceIn(uMin + 0.01f, uMax - 0.01f)
+            val hu1 = max(hole.u0, hole.u1).coerceIn(uMin + 0.01f, uMax - 0.01f)
+            val hv0 = min(hole.v0, hole.v1).coerceIn(vMin + 0.01f, vMax - 0.01f)
+            val hv1 = max(hole.v0, hole.v1).coerceIn(vMin + 0.01f, vMax - 0.01f)
+            ArchitectureStore.RectHole(hole.id, hole.name, hu0, hu1, hv0, hv1)
+        }.filter { it.u1 - it.u0 > 0.02f && it.v1 - it.v0 > 0.02f }
+
+        val uCuts = mutableListOf(uMin, uMax)
+        val vCuts = mutableListOf(vMin, vMax)
+        holes.forEach { hole ->
+            uCuts.add(hole.u0)
+            uCuts.add(hole.u1)
+            vCuts.add(hole.v0)
+            vCuts.add(hole.v1)
+        }
+        val sortedU = uCuts.distinct().sorted()
+        val sortedV = vCuts.distinct().sorted()
+        if (sortedU.size < 2 || sortedV.size < 2) {
+            return
+        }
+
+        val solid = Array(sortedU.size - 1) { BooleanArray(sortedV.size - 1) }
+        for (i in 0 until sortedU.lastIndex) {
+            for (j in 0 until sortedV.lastIndex) {
+                val uMid = (sortedU[i] + sortedU[i + 1]) * 0.5f
+                val vMid = (sortedV[j] + sortedV[j + 1]) * 0.5f
+                val insideHole = holes.any { hole ->
+                    uMid >= hole.u0 && uMid <= hole.u1 &&
+                        vMid >= hole.v0 && vMid <= hole.v1
+                }
+                solid[i][j] = !insideHole
+            }
+        }
+
+        fun isSolid(i: Int, j: Int): Boolean {
+            if (i < 0 || j < 0 || i >= solid.size || j >= solid[i].size) {
+                return false
+            }
+            return solid[i][j]
+        }
+
         val topNormal = Vector3(basis.normal).nor()
-        val sideUNormal = Vector3(topNormal).crs(basis.axisU).nor()
-        val sideVNormal = Vector3(topNormal).crs(basis.axisV).nor()
-        addQuad(faceStore, lineStore, p000, p100, p110, p010, Vector3(topNormal).scl(-1f), bottomColor)
-        addQuad(faceStore, lineStore, p001, p011, p111, p101, Vector3(topNormal), topColor)
-        addQuad(faceStore, lineStore, p000, p001, p101, p100, Vector3(sideVNormal).scl(-1f), sideColor)
-        addQuad(faceStore, lineStore, p100, p101, p111, p110, Vector3(sideUNormal), sideColor)
-        addQuad(faceStore, lineStore, p110, p111, p011, p010, Vector3(sideVNormal), sideColor)
-        addQuad(faceStore, lineStore, p010, p011, p001, p000, Vector3(sideUNormal).scl(-1f), sideColor)
+        val depth0 = 0f
+        val depth1 = basis.thickness
+
+        for (i in 0 until sortedU.lastIndex) {
+            for (j in 0 until sortedV.lastIndex) {
+                if (!solid[i][j]) {
+                    continue
+                }
+                val u0 = sortedU[i]
+                val u1 = sortedU[i + 1]
+                val v0 = sortedV[j]
+                val v1 = sortedV[j + 1]
+
+                val b00 = slabPoint(basis, u0, v0, depth0)
+                val b10 = slabPoint(basis, u1, v0, depth0)
+                val b11 = slabPoint(basis, u1, v1, depth0)
+                val b01 = slabPoint(basis, u0, v1, depth0)
+                val t00 = slabPoint(basis, u0, v0, depth1)
+                val t10 = slabPoint(basis, u1, v0, depth1)
+                val t11 = slabPoint(basis, u1, v1, depth1)
+                val t01 = slabPoint(basis, u0, v1, depth1)
+
+                addQuad(faceStore, lineStore, b00, b10, b11, b01, Vector3(topNormal).scl(-1f), bottomColor)
+                addQuad(faceStore, lineStore, t00, t01, t11, t10, Vector3(topNormal), topColor)
+
+                if (!isSolid(i - 1, j)) {
+                    addQuad(faceStore, lineStore, b00, b01, t01, t00, Vector3(basis.axisU).scl(-1f), sideColor)
+                }
+                if (!isSolid(i + 1, j)) {
+                    addQuad(faceStore, lineStore, b10, t10, t11, b11, Vector3(basis.axisU), sideColor)
+                }
+                if (!isSolid(i, j - 1)) {
+                    addQuad(faceStore, lineStore, b00, t00, t10, b10, Vector3(basis.axisV).scl(-1f), sideColor)
+                }
+                if (!isSolid(i, j + 1)) {
+                    addQuad(faceStore, lineStore, b01, b11, t11, t01, Vector3(basis.axisV), sideColor)
+                }
+            }
+        }
+
+        holes.forEach { hole ->
+            val contours = slabHoleContourSegments(slab, hole, includeDiagonals = true)
+            contours.forEach { (a, b) ->
+                lineStore.addSegment(a, b, autoCleanup = false)
+            }
+        }
     }
 
     private fun appendStairGeometry(
@@ -7573,8 +8178,14 @@ class GroupScene(
         modelHvacStore.clear()
         generatedArchitectureLines.clear()
         generatedArchitectureFaces.clear()
+        generatedArchitectureLineOwners.clear()
+        generatedArchitectureFaceOwners.clear()
+        selectedArchitectureHole = null
+        selectedArchitectureSlabHole = null
         generatedHvacLines.clear()
         generatedHvacFaces.clear()
+        generatedHvacLineOwners.clear()
+        generatedHvacFaceOwners.clear()
         resolvedHvacVentilation.clear()
         clearGroupSelection()
         if (activeGroup != root) {

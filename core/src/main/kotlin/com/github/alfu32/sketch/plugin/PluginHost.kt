@@ -45,6 +45,7 @@ class PluginHost(
     private var activePluginToolId: String? = null
     private val helperScripts = setOf("encode_base64.groovy", "polyline.groovy")
     private var showPluginPanelHandler: (String) -> Unit = {}
+    private var cachedUpdateModelSnapshot: ModelPersistence.ModelSnapshot? = null
 
     fun loadCatalog() {
         catalog = PluginCatalog.load(catalogFile)
@@ -279,9 +280,16 @@ class PluginHost(
     }
 
     fun dispatchUpdate(deltaSeconds: Float) {
+        if (plugins.isEmpty()) {
+            return
+        }
         plugins.forEach { plugin ->
             applyResult(plugin, safeCall(plugin) { it.onUpdate(buildContext(), deltaSeconds) })
         }
+    }
+
+    fun invalidateUpdateContextModelSnapshot() {
+        cachedUpdateModelSnapshot = null
     }
 
     fun dispatchSave() {
@@ -416,17 +424,7 @@ class PluginHost(
     }
 
     private fun buildContext(): PluginContext {
-        val modelSnapshot = ModelPersistence.snapshot(
-            scene,
-            camera,
-            getCameraTarget(),
-            lighting,
-            shadow,
-            getModelUnit(),
-            getSnapEpsilon(),
-            getGridSpacing(),
-            null
-        )
+        val modelSnapshot = buildUpdateModelSnapshot()
         val selection = buildSelectionSnapshot()
         val snap = getCursorSnap()
         val cursor = CursorSnapshot(
@@ -447,6 +445,30 @@ class PluginHost(
             currentFile = getCurrentFile(),
             applyResult = { result -> applyResult(result) }
         )
+    }
+
+    private fun buildUpdateModelSnapshot(): ModelPersistence.ModelSnapshot {
+        val snapshot = cachedUpdateModelSnapshot ?: ModelPersistence.snapshot(
+            scene,
+            camera,
+            getCameraTarget(),
+            lighting,
+            shadow,
+            getModelUnit(),
+            getSnapEpsilon(),
+            getGridSpacing(),
+            null
+        ).also { cachedUpdateModelSnapshot = it }
+
+        // Refresh transient runtime state without rebuilding large geometry lists every frame.
+        snapshot.cameraState = ModelPersistence.CameraDto(camera, getCameraTarget())
+        snapshot.lightingState = ModelPersistence.LightingDto(lighting)
+        snapshot.shadowState = ModelPersistence.ShadowDto(shadow)
+        snapshot.modelUnit = ModelPersistence.ModelUnitDto(getModelUnit())
+        snapshot.snapEpsilon = getSnapEpsilon()
+        snapshot.gridSpacing = getGridSpacing()
+        snapshot.undoHistory = null
+        return snapshot
     }
 
     private fun buildSelectionSnapshot(): SelectionSnapshot {

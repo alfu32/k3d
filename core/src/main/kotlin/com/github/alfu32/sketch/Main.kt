@@ -74,6 +74,7 @@ import com.github.alfu32.sketch.tui.ConsoleExecutionResult
 import com.github.alfu32.sketch.tui.ConsoleTui
 import com.github.alfu32.sketch.tui.HistoryManager
 import com.github.alfu32.sketch.tui.OutputPane
+import com.github.alfu32.sketch.InputModifiers
 import com.github.alfu32.sketch.K3DVersion
 import com.badlogic.gdx.Graphics
 import com.github.alfu32.sketch.plugin.PluginHost
@@ -100,6 +101,7 @@ import com.github.alfu32.sketch.tools.HvacVentilationTool
 import com.github.alfu32.sketch.tools.LinearDimensionTool
 import com.github.alfu32.sketch.tools.LineOffsetTool
 import com.github.alfu32.sketch.tools.LineTool
+import com.github.alfu32.sketch.tools.MeshTool
 import com.github.alfu32.sketch.tools.MoveTool
 import com.github.alfu32.sketch.tools.ObjectPlaceTool
 import com.github.alfu32.sketch.tools.PaintTool
@@ -136,7 +138,10 @@ import com.kotcrab.vis.ui.widget.file.FileTypeFilter
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.EnumMap
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.ceil
@@ -144,6 +149,34 @@ import kotlin.math.floor
 
 /** [com.badlogic.gdx.ApplicationListener] implementation shared by all platforms. */
 class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : ApplicationAdapter() {
+    private data class EntityDisplayState(
+        var draw: Boolean = true,
+        var unlocked: Boolean = true,
+        var wireframe: Boolean = false
+    )
+
+    private data class SelectionTotalsCache(
+        val edges: Int = 0,
+        val faces: Int = 0,
+        val voxels: Int = 0,
+        val hotspots: Int = 0,
+        val groups: Int = 0,
+        val dimensions: Int = 0,
+        val texts: Int = 0,
+        val walls: Int = 0,
+        val slabs: Int = 0,
+        val stairs: Int = 0,
+        val frames: Int = 0
+    )
+
+    private enum class BasicSelectionFilterKind {
+        EDGE,
+        FACE,
+        VOXEL,
+        HOTSPOT,
+        OBJECT
+    }
+
     private lateinit var camera: PerspectiveCamera
     private lateinit var walkCamera: PerspectiveCamera
     private lateinit var orthoCamera: OrthographicCamera
@@ -165,7 +198,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var modelBatch: ModelBatch
     private lateinit var shadowBatch: ModelBatch
     private lateinit var environment: Environment
-    private lateinit var shadowLight: DirectionalShadowLight
+    private lateinit var shadowLight: ResizableDirectionalShadowLight
     private lateinit var mainLight: DirectionalLight
     private lateinit var faceFrontMaterial: Material
     private lateinit var faceBackMaterial: Material
@@ -175,6 +208,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var groundRenderable: MeshRenderableProvider
     private val selectedFaceColor = Color(1f, 0f, 0f, 0.3f)
     private val selectedLineColor = Color(1f, 0f, 0f, 1f)
+    private val selectedLineOverlayPointColor = Color(0.12f, 0.32f, 0.95f, 0.95f)
     private val architectureHoleGuideColor = Color(0.2f, 0.55f, 0.95f, 1f)
     private val architectureHoleHotspotColor = Color(0.2f, 0.55f, 0.95f, 1f)
     private val architectureSlabHotspotColor = Color(0.2f, 0.9f, 0.85f, 1f)
@@ -216,6 +250,34 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private var directionalLightValue = 0.73f
     private var directionalLightAlpha = 1f
     private var ambientLightValue = 0.59f
+    private val shadowModelBoundsCenter = Vector3()
+    private var shadowModelBoundsRadius = 12f
+    private var shadowModelBoundsValid = false
+    private var shadowModelTrackedEdgeCount = -1
+    private var shadowModelTrackedFaceCount = -1
+    private val shadowBoundsCenterTmp = Vector3()
+    private val shadowBoundsDimensionsTmp = Vector3()
+    private var instanceGeometryDirty = true
+    private var faceMeshDirty = true
+    private var faceMeshVisualStamp = Long.MIN_VALUE
+    private var shadowPassDirty = true
+    private var selectionTotalsDirty = true
+    private var selectionTotalsCache = SelectionTotalsCache()
+    private var autosavePending = false
+    private var autosaveDueAtMs = 0L
+    private val autosaveDebounceMs = 1500L
+    private val modelSaveExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "k3d-model-save").apply { isDaemon = true }
+    }
+    @Volatile private var asyncModelSaveTask: Future<*>? = null
+    @Volatile private var asyncModelSaveError: String? = null
+    private var cursorStatusSampleInitialized = false
+    private var cursorStatusLastSampleAtMs = 0L
+    private var cursorStatusLastScreenX = Int.MIN_VALUE
+    private var cursorStatusLastScreenY = Int.MIN_VALUE
+    private val cursorStatusLastCamPos = Vector3()
+    private val cursorStatusLastCamDir = Vector3()
+    private val cursorStatusLastCamUp = Vector3()
     private var ambientLightAlpha = 1f
     private var specularLightValue = 0.2f
     private var specularLightAlpha = 0.95f
@@ -227,6 +289,19 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private var shadowUseCsm = true
     private lateinit var shadowSettings: ShadowSettings
     private lateinit var pluginHost: PluginHost
+    private val architectureDisplayState = EnumMap<ArchitectureStore.ElementKind, EntityDisplayState>(ArchitectureStore.ElementKind::class.java).apply {
+        put(ArchitectureStore.ElementKind.WALL, EntityDisplayState())
+        put(ArchitectureStore.ElementKind.SLAB, EntityDisplayState())
+        put(ArchitectureStore.ElementKind.STAIR, EntityDisplayState())
+        put(ArchitectureStore.ElementKind.FRAME, EntityDisplayState())
+    }
+    private val basicDisplayState = EnumMap<BasicSelectionFilterKind, EntityDisplayState>(BasicSelectionFilterKind::class.java).apply {
+        put(BasicSelectionFilterKind.EDGE, EntityDisplayState(wireframe = false))
+        put(BasicSelectionFilterKind.FACE, EntityDisplayState(wireframe = false))
+        put(BasicSelectionFilterKind.VOXEL, EntityDisplayState(wireframe = false))
+        put(BasicSelectionFilterKind.HOTSPOT, EntityDisplayState(wireframe = false))
+        put(BasicSelectionFilterKind.OBJECT, EntityDisplayState(wireframe = false))
+    }
     private lateinit var installDir: java.io.File
     private lateinit var objectPlaceTool: ObjectPlaceTool
     private val runtimePrefs by lazy { Gdx.app.getPreferences("k3d-runtime") }
@@ -283,7 +358,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         configureOrthoViewport(Gdx.graphics.width, Gdx.graphics.height)
         alignOrthographicView(OrthoView.TOP)
 
-        orbitCameraController = ShiftCameraController(camera, this::pickPanPoint).apply {
+        orbitCameraController = ShiftCameraController(camera, this::pickOrbitModelPoint).apply {
             rotateButton = Input.Buttons.RIGHT
             translateButton = Input.Buttons.RIGHT
         }
@@ -306,7 +381,15 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         scene = GroupScene(Color(0.8f, 0.8f, 0.8f, 1f))
         modelCleanup = ModelCleanup(scene)
         guideManager = GuideManager()
-        snapper = Snapper(activeCamera, scene, guideManager, gridSpacing, snapEpsilon)
+        snapper = Snapper(
+            activeCamera,
+            scene,
+            guideManager,
+            lineSnapVisible = ::isLineSnapVisibleForSnapping,
+            faceSnapVisible = ::isFaceVisibleForSnapping,
+            initialGridSpacing = gridSpacing,
+            snapPixels = snapEpsilon
+        )
         objectPlaceTool = ObjectPlaceTool(
             scene,
             { instance ->
@@ -321,7 +404,46 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         toolController = ToolController(
             statusModel,
             listOf(
-                SelectTool(scene) { activeCamera },
+                SelectTool(
+                    scene,
+                    { activeCamera },
+                    ::isArchitectureKindVisible,
+                    ::isArchitectureKindUnlocked,
+                    ::isArchitectureKindWireframe,
+                    { kind ->
+                        isBasicKindVisible(
+                            when (kind) {
+                                SelectTool.BasicSelectionKind.EDGE -> BasicSelectionFilterKind.EDGE
+                                SelectTool.BasicSelectionKind.FACE -> BasicSelectionFilterKind.FACE
+                                SelectTool.BasicSelectionKind.VOXEL -> BasicSelectionFilterKind.VOXEL
+                                SelectTool.BasicSelectionKind.HOTSPOT -> BasicSelectionFilterKind.HOTSPOT
+                                SelectTool.BasicSelectionKind.OBJECT -> BasicSelectionFilterKind.OBJECT
+                            }
+                        )
+                    },
+                    { kind ->
+                        isBasicKindUnlocked(
+                            when (kind) {
+                                SelectTool.BasicSelectionKind.EDGE -> BasicSelectionFilterKind.EDGE
+                                SelectTool.BasicSelectionKind.FACE -> BasicSelectionFilterKind.FACE
+                                SelectTool.BasicSelectionKind.VOXEL -> BasicSelectionFilterKind.VOXEL
+                                SelectTool.BasicSelectionKind.HOTSPOT -> BasicSelectionFilterKind.HOTSPOT
+                                SelectTool.BasicSelectionKind.OBJECT -> BasicSelectionFilterKind.OBJECT
+                            }
+                        )
+                    },
+                    { kind ->
+                        isBasicKindWireframe(
+                            when (kind) {
+                                SelectTool.BasicSelectionKind.EDGE -> BasicSelectionFilterKind.EDGE
+                                SelectTool.BasicSelectionKind.FACE -> BasicSelectionFilterKind.FACE
+                                SelectTool.BasicSelectionKind.VOXEL -> BasicSelectionFilterKind.VOXEL
+                                SelectTool.BasicSelectionKind.HOTSPOT -> BasicSelectionFilterKind.HOTSPOT
+                                SelectTool.BasicSelectionKind.OBJECT -> BasicSelectionFilterKind.OBJECT
+                            }
+                        )
+                    }
+                ),
                 LineTool(scene) { toolController.setTool(ToolId.SELECT) },
                 ConstructionLineTool(scene) { toolController.setTool(ToolId.SELECT) },
                 PolylineToolInternal(scene, polylineSettings),
@@ -338,6 +460,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 HvacPlumbingTool(scene, hvacSettings) { toolController.setTool(ToolId.SELECT) },
                 HvacVentilationTool(scene, hvacSettings) { toolController.setTool(ToolId.SELECT) },
                 FaceOutlineTool(scene),
+                MeshTool(scene) { toolController.setTool(ToolId.SELECT) },
                 LineOffsetTool(scene),
                 CutHolesTool(scene) { toolController.setTool(ToolId.SELECT) },
                 CutHolesTool2(scene) { toolController.setTool(ToolId.SELECT) },
@@ -423,6 +546,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::voxelizeSelectedFaces,
             ::addHotspotAtCursor,
             ::selectionInfo,
+            ::updateSelectionFilterFromSelectionPanel,
             ::updateSelectedText,
             ::updateSelectedTextSize,
             ::updateSelectedTextScreen,
@@ -2061,18 +2185,66 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         return Vector3(ray.origin).mulAdd(ray.direction, t)
     }
 
+    private fun pickOrbitModelPoint(screenX: Int, screenY: Int): Vector3? {
+        val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
+        var bestPoint: Vector3? = null
+        var bestDist2 = Float.POSITIVE_INFINITY
+
+        fun testGroup(group: GroupScene.GroupNode) {
+            val localRay = com.badlogic.gdx.math.collision.Ray(
+                group.toLocal(ray.origin),
+                group.vectorToLocal(ray.direction).nor()
+            )
+            val hit = group.faceStore.pickTriangle(localRay) ?: return
+            val worldHit = group.toWorld(hit.point)
+            val dist2 = worldHit.dst2(ray.origin)
+            if (dist2 < bestDist2) {
+                bestDist2 = dist2
+                bestPoint = worldHit
+            }
+        }
+
+        testGroup(scene.root)
+        scene.walkGroups(scene.root) { group ->
+            testGroup(group)
+        }
+        return bestPoint
+    }
+
     override fun render() {
         updateActiveCamera(Gdx.graphics.deltaTime)
         handleGlobalDistanceShortcut()
         updateCursorStatus()
         undoManager.update()
+        flushAutosaveIfDue()
+        drainAsyncModelSaveStatus()
         pluginHost.dispatchUpdate(Gdx.graphics.deltaTime)
         toolController.update(Gdx.graphics.deltaTime)
-        scene.recomputeAllInstanceGeometryFromPrototypes()
+        var rebuiltInstancesThisFrame = false
+        if (instanceGeometryDirty) {
+            scene.recomputeAllInstanceGeometryFromPrototypes()
+            instanceGeometryDirty = false
+            faceMeshDirty = true
+            rebuiltInstancesThisFrame = true
+        }
 
-        updateFaceMesh()
-        shadowLight.update(activeCamera)
-        renderShadowPass()
+        // Split heavy instance recompute and face-mesh rebuild across frames to reduce UI stalls on large models.
+        val currentFaceMeshStamp = if (rebuiltInstancesThisFrame) {
+            faceMeshVisualStamp
+        } else {
+            computeFaceMeshVisualStamp()
+        }
+        if (!rebuiltInstancesThisFrame && (faceMeshDirty || currentFaceMeshStamp != faceMeshVisualStamp)) {
+            updateFaceMesh()
+            faceMeshVisualStamp = currentFaceMeshStamp
+            faceMeshDirty = false
+            shadowPassDirty = true
+        }
+        updateShadowCameraFromModelBounds()
+        if (shadowPassDirty) {
+            renderShadowPass()
+            shadowPassDirty = false
+        }
 
         Gdx.gl.glViewport(0, 0, Gdx.graphics.width, Gdx.graphics.height)
         val skyColor=Color(0.6f,0.75f,0.9f,1f,)
@@ -2080,7 +2252,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
 
-        Gdx.gl.glLineWidth(2f)
+        setLineWidth(2f)
         shapeRenderer.projectionMatrix = activeCamera.combined
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         drawGrid(20, gridSpacing)
@@ -2115,6 +2287,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         Gdx.gl.glEnable(GL20.GL_BLEND)
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
         drawAnnotations2D()
+        drawSelectedSegments2DOverlay()
         drawHotspots2D()
         Gdx.gl.glDisable(GL20.GL_BLEND)
 
@@ -2176,6 +2349,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         if (::modelFile.isInitialized && ::scene.isInitialized && ::camera.isInitialized &&
             ::lightingSettings.isInitialized && ::shadowSettings.isInitialized
         ) {
+            flushAutosaveIfDue(force = true)
             saveModel()
         }
         if (::walkCameraController.isInitialized) {
@@ -2184,6 +2358,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         if (::pluginHost.isInitialized) {
             pluginHost.dispatchClose()
         }
+        waitForAsyncModelSave()
+        modelSaveExecutor.shutdown()
         if (::mcpServer.isInitialized) {
             mcpServer.stop()
         }
@@ -2743,6 +2919,26 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val pointerPos = if (::toolPointer.isInitialized) toolPointer.lastPointerScreenPosition() else null
         val screenX = pointerPos?.first ?: Gdx.input.x
         val screenY = pointerPos?.second ?: Gdx.input.y
+        val camera = activeCamera
+        val pointerChanged = screenX != cursorStatusLastScreenX || screenY != cursorStatusLastScreenY
+        val cameraChanged =
+            !cursorStatusSampleInitialized ||
+                camera.position.dst2(cursorStatusLastCamPos) > 1e-8f ||
+                camera.direction.dst2(cursorStatusLastCamDir) > 1e-8f ||
+                camera.up.dst2(cursorStatusLastCamUp) > 1e-8f
+        if (cursorStatusSampleInitialized && !pointerChanged && !cameraChanged) {
+            return
+        }
+        val now = System.currentTimeMillis()
+        val minIntervalMs = if (cameraChanged) {
+            if (activeCameraMode == CameraMode.ORBIT && Gdx.input.isButtonPressed(Input.Buttons.RIGHT)) 75L else 33L
+        } else {
+            0L
+        }
+        if (cursorStatusSampleInitialized && now - cursorStatusLastSampleAtMs < minIntervalMs) {
+            return
+        }
+
         lastSnap = snapper.compute(screenX, screenY)
         val snap = lastSnap
         if (snap != null && snap.valid && snap.world != null) {
@@ -2756,6 +2952,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             statusModel.cursorWorld = "--"
             statusModel.cursorSnapLabel = "No hit"
         }
+        cursorStatusLastScreenX = screenX
+        cursorStatusLastScreenY = screenY
+        cursorStatusLastCamPos.set(camera.position)
+        cursorStatusLastCamDir.set(camera.direction)
+        cursorStatusLastCamUp.set(camera.up)
+        cursorStatusLastSampleAtMs = now
+        cursorStatusSampleInitialized = true
     }
 
     private fun startDistanceInput() {
@@ -2777,9 +2980,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun handleGlobalDistanceShortcut() {
-        val ctrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
-            Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT) ||
-            Gdx.input.isKeyPressed(Input.Keys.SYM)
+        val ctrl = InputModifiers.isCtrlPressed()
         if (ctrl && Gdx.input.isKeyJustPressed(Input.Keys.N)) {
             startDistanceInput()
         }
@@ -3005,15 +3206,40 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         return text.take(head) + ".." + text.takeLast(tail)
     }
 
+    // Line width rendering is disabled for consistent behavior across platforms (notably Android).
+    private fun setLineWidth(width: Float) {
+        @Suppress("UNUSED_VARIABLE")
+        val ignored = width
+    }
+
     private fun drawDraftLines() {
         val defaultColor = Color(0.2f, 0.2f, 0.2f, 1f)
         val crossSize = 0.1f
+        fun shouldDrawSegment(
+            group: GroupScene.GroupNode,
+            segment: com.github.alfu32.sketch.model.DraftLineStore.Segment
+        ): Boolean {
+            if (scene.isVoxelGroup(group)) {
+                return isBasicKindVisible(BasicSelectionFilterKind.VOXEL)
+            }
+            if (group !== scene.root) {
+                return isBasicKindVisible(BasicSelectionFilterKind.EDGE)
+            }
+            if (scene.isGeneratedArchitectureSegment(segment)) {
+                val owner = scene.generatedArchitectureOwner(segment) ?: return true
+                return isArchitectureKindVisible(owner.kind)
+            }
+            return isBasicKindVisible(BasicSelectionFilterKind.EDGE)
+        }
         scene.walkGroups(scene.root) { group ->
             val selected = group.lineStore.getSelected()
             group.lineStore.getSegments().forEach { segment ->
+                if (!shouldDrawSegment(group, segment)) {
+                    return@forEach
+                }
                 val isSelected = selected.contains(segment)
                 shapeRenderer.color = if (isSelected) selectedLineColor else defaultColor
-                Gdx.gl.glLineWidth(if (isSelected) selectedLineWidth else 2f)
+                setLineWidth(if (isSelected) selectedLineWidth else 2f)
                 val start = group.toWorld(segment.start)
                 val end = group.toWorld(segment.end)
                 if (isSelected) {
@@ -3026,9 +3252,12 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             }
         }
         scene.root.lineStore.getSegments().forEach { segment ->
+            if (!shouldDrawSegment(scene.root, segment)) {
+                return@forEach
+            }
             val isSelected = scene.root.lineStore.isSelected(segment)
             shapeRenderer.color = if (isSelected) selectedLineColor else defaultColor
-            Gdx.gl.glLineWidth(if (isSelected) selectedLineWidth else 2f)
+            setLineWidth(if (isSelected) selectedLineWidth else 2f)
             if (isSelected) {
                 drawDashedLine(segment.start, segment.end, 0.4f, 0.25f)
             } else {
@@ -3039,10 +3268,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
         scene.collectActivePrototypeWorldLines { start, end ->
             shapeRenderer.color = prototypeGuideLineColor
-            Gdx.gl.glLineWidth(2f)
+            setLineWidth(2f)
             drawDashedLine(start, end, 0.2f, 0.2f)
         }
-        Gdx.gl.glLineWidth(2f)
+        setLineWidth(2f)
     }
 
     private fun drawArchitectureHoleGuides() {
@@ -3053,19 +3282,27 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             .filter { it.kind == ArchitectureStore.ElementKind.WALL }
             .map { it.id }
             .toSet()
-        if (selectedWallIds.isEmpty()) {
+        val selectedSlabIds = scene.selectedArchitectureElements(scene.root)
+            .filter { it.kind == ArchitectureStore.ElementKind.SLAB }
+            .map { it.id }
+            .toSet()
+        if (selectedWallIds.isEmpty() && selectedSlabIds.isEmpty()) {
             return
         }
-        val guides = selectedWallIds.flatMap { wallId ->
-            scene.architectureHoleGuideSegmentsWorld(scene.root, includeDiagonals = true, wallId = wallId)
+        val guides = mutableListOf<Pair<Vector3, Vector3>>()
+        selectedWallIds.forEach { wallId ->
+            guides += scene.architectureHoleGuideSegmentsWorld(scene.root, includeDiagonals = true, wallId = wallId)
+        }
+        selectedSlabIds.forEach { slabId ->
+            guides += scene.architectureSlabHoleGuideSegmentsWorld(scene.root, includeDiagonals = true, slabId = slabId)
         }
         if (guides.isEmpty()) {
             return
         }
         shapeRenderer.color = architectureHoleGuideColor
-        Gdx.gl.glLineWidth(3f)
+        setLineWidth(3f)
         guides.forEach { (a, b) -> shapeRenderer.line(a, b) }
-        Gdx.gl.glLineWidth(2f)
+        setLineWidth(2f)
     }
 
     private fun drawArchitectureWallEndpointHitAreas() {
@@ -3080,17 +3317,20 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             .filter { it.kind == ArchitectureStore.ElementKind.WALL }
             .map { it.id }
             .toSet()
-        val holeMarkers = if (selectedWallIds.isEmpty()) {
-            emptyList()
-        } else {
-            selectedWallIds.flatMap { wallId ->
-                scene.architectureHoleHandleMarkersWorld(root, wallId = wallId)
-            }
+        val selectedSlabIds = scene.selectedArchitectureElements(root)
+            .filter { it.kind == ArchitectureStore.ElementKind.SLAB }
+            .map { it.id }
+            .toSet()
+        val holeMarkers = selectedWallIds.flatMap { wallId ->
+            scene.architectureHoleHandleMarkersWorld(root, wallId = wallId)
         }
-        if (wallMarkers.isEmpty() && slabMarkers.isEmpty() && frameMarkers.isEmpty() && holeMarkers.isEmpty()) {
+        val slabHoleMarkers = selectedSlabIds.flatMap { slabId ->
+            scene.architectureSlabHoleHandleMarkersWorld(root, slabId = slabId)
+        }
+        if (wallMarkers.isEmpty() && slabMarkers.isEmpty() && frameMarkers.isEmpty() && holeMarkers.isEmpty() && slabHoleMarkers.isEmpty()) {
             return
         }
-        Gdx.gl.glLineWidth(3f)
+        setLineWidth(3f)
         shapeRenderer.color = architectureHoleGuideColor
         wallMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.center, marker.halfSize) }
         shapeRenderer.color = architectureSlabHotspotColor
@@ -3099,7 +3339,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         frameMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.center, marker.halfSize) }
         shapeRenderer.color = architectureHoleHotspotColor
         holeMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.world, 0.18f) }
-        Gdx.gl.glLineWidth(2f)
+        slabHoleMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.world, 0.18f) }
+        setLineWidth(2f)
     }
 
     private fun drawArchitectureConstructionHotspots() {
@@ -3121,14 +3362,14 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             return
         }
         val hotspotSize = 0.16f
-        Gdx.gl.glLineWidth(3f)
+        setLineWidth(3f)
         shapeRenderer.color = architectureSlabHotspotColor
         slabMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.world, hotspotSize) }
         shapeRenderer.color = architectureFrameHotspotColor
         frameMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.world, hotspotSize) }
         shapeRenderer.color = architectureHoleHotspotColor
         holeMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.world, hotspotSize) }
-        Gdx.gl.glLineWidth(2f)
+        setLineWidth(2f)
     }
 
     private fun drawHvacControlPoints() {
@@ -3144,7 +3385,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         if (markers.isEmpty()) {
             return
         }
-        Gdx.gl.glLineWidth(3f)
+        setLineWidth(3f)
         markers.forEach { marker ->
             shapeRenderer.color = when (marker.kind) {
                 HvacStore.ElementKind.PLUMBING -> hvacPlumbingHotspotColor
@@ -3152,7 +3393,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             }
             drawArchitectureHandleSquare(marker.center, marker.halfSize)
         }
-        Gdx.gl.glLineWidth(2f)
+        setLineWidth(2f)
     }
 
     private fun drawArchitectureHandleSquare(center: Vector3, halfSize: Float) {
@@ -3193,15 +3434,15 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             val extensionLineWidth = if (selected) 3f else 1.5f
             val arrowLineWidth = if (selected) selectedLineWidth * 2f else 16f
             shapeRenderer.color = if (selected) selectedLineColor else defaultColor
-            Gdx.gl.glLineWidth(dimensionLineWidth)
+            setLineWidth(dimensionLineWidth)
             shapeRenderer.line(dimStart, dimEnd)
-            Gdx.gl.glLineWidth(extensionLineWidth)
+            setLineWidth(extensionLineWidth)
             shapeRenderer.line(start, extensionEndA)
             shapeRenderer.line(end, extensionEndB)
             val slashDir = Vector3(dir).add(offsetDir).nor()
             val slashLen = extension * 0.6f
             shapeRenderer.color = Color(0f, 0f, 0f, 1f)
-            Gdx.gl.glLineWidth(arrowLineWidth)
+            setLineWidth(arrowLineWidth)
             shapeRenderer.line(
                 Vector3(lineStart).mulAdd(slashDir, -slashLen * 0.5f),
                 Vector3(lineStart).mulAdd(slashDir, slashLen * 0.5f)
@@ -3211,7 +3452,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 Vector3(lineEnd).mulAdd(slashDir, slashLen * 0.5f)
             )
         }
-        Gdx.gl.glLineWidth(2f)
+        setLineWidth(2f)
     }
 
     private fun drawAnnotations2D() {
@@ -3250,6 +3491,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun drawHotspots2D() {
+        if (!isBasicKindVisible(BasicSelectionFilterKind.HOTSPOT)) {
+            return
+        }
         val markers = hotspotInteractionGroups().flatMap { group ->
             scene.hotspotMarkersWorld(group)
         }
@@ -3320,6 +3564,98 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             shapeRenderer.circle(screen.x, screen.y, marker.radiusPx + 1f, 20)
         }
         shapeRenderer.end()
+    }
+
+    private fun drawSelectedSegments2DOverlay() {
+        data class ScreenSeg(val ax: Float, val ay: Float, val bx: Float, val by: Float)
+
+        val screenSegments = ArrayList<ScreenSeg>()
+        fun shouldDrawSelectedOverlaySegment(
+            ownerGroup: GroupScene.GroupNode?,
+            segment: com.github.alfu32.sketch.model.DraftLineStore.Segment
+        ): Boolean {
+            val group = ownerGroup ?: scene.root
+            if (scene.isVoxelGroup(group)) {
+                return isBasicKindVisible(BasicSelectionFilterKind.VOXEL)
+            }
+            if (group !== scene.root) {
+                return isBasicKindVisible(BasicSelectionFilterKind.EDGE)
+            }
+            if (scene.isGeneratedArchitectureSegment(segment)) {
+                val owner = scene.generatedArchitectureOwner(segment) ?: return true
+                return isArchitectureKindVisible(owner.kind)
+            }
+            return isBasicKindVisible(BasicSelectionFilterKind.EDGE)
+        }
+        fun collectSelectedSegments(
+            segments: Iterable<com.github.alfu32.sketch.model.DraftLineStore.Segment>,
+            ownerGroup: GroupScene.GroupNode? = null,
+            toWorld: ((Vector3) -> Vector3)? = null
+        ) {
+            segments.forEach { segment ->
+                if (!shouldDrawSelectedOverlaySegment(ownerGroup, segment)) {
+                    return@forEach
+                }
+                val startWorld = if (toWorld != null) toWorld(segment.start) else Vector3(segment.start)
+                val endWorld = if (toWorld != null) toWorld(segment.end) else Vector3(segment.end)
+                val a = activeCamera.project(startWorld)
+                val b = activeCamera.project(endWorld)
+                if (!a.x.isFinite() || !a.y.isFinite() || !a.z.isFinite()) return@forEach
+                if (!b.x.isFinite() || !b.y.isFinite() || !b.z.isFinite()) return@forEach
+                if (a.z !in 0f..1f || b.z !in 0f..1f) return@forEach
+                screenSegments.add(ScreenSeg(a.x, a.y, b.x, b.y))
+            }
+        }
+
+        collectSelectedSegments(scene.root.lineStore.getSelected(), ownerGroup = scene.root)
+        scene.walkGroups(scene.root) { group ->
+            collectSelectedSegments(group.lineStore.getSelected(), ownerGroup = group) { local -> group.toWorld(local) }
+        }
+        if (screenSegments.isEmpty()) {
+            return
+        }
+
+        shapeRenderer.projectionMatrix = uiOverlay.stage.camera.combined
+        shapeRenderer.transformMatrix = Matrix4().idt()
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
+        screenSegments.forEach { seg ->
+            shapeRenderer.color = selectedLineColor
+            drawDashedRectLine2D(seg.ax, seg.ay, seg.bx, seg.by, width = 2f, dash = 5f, gap = 3f)
+            shapeRenderer.color = selectedLineOverlayPointColor
+            shapeRenderer.circle(seg.ax, seg.ay, 3.5f, 16)
+            shapeRenderer.circle(seg.bx, seg.by, 3.5f, 16)
+        }
+        shapeRenderer.end()
+    }
+
+    private fun drawDashedRectLine2D(
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
+        width: Float,
+        dash: Float,
+        gap: Float
+    ) {
+        val dx = x2 - x1
+        val dy = y2 - y1
+        val length = kotlin.math.sqrt(dx * dx + dy * dy)
+        if (length <= 0.001f) {
+            return
+        }
+        val nx = dx / length
+        val ny = dy / length
+        val step = dash + gap
+        var dist = 0f
+        while (dist < length) {
+            val segLen = kotlin.math.min(dash, length - dist)
+            val sx = x1 + nx * dist
+            val sy = y1 + ny * dist
+            val ex = x1 + nx * (dist + segLen)
+            val ey = y1 + ny * (dist + segLen)
+            shapeRenderer.rectLine(sx, sy, ex, ey, width)
+            dist += step
+        }
     }
 
     private fun drawHotspotShapeFilled(
@@ -3411,6 +3747,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
         wallIds.forEach { wallId ->
             scene.architectureHoleHandleMarkersWorld(root, wallId = wallId).forEach { marker ->
+                out += EntityHotspot2D(Vector3(marker.world), Color(entityHotspotColor), 6f)
+            }
+        }
+        slabIds.forEach { slabId ->
+            scene.architectureSlabHoleHandleMarkersWorld(root, slabId = slabId).forEach { marker ->
                 out += EntityHotspot2D(Vector3(marker.world), Color(entityHotspotColor), 6f)
             }
         }
@@ -3707,11 +4048,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             return
         }
         lines.forEach { line ->
-            Gdx.gl.glLineWidth(line.width)
+            setLineWidth(line.width)
             shapeRenderer.color = line.color
             shapeRenderer.line(line.start, line.end)
         }
-        Gdx.gl.glLineWidth(2f)
+        setLineWidth(2f)
     }
 
     private fun drawSelectionHighlights() {
@@ -3728,7 +4069,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             onSnapshotApplied = {
                 uiOverlay.refreshLightingControls()
                 updateWindowTitle()
-            }
+            },
+            maxEntries = 20
         )
     }
 
@@ -3769,14 +4111,16 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         } finally {
             restoringSnapshot = false
         }
+        markSceneRuntimeDirty()
     }
 
     private fun onModelChanged() {
         if (restoringSnapshot) {
             return
         }
+        markSceneRuntimeDirty()
         undoManager.markChanged()
-        saveModel()
+        scheduleAutosave()
     }
 
     private fun runCleanup() {
@@ -3845,8 +4189,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val hasArchitecture = scene.hasArchitectureElements()
         val hasHvac = scene.hasHvacElements()
         val hotspotDeletes = deleteSelectedHotspotsAcrossInteractionGroups()
+        val architectureHoleEntityDeletes = if (hasArchitecture) {
+            scene.deleteSelectedArchitectureHoles(scene.root) + scene.deleteSelectedArchitectureSlabHoles(scene.root)
+        } else {
+            0
+        }
         val architectureElementDeletes = if (hasArchitecture) {
-            scene.deleteSelectedArchitectureElements(scene.root)
+            if (architectureHoleEntityDeletes > 0) 0 else scene.deleteSelectedArchitectureElements(scene.root)
         } else {
             0
         }
@@ -3861,7 +4210,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             0
         }
         val architectureHoleDeletes = if (hasArchitecture) {
-            scene.deleteSelectedArchitectureHoleContours(group)
+            if (architectureHoleEntityDeletes > 0) 0 else scene.deleteSelectedArchitectureHoleContours(group)
         } else {
             0
         }
@@ -3870,15 +4219,15 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val dimensions = activeDimensionStore().deleteSelected()
         val texts = activeTextStore().deleteSelected()
         val groups = scene.deleteSelectedGroups()
-        if (edges + faces + voxelDeletes + hotspotDeletes + architectureHoleDeletes + architectureElementDeletes + hvacElementDeletes + dimensions + texts + groups > 0) {
+        if (edges + faces + voxelDeletes + hotspotDeletes + architectureHoleDeletes + architectureHoleEntityDeletes + architectureElementDeletes + hvacElementDeletes + dimensions + texts + groups > 0) {
             statusModel.message =
-                "Deleted | architecture $architectureElementDeletes hvac $hvacElementDeletes hotspots $hotspotDeletes voxels $voxelDeletes holes $architectureHoleDeletes edges $edges faces $faces dimensions $dimensions texts $texts groups $groups"
-            if (groups > 0 && edges + faces + voxelDeletes + hotspotDeletes + architectureHoleDeletes + architectureElementDeletes + hvacElementDeletes == 0) {
+                "Deleted | architecture $architectureElementDeletes hvac $hvacElementDeletes hotspots $hotspotDeletes voxels $voxelDeletes holes ${architectureHoleEntityDeletes + architectureHoleDeletes} edges $edges faces $faces dimensions $dimensions texts $texts groups $groups"
+            if (groups > 0 && edges + faces + voxelDeletes + hotspotDeletes + architectureHoleDeletes + architectureHoleEntityDeletes + architectureElementDeletes + hvacElementDeletes == 0) {
                 undoManager.commit("Delete")
                 saveModel()
             }
         } else if (hasArchitecture) {
-            statusModel.message = "Select hole contours to delete wall holes."
+            statusModel.message = "Select a wall/slab hole (or its contour) and press Delete."
         }
     }
 
@@ -3892,8 +4241,17 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun saveModel() {
-        ModelPersistence.save(
-            modelFile,
+        autosavePending = false
+        waitForAsyncModelSave()
+        ModelPersistence.saveSnapshot(modelFile, snapshotForPersistence(includeUndoHistory = true))
+        if (::pluginHost.isInitialized) {
+            pluginHost.dispatchSave()
+        }
+    }
+
+    private fun snapshotForPersistence(includeUndoHistory: Boolean): ModelPersistence.ModelSnapshot {
+        val undoHistory = if (includeUndoHistory) undoManager.exportHistory() else null
+        return ModelPersistence.snapshot(
             scene,
             camera,
             orbitCameraController.target,
@@ -3902,14 +4260,47 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             modelUnit,
             snapEpsilon,
             gridSpacing,
-            undoManager.exportHistory()
+            undoHistory
         )
-        if (::pluginHost.isInitialized) {
-            pluginHost.dispatchSave()
+    }
+
+    private fun enqueueAsyncModelSave(snapshot: ModelPersistence.ModelSnapshot, file: File = modelFile) {
+        autosavePending = false
+        asyncModelSaveTask = modelSaveExecutor.submit {
+            try {
+                ModelPersistence.saveSnapshot(file, snapshot)
+            } catch (t: Throwable) {
+                asyncModelSaveError = "Autosave failed: ${t.message ?: t.javaClass.simpleName}"
+            }
         }
     }
 
+    private fun waitForAsyncModelSave() {
+        val task = asyncModelSaveTask ?: return
+        try {
+            task.get()
+        } catch (t: Throwable) {
+            asyncModelSaveError = "Autosave failed: ${t.message ?: t.javaClass.simpleName}"
+        } finally {
+            if (asyncModelSaveTask === task) {
+                asyncModelSaveTask = null
+            }
+        }
+    }
+
+    private fun drainAsyncModelSaveStatus() {
+        asyncModelSaveTask?.let { task ->
+            if (task.isDone) {
+                waitForAsyncModelSave()
+            }
+        }
+        val message = asyncModelSaveError ?: return
+        asyncModelSaveError = null
+        statusModel.message = message
+    }
+
     private fun loadModel() {
+        waitForAsyncModelSave()
         if (modelFile.exists()) {
             val backup = java.io.File(modelFile.absolutePath + ".bak")
             modelFile.copyTo(backup, overwrite = true)
@@ -3952,6 +4343,37 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             saveModel()
             statusModel.message = "Created ${modelFile.name}"
         }
+        markSceneRuntimeDirty()
+    }
+
+    private fun markSceneRuntimeDirty() {
+        instanceGeometryDirty = true
+        faceMeshDirty = true
+        shadowPassDirty = true
+        selectionTotalsDirty = true
+        if (::pluginHost.isInitialized) {
+            pluginHost.invalidateUpdateContextModelSnapshot()
+        }
+    }
+
+    private fun scheduleAutosave(now: Long = System.currentTimeMillis()) {
+        autosavePending = true
+        autosaveDueAtMs = now + autosaveDebounceMs
+    }
+
+    private fun flushAutosaveIfDue(now: Long = System.currentTimeMillis(), force: Boolean = false) {
+        if (!autosavePending) {
+            return
+        }
+        if (!force && now < autosaveDueAtMs) {
+            return
+        }
+        val runningAsyncSave = asyncModelSaveTask?.let { !it.isDone } == true
+        if (!force && runningAsyncSave) {
+            autosaveDueAtMs = now + autosaveDebounceMs
+            return
+        }
+        enqueueAsyncModelSave(snapshotForPersistence(includeUndoHistory = false))
     }
 
     private fun resolveModelFile(args: kotlin.Array<String>): java.io.File {
@@ -4084,19 +4506,358 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val selectedVoxels = scene.selectedVoxels(group).size
         val selectedHotspots = hotspotInteractionGroups()
             .sumOf { target -> scene.selectedHotspots(target).size }
+        val totals = selectionTotals()
+        val architectureSelected = scene.selectedArchitectureElements(scene.root)
+        val selectedWallCount = architectureSelected.count { it.kind == ArchitectureStore.ElementKind.WALL }
+        val selectedSlabCount = architectureSelected.count { it.kind == ArchitectureStore.ElementKind.SLAB }
+        val selectedStairCount = architectureSelected.count { it.kind == ArchitectureStore.ElementKind.STAIR }
+        val selectedFrameCount = architectureSelected.count { it.kind == ArchitectureStore.ElementKind.FRAME }
         return SketchUiOverlay.SelectionInfo(
             edgeCount = activeLineStore().getSelected().size,
+            edgeTotalCount = totals.edges,
+            edgeDrawEnabled = isBasicKindVisible(BasicSelectionFilterKind.EDGE),
+            edgeModifyEnabled = isBasicKindUnlocked(BasicSelectionFilterKind.EDGE),
+            edgeWireframe = isBasicKindWireframe(BasicSelectionFilterKind.EDGE),
             faceCount = activeFaceStore().getSelected().size,
+            faceTotalCount = totals.faces,
+            faceDrawEnabled = isBasicKindVisible(BasicSelectionFilterKind.FACE),
+            faceModifyEnabled = isBasicKindUnlocked(BasicSelectionFilterKind.FACE),
+            faceWireframe = isBasicKindWireframe(BasicSelectionFilterKind.FACE),
             voxelCount = selectedVoxels,
+            voxelTotalCount = totals.voxels,
+            voxelDrawEnabled = isBasicKindVisible(BasicSelectionFilterKind.VOXEL),
+            voxelModifyEnabled = isBasicKindUnlocked(BasicSelectionFilterKind.VOXEL),
+            voxelWireframe = isBasicKindWireframe(BasicSelectionFilterKind.VOXEL),
             hotspotCount = selectedHotspots,
+            hotspotTotalCount = totals.hotspots,
+            hotspotDrawEnabled = isBasicKindVisible(BasicSelectionFilterKind.HOTSPOT),
+            hotspotModifyEnabled = isBasicKindUnlocked(BasicSelectionFilterKind.HOTSPOT),
+            hotspotWireframe = isBasicKindWireframe(BasicSelectionFilterKind.HOTSPOT),
             groupCount = scene.selectedGroups().size,
+            groupTotalCount = totals.groups,
+            objectDrawEnabled = isBasicKindVisible(BasicSelectionFilterKind.OBJECT),
+            objectModifyEnabled = isBasicKindUnlocked(BasicSelectionFilterKind.OBJECT),
+            objectWireframe = isBasicKindWireframe(BasicSelectionFilterKind.OBJECT),
             dimensionCount = group.dimensionStore.getSelected().size,
+            dimensionTotalCount = totals.dimensions,
             textCount = selectedTexts.size,
+            textTotalCount = totals.texts,
+            wallTotalCount = totals.walls,
+            wallSelectedCount = selectedWallCount,
+            wallDrawEnabled = isArchitectureKindVisible(ArchitectureStore.ElementKind.WALL),
+            wallModifyEnabled = isArchitectureKindUnlocked(ArchitectureStore.ElementKind.WALL),
+            wallWireframe = isArchitectureKindWireframe(ArchitectureStore.ElementKind.WALL),
+            slabTotalCount = totals.slabs,
+            slabSelectedCount = selectedSlabCount,
+            slabDrawEnabled = isArchitectureKindVisible(ArchitectureStore.ElementKind.SLAB),
+            slabModifyEnabled = isArchitectureKindUnlocked(ArchitectureStore.ElementKind.SLAB),
+            slabWireframe = isArchitectureKindWireframe(ArchitectureStore.ElementKind.SLAB),
+            stairTotalCount = totals.stairs,
+            stairSelectedCount = selectedStairCount,
+            stairDrawEnabled = isArchitectureKindVisible(ArchitectureStore.ElementKind.STAIR),
+            stairModifyEnabled = isArchitectureKindUnlocked(ArchitectureStore.ElementKind.STAIR),
+            stairWireframe = isArchitectureKindWireframe(ArchitectureStore.ElementKind.STAIR),
+            frameTotalCount = totals.frames,
+            frameSelectedCount = selectedFrameCount,
+            frameDrawEnabled = isArchitectureKindVisible(ArchitectureStore.ElementKind.FRAME),
+            frameModifyEnabled = isArchitectureKindUnlocked(ArchitectureStore.ElementKind.FRAME),
+            frameWireframe = isArchitectureKindWireframe(ArchitectureStore.ElementKind.FRAME),
             selectedTextId = selectedText?.id,
             selectedTextValue = selectedText?.text,
             selectedTextSize = selectedText?.size,
             selectedTextScreen = selectedText?.screenText
         )
+    }
+
+    private fun selectionTotals(): SelectionTotalsCache {
+        if (!selectionTotalsDirty) {
+            return selectionTotalsCache
+        }
+        val architectureStore = scene.root.architectureStore
+        selectionTotalsCache = SelectionTotalsCache(
+            edges = totalEdgeCount(),
+            faces = totalFaceCount(),
+            voxels = totalVoxelCount(),
+            hotspots = totalHotspotCount(),
+            groups = scene.groupsInActiveContext().size,
+            dimensions = totalDimensionCount(),
+            texts = totalTextCount(),
+            walls = architectureStore?.allWalls()?.size ?: 0,
+            slabs = architectureStore?.allSlabs()?.size ?: 0,
+            stairs = architectureStore?.allStairs()?.size ?: 0,
+            frames = architectureStore?.allFrames()?.size ?: 0
+        )
+        selectionTotalsDirty = false
+        return selectionTotalsCache
+    }
+
+    private fun totalVoxelCount(): Int {
+        var count = scene.root.voxelStore?.all()?.size ?: 0
+        scene.walkGroups(scene.root) { child ->
+            count += child.voxelStore?.all()?.size ?: 0
+        }
+        return count
+    }
+
+    private fun totalDimensionCount(): Int {
+        var count = scene.root.dimensionStore.getDimensions().size
+        scene.walkGroups(scene.root) { child ->
+            count += child.dimensionStore.getDimensions().size
+        }
+        return count
+    }
+
+    private fun totalTextCount(): Int {
+        var count = scene.root.textStore.getTexts().size
+        scene.walkGroups(scene.root) { child ->
+            count += child.textStore.getTexts().size
+        }
+        return count
+    }
+
+    private fun totalHotspotCount(): Int {
+        return hotspotInteractionGroups()
+            .distinctBy { it.id }
+            .sumOf { target -> scene.hotspotMarkersWorld(target).size }
+    }
+
+    private fun architectureDisplay(kind: ArchitectureStore.ElementKind): EntityDisplayState {
+        return architectureDisplayState.getOrPut(kind) { EntityDisplayState() }
+    }
+
+    private fun basicDisplay(kind: BasicSelectionFilterKind): EntityDisplayState {
+        return basicDisplayState.getOrPut(kind) { EntityDisplayState() }
+    }
+
+    private fun isArchitectureKindVisible(kind: ArchitectureStore.ElementKind): Boolean = architectureDisplay(kind).draw
+
+    private fun isArchitectureKindUnlocked(kind: ArchitectureStore.ElementKind): Boolean = architectureDisplay(kind).unlocked
+
+    private fun isArchitectureKindWireframe(kind: ArchitectureStore.ElementKind): Boolean = architectureDisplay(kind).wireframe
+
+    private fun isBasicKindVisible(kind: BasicSelectionFilterKind): Boolean = basicDisplay(kind).draw
+
+    private fun isBasicKindUnlocked(kind: BasicSelectionFilterKind): Boolean = basicDisplay(kind).unlocked
+
+    private fun isBasicKindWireframe(kind: BasicSelectionFilterKind): Boolean = basicDisplay(kind).wireframe
+
+    private fun updateSelectionFilterFromSelectionPanel(
+        kind: SketchUiOverlay.SelectionFilterKind,
+        draw: Boolean,
+        modifyEnabled: Boolean,
+        wireframe: Boolean
+    ) {
+        when (kind) {
+            SketchUiOverlay.SelectionFilterKind.EDGE ->
+                updateBasicDisplayState(BasicSelectionFilterKind.EDGE, draw, modifyEnabled, wireframe)
+            SketchUiOverlay.SelectionFilterKind.FACE ->
+                updateBasicDisplayState(BasicSelectionFilterKind.FACE, draw, modifyEnabled, wireframe)
+            SketchUiOverlay.SelectionFilterKind.VOXEL ->
+                updateBasicDisplayState(BasicSelectionFilterKind.VOXEL, draw, modifyEnabled, wireframe)
+            SketchUiOverlay.SelectionFilterKind.HOTSPOT ->
+                updateBasicDisplayState(BasicSelectionFilterKind.HOTSPOT, draw, modifyEnabled, wireframe)
+            SketchUiOverlay.SelectionFilterKind.OBJECT ->
+                updateBasicDisplayState(BasicSelectionFilterKind.OBJECT, draw, modifyEnabled, wireframe)
+            SketchUiOverlay.SelectionFilterKind.WALL ->
+                updateArchitectureDisplayState(ArchitectureStore.ElementKind.WALL, draw, modifyEnabled, wireframe)
+            SketchUiOverlay.SelectionFilterKind.SLAB ->
+                updateArchitectureDisplayState(ArchitectureStore.ElementKind.SLAB, draw, modifyEnabled, wireframe)
+            SketchUiOverlay.SelectionFilterKind.STAIR ->
+                updateArchitectureDisplayState(ArchitectureStore.ElementKind.STAIR, draw, modifyEnabled, wireframe)
+            SketchUiOverlay.SelectionFilterKind.FRAME ->
+                updateArchitectureDisplayState(ArchitectureStore.ElementKind.FRAME, draw, modifyEnabled, wireframe)
+        }
+    }
+
+    private fun updateBasicDisplayState(
+        kind: BasicSelectionFilterKind,
+        draw: Boolean? = null,
+        modifyEnabled: Boolean? = null,
+        wireframe: Boolean? = null
+    ) {
+        val state = basicDisplay(kind)
+        val prevDraw = state.draw
+        val prevUnlocked = state.unlocked
+        val prevWireframe = state.wireframe
+
+        draw?.let { state.draw = it }
+        if (!state.draw) {
+            state.unlocked = false
+        } else if (draw != null && !prevDraw) {
+            state.unlocked = true
+        } else if (modifyEnabled != null) {
+            state.unlocked = modifyEnabled
+        }
+        // Wireframe is only meaningful for faces and voxels; keep false for the others.
+        when (kind) {
+            BasicSelectionFilterKind.FACE,
+            BasicSelectionFilterKind.VOXEL -> wireframe?.let { state.wireframe = it }
+            else -> state.wireframe = false
+        }
+
+        if (state.draw == prevDraw && state.unlocked == prevUnlocked && state.wireframe == prevWireframe) {
+            return
+        }
+
+        if (!state.draw || !state.unlocked) {
+            clearSelectionForBasicKind(kind)
+        }
+        markSceneRuntimeDirty()
+        cursorStatusSampleInitialized = false
+    }
+
+    private fun updateArchitectureDisplayState(
+        kind: ArchitectureStore.ElementKind,
+        draw: Boolean? = null,
+        modifyEnabled: Boolean? = null,
+        wireframe: Boolean? = null
+    ) {
+        val state = architectureDisplay(kind)
+        val prevDraw = state.draw
+        val prevUnlocked = state.unlocked
+        val prevWireframe = state.wireframe
+
+        draw?.let { state.draw = it }
+        if (!state.draw) {
+            state.unlocked = false
+        } else if (draw != null && !prevDraw) {
+            // Restoring visibility re-enables modification by default.
+            state.unlocked = true
+        } else if (modifyEnabled != null) {
+            state.unlocked = modifyEnabled
+        }
+        wireframe?.let { state.wireframe = it }
+
+        if (state.draw == prevDraw && state.unlocked == prevUnlocked && state.wireframe == prevWireframe) {
+            return
+        }
+
+        if (!state.draw || !state.unlocked) {
+            clearSelectionForArchitectureKind(kind)
+        }
+        markSceneRuntimeDirty()
+        cursorStatusSampleInitialized = false
+    }
+
+    private fun clearSelectionForArchitectureKind(kind: ArchitectureStore.ElementKind) {
+        val root = scene.root
+        scene.selectedArchitectureElements(root)
+            .filter { it.kind == kind }
+            .toList()
+            .forEach { selection ->
+                scene.selectArchitectureElement(root, kind, selection.id, GroupScene.ArchitectureSelectionMode.REMOVE)
+            }
+        if (kind == ArchitectureStore.ElementKind.WALL) {
+            scene.selectedArchitectureHole(root)?.let { holeSel ->
+                scene.selectArchitectureHole(
+                    root,
+                    holeSel.wallId,
+                    holeSel.holeId,
+                    GroupScene.ArchitectureSelectionMode.REMOVE
+                )
+            }
+        } else if (kind == ArchitectureStore.ElementKind.SLAB) {
+            scene.selectedArchitectureSlabHole(root)?.let { holeSel ->
+                scene.selectArchitectureSlabHole(
+                    root,
+                    holeSel.slabId,
+                    holeSel.holeId,
+                    GroupScene.ArchitectureSelectionMode.REMOVE
+                )
+            }
+        }
+        root.faceStore.getSelected().toList().forEach { tri ->
+            if (!scene.isGeneratedArchitectureTriangle(tri)) return@forEach
+            val owner = scene.generatedArchitectureOwner(tri) ?: return@forEach
+            if (owner.kind == kind) {
+                root.faceStore.removeSelection(tri)
+            }
+        }
+        root.lineStore.getSelected().toList().forEach { seg ->
+            if (!scene.isGeneratedArchitectureSegment(seg)) return@forEach
+            val owner = scene.generatedArchitectureOwner(seg) ?: return@forEach
+            if (owner.kind == kind) {
+                root.lineStore.removeSelection(seg)
+            }
+        }
+    }
+
+    private fun clearSelectionForBasicKind(kind: BasicSelectionFilterKind) {
+        when (kind) {
+            BasicSelectionFilterKind.EDGE -> {
+                scene.root.lineStore.getSelected().toList().forEach { seg ->
+                    if (scene.isGeneratedArchitectureSegment(seg) || scene.isGeneratedHvacSegment(seg)) return@forEach
+                    scene.root.lineStore.removeSelection(seg)
+                }
+                scene.walkGroups(scene.root) { group ->
+                    group.lineStore.clearSelection()
+                }
+            }
+            BasicSelectionFilterKind.FACE -> {
+                scene.root.faceStore.getSelected().toList().forEach { tri ->
+                    if (scene.isGeneratedArchitectureTriangle(tri) || scene.isGeneratedHvacTriangle(tri)) return@forEach
+                    scene.root.faceStore.removeSelection(tri)
+                }
+                scene.walkGroups(scene.root) { group ->
+                    group.faceStore.clearSelection()
+                }
+            }
+            BasicSelectionFilterKind.VOXEL -> {
+                if (scene.root.voxelStore != null) {
+                    scene.clearVoxelSelection(scene.root)
+                }
+                scene.walkGroups(scene.root) { group ->
+                    scene.clearVoxelSelection(group)
+                }
+            }
+            BasicSelectionFilterKind.HOTSPOT -> {
+                hotspotInteractionGroups().forEach { target -> scene.clearHotspotSelection(target) }
+            }
+            BasicSelectionFilterKind.OBJECT -> {
+                scene.clearGroupSelection()
+            }
+        }
+    }
+
+    private fun isLineSnapVisibleForSnapping(
+        group: GroupScene.GroupNode,
+        segment: com.github.alfu32.sketch.model.DraftLineStore.Segment
+    ): Boolean {
+        if (scene.isVoxelGroup(group)) {
+            return isBasicKindVisible(BasicSelectionFilterKind.VOXEL)
+        }
+        if (group !== scene.root) {
+            return isBasicKindVisible(BasicSelectionFilterKind.EDGE)
+        }
+        if (!isBasicKindVisible(BasicSelectionFilterKind.EDGE) && !scene.isGeneratedArchitectureSegment(segment)) {
+            return false
+        }
+        if (scene.isGeneratedHvacSegment(segment)) {
+            return isBasicKindVisible(BasicSelectionFilterKind.EDGE)
+        }
+        if (!scene.isGeneratedArchitectureSegment(segment)) return true
+        val owner = scene.generatedArchitectureOwner(segment) ?: return true
+        return isArchitectureKindVisible(owner.kind)
+    }
+
+    private fun isFaceVisibleForSnapping(
+        group: GroupScene.GroupNode,
+        triangle: com.github.alfu32.sketch.model.DraftFaceStore.Triangle
+    ): Boolean {
+        if (scene.isVoxelGroup(group)) {
+            return isBasicKindVisible(BasicSelectionFilterKind.VOXEL) && !isBasicKindWireframe(BasicSelectionFilterKind.VOXEL)
+        }
+        if (group !== scene.root) {
+            return isBasicKindVisible(BasicSelectionFilterKind.FACE) && !isBasicKindWireframe(BasicSelectionFilterKind.FACE)
+        }
+        if (scene.isGeneratedHvacTriangle(triangle)) {
+            return isBasicKindVisible(BasicSelectionFilterKind.FACE) && !isBasicKindWireframe(BasicSelectionFilterKind.FACE)
+        }
+        if (!scene.isGeneratedArchitectureTriangle(triangle)) {
+            return isBasicKindVisible(BasicSelectionFilterKind.FACE) && !isBasicKindWireframe(BasicSelectionFilterKind.FACE)
+        }
+        val owner = scene.generatedArchitectureOwner(triangle) ?: return true
+        return isArchitectureKindVisible(owner.kind) && !isArchitectureKindWireframe(owner.kind)
     }
 
     private fun hotspotSelectionInfo(): SketchUiOverlay.HotspotSelectionInfo {
@@ -5104,7 +5865,99 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         return count
     }
 
+    private fun updateShadowModelBoundsOnSceneChange() {
+        val edgeCount = totalEdgeCount()
+        val faceCount = totalFaceCount()
+        val insertOnly =
+            shadowModelBoundsValid &&
+                shadowModelTrackedEdgeCount >= 0 &&
+                shadowModelTrackedFaceCount >= 0 &&
+                edgeCount >= shadowModelTrackedEdgeCount &&
+                faceCount >= shadowModelTrackedFaceCount &&
+                (edgeCount > shadowModelTrackedEdgeCount || faceCount > shadowModelTrackedFaceCount)
+
+        if (insertOnly) {
+            expandShadowModelBoundsFromScene()
+        } else {
+            recomputeShadowModelBoundsFromScene()
+        }
+
+        shadowModelTrackedEdgeCount = edgeCount
+        shadowModelTrackedFaceCount = faceCount
+    }
+
+    private fun recomputeShadowModelBoundsFromScene() {
+        val bounds = scene.root.worldBounds()
+        if (bounds == null) {
+            shadowModelBoundsCenter.setZero()
+            shadowModelBoundsRadius = 12f
+            shadowModelBoundsValid = false
+        } else {
+            bounds.getCenter(shadowBoundsCenterTmp)
+            bounds.getDimensions(shadowBoundsDimensionsTmp)
+            shadowModelBoundsCenter.set(shadowBoundsCenterTmp)
+            shadowModelBoundsRadius = (shadowBoundsDimensionsTmp.len() * 0.5f).coerceAtLeast(1f)
+            shadowModelBoundsValid = true
+        }
+        shadowModelTrackedEdgeCount = totalEdgeCount()
+        shadowModelTrackedFaceCount = totalFaceCount()
+    }
+
+    private fun expandShadowModelBoundsFromScene() {
+        val bounds = scene.root.worldBounds()
+        if (bounds == null) {
+            shadowModelBoundsCenter.setZero()
+            shadowModelBoundsRadius = 12f
+            shadowModelBoundsValid = false
+            return
+        }
+        if (!shadowModelBoundsValid) {
+            recomputeShadowModelBoundsFromScene()
+            return
+        }
+        cornersFromBounds(bounds).forEach { corner ->
+            expandShadowModelBoundsWithPoint(corner)
+        }
+    }
+
+    private fun expandShadowModelBoundsWithPoint(point: Vector3) {
+        if (!shadowModelBoundsValid) {
+            shadowModelBoundsCenter.set(point)
+            shadowModelBoundsRadius = 1f
+            shadowModelBoundsValid = true
+            return
+        }
+        val dx = point.x - shadowModelBoundsCenter.x
+        val dy = point.y - shadowModelBoundsCenter.y
+        val dz = point.z - shadowModelBoundsCenter.z
+        val dist2 = dx * dx + dy * dy + dz * dz
+        val radius = shadowModelBoundsRadius
+        if (dist2 <= radius * radius) {
+            return
+        }
+        val dist = kotlin.math.sqrt(dist2)
+        if (dist <= 1e-6f) {
+            return
+        }
+        val newRadius = (radius + dist) * 0.5f
+        val shift = (newRadius - radius) / dist
+        shadowModelBoundsCenter.mulAdd(Vector3(dx, dy, dz), shift)
+        shadowModelBoundsRadius = newRadius
+    }
+
+    private fun updateShadowCameraFromModelBounds() {
+        val radius = if (shadowModelBoundsValid) shadowModelBoundsRadius.coerceAtLeast(1f) else 12f
+        val diameter = radius * 2f
+        val paddedSize = (diameter * 1.15f).coerceAtLeast(24f)
+        val near = 0.5f
+        val far = (near + diameter * 4f).coerceAtLeast(64f)
+        shadowLight.setShadowVolume(paddedSize, paddedSize, near, far)
+    }
+
     private fun drawGroupSelectionHighlights() {
+        if (!isBasicKindVisible(BasicSelectionFilterKind.OBJECT)) {
+            return
+        }
         val groups = scene.selectedGroups()
         if (groups.isEmpty()) {
             return
@@ -5232,6 +6085,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun drawSelectedVoxelHighlights() {
+        if (!isBasicKindVisible(BasicSelectionFilterKind.VOXEL)) {
+            return
+        }
         val group = scene.activeGroup()
         if (!scene.isVoxelGroup(group)) {
             return
@@ -5337,7 +6193,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun setupLighting() {
         environment = Environment()
-        shadowLight = DirectionalShadowLight(
+        shadowLight = ResizableDirectionalShadowLight(
             8192,
             8192,
             60f,
@@ -5461,16 +6317,109 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         groundRenderable = MeshRenderableProvider(groundMesh, groundMaterial, GL20.GL_TRIANGLES)
     }
 
+    private fun computeFaceMeshVisualStamp(): Long {
+        var h = 1469598103934665603L
+        fun mix(v: Long) {
+            h = (h xor v) * 0x100000001b3L
+        }
+        mix(scene.root.faceStore.visualVersion())
+        scene.walkGroups(scene.root) { group ->
+            mix(group.faceStore.visualVersion())
+        }
+        val activeGroup = scene.activeGroup()
+        mix(if (scene.isEditing()) 1L else 0L)
+        mix(activeGroup.id.hashCode().toLong())
+        mix(if (activeGroup.editPrototypeMode) 1L else 0L)
+        mix(if (activeGroup.hasGeometryOverrides()) 1L else 0L)
+        if (scene.isEditing() && !activeGroup.editPrototypeMode && activeGroup.hasGeometryOverrides()) {
+            mix(activeGroup.prototype.faceStore.visualVersion())
+        }
+        return h
+    }
+
     private fun updateFaceMesh() {
         val triangles = mutableListOf<TriangleWorld>()
-        scene.collectWorldTriangles { a, b, c, color, selected ->
+        val shadowBounds = com.badlogic.gdx.math.collision.BoundingBox()
+        var hasShadowCaster = false
+        fun includeTriangle(
+            group: GroupScene.GroupNode,
+            tri: com.github.alfu32.sketch.model.DraftFaceStore.Triangle
+        ): Boolean {
+            if (scene.isVoxelGroup(group)) {
+                return isBasicKindVisible(BasicSelectionFilterKind.VOXEL) &&
+                    !isBasicKindWireframe(BasicSelectionFilterKind.VOXEL)
+            }
+            if (group !== scene.root) {
+                return isBasicKindVisible(BasicSelectionFilterKind.FACE) &&
+                    !isBasicKindWireframe(BasicSelectionFilterKind.FACE)
+            }
+            if (group !== scene.root || !scene.isGeneratedArchitectureTriangle(tri)) {
+                return isBasicKindVisible(BasicSelectionFilterKind.FACE) &&
+                    !isBasicKindWireframe(BasicSelectionFilterKind.FACE)
+            }
+            val owner = scene.generatedArchitectureOwner(tri) ?: return true
+            return isArchitectureKindVisible(owner.kind) && !isArchitectureKindWireframe(owner.kind)
+        }
+        fun appendTriangle(a: Vector3, b: Vector3, c: Vector3, color: Color, selected: Boolean) {
             triangles.add(TriangleWorld(a, b, c, color, selected))
+            if (!hasShadowCaster) {
+                shadowBounds.set(a, a)
+                hasShadowCaster = true
+            }
+            shadowBounds.ext(a)
+            shadowBounds.ext(b)
+            shadowBounds.ext(c)
+        }
+        scene.walkGroups(scene.root) { group ->
+            group.faceStore.getTriangles().forEach { tri ->
+                if (!includeTriangle(group, tri)) {
+                    return@forEach
+                }
+                appendTriangle(
+                    group.toWorld(tri.a),
+                    group.toWorld(tri.b),
+                    group.toWorld(tri.c),
+                    group.faceStore.colorFor(tri),
+                    group.faceStore.isSelected(tri)
+                )
+            }
+        }
+        scene.root.faceStore.getTriangles().forEach { tri ->
+            if (!includeTriangle(scene.root, tri)) {
+                return@forEach
+            }
+            appendTriangle(
+                Vector3(tri.a),
+                Vector3(tri.b),
+                Vector3(tri.c),
+                scene.root.faceStore.colorFor(tri),
+                scene.root.faceStore.isSelected(tri)
+            )
         }
         scene.collectActivePrototypeWorldTriangles { a, b, c, _ ->
             triangles.add(TriangleWorld(a, b, c, prototypeGuideFaceColor, selected = false))
+            if (!hasShadowCaster) {
+                shadowBounds.set(a, a)
+                hasShadowCaster = true
+            }
+            shadowBounds.ext(a)
+            shadowBounds.ext(b)
+            shadowBounds.ext(c)
+        }
+        if (hasShadowCaster) {
+            shadowBounds.getCenter(shadowBoundsCenterTmp)
+            shadowBounds.getDimensions(shadowBoundsDimensionsTmp)
+            shadowModelBoundsCenter.set(shadowBoundsCenterTmp)
+            shadowModelBoundsRadius = (shadowBoundsDimensionsTmp.len() * 0.5f).coerceAtLeast(1f)
+            shadowModelBoundsValid = true
+        } else {
+            shadowModelBoundsCenter.setZero()
+            shadowModelBoundsRadius = 12f
+            shadowModelBoundsValid = false
         }
         val vertexCount = triangles.size * 3
         if (vertexCount == 0) {
+            faceMesh.setVertices(FloatArray(0))
             return
         }
         val vertices = FloatArray(vertexCount * 10)
@@ -5544,12 +6493,40 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun renderShadowPass() {
-        shadowLight.begin(Vector3.Zero, shadowLight.direction)
+        val shadowCenter = if (shadowModelBoundsValid) shadowModelBoundsCenter else Vector3.Zero
+        shadowLight.begin(shadowCenter, shadowLight.direction)
         shadowBatch.begin(shadowLight.camera)
         shadowBatch.render(faceFrontRenderable)
         shadowBatch.render(faceBackRenderable)
         shadowBatch.end()
         shadowLight.end()
+    }
+
+    private class ResizableDirectionalShadowLight(
+        shadowMapWidth: Int,
+        shadowMapHeight: Int,
+        viewportWidth: Float,
+        viewportHeight: Float,
+        near: Float,
+        far: Float
+    ) : DirectionalShadowLight(
+        shadowMapWidth,
+        shadowMapHeight,
+        viewportWidth,
+        viewportHeight,
+        near,
+        far
+    ) {
+        fun setShadowVolume(viewportWidth: Float, viewportHeight: Float, near: Float, far: Float) {
+            val ortho = camera as? OrthographicCamera ?: return
+            ortho.viewportWidth = viewportWidth
+            ortho.viewportHeight = viewportHeight
+            ortho.near = near
+            ortho.far = far
+            halfHeight = viewportHeight * 0.5f
+            halfDepth = near + (far - near) * 0.5f
+            ortho.update()
+        }
     }
 
     private class MeshRenderableProvider(

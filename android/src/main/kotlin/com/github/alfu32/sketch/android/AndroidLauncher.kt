@@ -1,10 +1,12 @@
 package com.github.alfu32.sketch.android
 
 import android.os.Bundle
+import android.view.KeyEvent
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
 import com.badlogic.gdx.backends.android.AndroidApplication
 import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
+import com.github.alfu32.sketch.InputModifiers
 import com.github.alfu32.sketch.Main
 import java.io.File
 
@@ -36,5 +38,15 @@ class AndroidLauncher : AndroidApplication() {
         initialize(Main(args), cfg)
         Gdx.input.setCatchKey(Input.Keys.BACK, true)
         Gdx.input.setCatchKey(Input.Keys.ESCAPE, true)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        InputModifiers.androidCtrlMetaActive = event.isCtrlPressed
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchKeyShortcutEvent(event: KeyEvent): Boolean {
+        InputModifiers.androidCtrlMetaActive = event.isCtrlPressed
+        return super.dispatchKeyShortcutEvent(event)
     }
 }

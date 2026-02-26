@@ -3,6 +3,7 @@ package com.github.alfu32.sketch.ui
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
 import com.badlogic.gdx.InputAdapter
+import com.github.alfu32.sketch.InputModifiers
 import com.github.alfu32.sketch.input.GuideManager
 import com.github.alfu32.sketch.input.SnapResult
 import com.github.alfu32.sketch.ui.ToolId
@@ -24,9 +25,7 @@ class ToolInputProcessor(
     private val uiCapturesInput: () -> Boolean
 ) : InputAdapter() {
     private fun ctrlPressed(): Boolean {
-        return Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
-            Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT) ||
-            Gdx.input.isKeyPressed(Input.Keys.SYM)
+        return InputModifiers.isCtrlPressed()
     }
 
     override fun keyDown(keycode: Int): Boolean {

@@ -4,6 +4,8 @@ import com.badlogic.gdx.graphics.Camera
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
+import com.github.alfu32.sketch.model.DraftFaceStore
+import com.github.alfu32.sketch.model.DraftLineStore
 import com.github.alfu32.sketch.model.GroupScene
 import kotlin.math.abs
 import kotlin.math.round
@@ -13,6 +15,8 @@ class Snapper(
     private var camera: Camera,
     private val scene: GroupScene,
     private val guideManager: GuideManager,
+    private val lineSnapVisible: ((GroupScene.GroupNode, DraftLineStore.Segment) -> Boolean)? = null,
+    private val faceSnapVisible: ((GroupScene.GroupNode, DraftFaceStore.Triangle) -> Boolean)? = null,
     initialGridSpacing: Float = 1f,
     snapPixels: Float = 12f
 ) {
@@ -26,6 +30,14 @@ class Snapper(
 
     fun setCamera(camera: Camera) {
         this.camera = camera
+    }
+
+    private fun isLineSnapVisible(group: GroupScene.GroupNode, segment: DraftLineStore.Segment): Boolean {
+        return lineSnapVisible?.invoke(group, segment) ?: true
+    }
+
+    private fun isFaceSnapVisible(group: GroupScene.GroupNode, triangle: DraftFaceStore.Triangle): Boolean {
+        return faceSnapVisible?.invoke(group, triangle) ?: true
     }
 
     fun compute(screenX: Int, screenY: Int): SnapResult {
@@ -42,7 +54,7 @@ class Snapper(
         var best: SnapCandidate? = null
         var faceReferencePoint: Vector3? = null
 
-        group.faceStore.pickTriangle(localRay)?.let { hit ->
+        group.faceStore.pickTriangle(localRay) { tri -> isFaceSnapVisible(group, tri) }?.let { hit ->
             val worldPoint = group.toWorld(hit.point)
             val faceNormal = facingNormal(group.vectorToWorld(hit.normal), ray.direction)
             val t = rayT(ray, worldPoint) ?: return@let
@@ -209,6 +221,7 @@ class Snapper(
     ): SnapCandidate? {
         var best: SnapCandidate? = null
         group.lineStore.getSegments().forEach { segment ->
+            if (!isLineSnapVisible(group, segment)) return@forEach
             listOf(segment.start, segment.end).forEach { local ->
                 val point = group.toWorld(local)
                 val dist = screenDistance(point, screenX, screenY)
@@ -231,6 +244,7 @@ class Snapper(
     ): SnapCandidate? {
         var best: SnapCandidate? = null
         group.lineStore.getSegments().forEach { segment ->
+            if (!isLineSnapVisible(group, segment)) return@forEach
             val midpointLocal = Vector3(segment.start).add(segment.end).scl(0.5f)
             val midpoint = group.toWorld(midpointLocal)
             val dist = screenDistance(midpoint, screenX, screenY)
@@ -254,6 +268,7 @@ class Snapper(
         val root = scene.root
         if (activeGroup !== root) {
             root.lineStore.getSegments().forEach { segment ->
+                if (!isLineSnapVisible(root, segment)) return@forEach
                 listOf(segment.start, segment.end).forEach { point ->
                     val dist = screenDistance(point, screenX, screenY)
                     if (dist <= snapPixels) {
@@ -269,6 +284,7 @@ class Snapper(
                 return@walkGroups
             }
             group.lineStore.getSegments().forEach { segment ->
+                if (!isLineSnapVisible(group, segment)) return@forEach
                 listOf(segment.start, segment.end).forEach { local ->
                     val point = group.toWorld(local)
                     val dist = screenDistance(point, screenX, screenY)
@@ -294,6 +310,7 @@ class Snapper(
         val root = scene.root
         if (activeGroup !== root) {
             root.lineStore.getSegments().forEach { segment ->
+                if (!isLineSnapVisible(root, segment)) return@forEach
                 val midpoint = Vector3(segment.start).add(segment.end).scl(0.5f)
                 val dist = screenDistance(midpoint, screenX, screenY)
                 if (dist <= snapPixels) {
@@ -308,6 +325,7 @@ class Snapper(
                 return@walkGroups
             }
             group.lineStore.getSegments().forEach { segment ->
+                if (!isLineSnapVisible(group, segment)) return@forEach
                 val midpointLocal = Vector3(segment.start).add(segment.end).scl(0.5f)
                 val midpoint = group.toWorld(midpointLocal)
                 val dist = screenDistance(midpoint, screenX, screenY)
@@ -331,6 +349,7 @@ class Snapper(
     ): SnapCandidate? {
         var best: SnapCandidate? = null
         group.lineStore.getSegments().forEach { segment ->
+            if (!isLineSnapVisible(group, segment)) return@forEach
             val start = group.toWorld(segment.start)
             val end = group.toWorld(segment.end)
             val closest = closestPointOnSegment(base, start, end)
@@ -357,7 +376,7 @@ class Snapper(
                 group.toLocal(ray.origin),
                 group.vectorToLocal(ray.direction).nor()
             )
-            group.faceStore.pickTriangle(localRay)?.let { hit ->
+            group.faceStore.pickTriangle(localRay) { tri -> isFaceSnapVisible(group, tri) }?.let { hit ->
                 val worldPoint = group.toWorld(hit.point)
                 val faceNormal = facingNormal(group.vectorToWorld(hit.normal), ray.direction)
                 val t = rayT(ray, worldPoint) ?: return@let
@@ -378,6 +397,7 @@ class Snapper(
     ): SnapCandidate? {
         var best: SnapCandidate? = null
         group.faceStore.getTriangles().forEach { tri ->
+            if (!isFaceSnapVisible(group, tri)) return@forEach
             val a = group.toWorld(tri.a)
             val b = group.toWorld(tri.b)
             val c = group.toWorld(tri.c)
@@ -417,6 +437,7 @@ class Snapper(
                 return@walkGroups
             }
             group.faceStore.getTriangles().forEach { tri ->
+                if (!isFaceSnapVisible(group, tri)) return@forEach
                 val a = group.toWorld(tri.a)
                 val b = group.toWorld(tri.b)
                 val c = group.toWorld(tri.c)
@@ -658,12 +679,14 @@ class Snapper(
         val points = mutableListOf<SelectionPoint>()
         val group = scene.activeGroup()
         group.lineStore.getSegments().forEach { segment ->
+            if (!isLineSnapVisible(group, segment)) return@forEach
             val start = group.toWorld(segment.start)
             val end = group.toWorld(segment.end)
             points.add(SelectionPoint(projectScreen(start), Vector3(start), null, SelectionSource.EDGE))
             points.add(SelectionPoint(projectScreen(end), Vector3(end), null, SelectionSource.EDGE))
         }
         group.faceStore.getTriangles().forEach { tri ->
+            if (!isFaceSnapVisible(group, tri)) return@forEach
             val a = group.toWorld(tri.a)
             val b = group.toWorld(tri.b)
             val c = group.toWorld(tri.c)
