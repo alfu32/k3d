@@ -1,10 +1,10 @@
 
 
-# ![K3D app icon](assets/appicon.png) K3D
+# ![Octodraw app icon](assets/appicon.png) Octodraw
 
-![splash.4.png](docs/splash.4.png)
+![splash.7.png](docs/splash.7.png)
 
-K3D is a Kotlin + libGDX desktop modeler for fast, direct 3D sketching. It focuses on edges, planar faces, and tool-driven workflows with precise snapping, groups (objects), and a live Groovy console for power users.
+Octodraw is a Kotlin + libGDX desktop modeler for fast, direct 3D sketching. It focuses on edges, planar faces, and tool-driven workflows with precise snapping, groups (objects), and a live Groovy console for power users.
 
 Android builds are available, but the Android experience is currently optimized for external mouse + keyboard (touch-only use is limited).
 
@@ -56,7 +56,7 @@ Android builds are available, but the Android experience is currently optimized 
 The dev console is a persistent Groovy REPL that runs alongside the GUI. Start it via the desktop launcher command:
 
 ```
-edit --file path/to/model.k3d
+edit --file path/to/model.octd
 ```
 
 Inside the console, type `:help` and `:examples` for meta commands and snippets. Use `app.run { ... }` to mutate the model safely.
@@ -64,7 +64,7 @@ Use `:perf` to print memory, disk, thread, and CPU stats.
 
 ## Files and autosave
 
-- Default file: `sketch3d.k3d` in the working directory.
+- Default file: `octodraw.octd` in the working directory.
 - Autosaves on geometry, selection, and settings changes.
 - Model files store camera, lighting, shadow settings, units, and grid spacing.
 
@@ -72,8 +72,8 @@ Use `:perf` to print memory, disk, thread, and CPU stats.
 
 Grab the latest release from GitHub Releases and run the platform launcher:
 
-- Windows: `k3d-jre.cmd` (bundled runtime) or `k3d.cmd` (system Java)
-- macOS / Linux: `./k3d-jre` (bundled runtime) or `./k3d-editor` (system Java)
+- Windows: `octodraw-jre.cmd` (bundled runtime) or `octodraw.cmd` (system Java)
+- macOS / Linux: `./octodraw-jre` (bundled runtime) or `./octodraw-editor` (system Java)
 
 ## CLI commands (desktop launcher)
 
@@ -142,4 +142,4 @@ help                                     Show help
 
 ## Status
 
-K3D is an active work-in-progress. File formats and APIs may evolve as new modeling and topology features land.
+Octodraw is an active work-in-progress. File formats and APIs may evolve as new modeling and topology features land.

@@ -1,4 +1,4 @@
-# K3D Shortcuts
+# Octodraw Shortcuts
 
 This is a quick reference for keyboard and mouse shortcuts.
 

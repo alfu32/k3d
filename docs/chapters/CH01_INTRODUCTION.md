@@ -5,12 +5,12 @@ Date: February 13, 2026
 
 ## Purpose
 This manual is for:
-- end users modeling directly in K3D,
-- plugin developers extending K3D with tools/commands/entities,
+- end users modeling directly in Octodraw,
+- plugin developers extending Octodraw with tools/commands/entities,
 - automation agents using MCP to drive user-level workflows.
 
-## What K3D Is
-K3D is a direct 3D modeler with:
+## What Octodraw Is
+Octodraw is a direct 3D modeler with:
 - edge/face drawing,
 - solid-like editing tools (`Push/Pull`, `Move`, `Rotate`, `Scale`),
 - architecture and voxel workflows,

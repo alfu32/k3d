@@ -2,13 +2,13 @@
 
 Last updated: January 29, 2026
 
-K3D is an offline desktop application. It does not require an account and does not include telemetry by default.
+Octodraw is an offline desktop application. It does not require an account and does not include telemetry by default.
 
-## What data K3D collects
+## What data Octodraw collects
 
 - None by default.
 
-## What data K3D stores locally
+## What data Octodraw stores locally
 
 - Project files you create or open.
 - Application settings and preferences stored on your device.
@@ -16,7 +16,7 @@ K3D is an offline desktop application. It does not require an account and does n
 
 ## Network access
 
-- K3D does not send data to external servers by default.
+- Octodraw does not send data to external servers by default.
 - Some features (such as plugins you install) may access the network. Those plugins are responsible for their own privacy practices.
 
 ## Third-party plugins

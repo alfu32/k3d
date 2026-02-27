@@ -19,7 +19,7 @@ fun main(args: Array<String>) {
     val (width, height) = parseSize(args)
     Lwjgl3Application(Main(commandArgs), Lwjgl3ApplicationConfiguration().apply {
         var ver = K3DVersion()
-        setTitle("K3D ${preferVersion(ver)}")
+        setTitle("Octodraw 3D ${preferVersion(ver)}")
 
         setWindowIcon("appicon.png")
         //// Vsync limits the frames per second to what your hardware can display, and helps eliminate
@@ -76,7 +76,7 @@ private fun handleCommand(args: Array<String>): Array<String>? {
                 return args
             }
             val fileArg = args[0]
-            if (fileArg.endsWith(".k3d", ignoreCase = true) || File(fileArg).exists()) {
+            if (fileArg.endsWith(".octd", ignoreCase = true) || fileArg.endsWith(".k3d", ignoreCase = true) || File(fileArg).exists()) {
                 return arrayOf("--file", fileArg)
             }
             printHelp()
@@ -88,15 +88,15 @@ private fun handleCommand(args: Array<String>): Array<String>? {
 private fun printVersion() {
     val ver = K3DVersion()
     val version = preferVersion(ver)
-    println("K3D Editor $version (${ver.buildGitCommit.take(8)}) ${ver.buildDate}")
+    println("Octodraw Editor $version (${ver.buildGitCommit.take(8)}) ${ver.buildDate}")
 }
 
 private fun printHelp() {
     println(
         """
-        K3D Editor
+        Octodraw Editor
         Commands:
-          edit --file <path> [--size WIDTHxHEIGHT]   Open or create a model file (default: sketch3d.k3d)
+          edit --file <path> [--size WIDTHxHEIGHT]   Open or create a model file (default: octodraw.octd)
           edit --plugins-dir <path>                 Override plugins folder
           groovy <script>      Run a Groovy script file
           version             Show version information
@@ -153,7 +153,7 @@ private fun runUpdate() {
         return
     }
     val tempFile = File(installDir, "${jarFile.name}.download")
-    val url = URL("https://github.com/alfu32/k3d/releases/latest/download/k3d-editor.jar")
+    val url = URL("https://github.com/alfu32/k3d/releases/latest/download/octodraw-editor.jar")
     try {
         url.openStream().use { input ->
             tempFile.outputStream().use { output ->

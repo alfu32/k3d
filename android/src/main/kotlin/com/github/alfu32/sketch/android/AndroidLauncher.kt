@@ -27,7 +27,7 @@ class AndroidLauncher : AndroidApplication() {
             appDir.mkdirs()
         }
         val pluginsDir = File(appDir, "plugins").apply { mkdirs() }
-        val modelFile = File(appDir, "sketch3d.k3d")
+        val modelFile = File(appDir, "octodraw.octd")
 
         // Keep plugin-folder semantics on Android by passing an explicit app-private folder.
         val args = arrayOf(

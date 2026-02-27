@@ -1,4 +1,4 @@
-# K3D Manual Chapters
+# Octodraw Manual Chapters
 
 Author: Codex (GPT-5)
 Date: February 13, 2026

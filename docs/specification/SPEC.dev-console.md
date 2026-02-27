@@ -1,6 +1,6 @@
 # Specification
 
-## Embedded Groovy Interactive Console (TUI) for K3D LibGDX Editor
+## Embedded Groovy Interactive Console (TUI) for Octodraw LibGDX Editor
 
 ---
 

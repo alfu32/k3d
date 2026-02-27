@@ -218,27 +218,27 @@ class McpHttpServer(
         return listOf(
             McpResourceDef(
                 uri = "k3d://contract",
-                name = "K3D MCP Contract",
+                name = "Octodraw MCP Contract",
                 description = "Same payload as /mcp/contract."
             ),
             McpResourceDef(
                 uri = "k3d://commands",
-                name = "K3D Command Catalog Snapshot",
+                name = "Octodraw Command Catalog Snapshot",
                 description = "Current command IDs and metadata."
             ),
             McpResourceDef(
                 uri = "k3d://scene/summary",
-                name = "K3D Scene Summary",
+                name = "Octodraw Scene Summary",
                 description = "Counts (groups/faces/edges/voxels) and active tool/camera."
             ),
             McpResourceDef(
                 uri = "k3d://selection",
-                name = "K3D Selection Summary",
+                name = "Octodraw Selection Summary",
                 description = "Current selection counts and selected entity summaries."
             ),
             McpResourceDef(
                 uri = "k3d://logs/recent",
-                name = "K3D Recent Logs",
+                name = "Octodraw Recent Logs",
                 description = "Recent stdout/stderr lines from the in-app log tap."
             )
         )
@@ -248,7 +248,7 @@ class McpHttpServer(
         return listOf(
             McpToolDef(
                 name = "k3d_list_commands",
-                description = "List available K3D command IDs and metadata.",
+                description = "List available Octodraw command IDs and metadata.",
                 inputSchema = """{"type":"object","properties":{},"additionalProperties":false}"""
             ),
             McpToolDef(
@@ -258,7 +258,7 @@ class McpHttpServer(
             ),
             McpToolDef(
                 name = "k3d_execute_console",
-                description = "Execute a K3D console/meta command or Groovy script.",
+                description = "Execute an Octodraw console/meta command or Groovy script.",
                 inputSchema = """{"type":"object","properties":{"cmd":{"type":"string"}},"required":["cmd"],"additionalProperties":false}"""
             ),
             McpToolDef(
@@ -268,12 +268,12 @@ class McpHttpServer(
             ),
             McpToolDef(
                 name = "k3d_status",
-                description = "Get K3D MCP server status and port.",
+                description = "Get Octodraw MCP server status and port.",
                 inputSchema = """{"type":"object","properties":{},"additionalProperties":false}"""
             ),
             McpToolDef(
                 name = "k3d_contract",
-                description = "Get full K3D contract payload.",
+                description = "Get full Octodraw contract payload.",
                 inputSchema = """{"type":"object","properties":{},"additionalProperties":false}"""
             )
         )

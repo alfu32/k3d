@@ -87,7 +87,7 @@ configure(subprojects.findAll { it.name != 'android' }) {
 
 subprojects {
   version = bundleVersion
-  ext.appName = 'k3d'
+  ext.appName = 'octodraw'
   repositories {
     google()
     mavenCentral()
@@ -98,4 +98,4 @@ subprojects {
   }
 }
 
-eclipse.project.name = 'k3d' + '-parent'
+eclipse.project.name = 'octodraw' + '-parent'

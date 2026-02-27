@@ -84,7 +84,7 @@ Implementation:
 
 ## Why this matters
 
-This release introduces a practical visual-programming layer inside K3D:
+This release introduces a practical visual-programming layer inside Octodraw:
 
 - users can build reusable parametric/dynamic entities with hotspots,
 - prototype topology remains clean and reusable,

@@ -644,7 +644,9 @@ class PluginHost(
 
     private fun addPluginApiJar(loader: GroovyClassLoader) {
         val apiJar = pluginsDir.listFiles { file ->
-            file.isFile && file.name.startsWith("k3d-plugin-api") && file.extension.equals("jar", true)
+            file.isFile &&
+                (file.name.startsWith("octodraw-plugin-api") || file.name.startsWith("k3d-plugin-api")) &&
+                file.extension.equals("jar", true)
         }?.firstOrNull() ?: return
         loader.addURL(apiJar.toURI().toURL())
     }

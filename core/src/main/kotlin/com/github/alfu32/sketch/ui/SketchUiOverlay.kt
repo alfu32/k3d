@@ -1751,7 +1751,7 @@ class SketchUiOverlay(
         content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         content.defaults().pad(4f).left().growX()
 
-        val title = VisLabel("K3D")
+        val title = VisLabel("Octodraw")
         val platformLabel = VisLabel(
             "Platform: " + when (Gdx.app?.type) {
                 Application.ApplicationType.Android -> "Android"
@@ -1761,7 +1761,7 @@ class SketchUiOverlay(
         )
         val warning = VisLabel(
             "Android input note:\n" +
-                "K3D is currently optimized for an external mouse and keyboard.\n" +
+                "Octodraw is currently optimized for an external mouse and keyboard.\n" +
                 "Touch-only use is limited (hover, right-click, wheel, modifier keys and precise picking are reduced).\n" +
                 "Use a tablet/Chromebook/DeX setup with mouse + keyboard for the best experience."
         ).apply {

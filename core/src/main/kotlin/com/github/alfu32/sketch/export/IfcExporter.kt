@@ -46,7 +46,7 @@ object IfcExporter {
         sb.appendLine("ISO-10303-21;")
         sb.appendLine("HEADER;")
         sb.appendLine("FILE_DESCRIPTION(('ViewDefinition [CoordinationView_V2.0]'),'2;1');")
-        sb.appendLine("FILE_NAME('${escapeStep(file.name)}','$timestamp',('Sketch3D'),('Sketch3D'),'Codex','Sketch3D','');")
+        sb.appendLine("FILE_NAME('${escapeStep(file.name)}','$timestamp',('Octodraw'),('Octodraw'),'Codex','Octodraw','');")
         sb.appendLine("FILE_SCHEMA(('IFC4'));")
         sb.appendLine("ENDSEC;")
         sb.appendLine("DATA;")
@@ -62,10 +62,10 @@ object IfcExporter {
         meshes: List<MeshChunk>,
         lines: List<LineChunk>
     ): ExportReport {
-        val person = writer.add("IFCPERSON($,$,'Sketch3D',$,$,$,$,$)")
-        val org = writer.add("IFCORGANIZATION($,'Sketch3D',$,$,$)")
+        val person = writer.add("IFCPERSON($,$,'Octodraw',$,$,$,$,$)")
+        val org = writer.add("IFCORGANIZATION($,'Octodraw',$,$,$)")
         val personOrg = writer.add("IFCPERSONANDORGANIZATION(#$person,#$org,$)")
-        val app = writer.add("IFCAPPLICATION(#$org,'2.9.0','Sketch3D','SKETCH3D')")
+        val app = writer.add("IFCAPPLICATION(#$org,'3.x','Octodraw','OCTODRAW')")
         val owner = writer.add("IFCOWNERHISTORY(#$personOrg,#$app,$,.ADDED.,$,$,$,0)")
 
         val origin = writer.add("IFCCARTESIANPOINT((0.,0.,0.))")
@@ -78,7 +78,7 @@ object IfcExporter {
         val unitVolume = writer.add("IFCSIUNIT(*,.VOLUMEUNIT.,$,.CUBIC_METRE.)")
         val units = writer.add("IFCUNITASSIGNMENT((#$unitLength,#$unitArea,#$unitVolume))")
 
-        val project = writer.add("IFCPROJECT('${ifcGuid()}',#$owner,'Sketch3D Model',$,$,$,$,(#$modelContext),#$units)")
+        val project = writer.add("IFCPROJECT('${ifcGuid()}',#$owner,'Octodraw Model',$,$,$,$,(#$modelContext),#$units)")
 
         val sitePlacement = writer.add("IFCLOCALPLACEMENT($,#$axis3d)")
         val buildingPlacement = writer.add("IFCLOCALPLACEMENT(#$sitePlacement,#$axis3d)")

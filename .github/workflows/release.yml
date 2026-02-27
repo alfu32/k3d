@@ -31,7 +31,7 @@ jobs:
         run: ./gradlew :lwjgl3:bundleLinuxTar -PreleaseNumber="${{ inputs.tag }}"
       - uses: actions/upload-artifact@v4
         with:
-          name: k3d-linux
+          name: octodraw-linux
           path: dist/*.tar.gz
 
   build-windows:
@@ -49,21 +49,21 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $version = "${{ inputs.tag }}"
-          $appName = "K3D"
-          $displayName = "K3D Editor"
+          $appName = "Octodraw"
+          $displayName = "Octodraw 3D"
           $publisher = "CN=K3D0"
           $packageName = "com.github.alfu32.k3d"
           $jarDir = "lwjgl3\build\libs"
-          $jarPath = Join-Path $jarDir "k3d-$version.jar"
+          $jarPath = Join-Path $jarDir "octodraw-$version.jar"
           $jpackage = Join-Path $env:JAVA_HOME "bin\jpackage.exe"
           if (!(Test-Path $jarPath)) { throw "Jar not found: $jarPath" }
           & $jpackage --type app-image --name $appName --app-version $version --vendor "alfu32" --win-console `
-            --input $jarDir --main-jar "k3d-$version.jar" --dest "dist\jpackage" `
+            --input $jarDir --main-jar "octodraw-$version.jar" --dest "dist\jpackage" `
             --icon "lwjgl3\icons\logo.ico"
           $appImage = "dist\jpackage\$appName"
           $pluginsDir = Join-Path $appImage "app\\plugins"
           New-Item $pluginsDir -ItemType Directory -Force | Out-Null
-          Copy-Item "core\build\libs\k3d-plugin-api*.jar" $pluginsDir -Force
+          Copy-Item "core\build\libs\octodraw-plugin-api*.jar" $pluginsDir -Force
           Copy-Item "scripts\*.groovy" $pluginsDir -Force
           & $jpackage --type msi --name $appName --app-version $version --vendor "alfu32" `
             --app-image $appImage --dest "dist\installer" `
@@ -73,8 +73,8 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $version = "${{ inputs.tag }}"
-          $appName = "K3D"
-          $displayName = "K3D Editor"
+          $appName = "Octodraw"
+          $displayName = "Octodraw 3D"
           $publisher = "CN=7F0CBC95-8035-4AF2-9B17-C38D58351CE5"
           $publisherDisplayName = "K3D0"
           $packageName = "K3D0.k3d-free"
@@ -116,16 +116,16 @@ jobs:
             '    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />',
             '  </Dependencies>',
             '  <Applications>',
-            '    <Application Id="K3D" Executable="Source/__APP_NAME__.exe" EntryPoint="Windows.FullTrustApplication">',
+            '    <Application Id="Octodraw" Executable="Source/__APP_NAME__.exe" EntryPoint="Windows.FullTrustApplication">',
             '      <uap:VisualElements DisplayName="__DISPLAY_NAME__" Description="__DISPLAY_NAME__"',
             '        Square150x150Logo="Source\Assets\Square150x150Logo.png"',
             '        Square44x44Logo="Source\Assets\Square44x44Logo.png"',
             '        BackgroundColor="transparent" />',
             '      <Extensions>',
             '        <uap:Extension Category="windows.fileTypeAssociation">',
-            '          <uap:FileTypeAssociation Name="k3d">',
+            '          <uap:FileTypeAssociation Name="octd">',
             '            <uap:SupportedFileTypes>',
-            '              <uap:FileType>.k3d</uap:FileType>',
+            '              <uap:FileType>.octd</uap:FileType>',
             '            </uap:SupportedFileTypes>',
             '          </uap:FileTypeAssociation>',
             '        </uap:Extension>',
@@ -193,7 +193,7 @@ jobs:
           if ($null -eq $signtool) { throw "signtool.exe not found (Windows SDK required)" }
 
           & $signtool.FullName sign /fd SHA256 /f $pfxPath /p $env:K3D_PFX_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $msixPath
-          $msiPath = Join-Path "dist\installer" ("k3d-${{ inputs.tag }}.msi")
+          $msiPath = Join-Path "dist\installer" ("octodraw-${{ inputs.tag }}.msi")
           if (Test-Path $msiPath) {
             & $signtool.FullName sign /fd SHA256 /f $pfxPath /p $env:K3D_PFX_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $msiPath
           }
@@ -246,10 +246,10 @@ jobs:
           $outputPath = "${{ steps.msix-build.outputs.msix-path }}"
           if ([string]::IsNullOrWhiteSpace($outputPath)) { throw "MSIX output path missing" }
           New-Item "dist\\installer" -ItemType Directory -Force | Out-Null
-          Copy-Item $outputPath "dist\\installer\\k3d-${{ inputs.tag }}.msix" -Force
+          Copy-Item $outputPath "dist\\installer\\octodraw-${{ inputs.tag }}.msix" -Force
       - uses: actions/upload-artifact@v4
         with:
-          name: k3d-windows
+          name: octodraw-windows
           path: |
             dist/*.zip
             dist/installer/*.msi
@@ -267,7 +267,7 @@ jobs:
         run: ./gradlew :lwjgl3:bundleMacArm64Tar -PreleaseNumber="${{ inputs.tag }}"
       - uses: actions/upload-artifact@v4
         with:
-          name: k3d-mac
+          name: octodraw-mac
           path: dist/*.tar.gz
 
   build-android:
@@ -286,9 +286,9 @@ jobs:
         run: ./gradlew :android:bundleAndroidApk -PreleaseNumber="${{ inputs.tag }}"
       - uses: actions/upload-artifact@v4
         with:
-          name: k3d-android
+          name: octodraw-android
           path: |
-            dist/k3d-*.apk
+            dist/octodraw-*.apk
 
   release:
     runs-on: ubuntu-latest

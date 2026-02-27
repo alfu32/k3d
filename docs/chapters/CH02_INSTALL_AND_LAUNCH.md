@@ -4,23 +4,23 @@ Author: Codex (GPT-5)
 Date: February 13, 2026
 
 ## Goal
-Get K3D running with the correct startup command and plugin path configuration.
+Get Octodraw running with the correct startup command and plugin path configuration.
 
 ## Platform Setup
 ### Windows
 1. Extract ZIP or install MSI/MSIX.
-2. Run `k3d-jre.cmd` (bundled runtime) or `k3d.cmd` (system Java).
-3. Optional (ZIP): run `k3d.install.cmd` for PATH/file associations.
+2. Run `octodraw-jre.cmd` (bundled runtime) or `octodraw.cmd` (system Java).
+3. Optional (ZIP): run `octodraw.install.cmd` for PATH/file associations.
 
 ### Linux
 1. Extract `.tar.gz` (preferred).
-2. If needed: `chmod +x k3d-jre k3d-editor`.
-3. Run `./k3d-jre` (bundled runtime) or `./k3d-editor` (system Java).
+2. If needed: `chmod +x octodraw-jre octodraw-editor`.
+3. Run `./octodraw-jre` (bundled runtime) or `./octodraw-editor` (system Java).
 
 ### macOS
 1. Extract `.tar.gz` (preferred).
-2. If needed: `chmod +x k3d-jre k3d-editor`.
-3. Run `./k3d-jre` or `./k3d-editor`.
+2. If needed: `chmod +x octodraw-jre octodraw-editor`.
+3. Run `./octodraw-jre` or `./octodraw-editor`.
 
 ## Launcher Commands
 From `lwjgl3/src/main/kotlin/com/github/alfu32/sketch/lwjgl3/Lwjgl3Launcher.kt`:
@@ -33,16 +33,16 @@ From `lwjgl3/src/main/kotlin/com/github/alfu32/sketch/lwjgl3/Lwjgl3Launcher.kt`:
 - `help`
 
 Additional behavior:
-- Passing a `.k3d` path directly is converted to `--file <path>`.
+- Passing a `.octd` path directly is converted to `--file <path>`.
 - `--size` controls initial window size.
 
 ## Typical Startup Examples
 ```bash
-./k3d-jre edit --file examples/mcp.demo.k3d
-./k3d-jre edit --file examples/mcp.demo.k3d --size 1600x900
-./k3d-jre edit --plugins-dir ./plugins
-./k3d-jre version
-./k3d-jre help
+./octodraw-jre edit --file examples/mcp.demo.k3d
+./octodraw-jre edit --file examples/mcp.demo.k3d --size 1600x900
+./octodraw-jre edit --plugins-dir ./plugins
+./octodraw-jre version
+./octodraw-jre help
 ```
 
 ## Plugin Folder Behavior

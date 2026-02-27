@@ -1,8 +1,8 @@
-# K3D
+# Octodraw
 ![splash.3.png](splash.3.png)
 
 
-K3D is a Kotlin + libGDX desktop modeler for fast, direct 3D sketching. It focuses on edges, planar faces, tool-driven workflows, and precise snapping with an extensible plugin system.
+Octodraw is a Kotlin + libGDX desktop modeler for fast, direct 3D sketching. It focuses on edges, planar faces, tool-driven workflows, and precise snapping with an extensible plugin system.
 
 ![Screenshot placeholder: Main UI](images/img_1.png)
 
@@ -74,4 +74,4 @@ https://github.com/alfu32/k3d/releases
 
 ## Status
 
-K3D is an active work-in-progress. File formats and APIs may change as modeling and topology features evolve.
+Octodraw is an active work-in-progress. File formats and APIs may change as modeling and topology features evolve.

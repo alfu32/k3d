@@ -304,9 +304,9 @@ class ConsoleTui(
                       POST /scene/pointer   body: {"action":"down|move|up", "screenX":0, "screenY":0} (worldX/worldY/worldZ also supported)
 
                     Agent setup (HTTP MCP):
-                      1) Start K3D.
+                      1) Start Octodraw.
                       2) Run: mcp: status (or mcp: start if not running).
-                      3) Keep K3D running. The MCP HTTP endpoint is already served at
+                      3) Keep Octodraw running. The MCP HTTP endpoint is already served at
                          http://127.0.0.1:<port> (no extra "expose" step needed).
                       4) In your coding agent MCP config, add a server entry named "k3d"
                          with base URL http://127.0.0.1:<port>.
@@ -496,7 +496,7 @@ class ConsoleTui(
                 - Camera: app.run { cameraCtl.setPosition(10f, 8f, 6f); cameraCtl.setTarget(0f, 0f, 0f) }
                 - Color: app.run { status.paintColor.set(1f, 0f, 0f, 1f) }
                 - Unit: app.run { unit.set("mm", 0.001f) }
-                - Save name: app.run { save.set("examples/new-name.k3d") }
+                - Save name: app.run { save.set("examples/new-name.octd") }
             """.trimIndent()
         )
     }
@@ -532,7 +532,7 @@ class ConsoleTui(
                 app.run { unit.set("mm", 0.001f) }
 
                 // change save name
-                app.run { save.set("examples/new-file.k3d") }
+                app.run { save.set("examples/new-file.octd") }
 
 
             Editing and executing groovy snippets
@@ -568,7 +568,7 @@ class ConsoleTui(
                 - Camera: app.run { cameraCtl.setPosition(10f, 8f, 6f); cameraCtl.setTarget(0f, 0f, 0f) }
                 - Color: app.run { status.paintColor.set(1f, 0f, 0f, 1f) }
                 - Unit: app.run { unit.set("mm", 0.001f) }
-                - Save name: app.run { save.set("examples/new-name.k3d") }
+                - Save name: app.run { save.set("examples/new-name.octd") }
             """.trimIndent()
         )
     }

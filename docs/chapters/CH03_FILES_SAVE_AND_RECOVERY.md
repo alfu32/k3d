@@ -4,10 +4,10 @@ Author: Codex (GPT-5)
 Date: February 13, 2026
 
 ## Goal
-Document how `.k3d` files are saved, backed up, and recovered.
+Document how `.octd` files are saved, backed up, and recovered.
 
 ## File Format
-- Model extension: `.k3d`
+- Model extension: `.octd`
 - Snapshot includes:
   - geometry and object hierarchy,
   - camera + target,
@@ -42,7 +42,7 @@ A grouped object/prototype state:
 ![Chapter 03 - Object/prototype persisted state](../../examples/mcp.demo_20260213_145026.png)
 
 ## Recovery Checklist
-1. If open fails, try `<model>.k3d.bak`.
+1. If open fails, try `<model>.octd.bak`.
 2. Confirm file is non-empty.
 3. Reopen with `edit --file <path>`.
 4. If needed, run cleanup and save a fresh copy under a new filename.

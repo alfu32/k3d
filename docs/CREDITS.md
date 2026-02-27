@@ -6,7 +6,7 @@ authors, short descriptions, and license references.
 
 ## Authors
 
-- Cristian Alferaru — creator and maintainer of K3D.
+- Cristian Alferaru — creator and maintainer of Octodraw.
 
 ## Libraries
 
@@ -118,7 +118,7 @@ authors, short descriptions, and license references.
 ## Assets
 
 - UI icons, application icon, and in-app graphics  
-  Created for K3D by Cristian Alferaru unless noted otherwise.
+  Created for Octodraw by Cristian Alferaru unless noted otherwise.
 
 ## Notes
 

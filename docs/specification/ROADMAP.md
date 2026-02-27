@@ -48,7 +48,7 @@ faces
 save
 
 saveas
-filename.k3d
+filename.octd
 
 exit
 

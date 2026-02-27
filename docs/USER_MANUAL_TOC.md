@@ -1,4 +1,4 @@
-# K3D User Manual and Tutorial TOC (Draft)
+# Octodraw User Manual and Tutorial TOC (Draft)
 
 Author: Codex (GPT-5)
 Date: February 13, 2026
@@ -35,7 +35,7 @@ This TOC is based on a code and MCP scan done on February 13, 2026.
 2.5 Plugin directory and overrides
 
 ## 3. Files, Save, and Recovery
-3.1 Model file format (`.k3d`)
+3.1 Model file format (`.octd`)
 3.2 Autosave behavior
 3.3 Save-as and backup files (`.bak`)
 3.4 Export targets and when to use each

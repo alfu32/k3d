@@ -1,6 +1,8 @@
-# K3D User Manual
+# Octodraw User Manual
+![img_7.png](img_7.png)
 
-This manual covers installation, navigation, selection, tools, panels, and workflows for K3D.
+
+This manual covers installation, navigation, selection, tools, panels, and workflows for Octodraw.
 
 ![Screenshot placeholder: Main UI](images/img_2.png)
 
@@ -10,20 +12,20 @@ This manual covers installation, navigation, selection, tools, panels, and workf
 
 1. ZIP: unzip the distribution archive.
 2. MSI/MSIX: install the package from the release artifacts.
-3. Run `k3d-jre.cmd` to use the bundled runtime, or `k3d.cmd` to use a system Java.
-4. Optional (ZIP only): run `k3d.install.cmd` to add K3D to PATH and register `.k3d` files.
+3. Run `octodraw-jre.cmd` to use the bundled runtime, or `octodraw.cmd` to use a system Java.
+4. Optional (ZIP only): run `octodraw.install.cmd` to add Octodraw to PATH and register `.octd` files.
 
 ### Linux (TAR.GZ recommended)
 
 1. Extract the `.tar.gz` distribution archive (preferred, preserves executable flags).
-2. If you used a ZIP, make the launcher executable: `chmod +x k3d-jre k3d-editor`.
-3. Run `./k3d-jre` for the bundled runtime, or `./k3d-editor` for system Java.
+2. If you used a ZIP, make the launcher executable: `chmod +x octodraw-jre octodraw-editor`.
+3. Run `./octodraw-jre` for the bundled runtime, or `./octodraw-editor` for system Java.
 
 ### macOS (TAR.GZ recommended)
 
 1. Extract the `.tar.gz` distribution archive (preferred, preserves executable flags).
-2. If you used a ZIP, make the launcher executable: `chmod +x k3d-jre k3d-editor`.
-3. Run `./k3d-jre` for the bundled runtime, or `./k3d-editor` for system Java.
+2. If you used a ZIP, make the launcher executable: `chmod +x octodraw-jre octodraw-editor`.
+3. Run `./octodraw-jre` for the bundled runtime, or `./octodraw-editor` for system Java.
 
 ### Launch commands
 
@@ -38,7 +40,7 @@ update                                   Download and replace the editor jar
 help                                     Show help
 ```
 
-You can also pass a `.k3d` path directly (the launcher converts it into `--file`).
+You can also pass a `.octd` path directly (the launcher converts it into `--file`).
 
 ### Plugins location
 
@@ -47,9 +49,9 @@ You can also pass a `.k3d` path directly (the launcher converts it into `--file`
 
 ## Files and autosave
 
-- Default model file: `sketch3d.k3d` in the current working folder.
-- Open a specific file with: `--file /path/to/model.k3d`.
-- K3D autosaves whenever geometry or settings change.
+- Default model file: `octodraw.octd` in the current working folder.
+- Open a specific file with: `--file /path/to/model.octd`.
+- Octodraw autosaves whenever geometry or settings change.
 - Model files store: geometry, objects, camera, lighting, shadow settings, units, snap radius, and grid spacing.
 
 ## UI overview
@@ -114,7 +116,7 @@ Keyboard focus is panel-aware: typing in focused fields stays in UI controls, wh
 
 ## Snapping and guides
 
-K3D snaps to multiple inference targets for precision:
+Octodraw snaps to multiple inference targets for precision:
 
 - Grid intersections and grid lines.
 - Line endpoints and midpoints.
@@ -235,7 +237,7 @@ You can set shape/color globally as defaults (no hotspot selected) or per select
 ### Voxel
 
 - Places one voxel per click on ground/surface context.
-- If no voxel group is active, K3D auto-creates one and enters voxel edit mode.
+- If no voxel group is active, Octodraw auto-creates one and enters voxel edit mode.
 - New voxels use the voxel group color.
 - `Esc` exits to Select.
 - Input: left-click to place.
@@ -244,14 +246,14 @@ You can set shape/color globally as defaults (no hotspot selected) or per select
 
 - Fills a rectangular 3D volume of voxels from two opposite corners.
 - First click sets corner A, second click sets corner B and commits.
-- If no voxel group is active, K3D auto-creates one and enters voxel edit mode.
+- If no voxel group is active, Octodraw auto-creates one and enters voxel edit mode.
 - `Enter` clears the current draft; `Esc` exits to Select.
 - Input: left-click corner A, left-click corner B.
 
 ### Voxel Frame
 
 - Same two-corner workflow as Voxel Volume, but creates only boundary edge voxels of the box.
-- If no voxel group is active, K3D auto-creates one and enters voxel edit mode.
+- If no voxel group is active, Octodraw auto-creates one and enters voxel edit mode.
 - `Enter` clears the current draft; `Esc` exits to Select.
 - Input: left-click corner A, left-click corner B.
 
@@ -260,14 +262,14 @@ You can set shape/color globally as defaults (no hotspot selected) or per select
 - Adds architecture wall segments (thickness, height, inclination from Architecture Settings).
 - First click sets segment start, second click sets end and creates one wall segment.
 - Tool chains by default: each next click continues from the previous endpoint.
-- If no architecture group is active, K3D auto-creates one and enters architecture edit mode.
+- If no architecture group is active, Octodraw auto-creates one and enters architecture edit mode.
 - `Enter` finishes the current chain; `Esc` exits to Select.
 
 ### Slab
 
 - Creates a rectangular slab from two opposite corners.
 - Slab thickness comes from Architecture Settings.
-- If no architecture group is active, K3D auto-creates one and enters architecture edit mode.
+- If no architecture group is active, Octodraw auto-creates one and enters architecture edit mode.
 - `Enter` clears the current draft; `Esc` exits to Select.
 
 ### Stair
@@ -278,7 +280,7 @@ You can set shape/color globally as defaults (no hotspot selected) or per select
   3. walking line start,
   4. walking line end (commit).
 - Stair height, step count, and support thickness come from Architecture Settings.
-- If no architecture group is active, K3D auto-creates one and enters architecture edit mode.
+- If no architecture group is active, Octodraw auto-creates one and enters architecture edit mode.
 - `Enter` resets the current draft; `Esc` exits to Select.
 
 ### Add Hole
@@ -287,21 +289,21 @@ You can set shape/color globally as defaults (no hotspot selected) or per select
 - Hole selection/deletion workflow:
   - selecting and deleting a hole contour removes the hole definition from the wall;
   - deleting generic generated wall faces/edges is blocked to preserve parametric architecture integrity.
-- If no architecture group is active, K3D auto-creates one and enters architecture edit mode.
+- If no architecture group is active, Octodraw auto-creates one and enters architecture edit mode.
 - `Enter` clears the current draft; `Esc` exits to Select.
 
 ### Window Frame
 
 - Creates a rectangular window frame from two opposite corners.
 - Frame depth and width come from Architecture Settings.
-- If no architecture group is active, K3D auto-creates one and enters architecture edit mode.
+- If no architecture group is active, Octodraw auto-creates one and enters architecture edit mode.
 - `Enter` clears the current draft; `Esc` exits to Select.
 
 ### Door Frame
 
 - Creates a rectangular door frame from two opposite corners.
 - Frame depth and width come from Architecture Settings.
-- If no architecture group is active, K3D auto-creates one and enters architecture edit mode.
+- If no architecture group is active, Octodraw auto-creates one and enters architecture edit mode.
 - `Enter` clears the current draft; `Esc` exits to Select.
 
 ### Rectangle
@@ -507,7 +509,7 @@ You can set shape/color globally as defaults (no hotspot selected) or per select
 - **Hotspot**: start hotspot placement (click in viewport to place).
 - **Voxelize Faces**: convert selected mesh faces into voxels.
   - Works from any mesh context.
-  - If no voxel group is active, K3D creates one and enters it.
+  - If no voxel group is active, Octodraw creates one and enters it.
   - Generated voxels use the target voxel-group color.
 - **Lighting**: toggle the Lighting panel.
 - **Plugin Manager**: open the Plugin Manager panel.
@@ -587,10 +589,10 @@ Useful voxel commands:
 
 ## Built-in console (dev)
 
-K3D includes a persistent Groovy console for power users. Start it using the launcher command:
+Octodraw includes a persistent Groovy console for power users. Start it using the launcher command:
 
 ```
-edit --file path/to/model.k3d
+edit --file path/to/model.octd
 ```
 
 In the console:
@@ -621,7 +623,7 @@ Useful bindings:
 
 ## Plugins
 
-K3D loads Groovy plugins from the plugins folder at startup and via the Plugin Manager.
+Octodraw loads Groovy plugins from the plugins folder at startup and via the Plugin Manager.
 
 - Use the Plugin Manager to add, download, enable/disable, and reload plugins.
 - Plugin tools appear in the toolbar and command palette.

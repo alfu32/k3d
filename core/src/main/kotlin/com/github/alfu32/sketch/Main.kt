@@ -2602,21 +2602,23 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         return System.getProperty("user.dir") ?: "."
     }
 
-    private fun toK3dTargetFile(handle: FileHandle): File {
+    private fun toOctodrawTargetFile(handle: FileHandle): File {
         val file = handle.file()
-        return if (handle.extension().lowercase() == "k3d") {
+        val ext = handle.extension().lowercase()
+        return if (ext == "octd" || ext == "k3d") {
             file
         } else {
-            File(file.parentFile, "${file.name}.k3d")
+            File(file.parentFile, "${file.name}.octd")
         }
     }
 
     private fun showOpenModelDialog() {
         val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.OPEN)
-        chooser.getTitleLabel().setText("Open K3D Model")
+        chooser.getTitleLabel().setText("Open Octodraw Model")
         chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
         val filter = FileTypeFilter(true)
-        filter.addRule("K3D", "k3d")
+        filter.addRule("Octodraw (*.octd)", "octd")
+        filter.addRule("Legacy K3D (*.k3d)", "k3d")
         chooser.setFileTypeFilter(filter)
         chooser.setListener(object : FileChooserAdapter() {
             override fun selected(files: Array<FileHandle>?) {
@@ -2636,20 +2638,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun showSaveAsModelDialog() {
         val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.SAVE)
-        chooser.getTitleLabel().setText("Save K3D Model As")
+        chooser.getTitleLabel().setText("Save Octodraw Model As")
         chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
         if (::modelFile.isInitialized) {
             chooser.setDefaultFileName(modelFile.name)
         } else {
-            chooser.setDefaultFileName("sketch3d.k3d")
+            chooser.setDefaultFileName("octodraw.octd")
         }
         val filter = FileTypeFilter(true)
-        filter.addRule("K3D", "k3d")
+        filter.addRule("Octodraw (*.octd)", "octd")
+        filter.addRule("Legacy K3D (*.k3d)", "k3d")
         chooser.setFileTypeFilter(filter)
         chooser.setListener(object : FileChooserAdapter() {
             override fun selected(files: Array<FileHandle>?) {
                 if (files == null || files.size == 0) return
-                val target = toK3dTargetFile(files.first()).absoluteFile
+                val target = toOctodrawTargetFile(files.first()).absoluteFile
                 target.parentFile?.mkdirs()
                 modelFile = target
                 saveModel()
@@ -3159,7 +3162,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
         val terminal = consoleTerminal ?: return
         terminal.restore()
-        println("Entering shell. Type 'exit' to return to the K3D console.")
+        println("Entering shell. Type 'exit' to return to the Octodraw console.")
         val shell = System.getenv("SHELL") ?: "/bin/bash"
         try {
             ProcessBuilder(shell)
@@ -4387,7 +4390,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             i++
         }
         if (fileArg.isNullOrBlank()) {
-            fileArg = "sketch3d.k3d"
+            fileArg = "octodraw.octd"
         }
         return java.io.File(fileArg).absoluteFile
     }
@@ -4467,7 +4470,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             defaults().pad(6f).left().growX()
         }
         val message = com.kotcrab.vis.ui.widget.VisLabel(
-            "K3D on Android is currently optimized for an external mouse and keyboard.\n" +
+            "Octodraw on Android is currently optimized for an external mouse and keyboard.\n" +
                 "Touch-only use is limited.\n\n" +
                 "For the best experience use a tablet, Chromebook or DeX setup with mouse + keyboard.\n" +
                 "User plugins remain supported from the app plugins folder.\n\n" +

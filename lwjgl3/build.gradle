@@ -255,20 +255,20 @@ def createUnixLauncher = { File outFile ->
   outFile.text = """#!/bin/bash
 set -euo pipefail
 INSTALL_PATH="\$(cd "\$(dirname "\$0")" && pwd)"
-PLUGINS_DIR="\${K3D_PLUGINS_DIR:-}"
+PLUGINS_DIR="\${OCTODRAW_PLUGINS_DIR:-\${K3D_PLUGINS_DIR:-}}"
 if [[ -z "\$PLUGINS_DIR" ]]; then
   PLUGINS_DIR="\$INSTALL_PATH/plugins"
 fi
 if [[ -z "\${1-}" ]]; then
-  java -jar "\$INSTALL_PATH/k3d-editor.jar" edit --plugins-dir "\$PLUGINS_DIR"
+  java -jar "\$INSTALL_PATH/octodraw-editor.jar" edit --plugins-dir "\$PLUGINS_DIR"
   exit \$?
 fi
 case "\$1" in
   edit|version|update|help)
-    java -jar "\$INSTALL_PATH/k3d-editor.jar" "\$@" --plugins-dir "\$PLUGINS_DIR"
+    java -jar "\$INSTALL_PATH/octodraw-editor.jar" "\$@" --plugins-dir "\$PLUGINS_DIR"
     ;;
   *)
-    java -jar "\$INSTALL_PATH/k3d-editor.jar" edit --file "\$1" --plugins-dir "\$PLUGINS_DIR"
+    java -jar "\$INSTALL_PATH/octodraw-editor.jar" edit --file "\$1" --plugins-dir "\$PLUGINS_DIR"
     ;;
 esac
 """
@@ -283,20 +283,20 @@ JAVA_BIN="\$INSTALL_PATH/jre/bin/java"
 if [[ ! -x "\$JAVA_BIN" && -x "\$INSTALL_PATH/jre/Contents/Home/bin/java" ]]; then
   JAVA_BIN="\$INSTALL_PATH/jre/Contents/Home/bin/java"
 fi
-PLUGINS_DIR="\${K3D_PLUGINS_DIR:-}"
+PLUGINS_DIR="\${OCTODRAW_PLUGINS_DIR:-\${K3D_PLUGINS_DIR:-}}"
 if [[ -z "\$PLUGINS_DIR" ]]; then
   PLUGINS_DIR="\$INSTALL_PATH/plugins"
 fi
 if [[ -z "\${1-}" ]]; then
-  "\$JAVA_BIN" -jar "\$INSTALL_PATH/k3d-editor.jar" edit --plugins-dir "\$PLUGINS_DIR"
+  "\$JAVA_BIN" -jar "\$INSTALL_PATH/octodraw-editor.jar" edit --plugins-dir "\$PLUGINS_DIR"
   exit \$?
 fi
 case "\$1" in
   edit|version|update|help)
-    "\$JAVA_BIN" -jar "\$INSTALL_PATH/k3d-editor.jar" "\$@" --plugins-dir "\$PLUGINS_DIR"
+    "\$JAVA_BIN" -jar "\$INSTALL_PATH/octodraw-editor.jar" "\$@" --plugins-dir "\$PLUGINS_DIR"
     ;;
   *)
-    "\$JAVA_BIN" -jar "\$INSTALL_PATH/k3d-editor.jar" edit --file "\$1" --plugins-dir "\$PLUGINS_DIR"
+    "\$JAVA_BIN" -jar "\$INSTALL_PATH/octodraw-editor.jar" edit --file "\$1" --plugins-dir "\$PLUGINS_DIR"
     ;;
 esac
 """
@@ -309,8 +309,9 @@ setlocal
 set "APP_DIR=%~dp0"
 set "APP_DIR=%APP_DIR:~0,-1%"
 set "PLUGINS_DIR=%APP_DIR%\\plugins"
-if not "%K3D_PLUGINS_DIR%"=="" set "PLUGINS_DIR=%K3D_PLUGINS_DIR%"
-if "%K3D_PLUGINS_DIR%"=="" (
+if not "%OCTODRAW_PLUGINS_DIR%"=="" set "PLUGINS_DIR=%OCTODRAW_PLUGINS_DIR%"
+if "%OCTODRAW_PLUGINS_DIR%"=="" if not "%K3D_PLUGINS_DIR%"=="" set "PLUGINS_DIR=%K3D_PLUGINS_DIR%"
+if "%OCTODRAW_PLUGINS_DIR%%K3D_PLUGINS_DIR%"=="" (
   for /d %%D in ("%LOCALAPPDATA%\\Packages\\*k3d*") do (
     if exist "%%D\\LocalState" (
       set "PLUGINS_DIR=%%D\\LocalState\\plugins"
@@ -320,17 +321,17 @@ if "%K3D_PLUGINS_DIR%"=="" (
 )
 :plugins_done
 if "%~1"=="" (
-  java -jar "%APP_DIR%\\k3d-editor.jar" edit --plugins-dir "%PLUGINS_DIR%"
+  java -jar "%APP_DIR%\\octodraw-editor.jar" edit --plugins-dir "%PLUGINS_DIR%"
   exit /b %ERRORLEVEL%
 )
 if /I "%~1"=="edit" goto run
 if /I "%~1"=="version" goto run
 if /I "%~1"=="update" goto run
 if /I "%~1"=="help" goto run
-java -jar "%APP_DIR%\\k3d-editor.jar" edit --file "%~1" --plugins-dir "%PLUGINS_DIR%"
+java -jar "%APP_DIR%\\octodraw-editor.jar" edit --file "%~1" --plugins-dir "%PLUGINS_DIR%"
 exit /b %ERRORLEVEL%
 :run
-java -jar "%APP_DIR%\\k3d-editor.jar" %* --plugins-dir "%PLUGINS_DIR%"
+java -jar "%APP_DIR%\\octodraw-editor.jar" %* --plugins-dir "%PLUGINS_DIR%"
 exit /b %ERRORLEVEL%
 """
 }
@@ -347,8 +348,9 @@ if not exist "%JAVA_BIN%" (
   exit /b 1
 )
 set "PLUGINS_DIR=%APP_DIR%\\plugins"
-if not "%K3D_PLUGINS_DIR%"=="" set "PLUGINS_DIR=%K3D_PLUGINS_DIR%"
-if "%K3D_PLUGINS_DIR%"=="" (
+if not "%OCTODRAW_PLUGINS_DIR%"=="" set "PLUGINS_DIR=%OCTODRAW_PLUGINS_DIR%"
+if "%OCTODRAW_PLUGINS_DIR%"=="" if not "%K3D_PLUGINS_DIR%"=="" set "PLUGINS_DIR=%K3D_PLUGINS_DIR%"
+if "%OCTODRAW_PLUGINS_DIR%%K3D_PLUGINS_DIR%"=="" (
   for /d %%D in ("%LOCALAPPDATA%\\Packages\\*k3d*") do (
     if exist "%%D\\LocalState" (
       set "PLUGINS_DIR=%%D\\LocalState\\plugins"
@@ -358,17 +360,17 @@ if "%K3D_PLUGINS_DIR%"=="" (
 )
 :plugins_done
 if "%~1"=="" (
-  "%JAVA_BIN%" -jar "%APP_DIR%\\k3d-editor.jar" edit --plugins-dir "%PLUGINS_DIR%"
+  "%JAVA_BIN%" -jar "%APP_DIR%\\octodraw-editor.jar" edit --plugins-dir "%PLUGINS_DIR%"
   exit /b %ERRORLEVEL%
 )
 if /I "%~1"=="edit" goto run
 if /I "%~1"=="version" goto run
 if /I "%~1"=="update" goto run
 if /I "%~1"=="help" goto run
-"%JAVA_BIN%" -jar "%APP_DIR%\\k3d-editor.jar" edit --file "%~1" --plugins-dir "%PLUGINS_DIR%"
+"%JAVA_BIN%" -jar "%APP_DIR%\\octodraw-editor.jar" edit --file "%~1" --plugins-dir "%PLUGINS_DIR%"
 exit /b %ERRORLEVEL%
 :run
-"%JAVA_BIN%" -jar "%APP_DIR%\\k3d-editor.jar" %* --plugins-dir "%PLUGINS_DIR%"
+"%JAVA_BIN%" -jar "%APP_DIR%\\octodraw-editor.jar" %* --plugins-dir "%PLUGINS_DIR%"
 exit /b %ERRORLEVEL%
 """
 }
@@ -380,14 +382,14 @@ setlocal
 set "APP_DIR=%~dp0"
 set "APP_DIR=%APP_DIR:~0,-1%"
 
-echo Registering K3D path: %APP_DIR%
+echo Registering Octodraw path: %APP_DIR%
 setx PATH "%PATH%;%APP_DIR%" >nul
 
-echo Registering .k3d file association...
-reg add "HKCU\\Software\\Classes\\.k3d" /ve /d "K3DFile" /f >nul
-reg add "HKCU\\Software\\Classes\\K3DFile" /ve /d "K3D File" /f >nul
-reg add "HKCU\\Software\\Classes\\K3DFile\\DefaultIcon" /ve /d "%APP_DIR%\\appicon.png" /f >nul
-reg add "HKCU\\Software\\Classes\\K3DFile\\shell\\open\\command" /ve /d "\\"%APP_DIR%\\k3d.cmd\\" \\"%%1\\"" /f >nul
+echo Registering .octd file association...
+reg add "HKCU\\Software\\Classes\\.octd" /ve /d "OctodrawFile" /f >nul
+reg add "HKCU\\Software\\Classes\\OctodrawFile" /ve /d "Octodraw File" /f >nul
+reg add "HKCU\\Software\\Classes\\OctodrawFile\\DefaultIcon" /ve /d "%APP_DIR%\\appicon.png" /f >nul
+reg add "HKCU\\Software\\Classes\\OctodrawFile\\shell\\open\\command" /ve /d "\\"%APP_DIR%\\octodraw.cmd\\" \\"%%1\\"" /f >nul
 
 echo Done. You may need to restart your shell for PATH changes to apply.
 pause
@@ -410,36 +412,36 @@ tasks.register("fetchJdkMacArm64") {
 }
 
 tasks.register("generateUnixLauncher") {
-  outputs.file file("$launcherDir/k3d-editor")
+  outputs.file file("$launcherDir/octodraw-editor")
   doLast {
-    def outFile = file("$launcherDir/k3d-editor")
+    def outFile = file("$launcherDir/octodraw-editor")
     createUnixLauncher(outFile)
     outFile.setExecutable(true, false)
   }
 }
 
 tasks.register("generateUnixJreLauncher") {
-  outputs.file file("$launcherDir/k3d-jre")
+  outputs.file file("$launcherDir/octodraw-jre")
   doLast {
-    def outFile = file("$launcherDir/k3d-jre")
+    def outFile = file("$launcherDir/octodraw-jre")
     createUnixJreLauncher(outFile)
     outFile.setExecutable(true, false)
   }
 }
 
 tasks.register("generateWindowsLauncher") {
-  outputs.file file("$launcherDir/k3d.cmd")
-  doLast { createWindowsLauncher(file("$launcherDir/k3d.cmd")) }
+  outputs.file file("$launcherDir/octodraw.cmd")
+  doLast { createWindowsLauncher(file("$launcherDir/octodraw.cmd")) }
 }
 
 tasks.register("generateWindowsJreLauncher") {
-  outputs.file file("$launcherDir/k3d-jre.cmd")
-  doLast { createWindowsJreLauncher(file("$launcherDir/k3d-jre.cmd")) }
+  outputs.file file("$launcherDir/octodraw-jre.cmd")
+  doLast { createWindowsJreLauncher(file("$launcherDir/octodraw-jre.cmd")) }
 }
 
 tasks.register("generateWindowsInstall") {
-  outputs.file file("$launcherDir/k3d.install.cmd")
-  doLast { createWindowsInstall(file("$launcherDir/k3d.install.cmd")) }
+  outputs.file file("$launcherDir/octodraw.install.cmd")
+  doLast { createWindowsInstall(file("$launcherDir/octodraw.install.cmd")) }
 }
 
 def configureBundleTask = { String name, String osLabel, TaskProvider jdkTask, File jdkCache, boolean includeUnixLauncher, boolean includeWindowsScripts ->
@@ -447,10 +449,10 @@ def configureBundleTask = { String name, String osLabel, TaskProvider jdkTask, F
     dependsOn "jar", jdkTask, ":core:pluginApiJar", "generateUnixLauncher", "generateUnixJreLauncher",
       "generateWindowsLauncher", "generateWindowsJreLauncher", "generateWindowsInstall"
     destinationDirectory.set(rootProject.file("dist"))
-    archiveFileName.set("k3d-dist-${bundleVersion}-${osLabel}.zip")
+    archiveFileName.set("octodraw-dist-${bundleVersion}-${osLabel}.zip")
     def stagingDir = file("$buildDir/bundle/${name}")
     from(tasks.named("jar").flatMap { it.archiveFile }) {
-      rename { "k3d-editor.jar" }
+      rename { "octodraw-editor.jar" }
     }
     from(rootProject.file("LICENSE.md"))
     from(rootProject.file("README.md"))
@@ -470,13 +472,13 @@ def configureBundleTask = { String name, String osLabel, TaskProvider jdkTask, F
       exclude("*.zip", "*.tar.gz", "*.tar")
     }
     if (includeUnixLauncher) {
-      from(file("$launcherDir/k3d-editor"))
-      from(file("$launcherDir/k3d-jre"))
+      from(file("$launcherDir/octodraw-editor"))
+      from(file("$launcherDir/octodraw-jre"))
     }
     if (includeWindowsScripts) {
-      from(file("$launcherDir/k3d.cmd"))
-      from(file("$launcherDir/k3d-jre.cmd"))
-      from(file("$launcherDir/k3d.install.cmd"))
+      from(file("$launcherDir/octodraw.cmd"))
+      from(file("$launcherDir/octodraw-jre.cmd"))
+      from(file("$launcherDir/octodraw.install.cmd"))
     }
   }
 }
@@ -485,10 +487,10 @@ def configureBundleTarTask = { String name, String osLabel, TaskProvider jdkTask
   tasks.register(name, Tar) {
     dependsOn "jar", jdkTask, ":core:pluginApiJar", "generateUnixLauncher", "generateUnixJreLauncher"
     destinationDirectory.set(rootProject.file("dist"))
-    archiveFileName.set("k3d-dist-${bundleVersion}-${osLabel}.tar.gz")
+    archiveFileName.set("octodraw-dist-${bundleVersion}-${osLabel}.tar.gz")
     compression = Compression.GZIP
     from(tasks.named("jar").flatMap { it.archiveFile }) {
-      rename { "k3d-editor.jar" }
+      rename { "octodraw-editor.jar" }
     }
     from(rootProject.file("LICENSE.md"))
     from(rootProject.file("README.md"))
@@ -508,8 +510,8 @@ def configureBundleTarTask = { String name, String osLabel, TaskProvider jdkTask
       exclude("*.zip", "*.tar.gz", "*.tar")
     }
     if (includeUnixLauncher) {
-      from(file("$launcherDir/k3d-editor"))
-      from(file("$launcherDir/k3d-jre"))
+      from(file("$launcherDir/octodraw-editor"))
+      from(file("$launcherDir/octodraw-jre"))
     }
   }
 }
@@ -518,10 +520,10 @@ def configureBundleDirTask = { String name, String osLabel, TaskProvider jdkTask
   tasks.register(name, Sync) {
     dependsOn "jar", jdkTask, ":core:pluginApiJar", "generateUnixLauncher", "generateUnixJreLauncher",
       "generateWindowsLauncher", "generateWindowsJreLauncher", "generateWindowsInstall"
-    def targetDir = rootProject.file("dist/k3d-dist-${bundleVersion}-${osLabel}")
+    def targetDir = rootProject.file("dist/octodraw-dist-${bundleVersion}-${osLabel}")
     into(targetDir)
     from(tasks.named("jar").flatMap { it.archiveFile }) {
-      rename { "k3d-editor.jar" }
+      rename { "octodraw-editor.jar" }
     }
     from(rootProject.file("LICENSE.md"))
     from(rootProject.file("README.md"))
@@ -541,18 +543,18 @@ def configureBundleDirTask = { String name, String osLabel, TaskProvider jdkTask
       exclude("*.zip", "*.tar.gz", "*.tar")
     }
     if (includeUnixLauncher) {
-      from(file("$launcherDir/k3d-editor"))
-      from(file("$launcherDir/k3d-jre"))
+      from(file("$launcherDir/octodraw-editor"))
+      from(file("$launcherDir/octodraw-jre"))
     }
     if (includeWindowsScripts) {
-      from(file("$launcherDir/k3d.cmd"))
-      from(file("$launcherDir/k3d-jre.cmd"))
-      from(file("$launcherDir/k3d.install.cmd"))
+      from(file("$launcherDir/octodraw.cmd"))
+      from(file("$launcherDir/octodraw-jre.cmd"))
+      from(file("$launcherDir/octodraw.install.cmd"))
     }
     doLast {
       if (includeUnixLauncher) {
-        def editor = new File(destinationDir, "k3d-editor")
-        def jre = new File(destinationDir, "k3d-jre")
+        def editor = new File(destinationDir, "octodraw-editor")
+        def jre = new File(destinationDir, "octodraw-jre")
         if (editor.exists()) editor.setExecutable(true, false)
         if (jre.exists()) jre.setExecutable(true, false)
       }

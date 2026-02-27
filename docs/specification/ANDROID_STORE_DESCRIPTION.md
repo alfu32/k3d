@@ -1,16 +1,16 @@
-# K3D Android Store Description (Play / F-Droid)
+# Octodraw Android Store Description (Play / F-Droid)
 
 ## Short warning (recommended)
 
-K3D on Android is currently optimized for external mouse + keyboard. Touch-only use is limited.
+Octodraw on Android is currently optimized for external mouse + keyboard. Touch-only use is limited.
 
 ## Short description
 
-K3D is a direct 3D sketch/modeling tool focused on edges, planar faces, snapping, and tool-driven workflows. It includes reusable objects, hotspot-based visual programming, lighting controls, and a plugin system.
+Octodraw is a direct 3D sketch/modeling tool focused on edges, planar faces, snapping, and tool-driven workflows. It includes reusable objects, hotspot-based visual programming, lighting controls, and a plugin system.
 
 ## Full description (Play / F-Droid)
 
-K3D brings the K3D modeling workflow to Android.
+Octodraw brings the Octodraw modeling workflow to Android.
 
 It is a precision-oriented modeling tool designed around:
 
@@ -22,11 +22,11 @@ It is a precision-oriented modeling tool designed around:
 
 Important input note:
 
-K3D on Android is currently optimized for an external mouse and keyboard. Touch-only use is limited (hover, right-click drag, wheel, modifier keys, and precise picking are reduced). For the best experience, use a tablet/Chromebook/DeX setup with mouse + keyboard.
+Octodraw on Android is currently optimized for an external mouse and keyboard. Touch-only use is limited (hover, right-click drag, wheel, modifier keys, and precise picking are reduced). For the best experience, use a tablet/Chromebook/DeX setup with mouse + keyboard.
 
 Plugin workflow on Android:
 
-- K3D still uses a `plugins` folder in the app-accessible files directory.
+- Octodraw still uses a `plugins` folder in the app-accessible files directory.
 - User plugins can be installed there without changing the desktop plugin workflow concept.
 
 ## Suggested store bullet points

@@ -31,7 +31,7 @@ dependencies {
 
 tasks.register('pluginApiJar', Jar) {
   dependsOn classes
-  archiveBaseName.set('k3d-plugin-api')
+  archiveBaseName.set('octodraw-plugin-api')
   from sourceSets.main.output
 }
 
