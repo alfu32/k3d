@@ -4,6 +4,24 @@ configurations {
   natives
 }
 
+def releaseVersionName = (project.findProperty("releaseNumber")
+  ?: rootProject.ext.projectVersion
+  ?: "0.0.0").toString()
+
+def releaseVersionCode = ((project.findProperty("androidVersionCode")
+  ?: System.getenv("ANDROID_VERSION_CODE")
+  ?: "1").toString()).toInteger()
+
+def releaseStoreFile = (project.findProperty("ANDROID_UPLOAD_STORE_FILE")
+  ?: System.getenv("ANDROID_UPLOAD_STORE_FILE"))?.toString()
+def releaseStorePassword = (project.findProperty("ANDROID_UPLOAD_STORE_PASSWORD")
+  ?: System.getenv("ANDROID_UPLOAD_STORE_PASSWORD"))?.toString()
+def releaseKeyAlias = (project.findProperty("ANDROID_UPLOAD_KEY_ALIAS")
+  ?: System.getenv("ANDROID_UPLOAD_KEY_ALIAS"))?.toString()
+def releaseKeyPassword = (project.findProperty("ANDROID_UPLOAD_KEY_PASSWORD")
+  ?: System.getenv("ANDROID_UPLOAD_KEY_PASSWORD"))?.toString()
+def hasReleaseSigning = releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+
 android {
   namespace = "com.github.alfu32.sketch.android"
   compileSdk = 36
@@ -12,9 +30,20 @@ android {
     applicationId "com.github.alfu32.sketch"
     minSdk = 26
     targetSdk = 34
-    versionCode 1
-    versionName rootProject.ext.projectVersion.toString()
+    versionCode releaseVersionCode
+    versionName releaseVersionName
     multiDexEnabled true
+  }
+
+  signingConfigs {
+    release {
+      if (hasReleaseSigning) {
+        storeFile file(releaseStoreFile)
+        storePassword releaseStorePassword
+        keyAlias releaseKeyAlias
+        keyPassword releaseKeyPassword
+      }
+    }
   }
 
   buildTypes {
@@ -23,6 +52,9 @@ android {
     }
     release {
       minifyEnabled false
+      if (hasReleaseSigning) {
+        signingConfig signingConfigs.release
+      }
       proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
     }
   }
@@ -102,20 +134,42 @@ registerRenamedApkTask(
   "bundleAndroidApk",
   "assembleRelease",
   "release",
-  "octodraw-${rootProject.ext.projectVersion}.apk"
+  "octodraw-${releaseVersionName}.apk"
 )
 
 registerRenamedApkTask(
   "bundleAndroidDebugApk",
   "assembleDebug",
   "debug",
-  "octodraw-${rootProject.ext.projectVersion}-debug.apk"
+  "octodraw-${releaseVersionName}-debug.apk"
 )
 
 tasks.register("bundleAndroidLocalTestApk") {
   group = "distribution"
   description = "Builds a locally signed debug APK for device testing and copies it to dist/."
   dependsOn "bundleAndroidDebugApk"
+}
+
+tasks.register("bundleAndroidAab", Copy) {
+  dependsOn "bundleRelease"
+  from(layout.buildDirectory.dir("outputs/bundle/release"))
+  include("*.aab")
+  rename { "octodraw-${releaseVersionName}.aab" }
+  into(rootProject.layout.projectDirectory.dir("dist"))
+}
+
+gradle.taskGraph.whenReady { graph ->
+  def needsReleaseSigning = graph.hasTask(":android:bundleRelease") ||
+    graph.hasTask(":android:assembleRelease") ||
+    graph.hasTask(":android:bundleAndroidApk") ||
+    graph.hasTask(":android:bundleAndroidAab")
+  if (needsReleaseSigning && !hasReleaseSigning) {
+    throw new GradleException(
+      "Release signing is not configured. Set ANDROID_UPLOAD_STORE_FILE, " +
+        "ANDROID_UPLOAD_STORE_PASSWORD, ANDROID_UPLOAD_KEY_ALIAS, ANDROID_UPLOAD_KEY_PASSWORD " +
+        "in ~/.gradle/gradle.properties or environment variables."
+    )
+  }
 }
 
 dependencies {

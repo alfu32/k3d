@@ -149,6 +149,8 @@ import kotlin.math.floor
 
 /** [com.badlogic.gdx.ApplicationListener] implementation shared by all platforms. */
 class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : ApplicationAdapter() {
+    private data class FeedbackWorldLine(val start: Vector3, val end: Vector3)
+
     private data class EntityDisplayState(
         var draw: Boolean = true,
         var unlocked: Boolean = true,
@@ -209,6 +211,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private val selectedFaceColor = Color(1f, 0f, 0f, 0.3f)
     private val selectedLineColor = Color(1f, 0f, 0f, 1f)
     private val selectedLineOverlayPointColor = Color(0.12f, 0.32f, 0.95f, 0.95f)
+    private val feedbackOverlayLineColor = Color(0.06f, 0.12f, 0.24f, 0.95f)
     private val architectureHoleGuideColor = Color(0.2f, 0.55f, 0.95f, 1f)
     private val architectureHoleHotspotColor = Color(0.2f, 0.55f, 0.95f, 1f)
     private val architectureSlabHotspotColor = Color(0.2f, 0.9f, 0.85f, 1f)
@@ -258,6 +261,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private val shadowBoundsCenterTmp = Vector3()
     private val shadowBoundsDimensionsTmp = Vector3()
     private var instanceGeometryDirty = true
+    private val capturedFeedbackLines = mutableListOf<FeedbackWorldLine>()
     private var faceMeshDirty = true
     private var faceMeshVisualStamp = Long.MIN_VALUE
     private var shadowPassDirty = true
@@ -2220,6 +2224,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         drainAsyncModelSaveStatus()
         pluginHost.dispatchUpdate(Gdx.graphics.deltaTime)
         toolController.update(Gdx.graphics.deltaTime)
+        collectFeedbackWorldLines()
         var rebuiltInstancesThisFrame = false
         if (instanceGeometryDirty) {
             scene.recomputeAllInstanceGeometryFromPrototypes()
@@ -2279,8 +2284,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         drawHvacControlPoints()
         drawDimensions()
         toolController.render(shapeRenderer)
-        drawActiveToolMeasurementLine()
-        drawPluginLines()
         shapeRenderer.end()
 
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
@@ -2321,6 +2324,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             shapeRenderer.end()
             Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
         }
+
+        drawFeedbackLines2DOverlay()
 
         Gdx.gl.glDisable(GL20.GL_CULL_FACE)
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
@@ -4240,6 +4245,69 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
         shapeRenderer.color = measurement.lineColor
         shapeRenderer.line(start, end)
+    }
+
+    private fun collectFeedbackWorldLines() {
+        capturedFeedbackLines.clear()
+
+        val measurement = toolController.activeTool().measurement(statusModel)
+        if (measurement != null && measurement.startWorld.dst2(measurement.endWorld) > 1e-8f) {
+            capturedFeedbackLines += FeedbackWorldLine(
+                Vector3(measurement.startWorld),
+                Vector3(measurement.endWorld)
+            )
+        }
+
+        if (::pluginHost.isInitialized) {
+            pluginHost.collectDrawLines().forEach { line ->
+                capturedFeedbackLines += FeedbackWorldLine(Vector3(line.start), Vector3(line.end))
+            }
+        }
+
+        if (scene.hasArchitectureElements()) {
+            val selectedWallIds = scene.selectedArchitectureElements(scene.root)
+                .filter { it.kind == ArchitectureStore.ElementKind.WALL }
+                .map { it.id }
+                .toSet()
+            val selectedSlabIds = scene.selectedArchitectureElements(scene.root)
+                .filter { it.kind == ArchitectureStore.ElementKind.SLAB }
+                .map { it.id }
+                .toSet()
+            selectedWallIds.forEach { wallId ->
+                scene.architectureHoleGuideSegmentsWorld(scene.root, includeDiagonals = true, wallId = wallId)
+                    .forEach { (a, b) -> capturedFeedbackLines += FeedbackWorldLine(Vector3(a), Vector3(b)) }
+            }
+            selectedSlabIds.forEach { slabId ->
+                scene.architectureSlabHoleGuideSegmentsWorld(scene.root, includeDiagonals = true, slabId = slabId)
+                    .forEach { (a, b) -> capturedFeedbackLines += FeedbackWorldLine(Vector3(a), Vector3(b)) }
+            }
+        }
+    }
+
+    private fun drawFeedbackLines2DOverlay() {
+        if (capturedFeedbackLines.isEmpty()) {
+            return
+        }
+        Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
+        Gdx.gl.glEnable(GL20.GL_BLEND)
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
+        shapeRenderer.projectionMatrix = uiOverlay.stage.camera.combined
+        shapeRenderer.transformMatrix = Matrix4().idt()
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
+        shapeRenderer.color = feedbackOverlayLineColor
+        capturedFeedbackLines.forEach { seg ->
+            val a = activeCamera.project(Vector3(seg.start))
+            val b = activeCamera.project(Vector3(seg.end))
+            if (!a.z.isFinite() || !b.z.isFinite()) {
+                return@forEach
+            }
+            if (a.z < 0f || a.z > 1f || b.z < 0f || b.z > 1f) {
+                return@forEach
+            }
+            shapeRenderer.rectLine(a.x, a.y, b.x, b.y, 3f)
+        }
+        shapeRenderer.end()
+        Gdx.gl.glDisable(GL20.GL_BLEND)
     }
 
     private fun drawActiveToolMeasurementLabels() {
