@@ -1,23 +1,104 @@
 package com.github.alfu32.sketch.android
 
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.view.KeyEvent
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
 import com.badlogic.gdx.backends.android.AndroidApplication
 import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
+import com.github.alfu32.sketch.AndroidSaf
+import com.github.alfu32.sketch.AndroidSafBridge
 import com.github.alfu32.sketch.InputModifiers
 import com.github.alfu32.sketch.Main
 import java.io.File
 
 class AndroidLauncher : AndroidApplication() {
+    private companion object {
+        const val REQUEST_OPEN_DOCUMENT = 48011
+        const val REQUEST_CREATE_DOCUMENT = 48012
+    }
+
+    private var openDocumentCallback: ((String?, String?) -> Unit)? = null
+    private var createDocumentCallback: ((String?, String?) -> Unit)? = null
+
     private fun updateAndroidCtrlMetaState(event: KeyEvent) {
         val ctrlMeta = (event.metaState and KeyEvent.META_CTRL_ON) != 0
         InputModifiers.androidCtrlMetaActive = event.isCtrlPressed || ctrlMeta
     }
 
+    private fun dispatchDocumentResult(callback: ((String?, String?) -> Unit)?, uri: Uri?) {
+        val cb = callback ?: return
+        val value = uri?.toString()
+        val name = uri?.let { queryDisplayName(it) }
+        val runner = Runnable { cb(value, name) }
+        if (Gdx.app == null) {
+            runner.run()
+        } else {
+            Gdx.app.postRunnable(runner)
+        }
+    }
+
+    private fun queryDisplayName(uri: Uri): String? {
+        return try {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0 && cursor.moveToFirst()) cursor.getString(idx) else null
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun installSafBridge() {
+        AndroidSaf.bridge = object : AndroidSafBridge {
+            override fun openDocument(onResult: (uri: String?, displayName: String?) -> Unit) {
+                openDocumentCallback = onResult
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/octet-stream", "application/json", "text/plain"))
+                }
+                startActivityForResult(intent, REQUEST_OPEN_DOCUMENT)
+            }
+
+            override fun createDocument(defaultName: String, onResult: (uri: String?, displayName: String?) -> Unit) {
+                createDocumentCallback = onResult
+                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/octet-stream"
+                    putExtra(Intent.EXTRA_TITLE, defaultName)
+                }
+                startActivityForResult(intent, REQUEST_CREATE_DOCUMENT)
+            }
+
+            override fun readBytes(uri: String): ByteArray? {
+                return try {
+                    contentResolver.openInputStream(Uri.parse(uri))?.use { it.readBytes() }
+                } catch (_: Throwable) {
+                    null
+                }
+            }
+
+            override fun writeBytes(uri: String, data: ByteArray): Boolean {
+                return try {
+                    contentResolver.openOutputStream(Uri.parse(uri), "wt")?.use { out ->
+                        out.write(data)
+                        out.flush()
+                    } != null
+                } catch (_: Throwable) {
+                    false
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installSafBridge()
 
         val cfg = AndroidApplicationConfiguration().apply {
             useImmersiveMode = true
@@ -47,6 +128,49 @@ class AndroidLauncher : AndroidApplication() {
         Gdx.input.setCatchKey(Input.Keys.CONTROL_RIGHT, true)
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        when (requestCode) {
+            REQUEST_OPEN_DOCUMENT -> {
+                val cb = openDocumentCallback
+                openDocumentCallback = null
+                val uri = if (resultCode == Activity.RESULT_OK) data?.data else null
+                if (uri != null) {
+                    val flags = data?.flags ?: 0
+                    val persistableFlags =
+                        flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                    if (persistableFlags != 0) {
+                        try {
+                            contentResolver.takePersistableUriPermission(uri, persistableFlags)
+                        } catch (_: SecurityException) {
+                            // ignore, provider may not grant persistable permissions
+                        }
+                    }
+                }
+                dispatchDocumentResult(cb, uri)
+            }
+
+            REQUEST_CREATE_DOCUMENT -> {
+                val cb = createDocumentCallback
+                createDocumentCallback = null
+                val uri = if (resultCode == Activity.RESULT_OK) data?.data else null
+                if (uri != null) {
+                    val flags = data?.flags ?: 0
+                    val persistableFlags =
+                        flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                    if (persistableFlags != 0) {
+                        try {
+                            contentResolver.takePersistableUriPermission(uri, persistableFlags)
+                        } catch (_: SecurityException) {
+                            // ignore, provider may not grant persistable permissions
+                        }
+                    }
+                }
+                dispatchDocumentResult(cb, uri)
+            }
+        }
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         updateAndroidCtrlMetaState(event)
         if (event.keyCode == KeyEvent.KEYCODE_CTRL_LEFT || event.keyCode == KeyEvent.KEYCODE_CTRL_RIGHT) {
@@ -62,5 +186,12 @@ class AndroidLauncher : AndroidApplication() {
     override fun dispatchKeyShortcutEvent(event: KeyEvent): Boolean {
         updateAndroidCtrlMetaState(event)
         return super.dispatchKeyShortcutEvent(event)
+    }
+
+    override fun onDestroy() {
+        if (AndroidSaf.bridge != null) {
+            AndroidSaf.bridge = null
+        }
+        super.onDestroy()
     }
 }

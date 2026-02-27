@@ -2614,7 +2614,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun showOpenModelDialog() {
         if (isAndroidRuntime()) {
-            showAndroidOpenModelDialog()
+            if (!showAndroidSafOpenModelDialog()) {
+                showAndroidOpenModelDialog()
+            }
             return
         }
         val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.OPEN)
@@ -2642,7 +2644,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun showSaveAsModelDialog() {
         if (isAndroidRuntime()) {
-            showAndroidSaveAsModelDialog()
+            if (!showAndroidSafSaveAsModelDialog()) {
+                showAndroidSaveAsModelDialog()
+            }
             return
         }
         val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.SAVE)
@@ -2669,6 +2673,88 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             }
         })
         showFileChooser(chooser)
+    }
+
+    private fun sanitizeModelFileName(raw: String): String {
+        val cleaned = raw.trim().replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "octodraw.octd" }
+        val ext = cleaned.substringAfterLast('.', "").lowercase()
+        return if (ext == "octd" || ext == "k3d") cleaned else "$cleaned.octd"
+    }
+
+    private fun showAndroidSafOpenModelDialog(): Boolean {
+        val bridge = AndroidSaf.bridge ?: return false
+        bridge.openDocument { uri, displayName ->
+            if (uri.isNullOrBlank()) {
+                statusModel.message = "Open cancelled."
+                return@openDocument
+            }
+            val data = bridge.readBytes(uri)
+            if (data == null || data.isEmpty()) {
+                statusModel.message = "Open failed: cannot read selected file."
+                return@openDocument
+            }
+            val fileName = sanitizeModelFileName(displayName ?: "octodraw.octd")
+            val localTarget = File(androidModelRootDirectory(), fileName).absoluteFile
+            try {
+                localTarget.parentFile?.mkdirs()
+                localTarget.writeBytes(data)
+            } catch (t: Throwable) {
+                statusModel.message = "Open failed: ${t.message ?: t.javaClass.simpleName}"
+                return@openDocument
+            }
+            if (::scene.isInitialized && ::camera.isInitialized && ::modelFile.isInitialized) {
+                saveModel()
+            }
+            modelFile = localTarget
+            loadModel()
+            updateWindowTitle()
+            statusModel.message = "Opened ${displayName ?: localTarget.name}"
+        }
+        return true
+    }
+
+    private fun showAndroidSafSaveAsModelDialog(): Boolean {
+        val bridge = AndroidSaf.bridge ?: return false
+        val suggestedName = sanitizeModelFileName(
+            if (::modelFile.isInitialized) modelFile.name else "octodraw.octd"
+        )
+        bridge.createDocument(suggestedName) { uri, displayName ->
+            if (uri.isNullOrBlank()) {
+                statusModel.message = "Save As cancelled."
+                return@createDocument
+            }
+            val bytes = try {
+                val temp = File.createTempFile("octodraw-save-", ".octd", androidModelRootDirectory())
+                try {
+                    ModelPersistence.saveSnapshot(temp, snapshotForPersistence(includeUndoHistory = true))
+                    temp.readBytes()
+                } finally {
+                    temp.delete()
+                }
+            } catch (t: Throwable) {
+                statusModel.message = "Save As failed: ${t.message ?: t.javaClass.simpleName}"
+                return@createDocument
+            }
+            if (!bridge.writeBytes(uri, bytes)) {
+                statusModel.message = "Save As failed: cannot write selected destination."
+                return@createDocument
+            }
+            val localName = sanitizeModelFileName(displayName ?: suggestedName)
+            val localTarget = File(androidModelRootDirectory(), localName).absoluteFile
+            try {
+                localTarget.parentFile?.mkdirs()
+                localTarget.writeBytes(bytes)
+            } catch (_: Throwable) {
+                // local mirror is best-effort; destination write already succeeded
+            }
+            modelFile = localTarget
+            updateWindowTitle()
+            if (::pluginHost.isInitialized) {
+                pluginHost.dispatchSave()
+            }
+            statusModel.message = "Saved ${displayName ?: localTarget.name}"
+        }
+        return true
     }
 
     private fun androidModelRootDirectory(): File {
