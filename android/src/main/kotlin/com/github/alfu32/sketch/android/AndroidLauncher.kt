@@ -11,6 +11,11 @@ import com.github.alfu32.sketch.Main
 import java.io.File
 
 class AndroidLauncher : AndroidApplication() {
+    private fun updateAndroidCtrlMetaState(event: KeyEvent) {
+        val ctrlMeta = (event.metaState and KeyEvent.META_CTRL_ON) != 0
+        InputModifiers.androidCtrlMetaActive = event.isCtrlPressed || ctrlMeta
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -38,15 +43,24 @@ class AndroidLauncher : AndroidApplication() {
         initialize(Main(args), cfg)
         Gdx.input.setCatchKey(Input.Keys.BACK, true)
         Gdx.input.setCatchKey(Input.Keys.ESCAPE, true)
+        Gdx.input.setCatchKey(Input.Keys.CONTROL_LEFT, true)
+        Gdx.input.setCatchKey(Input.Keys.CONTROL_RIGHT, true)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        InputModifiers.androidCtrlMetaActive = event.isCtrlPressed
+        updateAndroidCtrlMetaState(event)
+        if (event.keyCode == KeyEvent.KEYCODE_CTRL_LEFT || event.keyCode == KeyEvent.KEYCODE_CTRL_RIGHT) {
+            if (event.action == KeyEvent.ACTION_UP) {
+                InputModifiers.androidCtrlMetaActive = false
+            }
+            // Consume bare CTRL key events to prevent OEM keyboard overlays from stealing focus.
+            return true
+        }
         return super.dispatchKeyEvent(event)
     }
 
     override fun dispatchKeyShortcutEvent(event: KeyEvent): Boolean {
-        InputModifiers.androidCtrlMetaActive = event.isCtrlPressed
+        updateAndroidCtrlMetaState(event)
         return super.dispatchKeyShortcutEvent(event)
     }
 }

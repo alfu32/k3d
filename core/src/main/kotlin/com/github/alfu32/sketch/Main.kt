@@ -2613,6 +2613,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun showOpenModelDialog() {
+        if (isAndroidRuntime()) {
+            showAndroidOpenModelDialog()
+            return
+        }
         val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.OPEN)
         chooser.getTitleLabel().setText("Open Octodraw Model")
         chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
@@ -2637,6 +2641,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun showSaveAsModelDialog() {
+        if (isAndroidRuntime()) {
+            showAndroidSaveAsModelDialog()
+            return
+        }
         val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.SAVE)
         chooser.getTitleLabel().setText("Save Octodraw Model As")
         chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
@@ -2661,6 +2669,332 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             }
         })
         showFileChooser(chooser)
+    }
+
+    private fun androidModelRootDirectory(): File {
+        val currentParent = if (::modelFile.isInitialized) modelFile.parentFile else null
+        if (currentParent != null && currentParent.exists()) {
+            return currentParent.absoluteFile
+        }
+        if (::installDir.isInitialized && installDir.exists()) {
+            return installDir.absoluteFile
+        }
+        return try {
+            Gdx.files.local("").file().absoluteFile
+        } catch (_: Throwable) {
+            File(".").absoluteFile
+        }
+    }
+
+    private fun isWithinDirectory(base: File, candidate: File): Boolean {
+        return try {
+            val basePath = base.canonicalFile.toPath()
+            val candidatePath = candidate.canonicalFile.toPath()
+            candidatePath.startsWith(basePath)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun showAndroidOpenModelDialog() {
+        val stage = uiOverlay.stage
+        val rootDir = androidModelRootDirectory()
+        var currentDir = rootDir
+        val entries = mutableListOf<File>()
+
+        val dialog = com.kotcrab.vis.ui.widget.VisWindow("Open Octodraw Model", true).apply {
+            isModal = true
+            isMovable = true
+            isResizable = true
+            setResizeBorder(14)
+            setKeepWithinParent(true)
+            setSize(560f, 460f)
+        }
+        val pathLabel = com.kotcrab.vis.ui.widget.VisLabel("")
+        pathLabel.setWrap(true)
+        val list = com.kotcrab.vis.ui.widget.VisList<String>()
+        val statusLabel = com.kotcrab.vis.ui.widget.VisLabel("")
+        val nameLabel = com.kotcrab.vis.ui.widget.VisLabel("App storage model files (.octd/.k3d)")
+
+        fun refreshListing() {
+            if (!currentDir.exists()) {
+                currentDir.mkdirs()
+            }
+            pathLabel.setText(currentDir.absolutePath)
+            entries.clear()
+            val listed = currentDir.listFiles()?.toList().orEmpty()
+                .sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() }))
+            listed.forEach { file ->
+                val ext = file.extension.lowercase()
+                if (file.isDirectory || ext == "octd" || ext == "k3d") {
+                    entries += file
+                }
+            }
+            val names = entries.map { file ->
+                if (file.isDirectory) "[${file.name}]" else file.name
+            }
+            if (names.isEmpty()) {
+                list.setItems("(No files)")
+                list.selectedIndex = 0
+            } else {
+                list.setItems(*names.toTypedArray())
+                list.selectedIndex = 0
+            }
+            statusLabel.setText("")
+        }
+
+        fun selectedEntry(): File? {
+            if (entries.isEmpty()) return null
+            val index = list.selectedIndex
+            if (index < 0 || index >= entries.size) return null
+            return entries[index]
+        }
+
+        fun openSelected() {
+            val entry = selectedEntry()
+            if (entry == null) {
+                statusLabel.setText("No model file selected.")
+                return
+            }
+            if (entry.isDirectory) {
+                currentDir = entry
+                refreshListing()
+                return
+            }
+            if (::scene.isInitialized && ::camera.isInitialized && ::modelFile.isInitialized) {
+                saveModel()
+            }
+            modelFile = entry.absoluteFile
+            loadModel()
+            updateWindowTitle()
+            dialog.remove()
+        }
+
+        val upButton = com.kotcrab.vis.ui.widget.VisTextButton("Up")
+        upButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
+                val parent = currentDir.parentFile ?: return
+                if (!isWithinDirectory(rootDir, parent)) return
+                currentDir = parent
+                refreshListing()
+            }
+        })
+        val homeButton = com.kotcrab.vis.ui.widget.VisTextButton("Home")
+        homeButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
+                currentDir = rootDir
+                refreshListing()
+            }
+        })
+        val openButton = com.kotcrab.vis.ui.widget.VisTextButton("Open")
+        openButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
+                openSelected()
+            }
+        })
+        val cancelButton = com.kotcrab.vis.ui.widget.VisTextButton("Cancel")
+        cancelButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
+                dialog.remove()
+            }
+        })
+
+        list.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
+                if (tapCount >= 2) {
+                    openSelected()
+                }
+            }
+        })
+
+        val listScroll = com.kotcrab.vis.ui.widget.VisScrollPane(list).apply {
+            setFadeScrollBars(false)
+            setScrollingDisabled(true, false)
+        }
+        val toolbar = com.kotcrab.vis.ui.widget.VisTable().apply {
+            defaults().pad(4f)
+            add(upButton)
+            add(homeButton)
+        }
+        val footer = com.kotcrab.vis.ui.widget.VisTable().apply {
+            defaults().pad(4f)
+            add(cancelButton)
+            add(openButton)
+        }
+        dialog.defaults().pad(4f).growX()
+        dialog.add(nameLabel).left().row()
+        dialog.add(toolbar).left().row()
+        dialog.add(pathLabel).growX().row()
+        dialog.add(listScroll).grow().row()
+        dialog.add(statusLabel).left().row()
+        dialog.add(footer).right()
+
+        refreshListing()
+        stage.addActor(dialog)
+        dialog.pack()
+        dialog.centerWindow()
+        dialog.toFront()
+        dialog.fadeIn()
+    }
+
+    private fun showAndroidSaveAsModelDialog() {
+        val stage = uiOverlay.stage
+        val rootDir = androidModelRootDirectory()
+        var currentDir = rootDir
+        val entries = mutableListOf<File>()
+
+        val dialog = com.kotcrab.vis.ui.widget.VisWindow("Save Octodraw Model As", true).apply {
+            isModal = true
+            isMovable = true
+            isResizable = true
+            setResizeBorder(14)
+            setKeepWithinParent(true)
+            setSize(560f, 500f)
+        }
+        val pathLabel = com.kotcrab.vis.ui.widget.VisLabel("")
+        pathLabel.setWrap(true)
+        val list = com.kotcrab.vis.ui.widget.VisList<String>()
+        val statusLabel = com.kotcrab.vis.ui.widget.VisLabel("")
+        val nameField = com.kotcrab.vis.ui.widget.VisTextField(
+            if (::modelFile.isInitialized) modelFile.name else "octodraw.octd"
+        )
+
+        fun refreshListing() {
+            if (!currentDir.exists()) {
+                currentDir.mkdirs()
+            }
+            pathLabel.setText(currentDir.absolutePath)
+            entries.clear()
+            val listed = currentDir.listFiles()?.toList().orEmpty()
+                .sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() }))
+            listed.forEach { file ->
+                val ext = file.extension.lowercase()
+                if (file.isDirectory || ext == "octd" || ext == "k3d") {
+                    entries += file
+                }
+            }
+            val names = entries.map { file ->
+                if (file.isDirectory) "[${file.name}]" else file.name
+            }
+            if (names.isEmpty()) {
+                list.setItems("(No files)")
+                list.selectedIndex = 0
+            } else {
+                list.setItems(*names.toTypedArray())
+                list.selectedIndex = 0
+            }
+            statusLabel.setText("")
+        }
+
+        fun selectedEntry(): File? {
+            if (entries.isEmpty()) return null
+            val index = list.selectedIndex
+            if (index < 0 || index >= entries.size) return null
+            return entries[index]
+        }
+
+        fun saveCurrent() {
+            val rawName = nameField.text?.trim().orEmpty()
+            if (rawName.isBlank()) {
+                statusLabel.setText("Please enter a file name.")
+                return
+            }
+            val baseFile = File(currentDir, rawName)
+            val target = if (baseFile.extension.lowercase() == "octd" || baseFile.extension.lowercase() == "k3d") {
+                baseFile
+            } else {
+                File(currentDir, "$rawName.octd")
+            }
+            target.parentFile?.mkdirs()
+            modelFile = target.absoluteFile
+            saveModel()
+            updateWindowTitle()
+            statusModel.message = "Saved ${target.name}"
+            dialog.remove()
+        }
+
+        val upButton = com.kotcrab.vis.ui.widget.VisTextButton("Up")
+        upButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
+                val parent = currentDir.parentFile ?: return
+                if (!isWithinDirectory(rootDir, parent)) return
+                currentDir = parent
+                refreshListing()
+            }
+        })
+        val homeButton = com.kotcrab.vis.ui.widget.VisTextButton("Home")
+        homeButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
+                currentDir = rootDir
+                refreshListing()
+            }
+        })
+        val saveButton = com.kotcrab.vis.ui.widget.VisTextButton("Save")
+        saveButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
+                saveCurrent()
+            }
+        })
+        val cancelButton = com.kotcrab.vis.ui.widget.VisTextButton("Cancel")
+        cancelButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
+                dialog.remove()
+            }
+        })
+
+        list.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
+                val entry = selectedEntry() ?: return
+                if (entry.isDirectory) {
+                    if (tapCount >= 2) {
+                        currentDir = entry
+                        refreshListing()
+                    }
+                } else {
+                    nameField.text = entry.name
+                    if (tapCount >= 2) {
+                        saveCurrent()
+                    }
+                }
+            }
+        })
+
+        val listScroll = com.kotcrab.vis.ui.widget.VisScrollPane(list).apply {
+            setFadeScrollBars(false)
+            setScrollingDisabled(true, false)
+        }
+        val toolbar = com.kotcrab.vis.ui.widget.VisTable().apply {
+            defaults().pad(4f)
+            add(upButton)
+            add(homeButton)
+        }
+        val nameRow = com.kotcrab.vis.ui.widget.VisTable().apply {
+            defaults().pad(4f)
+            add(com.kotcrab.vis.ui.widget.VisLabel("File")).left()
+            add(nameField).growX()
+        }
+        val footer = com.kotcrab.vis.ui.widget.VisTable().apply {
+            defaults().pad(4f)
+            add(cancelButton)
+            add(saveButton)
+        }
+
+        dialog.defaults().pad(4f).growX()
+        dialog.add(com.kotcrab.vis.ui.widget.VisLabel("App storage model files (.octd/.k3d)")).left().row()
+        dialog.add(toolbar).left().row()
+        dialog.add(pathLabel).growX().row()
+        dialog.add(listScroll).grow().row()
+        dialog.add(nameRow).growX().row()
+        dialog.add(statusLabel).left().row()
+        dialog.add(footer).right()
+
+        refreshListing()
+        stage.addActor(dialog)
+        dialog.pack()
+        dialog.centerWindow()
+        dialog.toFront()
+        dialog.fadeIn()
+        stage.keyboardFocus = nameField
     }
 
     private fun showIfcExportDialog() {
