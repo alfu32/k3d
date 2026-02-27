@@ -106,10 +106,10 @@ class ScaleTool(
         val c = centerWorld ?: return
         val ref = referenceWorld
         if (ref != null) {
-            renderer.color = Color(0.95f, 0.3f, 0.3f, 1f)
+            renderer.color = ToolFeedbackColors.PRIMARY
             renderer.line(c.x, c.y, c.z, ref.x, ref.y, ref.z)
         }
-        renderer.color = Color(0.25f, 0.85f, 0.35f, 1f)
+        renderer.color = ToolFeedbackColors.TERTIARY
         renderer.line(c.x, c.y, c.z, hover.x, hover.y, hover.z)
         if (ref != null) {
             val refVec = Vector3(ref).sub(c)
@@ -145,7 +145,7 @@ class ScaleTool(
     }
 
     private fun renderPreview(renderer: ShapeRenderer, center: Vector3, scale: Float, constraint: ScaleConstraint) {
-        renderer.color = Color(0.25f, 0.85f, 0.55f, 1f)
+        renderer.color = ToolFeedbackColors.TERTIARY
         val group = scene.activeGroup()
         val centerLocal = group.toLocal(center)
         group.faceStore.getSelected().forEach { tri ->
@@ -235,7 +235,7 @@ class ScaleTool(
         if (scene.selectedGroups().isEmpty()) {
             return
         }
-        renderer.color = Color(0.25f, 0.85f, 0.55f, 1f)
+        renderer.color = ToolFeedbackColors.TERTIARY
         scene.selectedGroups().forEach { group ->
             val bounds = group.worldBounds() ?: return@forEach
             val corners = arrayOf(

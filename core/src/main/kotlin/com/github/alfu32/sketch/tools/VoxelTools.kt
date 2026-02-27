@@ -136,7 +136,7 @@ class VoxelVolumeTool(
         val group = scene.activeGroup()
         val start = group.toWorld(Vector3(a.x.toFloat(), a.y.toFloat(), a.z.toFloat()))
         val end = group.toWorld(Vector3((b.x + 1).toFloat(), (b.y + 1).toFloat(), (b.z + 1).toFloat()))
-        return ToolMeasurement(start, end, Color(0.55f, 0.85f, 0.95f, 1f))
+        return ToolMeasurement(start, end, ToolFeedbackColors.SECONDARY)
     }
 
     override fun render(renderer: ShapeRenderer) {
@@ -155,7 +155,7 @@ class VoxelVolumeTool(
             max(a.x, b.x) + 1,
             max(a.y, b.y) + 1,
             max(a.z, b.z) + 1,
-            Color(0.35f, 0.8f, 0.95f, 1f)
+            ToolFeedbackColors.SECONDARY
         )
     }
 
@@ -260,7 +260,7 @@ class VoxelFrameTool(
         val group = scene.activeGroup()
         val start = group.toWorld(Vector3(a.x.toFloat(), a.y.toFloat(), a.z.toFloat()))
         val end = group.toWorld(Vector3((b.x + 1).toFloat(), (b.y + 1).toFloat(), (b.z + 1).toFloat()))
-        return ToolMeasurement(start, end, Color(0.85f, 0.65f, 0.25f, 1f))
+        return ToolMeasurement(start, end, ToolFeedbackColors.PRIMARY)
     }
 
     override fun render(renderer: ShapeRenderer) {
@@ -279,7 +279,7 @@ class VoxelFrameTool(
             max(a.x, b.x) + 1,
             max(a.y, b.y) + 1,
             max(a.z, b.z) + 1,
-            Color(0.95f, 0.7f, 0.3f, 1f)
+            ToolFeedbackColors.PRIMARY
         )
     }
 

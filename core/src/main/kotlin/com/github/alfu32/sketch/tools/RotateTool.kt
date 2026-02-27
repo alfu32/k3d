@@ -171,14 +171,14 @@ class RotateTool(
         }.coerceAtLeast(0.5f)
         if (axis != null) {
             val axisEnd = Vector3(c).mulAdd(axis, axisLen)
-            renderer.color = Color(0.35f, 0.45f, 0.95f, 1f)
+            renderer.color = ToolFeedbackColors.SECONDARY
             renderer.line(c.x, c.y, c.z, axisEnd.x, axisEnd.y, axisEnd.z)
         }
         if (ref != null) {
-            renderer.color = Color(0.95f, 0.3f, 0.3f, 1f)
+            renderer.color = ToolFeedbackColors.PRIMARY
             renderer.line(c.x, c.y, c.z, ref.x, ref.y, ref.z)
         }
-        renderer.color = Color(0.25f, 0.85f, 0.35f, 1f)
+        renderer.color = ToolFeedbackColors.TERTIARY
         renderer.line(c.x, c.y, c.z, hover.x, hover.y, hover.z)
         if (axis != null && ref != null) {
             val group = scene.activeGroup()
@@ -220,7 +220,7 @@ class RotateTool(
     }
 
     private fun renderPreview(renderer: ShapeRenderer, center: Vector3, rotation: Quaternion) {
-        renderer.color = Color(0.25f, 0.85f, 0.55f, 1f)
+        renderer.color = ToolFeedbackColors.TERTIARY
         val group = scene.activeGroup()
         group.faceStore.getSelected().forEach { tri ->
             val a = Vector3(tri.a).sub(center).mul(rotation).add(center)
@@ -247,7 +247,7 @@ class RotateTool(
             return
         }
         val rotation = Quaternion().setFromAxis(axisWorld, degrees)
-        renderer.color = Color(0.25f, 0.85f, 0.55f, 1f)
+        renderer.color = ToolFeedbackColors.TERTIARY
         scene.selectedGroups().forEach { group ->
             val bounds = group.worldBounds() ?: return@forEach
             val corners = arrayOf(

@@ -155,7 +155,7 @@ class PolylineToolInternal(
             return
         }
         val group = scene.activeGroup()
-        renderer.color = Color(0.95f, 0.75f, 0.25f, 1f)
+        renderer.color = ToolFeedbackColors.PRIMARY
         for (i in 0 until pointsLocal.size - 1) {
             renderer.line(group.toWorld(pointsLocal[i]), group.toWorld(pointsLocal[i + 1]))
         }
@@ -598,7 +598,7 @@ class DoubleLineToolInternal(
             return
         }
         val group = scene.activeGroup()
-        renderer.color = Color(0.35f, 0.75f, 0.95f, 1f)
+        renderer.color = ToolFeedbackColors.SECONDARY
         val renderPoints = pointsLocal.toMutableList()
         if (hasHover) {
             val preview = when {

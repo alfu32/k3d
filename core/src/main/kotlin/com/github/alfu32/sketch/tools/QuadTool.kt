@@ -104,7 +104,7 @@ class QuadTool(
         if (!hasHover) {
             return
         }
-        renderer.color = Color(0.55f, 0.85f, 0.95f, 1f)
+        renderer.color = ToolFeedbackColors.SECONDARY
         val b = pointBWorld
         if (b == null) {
             renderer.line(a.x, a.y, a.z, hover.x, hover.y, hover.z)

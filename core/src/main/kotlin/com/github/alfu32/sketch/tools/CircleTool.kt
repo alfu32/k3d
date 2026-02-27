@@ -74,7 +74,7 @@ class CircleTool(
         val currentBasis = basis
         if (c != null && currentBasis != null && hasHover) {
             val radius = radiusOnPlane(c, hover, currentBasis)
-            renderCircle(renderer, c, currentBasis, radius, Color(0.95f, 0.55f, 0.75f, 1f))
+            renderCircle(renderer, c, currentBasis, radius, ToolFeedbackColors.SECONDARY)
         }
     }
 

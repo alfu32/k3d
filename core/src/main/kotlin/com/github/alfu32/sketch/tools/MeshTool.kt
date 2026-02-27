@@ -99,7 +99,7 @@ class MeshTool(
 
     override fun render(renderer: ShapeRenderer) {
         if (pickedWorld.isEmpty()) return
-        renderer.color = Color(0.55f, 0.85f, 0.95f, 1f)
+        renderer.color = ToolFeedbackColors.SECONDARY
         for (i in 1 until pickedWorld.size) {
             val a = pickedWorld[i - 1]
             val b = pickedWorld[i]
@@ -107,13 +107,13 @@ class MeshTool(
         }
         if (hoverValid) {
             val last = pickedWorld.last()
-            renderer.color = Color(0.95f, 0.75f, 0.25f, 1f)
+            renderer.color = ToolFeedbackColors.PRIMARY
             renderer.line(last.x, last.y, last.z, hoverWorld.x, hoverWorld.y, hoverWorld.z)
             if (pickedWorld.size >= 2) {
                 val prev = pickedWorld.last()
                 val nearest = nearestPointForPreview(hoverWorld, pickedWorld.size - 1) // exclude preview's previous point only
                 if (nearest != null) {
-                    renderer.color = Color(0.95f, 0.45f, 0.45f, 1f)
+                    renderer.color = ToolFeedbackColors.PRIMARY
                     renderer.line(nearest.x, nearest.y, nearest.z, prev.x, prev.y, prev.z)
                     renderer.line(nearest.x, nearest.y, nearest.z, hoverWorld.x, hoverWorld.y, hoverWorld.z)
                 }

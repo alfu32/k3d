@@ -81,7 +81,7 @@ class RectangleTool(
         val start = anchorWorld
         if (start != null && hasHover) {
             val currentBasis = chooseRectangleBasis(start, hover, pickNormalWorld ?: Vector3(0f, 1f, 0f))
-            renderer.color = Color(0.35f, 0.75f, 0.95f, 1f)
+            renderer.color = ToolFeedbackColors.SECONDARY
             val corners = rectangleCorners(start, hover, currentBasis)
             for (i in 0 until 4) {
                 val a = corners[i]

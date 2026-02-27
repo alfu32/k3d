@@ -172,11 +172,11 @@ class StretchTool(
     override fun render(renderer: ShapeRenderer) {
         val startPoint = start
         if (startPoint != null && hasHover) {
-            renderer.color = Color(0.95f, 0.3f, 0.3f, 1f)
+            renderer.color = ToolFeedbackColors.PRIMARY
             drawCross(renderer, startPoint, 0.18f)
-            renderer.color = Color(0.2f, 0.55f, 0.95f, 1f)
+            renderer.color = ToolFeedbackColors.SECONDARY
             drawCross(renderer, hover, 0.18f)
-            renderer.color = Color(0.95f, 0.9f, 0.2f, 1f)
+            renderer.color = ToolFeedbackColors.TERTIARY
             renderer.line(startPoint.x, startPoint.y, startPoint.z, hover.x, hover.y, hover.z)
             val deltaWorld = Vector3(hover).sub(startPoint)
             if (deltaWorld.len2() > 1e-6f) {
@@ -224,7 +224,7 @@ class StretchTool(
     }
 
     private fun renderPreview(renderer: ShapeRenderer, deltaWorld: Vector3) {
-        renderer.color = Color(0.25f, 0.85f, 0.55f, 1f)
+        renderer.color = ToolFeedbackColors.TERTIARY
         val group = scene.activeGroup()
         val localDelta = group.vectorToLocal(deltaWorld)
         val selectedKeys = collectSelectedKeys(group)
@@ -255,7 +255,7 @@ class StretchTool(
         if (scene.selectedGroups().isEmpty()) {
             return
         }
-        renderer.color = Color(0.25f, 0.85f, 0.55f, 1f)
+        renderer.color = ToolFeedbackColors.TERTIARY
         scene.selectedGroups().forEach { group ->
             val corners = group.orientedBoundsCorners() ?: return@forEach
             corners.indices.forEach { idx ->

@@ -217,14 +217,14 @@ class ExtrudeSwipeTool(
         return ToolMeasurement(
             startWorld = group.toWorld(pathLocal.last()),
             endWorld = group.toWorld(hoverLocal),
-            lineColor = Color(0.4f, 0.9f, 1f, 1f)
+            lineColor = ToolFeedbackColors.SECONDARY
         )
     }
 
     override fun render(renderer: ShapeRenderer) {
         val group = scene.activeGroup()
 
-        renderer.color = Color(0.95f, 0.7f, 0.25f, 1f)
+        renderer.color = ToolFeedbackColors.PRIMARY
         sourceSegments.forEach { segment ->
             renderer.line(group.toWorld(segment.start), group.toWorld(segment.end))
         }
@@ -233,7 +233,7 @@ class ExtrudeSwipeTool(
             return
         }
 
-        renderer.color = Color(0.35f, 0.9f, 1f, 1f)
+        renderer.color = ToolFeedbackColors.SECONDARY
         for (i in 0 until pathLocal.lastIndex) {
             renderer.line(group.toWorld(pathLocal[i]), group.toWorld(pathLocal[i + 1]))
         }

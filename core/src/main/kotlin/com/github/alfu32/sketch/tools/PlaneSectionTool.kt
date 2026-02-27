@@ -104,7 +104,7 @@ class PlaneSectionTool(
         if (!hasHover) {
             return
         }
-        renderer.color = Color(0.75f, 0.6f, 0.95f, 1f)
+        renderer.color = ToolFeedbackColors.SECONDARY
         renderer.line(origin.x, origin.y, origin.z, hoverWorld.x, hoverWorld.y, hoverWorld.z)
     }
 

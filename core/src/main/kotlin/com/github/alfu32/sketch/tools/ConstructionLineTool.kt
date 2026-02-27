@@ -103,7 +103,7 @@ class ConstructionLineTool(
     override fun render(renderer: ShapeRenderer) {
         val start = anchorWorld
         if (start != null && hasHover) {
-            renderer.color = Color(0.65f, 0.9f, 0.65f, 1f)
+            renderer.color = ToolFeedbackColors.TERTIARY
             renderer.line(start.x, start.y, start.z, hover.x, hover.y, hover.z)
         }
     }

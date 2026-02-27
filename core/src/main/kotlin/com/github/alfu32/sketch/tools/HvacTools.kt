@@ -86,7 +86,7 @@ class HvacPlumbingTool(
         return ToolMeasurement(
             startWorld = Vector3(pointsWorld.last()),
             endWorld = Vector3(hoverWorld),
-            lineColor = Color(0.55f, 0.8f, 0.95f, 1f)
+            lineColor = ToolFeedbackColors.SECONDARY
         )
     }
 
@@ -94,7 +94,7 @@ class HvacPlumbingTool(
         if (pointsWorld.isEmpty()) {
             return
         }
-        renderer.color = Color(0.55f, 0.8f, 0.95f, 1f)
+        renderer.color = ToolFeedbackColors.SECONDARY
         for (i in 0 until pointsWorld.lastIndex) {
             renderer.line(pointsWorld[i], pointsWorld[i + 1])
         }
@@ -233,13 +233,13 @@ class HvacVentilationTool(
         return ToolMeasurement(
             startWorld = if (end == null) Vector3(start) else Vector3(end),
             endWorld = Vector3(hoverWorld),
-            lineColor = Color(0.8f, 0.8f, 0.9f, 1f)
+            lineColor = ToolFeedbackColors.SECONDARY
         )
     }
 
     override fun render(renderer: ShapeRenderer) {
         val start = startWorld ?: return
-        renderer.color = Color(0.8f, 0.8f, 0.9f, 1f)
+        renderer.color = ToolFeedbackColors.SECONDARY
         val end = endWorld
         if (end == null) {
             if (hasHover) {
@@ -249,7 +249,7 @@ class HvacVentilationTool(
         }
         renderer.line(start, end)
         if (hasHover) {
-            renderer.color = Color(0.6f, 0.95f, 0.6f, 1f)
+            renderer.color = ToolFeedbackColors.TERTIARY
             renderer.line(end, hoverWorld)
         }
     }

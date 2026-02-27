@@ -79,7 +79,7 @@ class LinearDimensionTool(
         if (!hasHover) {
             return
         }
-        renderer.color = Color(0.35f, 0.35f, 0.35f, 1f)
+        renderer.color = ToolFeedbackColors.DARK
         val end = endWorld
         if (end == null) {
             renderer.line(start, hover)

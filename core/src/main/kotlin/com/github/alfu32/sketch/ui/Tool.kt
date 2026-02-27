@@ -2,11 +2,12 @@ package com.github.alfu32.sketch.ui
 
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Vector3
+import com.github.alfu32.sketch.tools.ToolFeedbackColors
 
 data class ToolMeasurement(
     val startWorld: Vector3,
     val endWorld: Vector3,
-    val lineColor: com.badlogic.gdx.graphics.Color = com.badlogic.gdx.graphics.Color(0.95f, 0.9f, 0.2f, 1f)
+    val lineColor: com.badlogic.gdx.graphics.Color = ToolFeedbackColors.PRIMARY
 )
 
 interface Tool {

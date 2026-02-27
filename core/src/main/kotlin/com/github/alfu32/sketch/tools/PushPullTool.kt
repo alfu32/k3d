@@ -86,7 +86,7 @@ class PushPullTool(
         }
         val faceNormal = normalLocal ?: return
         val group = scene.activeGroup()
-        renderer.color = Color(0.95f, 0.75f, 0.25f, 1f)
+        renderer.color = ToolFeedbackColors.PRIMARY
         val offset = Vector3(faceNormal).scl(currentDistance)
         val boundaryEdges = collectBoundaryEdges(activeTriangles)
         val verticalKeys = mutableSetOf<VertexKey>()

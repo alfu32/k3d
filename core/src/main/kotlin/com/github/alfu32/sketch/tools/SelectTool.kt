@@ -1058,7 +1058,7 @@ class SelectTool(
 
     override fun render(renderer: ShapeRenderer) {
         holeDrag?.let { drag ->
-            renderer.color = com.badlogic.gdx.graphics.Color(0.2f, 0.55f, 0.95f, 1f)
+            renderer.color = ToolFeedbackColors.SECONDARY
             val p = drag.movingWorld
             val size = 0.15f
             renderer.line(p.x - size, p.y, p.z, p.x + size, p.y, p.z)
@@ -1067,7 +1067,7 @@ class SelectTool(
             return
         }
         slabHoleDrag?.let { drag ->
-            renderer.color = com.badlogic.gdx.graphics.Color(0.2f, 0.55f, 0.95f, 1f)
+            renderer.color = ToolFeedbackColors.SECONDARY
             val p = drag.movingWorld
             val size = 0.15f
             renderer.line(p.x - size, p.y, p.z, p.x + size, p.y, p.z)
@@ -1076,22 +1076,22 @@ class SelectTool(
             return
         }
         wallDrag?.let { drag ->
-            renderer.color = com.badlogic.gdx.graphics.Color(0.25f, 0.65f, 1f, 1f)
+            renderer.color = ToolFeedbackColors.SECONDARY
             renderer.line(drag.fixedWorld, drag.movingWorld)
             return
         }
         slabDrag?.let { drag ->
-            renderer.color = com.badlogic.gdx.graphics.Color(0.2f, 0.55f, 0.95f, 1f)
+            renderer.color = ToolFeedbackColors.SECONDARY
             renderer.line(drag.fixedWorld, drag.movingWorld)
             return
         }
         frameDrag?.let { drag ->
-            renderer.color = com.badlogic.gdx.graphics.Color(0.2f, 0.55f, 0.95f, 1f)
+            renderer.color = ToolFeedbackColors.SECONDARY
             renderer.line(drag.fixedWorld, drag.movingWorld)
             return
         }
         hvacDrag?.let { drag ->
-            renderer.color = com.badlogic.gdx.graphics.Color(0.35f, 0.9f, 0.7f, 1f)
+            renderer.color = ToolFeedbackColors.TERTIARY
             renderer.line(drag.marker.center, drag.movingWorld)
             return
         }
@@ -1107,7 +1107,7 @@ class SelectTool(
         val maxX = kotlin.math.max(start.x, end.x)
         val maxY = kotlin.math.max(start.y, end.y)
         val maxZ = kotlin.math.max(start.z, end.z)
-        renderer.color = com.badlogic.gdx.graphics.Color(0.25f, 0.55f, 0.95f, 0.35f)
+        renderer.color = ToolFeedbackColors.TRANSLUCENT
         drawWireBox(renderer, minX, minY, minZ, maxX, maxY, maxZ)
     }
 

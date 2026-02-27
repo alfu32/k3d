@@ -107,7 +107,7 @@ class ArchitectureWallTool(
         if (!hasHover) {
             return null
         }
-        return ToolMeasurement(startWorld = Vector3(start), endWorld = Vector3(hover), lineColor = Color(0.95f, 0.65f, 0.25f, 1f))
+        return ToolMeasurement(startWorld = Vector3(start), endWorld = Vector3(hover), lineColor = ToolFeedbackColors.PRIMARY)
     }
 
     override fun render(renderer: ShapeRenderer) {
@@ -115,7 +115,7 @@ class ArchitectureWallTool(
         if (!hasHover) {
             return
         }
-        renderer.color = Color(0.95f, 0.65f, 0.25f, 1f)
+        renderer.color = ToolFeedbackColors.PRIMARY
         renderer.line(start, hover)
     }
 
@@ -213,7 +213,7 @@ class ArchitectureSlabTool(
         if (!hasHover) {
             return null
         }
-        return ToolMeasurement(startWorld = Vector3(start), endWorld = Vector3(hover), lineColor = Color(0.35f, 0.75f, 0.95f, 1f))
+        return ToolMeasurement(startWorld = Vector3(start), endWorld = Vector3(hover), lineColor = ToolFeedbackColors.SECONDARY)
     }
 
     override fun render(renderer: ShapeRenderer) {
@@ -222,7 +222,7 @@ class ArchitectureSlabTool(
             return
         }
         val corners = horizontalRectCorners(first, hover)
-        drawLoop(renderer, corners, Color(0.35f, 0.75f, 0.95f, 1f))
+        drawLoop(renderer, corners, ToolFeedbackColors.SECONDARY)
     }
 
     private fun clear() {
@@ -322,7 +322,7 @@ class ArchitectureAddHoleTool(
         if (!hasHover) {
             return null
         }
-        return ToolMeasurement(startWorld = Vector3(start), endWorld = Vector3(hover), lineColor = Color(0.95f, 0.55f, 0.25f, 1f))
+        return ToolMeasurement(startWorld = Vector3(start), endWorld = Vector3(hover), lineColor = ToolFeedbackColors.PRIMARY)
     }
 
     override fun render(renderer: ShapeRenderer) {
@@ -332,7 +332,7 @@ class ArchitectureAddHoleTool(
         }
         val basis = chooseRectangleBasis(first, hover, firstNormalWorld ?: Vector3(0f, 1f, 0f))
         val corners = rectangleCorners(first, hover, basis)
-        drawLoop(renderer, corners, Color(0.95f, 0.55f, 0.25f, 1f))
+        drawLoop(renderer, corners, ToolFeedbackColors.PRIMARY)
     }
 
     private fun clear() {
@@ -523,15 +523,15 @@ class ArchitectureStairTool(
             return null
         }
         val start = contourPath?.points?.firstOrNull() ?: return null
-        return ToolMeasurement(startWorld = Vector3(start), endWorld = Vector3(hoverPoint), lineColor = Color(0.75f, 0.55f, 0.95f, 1f))
+        return ToolMeasurement(startWorld = Vector3(start), endWorld = Vector3(hoverPoint), lineColor = ToolFeedbackColors.SECONDARY)
     }
 
     override fun render(renderer: ShapeRenderer) {
         contourPath?.let { contour ->
-            drawLoop(renderer, contour.points, Color(0.75f, 0.55f, 0.95f, 1f))
+            drawLoop(renderer, contour.points, ToolFeedbackColors.SECONDARY)
         }
         treadPath?.let { tread ->
-            renderer.color = Color(0.95f, 0.6f, 0.3f, 1f)
+            renderer.color = ToolFeedbackColors.PRIMARY
             for (i in 0 until tread.points.lastIndex) {
                 renderer.line(tread.points[i], tread.points[i + 1])
             }
@@ -796,7 +796,7 @@ class ArchitectureWindowFrameTool(
     toolId = ToolId.ARCH_WINDOW_FRAME,
     frameKind = ArchitectureStore.FrameKind.WINDOW,
     baseMessage = "Pick first window frame corner.",
-    drawColor = Color(0.35f, 0.8f, 0.95f, 1f)
+    drawColor = ToolFeedbackColors.SECONDARY
 )
 
 class ArchitectureDoorFrameTool(
@@ -812,7 +812,7 @@ class ArchitectureDoorFrameTool(
     toolId = ToolId.ARCH_DOOR_FRAME,
     frameKind = ArchitectureStore.FrameKind.DOOR,
     baseMessage = "Pick first door frame corner.",
-    drawColor = Color(0.95f, 0.75f, 0.25f, 1f)
+    drawColor = ToolFeedbackColors.PRIMARY
 )
 
 abstract class ArchitectureFrameTool(

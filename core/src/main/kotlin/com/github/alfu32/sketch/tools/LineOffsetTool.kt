@@ -104,7 +104,7 @@ class LineOffsetTool(
             return
         }
         val start = referenceWorld ?: return
-        renderer.color = Color(0.35f, 0.75f, 0.95f, 1f)
+        renderer.color = ToolFeedbackColors.SECONDARY
         renderer.line(start.x, start.y, start.z, hover.x, hover.y, hover.z)
     }
 

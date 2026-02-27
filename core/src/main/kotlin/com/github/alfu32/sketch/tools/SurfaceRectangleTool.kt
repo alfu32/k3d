@@ -87,7 +87,7 @@ class SurfaceRectangleTool(
         val v = axisVWorld
         if (start != null && u != null && v != null && hasHover) {
             val corners = rectangleCorners(start, hover, u, v)
-            renderer.color = Color(0.35f, 0.85f, 0.65f, 1f)
+            renderer.color = ToolFeedbackColors.TERTIARY
             for (i in 0 until 4) {
                 val a = corners[i]
                 val b = corners[(i + 1) % 4]
