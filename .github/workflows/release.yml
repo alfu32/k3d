@@ -282,13 +282,36 @@ jobs:
       - name: Install Android SDK components
         run: |
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
-      - name: Build Android APK bundle
-        run: ./gradlew :android:bundleAndroidApk -PreleaseNumber="${{ inputs.tag }}"
+      - name: Prepare Android signing keystore
+        env:
+          ANDROID_UPLOAD_KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+          ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_UPLOAD_KEYSTORE_B64:-}" ] || [ -z "${ANDROID_UPLOAD_STORE_PASSWORD:-}" ] || [ -z "${ANDROID_UPLOAD_KEY_ALIAS:-}" ] || [ -z "${ANDROID_UPLOAD_KEY_PASSWORD:-}" ]; then
+            echo "Missing Android signing secrets. Required: ANDROID_UPLOAD_KEYSTORE_B64, ANDROID_UPLOAD_STORE_PASSWORD, ANDROID_UPLOAD_KEY_ALIAS, ANDROID_UPLOAD_KEY_PASSWORD"
+            exit 1
+          fi
+          keystore_path="$RUNNER_TEMP/octodraw-upload.jks"
+          echo "$ANDROID_UPLOAD_KEYSTORE_B64" | base64 --decode > "$keystore_path"
+          chmod 600 "$keystore_path"
+          {
+            echo "ANDROID_UPLOAD_STORE_FILE=$keystore_path"
+            echo "ANDROID_UPLOAD_STORE_PASSWORD=$ANDROID_UPLOAD_STORE_PASSWORD"
+            echo "ANDROID_UPLOAD_KEY_ALIAS=$ANDROID_UPLOAD_KEY_ALIAS"
+            echo "ANDROID_UPLOAD_KEY_PASSWORD=$ANDROID_UPLOAD_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+      - name: Build Android APK + AAB bundles
+        run: |
+          ./gradlew :android:bundleAndroidApk :android:bundleAndroidAab -PreleaseNumber="${{ inputs.tag }}"
       - uses: actions/upload-artifact@v4
         with:
           name: octodraw-android
           path: |
             dist/octodraw-*.apk
+            dist/octodraw-*.aab
 
   release:
     runs-on: ubuntu-latest
@@ -312,7 +335,7 @@ jobs:
           else
             gh release edit "$TAG" --draft="$DRAFT" --prerelease="$PRERELEASE"
           fi
-          files=$(find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.msi" -o -name "*.msix" -o -name "*.apk" \))
+          files=$(find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.msi" -o -name "*.msix" -o -name "*.apk" -o -name "*.aab" \))
           if [ -z "$files" ]; then
             echo "No release artifacts found."
             exit 1
