@@ -50,6 +50,8 @@ class SketchUiOverlay(
     private val status: StatusModel,
     private val openModelAction: () -> Unit,
     private val saveAsModelAction: () -> Unit,
+    private val importMeshAction: () -> Unit,
+    private val exportMeshAction: () -> Unit,
     private val cleanupAction: () -> Unit,
     private val deleteSelectionAction: () -> Unit,
     private val flipFacesAction: () -> Unit,
@@ -1281,6 +1283,20 @@ class SketchUiOverlay(
             saveAsModelAction()
         }
 
+        val importMeshButton = createActionButton(
+            label = "Import Mesh",
+            icon = iconFor("file_open", createActionIconDrawable(Color(0.9f, 0.78f, 0.45f, 1f)))
+        ) {
+            importMeshAction()
+        }
+
+        val exportMeshButton = createActionButton(
+            label = "Export Mesh",
+            icon = iconFor("file_save", createActionIconDrawable(Color(0.85f, 0.7f, 0.95f, 1f)))
+        ) {
+            exportMeshAction()
+        }
+
         val cleanupButton = createActionButton(
             label = "Cleanup",
             icon = iconFor("cleanup", createActionIconDrawable(Color(0.55f, 0.85f, 0.65f, 1f)))
@@ -1327,7 +1343,18 @@ class SketchUiOverlay(
         ) {
             togglePluginManager()
         }
-        val buttons = listOf(openButton, saveAsButton, cleanupButton, colorButton, deleteButton, flipButton, lightingButton, pluginButton)
+        val buttons = listOf(
+            openButton,
+            saveAsButton,
+            importMeshButton,
+            exportMeshButton,
+            cleanupButton,
+            colorButton,
+            deleteButton,
+            flipButton,
+            lightingButton,
+            pluginButton
+        )
         buttons.forEach { button ->
             content.add(button).size(toolbarButtonSize, toolbarButtonSize)
         }

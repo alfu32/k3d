@@ -79,6 +79,7 @@ import com.github.alfu32.sketch.K3DVersion
 import com.badlogic.gdx.Graphics
 import com.github.alfu32.sketch.plugin.PluginHost
 import com.github.alfu32.sketch.export.IfcExporter
+import com.github.alfu32.sketch.export.MeshIo
 import com.github.alfu32.sketch.tools.CircleTool
 import com.github.alfu32.sketch.tools.ConstructionLineTool
 import com.github.alfu32.sketch.tools.CutHolesTool
@@ -544,6 +545,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             statusModel,
             ::showOpenModelDialog,
             ::showSaveAsModelDialog,
+            ::showImportMeshDialog,
+            ::showExportMeshDialog,
             ::runCleanup,
             ::deleteSelection,
             ::flipSelectedFaces,
@@ -1002,6 +1005,36 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 priority = 1,
                 execute = {
                     showIfcExportDialog()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "import.mesh",
+                name = "Import> Mesh (OBJ/STL)",
+                description = "Import mesh geometry from OBJ or STL and place as object",
+                icon = "import",
+                category = "Import",
+                tags = listOf("import", "mesh", "obj", "stl"),
+                priority = 1,
+                execute = {
+                    showImportMeshDialog()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "export.mesh",
+                name = "Export> Mesh (OBJ/STL)",
+                description = "Export mesh geometry as OBJ or STL",
+                icon = "export",
+                category = "Export",
+                tags = listOf("export", "mesh", "obj", "stl"),
+                priority = 1,
+                execute = {
+                    showExportMeshDialog()
                     com.github.alfu32.sketch.plugin.PluginResult.success()
                 }
             )
@@ -3108,6 +3141,333 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             }
         })
         showFileChooser(chooser)
+    }
+
+    private data class MeshExportOption(
+        val label: String,
+        val extensions: List<String>,
+        val defaultExtension: String,
+        val format: MeshIo.ExportFormat
+    )
+
+    private val meshExportOptions = listOf(
+        MeshExportOption(
+            label = "OBJ (*.obj)",
+            extensions = listOf("obj"),
+            defaultExtension = "obj",
+            format = MeshIo.ExportFormat.OBJ
+        ),
+        MeshExportOption(
+            label = "STL Binary (*.stl, *.stlb)",
+            extensions = listOf("stl", "stlb"),
+            defaultExtension = "stl",
+            format = MeshIo.ExportFormat.STL_BINARY
+        ),
+        MeshExportOption(
+            label = "STL ASCII (*.stla)",
+            extensions = listOf("stla"),
+            defaultExtension = "stla",
+            format = MeshIo.ExportFormat.STL_ASCII
+        )
+    )
+
+    private fun showImportMeshDialog() {
+        if (isAndroidRuntime()) {
+            if (showAndroidSafImportMeshDialog()) {
+                return
+            }
+        }
+        val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.OPEN)
+        chooser.getTitleLabel().setText("Import Mesh")
+        chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
+        val filter = FileTypeFilter(true)
+        filter.addRule("OBJ (*.obj)", "obj")
+        filter.addRule("STL (*.stl, *.stla, *.stlb)", "stl", "stla", "stlb")
+        chooser.setFileTypeFilter(filter)
+        chooser.setListener(object : FileChooserAdapter() {
+            override fun selected(files: Array<FileHandle>?) {
+                if (files == null || files.size == 0) {
+                    return
+                }
+                val handle = files.first()
+                if (!handle.exists()) {
+                    statusModel.message = "Import failed: selected file does not exist."
+                    return
+                }
+                importMeshPayload(handle.name(), handle.readBytes())
+            }
+        })
+        showFileChooser(chooser)
+    }
+
+    private fun showExportMeshDialog() {
+        if (isAndroidRuntime()) {
+            if (showAndroidSafExportMeshDialog()) {
+                return
+            }
+        }
+        val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.SAVE)
+        chooser.getTitleLabel().setText("Export Mesh")
+        chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
+        chooser.setDefaultFileName(
+            if (::modelFile.isInitialized) "${modelFile.nameWithoutExtension}.obj" else "mesh.obj"
+        )
+        val filter = FileTypeFilter(true)
+        meshExportOptions.forEach { option ->
+            filter.addRule(option.label, *option.extensions.toTypedArray())
+        }
+        chooser.setFileTypeFilter(filter)
+        chooser.setListener(object : FileChooserAdapter() {
+            override fun selected(files: Array<FileHandle>?) {
+                if (files == null || files.size == 0) {
+                    return
+                }
+                val requested = files.first().file().absoluteFile
+                exportMeshToFile(requested)
+            }
+        })
+        showFileChooser(chooser)
+    }
+
+    private fun showAndroidSafImportMeshDialog(): Boolean {
+        val bridge = AndroidSaf.bridge ?: return false
+        bridge.openDocument { uri, displayName ->
+            if (uri.isNullOrBlank()) {
+                statusModel.message = "Import canceled."
+                return@openDocument
+            }
+            val bytes = bridge.readBytes(uri)
+            if (bytes == null || bytes.isEmpty()) {
+                statusModel.message = "Import failed: cannot read selected file."
+                return@openDocument
+            }
+            val nameHint = displayName ?: uri.substringAfterLast('/').substringBefore('?')
+            importMeshPayload(nameHint, bytes)
+        }
+        return true
+    }
+
+    private fun showAndroidSafExportMeshDialog(): Boolean {
+        val bridge = AndroidSaf.bridge ?: return false
+        showMeshExportOptionDialog { option ->
+            val suggestedBase = if (::modelFile.isInitialized) modelFile.nameWithoutExtension else "mesh"
+            val suggestedName = "$suggestedBase.${option.defaultExtension}"
+            bridge.createDocument(suggestedName) { uri, displayName ->
+                if (uri.isNullOrBlank()) {
+                    statusModel.message = "Export canceled."
+                    return@createDocument
+                }
+                val targetName = displayName ?: suggestedName
+                val extension = targetName.substringAfterLast('.', "").lowercase()
+                val format = MeshIo.exportFormatForExtension(extension) ?: option.format
+                val export = exportMeshBytes(format) ?: return@createDocument
+                if (!bridge.writeBytes(uri, export.bytes)) {
+                    statusModel.message = "Export failed: cannot write selected destination."
+                    return@createDocument
+                }
+                val localMirror = File(androidModelRootDirectory(), ensureMeshExportFileName(targetName, option.defaultExtension))
+                try {
+                    localMirror.parentFile?.mkdirs()
+                    localMirror.writeBytes(export.bytes)
+                } catch (_: Throwable) {
+                    // Best effort local mirror for convenience.
+                }
+                statusModel.message = "Exported ${export.triangleCount} triangle(s) to $targetName (${export.scopeLabel})."
+            }
+        }
+        return true
+    }
+
+    private fun showMeshExportOptionDialog(onSelected: (MeshExportOption) -> Unit) {
+        val stage = uiOverlay.stage
+        val dialog = com.kotcrab.vis.ui.widget.VisWindow("Export Mesh Format", true).apply {
+            isModal = true
+            isMovable = true
+            isResizable = false
+            setKeepWithinParent(true)
+        }
+        val content = com.kotcrab.vis.ui.widget.VisTable()
+        content.defaults().pad(4f).growX()
+        content.add(com.kotcrab.vis.ui.widget.VisLabel("Choose format (extension drives writer):")).left().row()
+        meshExportOptions.forEach { option ->
+            val button = com.kotcrab.vis.ui.widget.VisTextButton(option.label)
+            button.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+                override fun clicked(
+                    event: com.badlogic.gdx.scenes.scene2d.InputEvent?,
+                    x: Float,
+                    y: Float
+                ) {
+                    dialog.remove()
+                    onSelected(option)
+                }
+            })
+            content.add(button).left().row()
+        }
+        val cancelButton = com.kotcrab.vis.ui.widget.VisTextButton("Cancel")
+        cancelButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(
+                event: com.badlogic.gdx.scenes.scene2d.InputEvent?,
+                x: Float,
+                y: Float
+            ) {
+                dialog.remove()
+            }
+        })
+        content.add(cancelButton).right().padTop(6f).row()
+        dialog.add(content).pad(6f)
+        dialog.pack()
+        stage.addActor(dialog)
+        dialog.centerWindow()
+        dialog.toFront()
+        dialog.fadeIn()
+    }
+
+    private data class MeshExportPayload(
+        val bytes: ByteArray,
+        val triangleCount: Int,
+        val scopeLabel: String
+    )
+
+    private fun exportMeshToFile(requestedFile: File) {
+        val normalizedTarget = if (requestedFile.extension.isBlank()) {
+            File(requestedFile.parentFile, "${requestedFile.name}.obj")
+        } else {
+            requestedFile
+        }
+        val target = normalizedTarget.absoluteFile
+        val extension = target.extension.lowercase()
+        val format = MeshIo.exportFormatForExtension(extension)
+        if (format == null) {
+            statusModel.message = "Export failed: unsupported extension '${target.extension}'. Use .obj, .stl, .stla or .stlb."
+            return
+        }
+        val export = exportMeshBytes(format) ?: return
+        try {
+            target.parentFile?.mkdirs()
+            target.writeBytes(export.bytes)
+            statusModel.message = "Exported ${export.triangleCount} triangle(s) to ${target.absolutePath} (${export.scopeLabel})."
+        } catch (t: Throwable) {
+            statusModel.message = "Export failed: ${t.message ?: t.javaClass.simpleName}"
+        }
+    }
+
+    private fun exportMeshBytes(format: MeshIo.ExportFormat): MeshExportPayload? {
+        val selected = collectSelectedWorldTrianglesForExport()
+        val triangles = if (selected.isNotEmpty()) selected else collectAllWorldTrianglesForExport()
+        if (triangles.isEmpty()) {
+            statusModel.message = "Export failed: no mesh triangles in the model."
+            return null
+        }
+        val bytes = try {
+            MeshIo.exportTriangles(triangles, format)
+        } catch (t: Throwable) {
+            statusModel.message = "Export failed: ${t.message ?: t.javaClass.simpleName}"
+            return null
+        }
+        val scopeLabel = if (selected.isNotEmpty()) "selection" else "full model"
+        return MeshExportPayload(bytes, triangles.size, scopeLabel)
+    }
+
+    private fun collectAllWorldTrianglesForExport(): List<MeshIo.Triangle> {
+        val out = ArrayList<MeshIo.Triangle>(4096)
+        scene.collectWorldTriangles { a, b, c, _, _ ->
+            out.add(MeshIo.Triangle(Vector3(a), Vector3(b), Vector3(c)))
+        }
+        return out
+    }
+
+    private fun collectSelectedWorldTrianglesForExport(): List<MeshIo.Triangle> {
+        val out = ArrayList<MeshIo.Triangle>(2048)
+        val seen = HashSet<String>()
+        val selectedGroups = scene.selectedGroups().toSet()
+        val selectedArchitecture = scene.selectedArchitectureElements(scene.root)
+        val selectedHvac = scene.selectedHvacElements(scene.root)
+
+        scene.root.faceStore.getTriangles().forEach { tri ->
+            val selectedByFace = scene.root.faceStore.isSelected(tri)
+            val selectedByArchitecture = scene.isGeneratedArchitectureTriangle(tri) &&
+                selectedArchitecture.contains(scene.generatedArchitectureOwner(tri))
+            val selectedByHvac = scene.isGeneratedHvacTriangle(tri) &&
+                selectedHvac.contains(scene.generatedHvacOwner(tri))
+            if (!selectedByFace && !selectedByArchitecture && !selectedByHvac) {
+                return@forEach
+            }
+            val key = "root:${tri.id}"
+            if (!seen.add(key)) {
+                return@forEach
+            }
+            out.add(MeshIo.Triangle(Vector3(tri.a), Vector3(tri.b), Vector3(tri.c)))
+        }
+
+        scene.walkGroups(scene.root) { group ->
+            val includeAll = selectedGroups.contains(group)
+            val source = if (includeAll) group.faceStore.getTriangles() else group.faceStore.getSelected()
+            source.forEach { tri ->
+                val key = "${group.id}:${tri.id}"
+                if (!seen.add(key)) {
+                    return@forEach
+                }
+                out.add(
+                    MeshIo.Triangle(
+                        group.toWorld(tri.a),
+                        group.toWorld(tri.b),
+                        group.toWorld(tri.c)
+                    )
+                )
+            }
+        }
+        return out
+    }
+
+    private fun importMeshPayload(nameHint: String?, bytes: ByteArray) {
+        val extension = nameHint?.substringAfterLast('.', "")?.lowercase().orEmpty()
+        val resolvedFormat = MeshIo.importFormatForExtension(extension)
+        val triangles = when {
+            resolvedFormat != null -> MeshIo.importTriangles(bytes, resolvedFormat)
+            else -> {
+                // Fallback when SAF providers omit extension metadata.
+                val obj = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.OBJ)
+                val stl = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.STL_AUTO)
+                if (obj.size >= stl.size) obj else stl
+            }
+        }
+        if (triangles.isEmpty()) {
+            statusModel.message = "Import failed: no triangles parsed from ${nameHint ?: "selected file"}."
+            return
+        }
+        val prototypeName = importedPrototypeName(nameHint)
+        val meshTriangles = triangles.map { tri ->
+            GroupScene.MeshTriangle(
+                a = Vector3(tri.a),
+                b = Vector3(tri.b),
+                c = Vector3(tri.c),
+                color = Color(scene.defaultFaceColor)
+            )
+        }
+        val prototype = scene.createMeshPrototype(prototypeName, meshTriangles, includeEdges = true)
+        if (prototype == null) {
+            statusModel.message = "Import failed: could not create object prototype."
+            return
+        }
+        startObjectPlacement(prototype.id)
+        statusModel.message = "Imported ${triangles.size} triangle(s) as '$prototypeName'. Click to place object."
+    }
+
+    private fun importedPrototypeName(nameHint: String?): String {
+        val raw = nameHint?.substringAfterLast('/')?.substringAfterLast('\\') ?: "Imported Mesh"
+        val base = raw.substringBeforeLast('.', raw).trim()
+        val cleaned = base.replace(Regex("[^A-Za-z0-9 _.-]"), "_").trim().ifBlank { "Imported Mesh" }
+        return cleaned
+    }
+
+    private fun ensureMeshExportFileName(name: String, fallbackExtension: String): String {
+        val trimmed = name.trim().ifBlank { "mesh.$fallbackExtension" }
+        val ext = trimmed.substringAfterLast('.', "").lowercase()
+        return if (MeshIo.exportFormatForExtension(ext) != null) {
+            trimmed
+        } else {
+            "$trimmed.$fallbackExtension"
+        }
     }
 
     private fun showFileChooser(chooser: FileChooser) {

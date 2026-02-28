@@ -21,6 +21,7 @@ class GroupScene(
     val defaultFaceColor: Color
 ) {
     data class Axes(val u: Vector3, val v: Vector3, val w: Vector3)
+    data class MeshTriangle(val a: Vector3, val b: Vector3, val c: Vector3, val color: Color = Color(1f, 1f, 1f, 1f))
     enum class PrototypeKind { MESH, VOXEL, ARCHITECTURE }
     enum class HoleHandleKind {
         CORNER_0, CORNER_1, CORNER_2, CORNER_3,
@@ -658,6 +659,74 @@ class GroupScene(
         selectedGroups.add(group)
         notifyChange()
         return group
+    }
+
+    fun createMeshPrototype(
+        name: String,
+        triangles: List<MeshTriangle>,
+        includeEdges: Boolean = true
+    ): ObjectPrototype? {
+        if (triangles.isEmpty()) {
+            return null
+        }
+        val bounds = BoundingBox()
+        var hasBounds = false
+        triangles.forEach { tri ->
+            if (!hasBounds) {
+                bounds.set(tri.a, tri.a)
+                hasBounds = true
+            }
+            bounds.ext(tri.a)
+            bounds.ext(tri.b)
+            bounds.ext(tri.c)
+        }
+        if (!hasBounds) {
+            return null
+        }
+        val localOrigin = Vector3(bounds.min)
+        val prototype = ObjectPrototype(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name.ifBlank { "Imported Object" },
+            definitionOrigin = Vector3(),
+            definitionAxisU = Vector3(1f, 0f, 0f),
+            definitionAxisV = Vector3(0f, 1f, 0f),
+            definitionAxisW = Vector3(0f, 0f, 1f),
+            gluedToSurface = false,
+            kind = PrototypeKind.MESH,
+            voxelColor = Color(defaultFaceColor),
+            voxelStore = null,
+            architectureStore = null,
+            hvacStore = null,
+            lineStore = DraftLineStore(),
+            faceStore = DraftFaceStore(defaultFaceColor),
+            dimensionStore = DraftDimensionStore(),
+            textStore = DraftTextStore()
+        )
+
+        prototype.faceStore.withChangeSuppressed {
+            prototype.lineStore.withChangeSuppressed {
+                triangles.forEach { tri ->
+                    val a = Vector3(tri.a).sub(localOrigin)
+                    val b = Vector3(tri.b).sub(localOrigin)
+                    val c = Vector3(tri.c).sub(localOrigin)
+                    prototype.faceStore.addTriangle(a, b, c, tri.color)
+                    if (includeEdges) {
+                        prototype.lineStore.addSegment(a, b, autoCleanup = false)
+                        prototype.lineStore.addSegment(b, c, autoCleanup = false)
+                        prototype.lineStore.addSegment(c, a, autoCleanup = false)
+                    }
+                }
+            }
+        }
+        if (includeEdges) {
+            prototype.lineStore.cleanupJts()
+        }
+        registerPrototype(prototype)
+        refreshPrototypeVertexIds(prototype)
+        prototype.lineStore.notifyExternalChange()
+        prototype.faceStore.notifyExternalChange()
+        notifyChange()
+        return prototype
     }
 
     fun isVoxelGroup(group: GroupNode): Boolean {
