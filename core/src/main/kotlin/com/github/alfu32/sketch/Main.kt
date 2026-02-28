@@ -1012,11 +1012,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         pluginHost.getCommandPalette().registerCommand(
             com.github.alfu32.sketch.plugin.PaletteCommand(
                 id = "import.mesh",
-                name = "Import> Mesh (OBJ/STL)",
-                description = "Import mesh geometry from OBJ or STL and place as object",
+                name = "Import> Mesh (OBJ/STL/FBX/glTF/DAE/DXF/3MF/AMF/IFC)",
+                description = "Import mesh geometry and place as object",
                 icon = "import",
                 category = "Import",
-                tags = listOf("import", "mesh", "obj", "stl"),
+                tags = listOf("import", "mesh", "obj", "stl", "fbx", "gltf", "glb", "dae", "dxf", "3mf", "amf", "ifc"),
                 priority = 1,
                 execute = {
                     showImportMeshDialog()
@@ -1027,11 +1027,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         pluginHost.getCommandPalette().registerCommand(
             com.github.alfu32.sketch.plugin.PaletteCommand(
                 id = "export.mesh",
-                name = "Export> Mesh (OBJ/STL)",
-                description = "Export mesh geometry as OBJ or STL",
+                name = "Export> Mesh (OBJ/STL/FBX/glTF/DAE/DXF/3MF/AMF/IFC)",
+                description = "Export mesh geometry in selected format",
                 icon = "export",
                 category = "Export",
-                tags = listOf("export", "mesh", "obj", "stl"),
+                tags = listOf("export", "mesh", "obj", "stl", "fbx", "gltf", "glb", "dae", "dxf", "3mf", "amf", "ifc"),
                 priority = 1,
                 execute = {
                     showExportMeshDialog()
@@ -3147,7 +3147,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val label: String,
         val extensions: List<String>,
         val defaultExtension: String,
-        val format: MeshIo.ExportFormat
+        val format: MeshIo.ExportFormat? = null,
+        val ifcExport: Boolean = false,
+        val unsupportedReason: String? = null
     )
 
     private val meshExportOptions = listOf(
@@ -3168,6 +3170,54 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             extensions = listOf("stla"),
             defaultExtension = "stla",
             format = MeshIo.ExportFormat.STL_ASCII
+        ),
+        MeshExportOption(
+            label = "glTF 2.0 (*.gltf)",
+            extensions = listOf("gltf"),
+            defaultExtension = "gltf",
+            format = MeshIo.ExportFormat.GLTF
+        ),
+        MeshExportOption(
+            label = "GLB (*.glb)",
+            extensions = listOf("glb"),
+            defaultExtension = "glb",
+            format = MeshIo.ExportFormat.GLB
+        ),
+        MeshExportOption(
+            label = "DAE/Collada (*.dae)",
+            extensions = listOf("dae"),
+            defaultExtension = "dae",
+            format = MeshIo.ExportFormat.DAE
+        ),
+        MeshExportOption(
+            label = "DXF 3DFACE (*.dxf)",
+            extensions = listOf("dxf"),
+            defaultExtension = "dxf",
+            format = MeshIo.ExportFormat.DXF
+        ),
+        MeshExportOption(
+            label = "3MF (*.3mf)",
+            extensions = listOf("3mf"),
+            defaultExtension = "3mf",
+            format = MeshIo.ExportFormat.THREE_MF
+        ),
+        MeshExportOption(
+            label = "AMF (*.amf)",
+            extensions = listOf("amf"),
+            defaultExtension = "amf",
+            format = MeshIo.ExportFormat.AMF
+        ),
+        MeshExportOption(
+            label = "IFC (*.ifc)",
+            extensions = listOf("ifc"),
+            defaultExtension = "ifc",
+            ifcExport = true
+        ),
+        MeshExportOption(
+            label = "FBX ASCII (*.fbx)",
+            extensions = listOf("fbx"),
+            defaultExtension = "fbx",
+            format = MeshIo.ExportFormat.FBX
         )
     )
 
@@ -3183,6 +3233,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val filter = FileTypeFilter(true)
         filter.addRule("OBJ (*.obj)", "obj")
         filter.addRule("STL (*.stl, *.stla, *.stlb)", "stl", "stla", "stlb")
+        filter.addRule("glTF/GLB (*.gltf, *.glb)", "gltf", "glb")
+        filter.addRule("DAE/Collada (*.dae)", "dae")
+        filter.addRule("DXF 3DFACE (*.dxf)", "dxf")
+        filter.addRule("3MF (*.3mf)", "3mf")
+        filter.addRule("AMF (*.amf)", "amf")
+        filter.addRule("IFC (*.ifc)", "ifc")
+        filter.addRule("FBX ASCII (*.fbx)", "fbx")
         chooser.setFileTypeFilter(filter)
         chooser.setListener(object : FileChooserAdapter() {
             override fun selected(files: Array<FileHandle>?) {
@@ -3194,7 +3251,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                     statusModel.message = "Import failed: selected file does not exist."
                     return
                 }
-                importMeshPayload(handle.name(), handle.readBytes())
+                importMeshPayload(handle.name(), handle.readBytes(), sourcePath = handle.file().absolutePath)
             }
         })
         showFileChooser(chooser)
@@ -3259,20 +3316,20 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 }
                 val targetName = displayName ?: suggestedName
                 val extension = targetName.substringAfterLast('.', "").lowercase()
-                val format = MeshIo.exportFormatForExtension(extension) ?: option.format
-                val export = exportMeshBytes(format) ?: return@createDocument
-                if (!bridge.writeBytes(uri, export.bytes)) {
+                val optionForExtension = meshExportOptionForExtension(extension) ?: option
+                val payload = createExportPayloadForOption(optionForExtension) ?: return@createDocument
+                if (!bridge.writeBytes(uri, payload.bytes)) {
                     statusModel.message = "Export failed: cannot write selected destination."
                     return@createDocument
                 }
                 val localMirror = File(androidModelRootDirectory(), ensureMeshExportFileName(targetName, option.defaultExtension))
                 try {
                     localMirror.parentFile?.mkdirs()
-                    localMirror.writeBytes(export.bytes)
+                    localMirror.writeBytes(payload.bytes)
                 } catch (_: Throwable) {
                     // Best effort local mirror for convenience.
                 }
-                statusModel.message = "Exported ${export.triangleCount} triangle(s) to $targetName (${export.scopeLabel})."
+                statusModel.message = payload.statusMessage(targetName)
             }
         }
         return true
@@ -3325,8 +3382,17 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private data class MeshExportPayload(
         val bytes: ByteArray,
         val triangleCount: Int,
-        val scopeLabel: String
-    )
+        val scopeLabel: String,
+        val ifcProductCount: Int? = null
+    ) {
+        fun statusMessage(target: String): String {
+            return if (ifcProductCount != null) {
+                "Exported IFC to $target ($ifcProductCount products, $scopeLabel)."
+            } else {
+                "Exported $triangleCount triangle(s) to $target ($scopeLabel)."
+            }
+        }
+    }
 
     private fun exportMeshToFile(requestedFile: File) {
         val normalizedTarget = if (requestedFile.extension.isBlank()) {
@@ -3336,19 +3402,38 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
         val target = normalizedTarget.absoluteFile
         val extension = target.extension.lowercase()
-        val format = MeshIo.exportFormatForExtension(extension)
-        if (format == null) {
-            statusModel.message = "Export failed: unsupported extension '${target.extension}'. Use .obj, .stl, .stla or .stlb."
+        val option = meshExportOptionForExtension(extension)
+        if (option == null) {
+            statusModel.message = "Export failed: unsupported extension '${target.extension}'."
             return
         }
-        val export = exportMeshBytes(format) ?: return
+        val export = createExportPayloadForOption(option) ?: return
         try {
             target.parentFile?.mkdirs()
             target.writeBytes(export.bytes)
-            statusModel.message = "Exported ${export.triangleCount} triangle(s) to ${target.absolutePath} (${export.scopeLabel})."
+            statusModel.message = export.statusMessage(target.absolutePath)
         } catch (t: Throwable) {
             statusModel.message = "Export failed: ${t.message ?: t.javaClass.simpleName}"
         }
+    }
+
+    private fun meshExportOptionForExtension(extension: String): MeshExportOption? {
+        val ext = extension.lowercase()
+        return meshExportOptions.firstOrNull { option ->
+            option.extensions.any { candidate -> candidate.equals(ext, ignoreCase = true) }
+        }
+    }
+
+    private fun createExportPayloadForOption(option: MeshExportOption): MeshExportPayload? {
+        option.unsupportedReason?.let { reason ->
+            statusModel.message = reason
+            return null
+        }
+        if (option.ifcExport) {
+            return exportIfcPayloadFromSelection()
+        }
+        val format = option.format ?: return null
+        return exportMeshBytes(format)
     }
 
     private fun exportMeshBytes(format: MeshIo.ExportFormat): MeshExportPayload? {
@@ -3419,7 +3504,45 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         return out
     }
 
-    private fun importMeshPayload(nameHint: String?, bytes: ByteArray) {
+    private fun exportIfcPayloadFromSelection(): MeshExportPayload? {
+        val selected = collectSelectedWorldTrianglesForExport()
+        val triangles = if (selected.isNotEmpty()) selected else collectAllWorldTrianglesForExport()
+        if (triangles.isEmpty()) {
+            statusModel.message = "IFC export failed: no mesh triangles in the model."
+            return null
+        }
+        val exportScene = GroupScene(Color(scene.defaultFaceColor))
+        exportScene.root.faceStore.withChangeSuppressed {
+            triangles.forEach { tri ->
+                exportScene.root.faceStore.addTriangle(Vector3(tri.a), Vector3(tri.b), Vector3(tri.c), scene.defaultFaceColor)
+            }
+        }
+        exportScene.root.faceStore.notifyExternalChange()
+        val tmp = kotlin.runCatching {
+            File.createTempFile("octodraw-ifc-export-", ".ifc")
+        }.getOrNull() ?: run {
+            statusModel.message = "IFC export failed: cannot allocate temporary file."
+            return null
+        }
+        val unitScale = modelUnit.size.coerceAtLeast(1e-6f)
+        return try {
+            val report = IfcExporter.export(exportScene, tmp, unitScale)
+            val bytes = tmp.readBytes()
+            MeshExportPayload(
+                bytes = bytes,
+                triangleCount = triangles.size,
+                scopeLabel = if (selected.isNotEmpty()) "selection" else "full model",
+                ifcProductCount = report.productCount
+            )
+        } catch (t: Throwable) {
+            statusModel.message = "IFC export failed: ${t.message ?: t.javaClass.simpleName}"
+            null
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    private fun importMeshPayload(nameHint: String?, bytes: ByteArray, sourcePath: String? = null) {
         val extension = nameHint?.substringAfterLast('.', "")?.lowercase().orEmpty()
         val resolvedFormat = MeshIo.importFormatForExtension(extension)
         val triangles = when {
@@ -3428,7 +3551,15 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 // Fallback when SAF providers omit extension metadata.
                 val obj = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.OBJ)
                 val stl = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.STL_AUTO)
-                if (obj.size >= stl.size) obj else stl
+                val glb = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.GLB)
+                val gltf = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.GLTF)
+                val dae = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.DAE)
+                val dxf = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.DXF)
+                val threemf = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.THREE_MF)
+                val amf = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.AMF)
+                val fbx = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.FBX)
+                val ifc = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.IFC)
+                listOf(obj, stl, glb, gltf, dae, dxf, threemf, amf, fbx, ifc).maxByOrNull { it.size }.orEmpty()
             }
         }
         if (triangles.isEmpty()) {
@@ -3463,7 +3594,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private fun ensureMeshExportFileName(name: String, fallbackExtension: String): String {
         val trimmed = name.trim().ifBlank { "mesh.$fallbackExtension" }
         val ext = trimmed.substringAfterLast('.', "").lowercase()
-        return if (MeshIo.exportFormatForExtension(ext) != null) {
+        return if (meshExportOptionForExtension(ext) != null) {
             trimmed
         } else {
             "$trimmed.$fallbackExtension"
