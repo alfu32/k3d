@@ -99,6 +99,24 @@ class DraftTextStore {
         return removed
     }
 
+    fun removeTexts(entities: Collection<TextEntity>): Int {
+        if (entities.isEmpty()) {
+            return 0
+        }
+        val ids = entities.mapTo(mutableSetOf()) { it.id }
+        if (ids.isEmpty()) {
+            return 0
+        }
+        val before = texts.size
+        texts.removeAll { ids.contains(it.id) }
+        val removed = before - texts.size
+        if (removed > 0) {
+            selectedIds.removeAll(ids)
+            notifyChange()
+        }
+        return removed
+    }
+
     fun clearAll() {
         texts.clear()
         selectedIds.clear()
@@ -246,6 +264,47 @@ class DraftTextStore {
         return count
     }
 
+    fun transformSelectedAdvanced(
+        pointTransform: (Vector3) -> Vector3,
+        vectorTransform: ((Vector3) -> Vector3)? = null,
+        sizeTransform: ((Float) -> Float)? = null
+    ): Int {
+        if (selectedIds.isEmpty()) {
+            return 0
+        }
+        var count = 0
+        texts.forEach { text ->
+            if (!selectedIds.contains(text.id)) {
+                return@forEach
+            }
+            text.position.set(pointTransform(Vector3(text.position)))
+            if (vectorTransform != null) {
+                val nextAxisU = vectorTransform(Vector3(text.axisU))
+                if (nextAxisU.len2() > 1e-8f) {
+                    text.axisU.set(nextAxisU)
+                }
+                val nextNormal = vectorTransform(Vector3(text.normal))
+                if (nextNormal.len2() > 1e-8f) {
+                    text.normal.set(nextNormal)
+                }
+                stabilizeBasis(text)
+            }
+            if (sizeTransform != null) {
+                val nextSize = sizeTransform(text.size)
+                text.size = if (text.kind == Kind.VECTOR) {
+                    nextSize.coerceAtLeast(1e-3f)
+                } else {
+                    nextSize
+                }
+            }
+            count++
+        }
+        if (count > 0) {
+            notifyChange()
+        }
+        return count
+    }
+
     fun copySelected(transform: (Vector3) -> Vector3): Int {
         if (selectedIds.isEmpty()) {
             return 0
@@ -273,6 +332,79 @@ class DraftTextStore {
             notifyChange()
         }
         return count
+    }
+
+    fun copySelectedAdvanced(
+        pointTransform: (Vector3) -> Vector3,
+        vectorTransform: ((Vector3) -> Vector3)? = null,
+        sizeTransform: ((Float) -> Float)? = null
+    ): Int {
+        if (selectedIds.isEmpty()) {
+            return 0
+        }
+        val original = texts.filter { selectedIds.contains(it.id) }
+        selectedIds.clear()
+        var count = 0
+        original.forEach { text ->
+            val transformedNormal = if (vectorTransform != null) vectorTransform(Vector3(text.normal)) else Vector3(text.normal)
+            val transformedAxisU = if (vectorTransform != null) vectorTransform(Vector3(text.axisU)) else Vector3(text.axisU)
+            val copy = addText(
+                position = pointTransform(Vector3(text.position)),
+                text = text.text,
+                size = if (sizeTransform != null) sizeTransform(text.size) else text.size,
+                normal = transformedNormal,
+                axisU = transformedAxisU,
+                screenText = text.screenText,
+                kind = text.kind,
+                tracking = text.tracking,
+                lineSpacing = text.lineSpacing,
+                glyphSourcePath = text.glyphSourcePath
+            )
+            if (vectorTransform != null) {
+                copy.normal.set(transformedNormal)
+                copy.axisU.set(transformedAxisU)
+                stabilizeBasis(copy)
+            }
+            if (text.kind == Kind.VECTOR) {
+                copy.size = copy.size.coerceAtLeast(1e-3f)
+            }
+            selectedIds.add(copy.id)
+            count++
+        }
+        if (count > 0) {
+            notifyChange()
+        }
+        return count
+    }
+
+    private fun stabilizeBasis(text: TextEntity) {
+        val eps = 1e-8f
+        val axisU = Vector3(text.axisU)
+        if (axisU.len2() <= eps) {
+            axisU.set(1f, 0f, 0f)
+        }
+        val normal = Vector3(text.normal)
+        if (normal.len2() <= eps) {
+            normal.set(0f, 1f, 0f)
+        }
+        if (Vector3(axisU).crs(normal).len2() <= eps) {
+            val desiredLen = normal.len().coerceAtLeast(1f)
+            var perpendicular = if (kotlin.math.abs(axisU.y) < 0.9f) {
+                Vector3(0f, 1f, 0f).crs(axisU)
+            } else {
+                Vector3(1f, 0f, 0f).crs(axisU)
+            }
+            if (perpendicular.len2() <= eps) {
+                perpendicular = Vector3(0f, 0f, 1f).crs(axisU)
+            }
+            if (perpendicular.len2() <= eps) {
+                perpendicular = Vector3(0f, 1f, 0f)
+            }
+            perpendicular.nor().scl(desiredLen)
+            normal.set(perpendicular)
+        }
+        text.axisU.set(axisU)
+        text.normal.set(normal)
     }
 
     private fun notifyChange() {

@@ -7166,6 +7166,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val targets = scene.selectedGroups().toList()
         val architectureSelections = scene.selectedArchitectureElements(scene.root)
         val hvacSelections = scene.selectedHvacElements(scene.root)
+        val explodedVectorTexts = explodeSelectedVectorTexts()
         val explodedArchitecture = if (architectureSelections.isNotEmpty()) {
             scene.explodeSelectedArchitectureElements(scene.root)
         } else {
@@ -7176,9 +7177,28 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         } else {
             0
         }
+        fun messageFor(ungrouped: Int?): String {
+            val parts = mutableListOf<String>()
+            if (ungrouped != null) {
+                parts += "Ungrouped $ungrouped group(s)"
+            }
+            if (explodedArchitecture > 0) {
+                parts += "exploded architecture $explodedArchitecture element(s)"
+            }
+            if (explodedHvac > 0) {
+                parts += "exploded HVAC $explodedHvac element(s)"
+            }
+            if (explodedVectorTexts > 0) {
+                parts += "exploded vector texts $explodedVectorTexts"
+            }
+            if (parts.isEmpty()) {
+                return if (ungrouped != null) "Ungrouped $ungrouped group(s)." else "Nothing to explode."
+            }
+            return parts.joinToString(", ").replaceFirstChar { it.uppercase() } + "."
+        }
         if (targets.isEmpty()) {
-            if (explodedArchitecture + explodedHvac > 0) {
-                statusModel.message = "Exploded architecture $explodedArchitecture, HVAC $explodedHvac element(s)."
+            if (explodedArchitecture + explodedHvac + explodedVectorTexts > 0) {
+                statusModel.message = messageFor(null)
                 undoManager.commit("Explode Elements")
                 saveModel()
             }
@@ -7193,13 +7213,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             // Defer actual explode one frame so the user sees feedback before heavy geometry transfer.
             Gdx.app.postRunnable {
                 val count = scene.ungroupSelected()
-                val changed = count + explodedArchitecture + explodedHvac
+                val changed = count + explodedArchitecture + explodedHvac + explodedVectorTexts
                 if (changed > 0) {
-                    statusModel.message = if (explodedArchitecture > 0 || explodedHvac > 0) {
-                        "Ungrouped $count group(s), exploded architecture $explodedArchitecture and HVAC $explodedHvac element(s)."
-                    } else {
-                        "Ungrouped $count group(s)."
-                    }
+                    statusModel.message = messageFor(count)
                     undoManager.commit("Explode")
                     saveModel()
                 }
@@ -7207,16 +7223,57 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             return
         }
         val count = scene.ungroupSelected()
-        val changed = count + explodedArchitecture + explodedHvac
+        val changed = count + explodedArchitecture + explodedHvac + explodedVectorTexts
         if (changed > 0) {
-            statusModel.message = if (explodedArchitecture > 0 || explodedHvac > 0) {
-                "Ungrouped $count group(s), exploded architecture $explodedArchitecture and HVAC $explodedHvac element(s)."
-            } else {
-                "Ungrouped $count group(s)."
-            }
+            statusModel.message = messageFor(count)
             undoManager.commit("Explode")
             saveModel()
         }
+    }
+
+    private fun explodeSelectedVectorTexts(): Int {
+        val group = scene.activeGroup()
+        val selected = group.textStore.getSelected().filter { it.kind == DraftTextStore.Kind.VECTOR }
+        if (selected.isEmpty()) {
+            return 0
+        }
+        val linesBefore = group.lineStore.getSegments().toSet()
+        val facesBefore = group.faceStore.getTriangles().toSet()
+        group.lineStore.withChangeSuppressed {
+            group.faceStore.withChangeSuppressed {
+                selected.forEach { text ->
+                    explodeVectorTextEntity(group, text)
+                }
+            }
+        }
+        group.textStore.removeTexts(selected)
+        group.lineStore.clearSelection()
+        group.faceStore.clearSelection()
+        group.textStore.clearSelection()
+        group.lineStore.getSegments().filter { it !in linesBefore }.forEach { group.lineStore.addSelection(it) }
+        group.faceStore.getTriangles().filter { it !in facesBefore }.forEach { group.faceStore.addSelection(it) }
+        return selected.size
+    }
+
+    private fun explodeVectorTextEntity(group: GroupScene.GroupNode, text: DraftTextStore.TextEntity) {
+        val axisW = Vector3(text.axisU).crs(text.normal).nor()
+        if (axisW.len2() <= 1e-6f) {
+            return
+        }
+        val catalog = glyphCatalogForSource(text.glyphSourcePath)
+        drawVectorTextGeometry(
+            content = text.text,
+            position = Vector3(text.position),
+            normal = Vector3(text.normal),
+            axisU = Vector3(text.axisU),
+            axisW = axisW,
+            targetHeight = text.size.coerceAtLeast(1e-3f),
+            tracking = text.tracking.coerceAtLeast(0f),
+            lineSpacing = text.lineSpacing.coerceAtLeast(0.1f),
+            catalog = catalog,
+            drawLine = { a, b -> group.lineStore.addSegment(a, b, autoCleanup = false) },
+            drawFace = { a, b, c -> group.faceStore.addTriangle(a, b, c, scene.defaultFaceColor) }
+        )
     }
 
     private fun exitGroupEditMode(): Boolean {

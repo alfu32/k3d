@@ -31,7 +31,7 @@ class VectorGlyphCatalog(
     fun size(): Int = glyphs.size
 
     companion object {
-        private val glyphNameRegex = Regex("^GL_0x([0-9A-Fa-f]{2})$")
+        private val glyphNameRegex = Regex("^GL_?0x([0-9A-Fa-f]{2})$")
 
         fun empty(source: String = ""): VectorGlyphCatalog = VectorGlyphCatalog(source, emptyMap())
 

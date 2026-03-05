@@ -126,11 +126,16 @@ class RotateTool(
             val movedEdges = group.lineStore.copySelected { point ->
                 Vector3(point).sub(cLocal).mul(quaternionLocal).add(cLocal)
             }
+            val movedTexts = group.textStore.copySelectedAdvanced(
+                pointTransform = { point -> Vector3(point).sub(cLocal).mul(quaternionLocal).add(cLocal) },
+                vectorTransform = { vector -> Vector3(vector).mul(quaternionLocal) }
+            )
             val movedGroups = scene.copySelectedGroups(
                 { point -> Vector3(point).sub(cWorld).mul(quaternionWorld).add(cWorld) },
                 { vector -> Vector3(vector).mul(quaternionWorld) }
             )
-            status.message = "Copied | architecture $rotatedArchitecture hvac $rotatedHvac edges $movedEdges faces $movedFaces groups $movedGroups"
+            status.message =
+                "Copied | architecture $rotatedArchitecture hvac $rotatedHvac edges $movedEdges faces $movedFaces texts $movedTexts groups $movedGroups"
         } else {
             val rotatedArchitecture = scene.transformSelectedArchitectureElements(
                 group = group,
@@ -147,11 +152,16 @@ class RotateTool(
             val movedEdges = group.lineStore.transformSelected { point ->
                 Vector3(point).sub(cLocal).mul(quaternionLocal).add(cLocal)
             }
+            val movedTexts = group.textStore.transformSelectedAdvanced(
+                pointTransform = { point -> Vector3(point).sub(cLocal).mul(quaternionLocal).add(cLocal) },
+                vectorTransform = { vector -> Vector3(vector).mul(quaternionLocal) }
+            )
             val movedGroups = scene.transformSelectedGroups(
                 { point -> Vector3(point).sub(cWorld).mul(quaternionWorld).add(cWorld) },
                 { vector -> Vector3(vector).mul(quaternionWorld) }
             )
-            status.message = "Rotated | architecture $rotatedArchitecture hvac $rotatedHvac edges $movedEdges faces $movedFaces groups $movedGroups"
+            status.message =
+                "Rotated | architecture $rotatedArchitecture hvac $rotatedHvac edges $movedEdges faces $movedFaces texts $movedTexts groups $movedGroups"
         }
         clearTransient()
         return true
