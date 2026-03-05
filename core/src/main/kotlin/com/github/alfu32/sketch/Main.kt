@@ -46,6 +46,7 @@ import com.github.alfu32.sketch.input.SnapResult
 import com.github.alfu32.sketch.input.Snapper
 import com.github.alfu32.sketch.input.ToolPointerProcessor
 import com.github.alfu32.sketch.model.ArchitectureStore
+import com.github.alfu32.sketch.model.DraftTextStore
 import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.model.HvacStore
 import com.github.alfu32.sketch.model.ModelPersistence
@@ -95,6 +96,9 @@ import com.github.alfu32.sketch.tools.ArchitectureWindowFrameTool
 import com.github.alfu32.sketch.tools.ExtrudeSwipeTool
 import com.github.alfu32.sketch.tools.MeshIntersectionTool
 import com.github.alfu32.sketch.tools.FaceOutlineTool
+import com.github.alfu32.sketch.tools.CopyMultipleTool
+import com.github.alfu32.sketch.tools.PlanarRotateMultipleTool
+import com.github.alfu32.sketch.tools.HelicoidalRotateMultipleTool
 import com.github.alfu32.sketch.tools.HotspotSettings
 import com.github.alfu32.sketch.tools.HvacPlumbingTool
 import com.github.alfu32.sketch.tools.HvacSettings
@@ -114,11 +118,16 @@ import com.github.alfu32.sketch.tools.PushPullTool
 import com.github.alfu32.sketch.tools.QuadTool
 import com.github.alfu32.sketch.tools.RectangleTool
 import com.github.alfu32.sketch.tools.RotateTool
+import com.github.alfu32.sketch.tools.RotateStretchTool
 import com.github.alfu32.sketch.tools.SurfaceRectangleTool
 import com.github.alfu32.sketch.tools.SelectTool
 import com.github.alfu32.sketch.tools.ScaleTool
 import com.github.alfu32.sketch.tools.StretchTool
 import com.github.alfu32.sketch.tools.TextTool
+import com.github.alfu32.sketch.tools.EmbeddedVectorGlyphCatalog
+import com.github.alfu32.sketch.tools.VectorTextTool
+import com.github.alfu32.sketch.tools.VectorTextSettings
+import com.github.alfu32.sketch.tools.VectorGlyphCatalog
 import com.github.alfu32.sketch.tools.VoxelFrameTool
 import com.github.alfu32.sketch.tools.VoxelTool
 import com.github.alfu32.sketch.tools.VoxelVolumeTool
@@ -234,6 +243,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private lateinit var uiOverlay: SketchUiOverlay
     private lateinit var toolPointer: ToolPointerProcessor
     private val polylineSettings = PolylineSettings()
+    private val vectorTextSettings = VectorTextSettings()
+    private var vectorGlyphCatalog = VectorGlyphCatalog.empty("uninitialized")
+    private val vectorGlyphCatalogCache = mutableMapOf<String, VectorGlyphCatalog>()
     private val architectureSettings = ArchitectureSettings()
     private val hvacSettings = HvacSettings()
     private val hotspotSettings = HotspotSettings()
@@ -247,6 +259,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private var distanceInputActive = false
     private var gridSpacing = 1f
     private var snapEpsilon = 12f
+    private val baseGridHalfSize = 20
+    private val adaptiveGridCloudRadiusUnits = 7
     private var modelUnit = ModelUnit(1f, "unit")
     private lateinit var modelFile: java.io.File
     private var shadowLightValue = 0.59f
@@ -315,6 +329,14 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private val walkGravityPrefKey = "walk.gravity"
     private val walkHeightAdjustSpeedPrefKey = "walk.heightAdjustSpeed"
     private val cameraTarget = Vector3(0f, 0f, 0f)
+    private data class AdaptiveGridCloudState(
+        val center: Vector3,
+        val normal: Vector3,
+        val axisU: Vector3,
+        val axisV: Vector3,
+        val halfExtent: Float
+    )
+    private var adaptiveGridCloudState: AdaptiveGridCloudState? = null
     private val screenshotTimestampFormatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
     private var mcpPort = 8765
     private lateinit var stdoutTap: StdoutTap
@@ -384,6 +406,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             inputBuffer = ""
         )
         scene = GroupScene(Color(0.8f, 0.8f, 0.8f, 1f))
+        vectorGlyphCatalog = loadVectorGlyphCatalog(vectorTextSettings.glyphSourcePath)
         modelCleanup = ModelCleanup(scene)
         guideManager = GuideManager()
         snapper = Snapper(
@@ -479,11 +502,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 CircleTool(scene),
                 LinearDimensionTool(scene),
                 TextTool(scene) { activeCamera },
+                VectorTextTool(
+                    scene,
+                    { activeCamera },
+                    { vectorTextSettings },
+                    { vectorGlyphCatalog }
+                ),
                 PushPullTool(scene) { activeCamera },
                 MoveTool(scene),
                 RotateTool(scene),
                 ScaleTool(scene),
                 StretchTool(scene),
+                RotateStretchTool(scene),
+                CopyMultipleTool(scene),
+                PlanarRotateMultipleTool(scene),
+                HelicoidalRotateMultipleTool(scene),
                 PaintTool(scene, { activeCamera }) { statusModel.paintColor.cpy() },
                 objectPlaceTool
             )
@@ -576,6 +609,12 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             shadowSettings,
             ::applyShadowSettings,
             polylineSettings,
+            vectorTextSettings,
+            ::vectorGlyphSourcePath,
+            ::loadVectorGlyphCatalogFromPath,
+            ::showVectorGlyphSourceDialog,
+            ::updateSelectedVectorTextTracking,
+            ::updateSelectedVectorTextLineSpacing,
             architectureSettings,
             hvacSettings,
             hotspotSettings,
@@ -695,6 +734,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 priority = 1,
                 execute = {
                     uiOverlay.showPolylineSettingsPanel()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.vector_text_settings",
+                name = "View> Vector Text Settings",
+                description = "Show vector text settings panel",
+                icon = "view",
+                category = "View",
+                tags = listOf("vector", "text", "settings", "panel"),
+                priority = 1,
+                execute = {
+                    uiOverlay.showVectorTextSettingsPanel()
                     com.github.alfu32.sketch.plugin.PluginResult.success()
                 }
             )
@@ -1096,11 +1150,16 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ToolId.MESH_INTERSECTION,
             ToolId.LINEAR_DIMENSION,
             ToolId.TEXT,
+            ToolId.VECTOR_TEXT,
             ToolId.PUSH_PULL,
             ToolId.MOVE,
             ToolId.ROTATE,
             ToolId.SCALE,
             ToolId.STRETCH,
+            ToolId.ROTATE_STRETCH,
+            ToolId.COPY_MULTIPLE,
+            ToolId.PLANAR_ROTATE_MULTIPLE,
+            ToolId.HELICOIDAL_ROTATE_MULTIPLE,
             ToolId.PAINT
         ).forEach { toolId ->
             pluginHost.getCommandPalette().registerCommand(
@@ -1119,6 +1178,21 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 )
             )
         }
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "tool.vector_text",
+                name = "Tool> Vector Text",
+                description = "Activate vector text tool",
+                icon = "tool",
+                category = "Tools",
+                tags = listOf("vector", "text", "glyph"),
+                priority = 1,
+                execute = {
+                    toolController.setTool(ToolId.VECTOR_TEXT)
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
 
         toolPointer = ToolPointerProcessor(toolController, snapper) { distanceOverrideSnap }
         val uiBlocker = object : com.badlogic.gdx.InputAdapter() {
@@ -2293,7 +2367,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         setLineWidth(2f)
         shapeRenderer.projectionMatrix = activeCamera.combined
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
-        drawGrid(20, gridSpacing)
+        drawGrid(baseGridHalfSize, gridSpacing)
         shapeRenderer.end()
 
         modelBatch.begin(activeCamera)
@@ -2310,9 +2384,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         drawActiveGroupAxes(1.8f)
         drawCameraTarget(1f)
         drawGuides()
-        drawCursor()
+        drawAdaptiveGridPointCloud()
         drawSelectionHighlights()
         drawDraftLines()
+        drawVectorTextEdges3D()
         drawArchitectureHoleGuides()
         drawHvacControlPoints()
         drawDimensions()
@@ -2324,6 +2399,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
         drawAnnotations2D()
         drawSelectedSegments2DOverlay()
+        drawCursor2DOverlay()
         drawHotspots2D()
         Gdx.gl.glDisable(GL20.GL_BLEND)
 
@@ -2492,23 +2568,74 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         )
     }
 
-    private fun drawCursor() {
+    private fun drawCursor2DOverlay() {
         val snap = lastSnap ?: return
         val hit = snap.world ?: return
-        val size = 0.24f
-        shapeRenderer.color = Color(0.9f, 0.2f, 0.2f, 1f) // X
-        shapeRenderer.line(hit.x - size, hit.y, hit.z, hit.x + size, hit.y, hit.z)
-        shapeRenderer.color = Color(0.2f, 0.45f, 0.95f, 1f) // Y
-        shapeRenderer.line(hit.x, hit.y - size, hit.z, hit.x, hit.y + size, hit.z)
-        shapeRenderer.color = Color(0.2f, 0.85f, 0.3f, 1f) // Z
-        shapeRenderer.line(hit.x, hit.y, hit.z - size, hit.x, hit.y, hit.z + size)
-        if (snap.type != com.github.alfu32.sketch.input.SnapType.NONE) {
-            val snapSize = 0.12f
-            shapeRenderer.color = Color(1f, 0.95f, 0.6f, 1f)
-            shapeRenderer.line(hit.x - snapSize, hit.y, hit.z, hit.x + snapSize, hit.y, hit.z)
-            shapeRenderer.line(hit.x, hit.y - snapSize, hit.z, hit.x, hit.y + snapSize, hit.z)
-            shapeRenderer.line(hit.x, hit.y, hit.z - snapSize, hit.x, hit.y, hit.z + snapSize)
+        val center = activeCamera.project(Vector3(hit))
+        if (!center.x.isFinite() || !center.y.isFinite() || !center.z.isFinite()) {
+            return
         }
+        if (center.z !in 0f..1f) {
+            return
+        }
+
+        shapeRenderer.projectionMatrix = uiOverlay.stage.camera.combined
+        shapeRenderer.transformMatrix = Matrix4().idt()
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
+        drawCursorAxis2D(hit, center, Vector3(1f, 0f, 0f), Color(0.9f, 0.2f, 0.2f, 1f))
+        drawCursorAxis2D(hit, center, Vector3(0f, 1f, 0f), Color(0.2f, 0.45f, 0.95f, 1f))
+        drawCursorAxis2D(hit, center, Vector3(0f, 0f, 1f), Color(0.2f, 0.85f, 0.3f, 1f))
+        if (snap.type != com.github.alfu32.sketch.input.SnapType.NONE) {
+            shapeRenderer.color = Color(1f, 0.95f, 0.6f, 0.95f)
+            shapeRenderer.circle(center.x, center.y, 3.8f, 18)
+        }
+        shapeRenderer.end()
+    }
+
+    private fun drawCursorAxis2D(centerWorld: Vector3, centerScreen: Vector3, axisWorld: Vector3, baseColor: Color) {
+        val axisTip = activeCamera.project(Vector3(centerWorld).add(axisWorld))
+        if (!axisTip.x.isFinite() || !axisTip.y.isFinite() || !axisTip.z.isFinite()) {
+            return
+        }
+        val dx = axisTip.x - centerScreen.x
+        val dy = axisTip.y - centerScreen.y
+        val len = kotlin.math.sqrt(dx * dx + dy * dy)
+        if (len <= 1e-4f) {
+            return
+        }
+        val nx = dx / len
+        val ny = dy / len
+        val positiveLenPx = 16f
+        val negativeLenPx = 16f
+        val lineWidthPx = 3.4f
+
+        val negX = centerScreen.x - nx * negativeLenPx
+        val negY = centerScreen.y - ny * negativeLenPx
+        val posX = centerScreen.x + nx * positiveLenPx
+        val posY = centerScreen.y + ny * positiveLenPx
+
+        shapeRenderer.color = lightenColor(baseColor, 0.45f)
+        shapeRenderer.rectLine(negX, negY, centerScreen.x, centerScreen.y, lineWidthPx)
+        shapeRenderer.circle(negX, negY, lineWidthPx * 0.55f, 14)
+
+        shapeRenderer.color = darkenColor(baseColor, 0.25f)
+        shapeRenderer.rectLine(centerScreen.x, centerScreen.y, posX, posY, lineWidthPx)
+        shapeRenderer.circle(posX, posY, lineWidthPx * 0.6f, 14)
+    }
+
+    private fun lightenColor(color: Color, amount: Float): Color {
+        val a = amount.coerceIn(0f, 1f)
+        return Color(
+            color.r + (1f - color.r) * a,
+            color.g + (1f - color.g) * a,
+            color.b + (1f - color.b) * a,
+            color.a
+        )
+    }
+
+    private fun darkenColor(color: Color, amount: Float): Color {
+        val a = (1f - amount.coerceIn(0f, 1f))
+        return Color(color.r * a, color.g * a, color.b * a, color.a)
     }
 
     private fun drawGuides() {
@@ -2552,6 +2679,107 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             shapeRenderer.color = axisColor(axisV)
             shapeRenderer.line(startV.x, startV.y, startV.z, endV.x, endV.y, endV.z)
         }
+    }
+
+    private fun drawAdaptiveGridPointCloud() {
+        val snap = lastSnap
+        if (snap == null || !snap.valid) {
+            adaptiveGridCloudState = null
+            return
+        }
+        val snapCenter = snap.world ?: return
+        val snapNormal = (snap.normal ?: Vector3(0f, 1f, 0f)).cpy()
+        if (snapNormal.len2() <= 1e-6f) {
+            adaptiveGridCloudState = null
+            return
+        }
+        snapNormal.nor()
+        val baseExtent = baseGridHalfSize * gridSpacing
+        val onGround = kotlin.math.abs(snapCenter.y) <= gridSpacing * 0.2f
+        val nearBaseGridEdge = onGround &&
+            (kotlin.math.abs(snapCenter.x) >= baseExtent * 0.75f || kotlin.math.abs(snapCenter.z) >= baseExtent * 0.75f)
+        val outsideBaseGrid = !onGround ||
+            kotlin.math.abs(snapCenter.x) > baseExtent ||
+            kotlin.math.abs(snapCenter.z) > baseExtent
+        val shouldActivate = nearBaseGridEdge || outsideBaseGrid || guideManager.hasGridGuides()
+        if (!shouldActivate && adaptiveGridCloudState == null) {
+            return
+        }
+
+        var state = adaptiveGridCloudState
+        if (state == null) {
+            state = createAdaptiveGridCloudState(snapCenter, snapNormal)
+        } else if (shouldReanchorAdaptiveGridCloud(state, snapCenter, snapNormal)) {
+            state = createAdaptiveGridCloudState(snapCenter, snapNormal)
+        }
+        adaptiveGridCloudState = state
+        val center = state.center
+        val axisU = state.axisU
+        val axisV = state.axisV
+        val step = gridSpacing
+        val crossHalf = (gridSpacing * 0.08f).coerceIn(0.05f, 0.18f)
+        val ux = axisU.x * crossHalf
+        val uy = axisU.y * crossHalf
+        val uz = axisU.z * crossHalf
+        val vx = axisV.x * crossHalf
+        val vy = axisV.y * crossHalf
+        val vz = axisV.z * crossHalf
+
+        shapeRenderer.color = Color(0.08f, 0.16f, 0.32f, 0.7f)
+        for (i in -adaptiveGridCloudRadiusUnits..adaptiveGridCloudRadiusUnits) {
+            for (j in -adaptiveGridCloudRadiusUnits..adaptiveGridCloudRadiusUnits) {
+                val px = center.x + axisU.x * (i * step) + axisV.x * (j * step)
+                val py = center.y + axisU.y * (i * step) + axisV.y * (j * step)
+                val pz = center.z + axisU.z * (i * step) + axisV.z * (j * step)
+                shapeRenderer.line(px - ux, py - uy, pz - uz, px + ux, py + uy, pz + uz)
+                shapeRenderer.line(px - vx, py - vy, pz - vz, px + vx, py + vy, pz + vz)
+            }
+        }
+    }
+
+    private fun createAdaptiveGridCloudState(center: Vector3, normal: Vector3): AdaptiveGridCloudState {
+        val n = Vector3(normal).nor()
+        val ref = if (kotlin.math.abs(n.y) < 0.95f) Vector3(0f, 1f, 0f) else Vector3(1f, 0f, 0f)
+        var axisU = Vector3(ref).crs(n)
+        if (axisU.len2() <= 1e-6f) {
+            axisU = Vector3(0f, 0f, 1f).crs(n)
+        }
+        axisU.nor()
+        val axisV = Vector3(n).crs(axisU).nor()
+        val planeDistance = center.dot(n)
+        val planeOrigin = Vector3(n).scl(planeDistance)
+        val local = Vector3(center).sub(planeOrigin)
+        val u = local.dot(axisU)
+        val v = local.dot(axisV)
+        val snappedU = kotlin.math.round(u / gridSpacing) * gridSpacing
+        val snappedV = kotlin.math.round(v / gridSpacing) * gridSpacing
+        val snappedCenter = Vector3(planeOrigin).mulAdd(axisU, snappedU).mulAdd(axisV, snappedV)
+        return AdaptiveGridCloudState(
+            center = snappedCenter,
+            normal = n,
+            axisU = axisU,
+            axisV = axisV,
+            halfExtent = adaptiveGridCloudRadiusUnits * gridSpacing
+        )
+    }
+
+    private fun shouldReanchorAdaptiveGridCloud(
+        state: AdaptiveGridCloudState,
+        cursorPoint: Vector3,
+        cursorNormal: Vector3
+    ): Boolean {
+        val normalAlignment = state.normal.dot(cursorNormal)
+        if (normalAlignment < 0.98f) {
+            return true
+        }
+        val local = Vector3(cursorPoint).sub(state.center)
+        val planeDistance = kotlin.math.abs(local.dot(state.normal))
+        if (planeDistance > gridSpacing * 0.35f) {
+            return true
+        }
+        val u = local.dot(state.axisU)
+        val v = local.dot(state.axisV)
+        return kotlin.math.abs(u) > state.halfExtent || kotlin.math.abs(v) > state.halfExtent
     }
 
     private fun axisColor(axis: Vector3): Color {
@@ -4390,8 +4618,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         textTransform.idt()
         spriteBatch.transformMatrix = textTransform
         spriteBatch.begin()
-        scene.collectWorldTexts { position, text, size, normal, axisU, selected, screenText ->
-            if (screenText) {
+        scene.collectWorldTexts { position, text, size, normal, axisU, selected, screenText, kind, _, _, _ ->
+            if (kind == DraftTextStore.Kind.BITMAP && screenText) {
                 drawWorldTextScreen(text, position, size, selected)
             }
         }
@@ -4401,8 +4629,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         textTransform.idt()
         spriteBatch.transformMatrix = textTransform
         spriteBatch.begin()
-        scene.collectWorldTexts { position, text, size, normal, axisU, selected, screenText ->
-            if (!screenText) {
+        scene.collectWorldTexts { position, text, size, normal, axisU, selected, screenText, kind, _, _, _ ->
+            if (kind == DraftTextStore.Kind.BITMAP && !screenText) {
                 drawWorldTextModel(text, position, size, normal, axisU, selected)
             }
         }
@@ -4867,6 +5095,123 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     ) {
         val color = if (selected) selectedLineColor else Color(0.1f, 0.1f, 0.1f, 1f)
         drawTextInPlane(text, position, size, normal, axisU, color)
+    }
+
+    private fun drawVectorTextEdges3D() {
+        scene.collectWorldTexts { position, text, size, normal, axisU, selected, _, kind, tracking, lineSpacing, glyphSourcePath ->
+            if (kind != DraftTextStore.Kind.VECTOR) {
+                return@collectWorldTexts
+            }
+            val catalog = glyphCatalogForSource(glyphSourcePath)
+            if (catalog.isEmpty()) {
+                return@collectWorldTexts
+            }
+            val axisW = Vector3(axisU).crs(normal).nor()
+            if (axisW.len2() <= 1e-6f) {
+                return@collectWorldTexts
+            }
+            shapeRenderer.color = if (selected) selectedLineColor else Color(0.06f, 0.06f, 0.1f, 1f)
+            drawVectorTextGeometry(
+                content = text,
+                position = position,
+                normal = normal,
+                axisU = axisU,
+                axisW = axisW,
+                targetHeight = size.coerceAtLeast(1e-3f),
+                tracking = tracking.coerceAtLeast(0f),
+                lineSpacing = lineSpacing.coerceAtLeast(0.1f),
+                catalog = catalog,
+                drawLine = { a, b -> shapeRenderer.line(a, b) }
+            )
+        }
+    }
+
+    private fun drawVectorTextGeometry(
+        content: String,
+        position: Vector3,
+        normal: Vector3,
+        axisU: Vector3,
+        axisW: Vector3,
+        targetHeight: Float,
+        tracking: Float,
+        lineSpacing: Float,
+        catalog: VectorGlyphCatalog,
+        drawLine: ((Vector3, Vector3) -> Unit)? = null,
+        drawFace: ((Vector3, Vector3, Vector3) -> Unit)? = null
+    ) {
+        val lineStep = (lineSpacing * targetHeight)
+        val spaceAdvance = targetHeight * 0.6f
+        var pen = 0f
+        var lineOffset = 0f
+        var index = 0
+        while (index < content.length) {
+            val codePoint = Character.codePointAt(content, index)
+            index += Character.charCount(codePoint)
+            when (codePoint) {
+                '\n'.code -> {
+                    pen = 0f
+                    lineOffset += lineStep
+                    continue
+                }
+                '\r'.code -> continue
+                ' '.code, '\t'.code -> {
+                    pen += spaceAdvance
+                    continue
+                }
+            }
+            val glyph = catalog.glyphOrSquare(codePoint)
+            if (glyph.height <= 1e-6f || glyph.width < 0f) {
+                pen += spaceAdvance
+                continue
+            }
+            val scale = targetHeight / glyph.height
+            val lineOrigin = Vector3(position).mulAdd(axisW, -lineOffset)
+            val glyphOrigin = Vector3(lineOrigin)
+                .mulAdd(axisU, pen - glyph.minX * scale)
+                .mulAdd(axisW, -glyph.minZ * scale)
+            val worldU = Vector3(axisU).scl(scale)
+            val worldV = Vector3(normal).scl(scale)
+            val worldW = Vector3(axisW).scl(scale)
+            if (drawLine != null) {
+                glyph.segments.forEach { segment ->
+                    val a = transformGlyphPoint(segment.start, glyphOrigin, worldU, worldV, worldW)
+                    val b = transformGlyphPoint(segment.end, glyphOrigin, worldU, worldV, worldW)
+                    drawLine(a, b)
+                }
+            }
+            if (drawFace != null) {
+                glyph.faces.forEach { face ->
+                    val a = transformGlyphPoint(face.a, glyphOrigin, worldU, worldV, worldW)
+                    val b = transformGlyphPoint(face.b, glyphOrigin, worldU, worldV, worldW)
+                    val c = transformGlyphPoint(face.c, glyphOrigin, worldU, worldV, worldW)
+                    drawFace(a, b, c)
+                }
+            }
+            pen += glyph.width * scale + tracking * targetHeight
+        }
+    }
+
+    private fun transformGlyphPoint(
+        point: Vector3,
+        origin: Vector3,
+        axisU: Vector3,
+        axisV: Vector3,
+        axisW: Vector3
+    ): Vector3 {
+        return Vector3(origin)
+            .mulAdd(axisU, point.x)
+            .mulAdd(axisV, point.y)
+            .mulAdd(axisW, point.z)
+    }
+
+    private fun glyphCatalogForSource(path: String): VectorGlyphCatalog {
+        val requested = path.trim().ifBlank { "embedded:alphabet" }
+        if (requested == vectorTextSettings.glyphSourcePath && !vectorGlyphCatalog.isEmpty()) {
+            return vectorGlyphCatalog
+        }
+        return vectorGlyphCatalogCache.getOrPut(requested) {
+            loadVectorGlyphCatalog(requested)
+        }
     }
 
     private fun drawWorldTextScreen(text: String, position: Vector3, size: Float, selected: Boolean) {
@@ -5547,7 +5892,11 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             selectedTextId = selectedText?.id,
             selectedTextValue = selectedText?.text,
             selectedTextSize = selectedText?.size,
-            selectedTextScreen = selectedText?.screenText
+            selectedTextScreen = selectedText?.screenText,
+            selectedVectorText = selectedText?.kind == DraftTextStore.Kind.VECTOR,
+            selectedVectorTextTracking = selectedText?.takeIf { it.kind == DraftTextStore.Kind.VECTOR }?.tracking,
+            selectedVectorTextLineSpacing = selectedText?.takeIf { it.kind == DraftTextStore.Kind.VECTOR }?.lineSpacing,
+            selectedVectorTextGlyphSourcePath = selectedText?.takeIf { it.kind == DraftTextStore.Kind.VECTOR }?.glyphSourcePath
         )
     }
 
@@ -6300,6 +6649,20 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
     }
 
+    private fun updateSelectedVectorTextTracking(textId: String, tracking: Float) {
+        val group = scene.activeGroup()
+        if (group.textStore.updateTracking(textId, tracking)) {
+            statusModel.message = "Vector text tracking updated."
+        }
+    }
+
+    private fun updateSelectedVectorTextLineSpacing(textId: String, lineSpacing: Float) {
+        val group = scene.activeGroup()
+        if (group.textStore.updateLineSpacing(textId, lineSpacing)) {
+            statusModel.message = "Vector text line spacing updated."
+        }
+    }
+
     private fun groupInfo(): SketchUiOverlay.GroupInfo? {
         val editing = scene.isEditing()
         val targetInstance = if (editing) {
@@ -6603,6 +6966,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             return
         }
         gridSpacing = next
+        adaptiveGridCloudState = null
         snapper.gridSpacing = next
         if (save) {
             undoManager.markChanged()
@@ -6612,6 +6976,147 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun setGridSpacing(value: Float) {
         applyGridSpacing(value, true)
+    }
+
+    private fun vectorGlyphSourcePath(): String {
+        return vectorTextSettings.glyphSourcePath
+    }
+
+    private fun showVectorGlyphSourceDialog() {
+        if (isAndroidRuntime()) {
+            if (!showAndroidSafVectorGlyphSourceDialog()) {
+                statusModel.message = "Vector glyph browse is unavailable on this Android runtime."
+            }
+            return
+        }
+        val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.OPEN)
+        chooser.getTitleLabel().setText("Load Vector Glyph Catalog")
+        chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
+        val filter = FileTypeFilter(true)
+        filter.addRule("Vector Glyph Catalog (*.octd)", "octd")
+        filter.addRule("Fonts (*.ttf, *.otf)", "ttf", "otf")
+        chooser.setFileTypeFilter(filter)
+        chooser.setListener(object : FileChooserAdapter() {
+            override fun selected(files: Array<FileHandle>?) {
+                if (files == null || files.size == 0) return
+                loadVectorGlyphCatalogFromPath(files.first().file().absolutePath)
+            }
+        })
+        showFileChooser(chooser)
+    }
+
+    private fun showAndroidSafVectorGlyphSourceDialog(): Boolean {
+        val bridge = AndroidSaf.bridge ?: return false
+        bridge.openDocument { uri, displayName ->
+            val safeUri = uri?.trim().orEmpty()
+            if (safeUri.isBlank()) {
+                statusModel.message = "Vector glyph load cancelled."
+                return@openDocument
+            }
+            val bytes = bridge.readBytes(safeUri)
+            if (bytes == null || bytes.isEmpty()) {
+                statusModel.message = "Failed to read selected glyph source."
+                return@openDocument
+            }
+            val nameHint = displayName?.trim().takeUnless { it.isNullOrBlank() } ?: safeUri
+            val lower = nameHint.lowercase()
+            if (lower.endsWith(".ttf") || lower.endsWith(".otf")) {
+                statusModel.message = "TTF/OTF vector import is not implemented yet. Use .octd glyph catalogs."
+                return@openDocument
+            }
+            val loaded = runCatching {
+                VectorGlyphCatalog.fromEncodedModel(bytes.toString(Charsets.UTF_8), "saf:$nameHint")
+            }.getOrNull()
+            if (loaded == null || loaded.isEmpty()) {
+                statusModel.message = "Failed to load glyph catalog: $nameHint"
+                return@openDocument
+            }
+            val persistedPath = persistSafGlyphCatalog(nameHint, bytes)
+            vectorGlyphCatalog = loaded
+            vectorTextSettings.glyphSourcePath = persistedPath ?: "saf:$nameHint"
+            statusModel.message = "Glyph catalog loaded (${loaded.size()} glyphs) from ${loaded.source}."
+        }
+        return true
+    }
+
+    private fun persistSafGlyphCatalog(nameHint: String, bytes: ByteArray): String? {
+        return try {
+            val fileName = nameHint.substringAfterLast('/').substringAfterLast('\\')
+                .replace(Regex("[^A-Za-z0-9._-]"), "_")
+                .ifBlank { "glyphs.octd" }
+            val safeName = if (fileName.lowercase().endsWith(".octd")) fileName else "$fileName.octd"
+            val baseDir = modelFile.parentFile ?: File(System.getProperty("user.home"))
+            val glyphDir = File(baseDir, "glyphs").apply { mkdirs() }
+            val target = File(glyphDir, safeName)
+            target.writeBytes(bytes)
+            target.absolutePath
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun loadVectorGlyphCatalogFromPath(path: String) {
+        val requested = path.trim().ifBlank { "embedded:alphabet" }
+        val lower = requested.lowercase()
+        if (lower.endsWith(".ttf") || lower.endsWith(".otf")) {
+            statusModel.message = "TTF/OTF vector import is not implemented yet. Use .octd glyph catalogs."
+            return
+        }
+        val loaded = loadVectorGlyphCatalog(requested, allowEmbeddedFallback = requested.startsWith("embedded", ignoreCase = true))
+        if (loaded.isEmpty()) {
+            statusModel.message = "Failed to load glyph catalog: $requested"
+            return
+        }
+        vectorGlyphCatalogCache[requested] = loaded
+        vectorGlyphCatalog = loaded
+        vectorTextSettings.glyphSourcePath = requested
+        val selected = scene.activeGroup().textStore.getSelected()
+        if (selected.size == 1 && selected.first().kind == DraftTextStore.Kind.VECTOR) {
+            scene.activeGroup().textStore.updateGlyphSourcePath(selected.first().id, requested)
+        }
+        statusModel.message = "Glyph catalog loaded (${loaded.size()} glyphs) from ${loaded.source}."
+    }
+
+    private fun loadVectorGlyphCatalog(path: String, allowEmbeddedFallback: Boolean = true): VectorGlyphCatalog {
+        val requested = path.trim()
+        if (requested.isBlank() || requested.startsWith("embedded", ignoreCase = true)) {
+            val embedded = EmbeddedVectorGlyphCatalog.load()
+            vectorGlyphCatalogCache["embedded:alphabet"] = embedded
+            return embedded
+        }
+
+        fun fromInternal(internalPath: String): VectorGlyphCatalog? {
+            return try {
+                val handle = Gdx.files.internal(internalPath)
+                if (!handle.exists()) return null
+                VectorGlyphCatalog.fromEncodedModel(handle.readString("UTF-8"), "internal:$internalPath")
+            } catch (_: Exception) {
+                null
+            }
+        }
+        fun fromAbsoluteOrRelative(filePath: String): VectorGlyphCatalog? {
+            return try {
+                val file = File(filePath)
+                val resolved = if (file.isAbsolute) file else File(System.getProperty("user.dir"), filePath)
+                if (!resolved.exists() || !resolved.isFile) return null
+                VectorGlyphCatalog.fromEncodedModel(resolved.readText(), resolved.absolutePath)
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        val loaded = fromInternal(requested) ?: fromAbsoluteOrRelative(requested)
+        if (loaded != null && !loaded.isEmpty()) {
+            return loaded
+        }
+        if (allowEmbeddedFallback) {
+            val embedded = EmbeddedVectorGlyphCatalog.load()
+            if (!embedded.isEmpty()) {
+                vectorGlyphCatalogCache["embedded:alphabet"] = embedded
+                return embedded
+            }
+        }
+        return VectorGlyphCatalog.empty(requested)
     }
 
     private fun walkthroughTuningInfo(): WalkthroughTuning {

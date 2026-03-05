@@ -42,6 +42,7 @@ import com.github.alfu32.sketch.tools.ArchitectureSettings
 import com.github.alfu32.sketch.tools.HotspotSettings
 import com.github.alfu32.sketch.tools.HvacSettings
 import com.github.alfu32.sketch.tools.PolylineSettings
+import com.github.alfu32.sketch.tools.VectorTextSettings
 import java.util.Locale
 import kotlin.math.abs
 
@@ -81,6 +82,12 @@ class SketchUiOverlay(
     private val shadowSettings: ShadowSettings,
     private val shadowChanged: (ShadowSettings) -> Unit,
     private val polylineSettings: PolylineSettings,
+    private val vectorTextSettings: VectorTextSettings,
+    private val vectorGlyphSourceProvider: () -> String,
+    private val vectorGlyphSourceLoadAction: (String) -> Unit,
+    private val vectorGlyphSourceBrowseAction: () -> Unit,
+    private val vectorTextTrackingChanged: (String, Float) -> Unit,
+    private val vectorTextLineSpacingChanged: (String, Float) -> Unit,
     private val architectureSettings: ArchitectureSettings,
     private val hvacSettings: HvacSettings,
     private val hotspotSettings: HotspotSettings,
@@ -426,6 +433,7 @@ class SketchUiOverlay(
     private lateinit var rightSidePanelScrollCell: Cell<VisScrollPane>
     private lateinit var helpPanel: DockSection
     private lateinit var polylineSettingsPanel: DockSection
+    private lateinit var vectorTextSettingsPanel: DockSection
     private lateinit var architectureWallsPanel: DockSection
     private lateinit var architectureSlabsPanel: DockSection
     private lateinit var architectureStairsPanel: DockSection
@@ -529,6 +537,14 @@ class SketchUiOverlay(
     private lateinit var architectureStairsContent: VisTable
     private lateinit var architectureFramesContent: VisTable
     private var updatingArchitectureFields = false
+    private lateinit var vectorTextValueField: VisTextField
+    private lateinit var vectorTextSizeField: VisTextField
+    private lateinit var vectorTextTrackingField: VisTextField
+    private lateinit var vectorTextLineSpacingField: VisTextField
+    private lateinit var vectorTextGlyphSourceField: VisTextField
+    private lateinit var vectorTextLoadGlyphSourceButton: VisTextButton
+    private lateinit var vectorTextBrowseGlyphSourceButton: VisTextButton
+    private var updatingVectorTextFields = false
     private val unitNameField = VisTextField()
     private val unitSizeField = VisTextField()
     private val gridSpacingField = VisTextField()
@@ -586,6 +602,7 @@ class SketchUiOverlay(
         uiSettingsPanel = buildUiSettingsPanel()
         helpPanel = buildHelpPanel()
         polylineSettingsPanel = buildPolylineSettingsPanel()
+        vectorTextSettingsPanel = buildVectorTextSettingsPanel()
         buildArchitectureSettingsPanels()
         hvacSettingsPanel = buildHvacSettingsPanel()
         hotspotSettingsPanel = buildHotspotSettingsPanel()
@@ -855,11 +872,12 @@ class SketchUiOverlay(
         }
         updatingSelectionFilters = false
         val hasTextSelection = selection.selectedTextId != null
+        val isVectorTextSelection = selection.selectedVectorText
         selectionTextLabel.isVisible = hasTextSelection
         selectionTextField.isVisible = hasTextSelection
         selectionTextSizeLabel.isVisible = hasTextSelection
         selectionTextSizeField.isVisible = hasTextSelection
-        selectionTextScreenCheck.isVisible = hasTextSelection
+        selectionTextScreenCheck.isVisible = hasTextSelection && !isVectorTextSelection
         updatingSelectionFields = true
         selectionTextId = selection.selectedTextId
         selectionTextField.text = selection.selectedTextValue ?: ""
@@ -869,6 +887,7 @@ class SketchUiOverlay(
         updateGroupPanel()
         updateObjectsPanel()
         updateModelSettingsPanel()
+        updateVectorTextSettingsPanel()
         updateArchitectureSettingsPanel()
         updateHvacSettingsPanel()
         updateHotspotSettingsPanel()
@@ -882,6 +901,61 @@ class SketchUiOverlay(
 
     fun refreshLightingControls() {
         lightingRefreshers.forEach { it.invoke() }
+    }
+
+    private fun updateVectorTextSettingsPanel() {
+        if (!::vectorTextValueField.isInitialized) {
+            return
+        }
+        val selection = selectionInfoProvider()
+        val selectedVector = selection.selectedTextId != null && selection.selectedVectorText
+        val displayText = if (selectedVector) {
+            selection.selectedTextValue ?: ""
+        } else {
+            vectorTextSettings.text
+        }
+        val displaySize = if (selectedVector) {
+            selection.selectedTextSize ?: vectorTextSettings.size
+        } else {
+            vectorTextSettings.size
+        }
+        val displayTracking = if (selectedVector) {
+            selection.selectedVectorTextTracking ?: vectorTextSettings.tracking
+        } else {
+            vectorTextSettings.tracking
+        }
+        val displayLineSpacing = if (selectedVector) {
+            selection.selectedVectorTextLineSpacing ?: vectorTextSettings.lineSpacing
+        } else {
+            vectorTextSettings.lineSpacing
+        }
+        val displayGlyphSource = if (selectedVector) {
+            selection.selectedVectorTextGlyphSourcePath ?: vectorGlyphSourceProvider()
+        } else {
+            vectorGlyphSourceProvider()
+        }
+
+        updatingVectorTextFields = true
+        if (!vectorTextValueField.hasKeyboardFocus() && vectorTextValueField.text != displayText) {
+            vectorTextValueField.text = displayText
+        }
+        val sizeText = String.format(Locale.US, "%.3f", displaySize)
+        if (!vectorTextSizeField.hasKeyboardFocus() && vectorTextSizeField.text != sizeText) {
+            vectorTextSizeField.text = sizeText
+        }
+        val trackingText = String.format(Locale.US, "%.3f", displayTracking)
+        if (!vectorTextTrackingField.hasKeyboardFocus() && vectorTextTrackingField.text != trackingText) {
+            vectorTextTrackingField.text = trackingText
+        }
+        val lineSpacingText = String.format(Locale.US, "%.3f", displayLineSpacing)
+        if (!vectorTextLineSpacingField.hasKeyboardFocus() && vectorTextLineSpacingField.text != lineSpacingText) {
+            vectorTextLineSpacingField.text = lineSpacingText
+        }
+        val sourceText = displayGlyphSource
+        if (!vectorTextGlyphSourceField.hasKeyboardFocus() && vectorTextGlyphSourceField.text != sourceText) {
+            vectorTextGlyphSourceField.text = sourceText
+        }
+        updatingVectorTextFields = false
     }
 
     private fun syncCameraModeButtons() {
@@ -999,6 +1073,13 @@ class SketchUiOverlay(
         needsPanelLayout = true
     }
 
+    fun showVectorTextSettingsPanel() {
+        vectorTextSettingsPanel.isVisible = true
+        vectorTextSettingsPanel.setCollapsedState(false)
+        if (::rightSidePanel.isInitialized) rightSidePanel.isVisible = true
+        needsPanelLayout = true
+    }
+
     fun showArchitectureSettingsPanel() {
         val selection = architectureElementProvider()
         val sections = listOf(
@@ -1056,6 +1137,7 @@ class SketchUiOverlay(
             modelSettingsPanel.isVisible = false
             helpPanel.isVisible = false
             polylineSettingsPanel.isVisible = false
+            vectorTextSettingsPanel.isVisible = false
             architectureWallsPanel.isVisible = false
             architectureSlabsPanel.isVisible = false
             architectureStairsPanel.isVisible = false
@@ -1109,6 +1191,7 @@ class SketchUiOverlay(
         val entityConstructionTools = listOf(
             ToolId.LINEAR_DIMENSION,
             ToolId.TEXT,
+            ToolId.VECTOR_TEXT,
             ToolId.LINE_OFFSET,
             ToolId.CUT_OUT_3,
             ToolId.PUSH_PULL,
@@ -1122,6 +1205,10 @@ class SketchUiOverlay(
             ToolId.ROTATE,
             ToolId.SCALE,
             ToolId.STRETCH,
+            ToolId.ROTATE_STRETCH,
+            ToolId.COPY_MULTIPLE,
+            ToolId.PLANAR_ROTATE_MULTIPLE,
+            ToolId.HELICOIDAL_ROTATE_MULTIPLE,
             ToolId.PAINT
         )
         val voxelTools = listOf(
@@ -1838,6 +1925,108 @@ class SketchUiOverlay(
             override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
                 val value = offsetField.text.toFloatOrNull() ?: return
                 polylineSettings.doubleLineOffset = value
+            }
+        })
+        return panel
+    }
+
+    private fun buildVectorTextSettingsPanel(): DockSection {
+        val content = VisTable()
+        content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        content.defaults().pad(4f).left().growX()
+        vectorTextValueField = VisTextField(vectorTextSettings.text)
+        vectorTextSizeField = VisTextField(String.format(Locale.US, "%.3f", vectorTextSettings.size))
+        vectorTextTrackingField = VisTextField(String.format(Locale.US, "%.3f", vectorTextSettings.tracking))
+        vectorTextLineSpacingField = VisTextField(String.format(Locale.US, "%.3f", vectorTextSettings.lineSpacing))
+        vectorTextGlyphSourceField = VisTextField(vectorGlyphSourceProvider())
+        vectorTextLoadGlyphSourceButton = VisTextButton("Load Glyph Source")
+        vectorTextBrowseGlyphSourceButton = VisTextButton("Browse...")
+
+        content.add(VisLabel("Text")).left().row()
+        content.add(vectorTextValueField).growX().row()
+        content.add(VisLabel("Size")).left().padTop(4f).row()
+        content.add(vectorTextSizeField).growX().row()
+        content.add(VisLabel("Tracking")).left().padTop(4f).row()
+        content.add(vectorTextTrackingField).growX().row()
+        content.add(VisLabel("Line spacing")).left().padTop(4f).row()
+        content.add(vectorTextLineSpacingField).growX().row()
+        content.add(VisLabel("Glyph source file (.octd / .ttf / .otf)")).left().padTop(6f).row()
+        content.add(vectorTextGlyphSourceField).growX().row()
+        val glyphButtons = VisTable()
+        glyphButtons.defaults().padRight(6f)
+        glyphButtons.add(vectorTextLoadGlyphSourceButton).left()
+        glyphButtons.add(vectorTextBrowseGlyphSourceButton).left()
+        content.add(glyphButtons).left().padTop(2f).row()
+        content.add(VisLabel("Default uses embedded glyph map (alphabet)")).left().padTop(4f).row()
+
+        val panel = buildDockSection("Vector Text", content, visible = true, collapsed = true)
+
+        vectorTextValueField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingVectorTextFields) return
+                val selection = selectionInfoProvider()
+                val selectedId = selection.selectedTextId
+                if (selection.selectedVectorText && selectedId != null) {
+                    selectionTextChanged(selectedId, vectorTextValueField.text)
+                } else {
+                    vectorTextSettings.text = vectorTextValueField.text
+                }
+            }
+        })
+        vectorTextSizeField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingVectorTextFields) return
+                val value = vectorTextSizeField.text.toFloatOrNull() ?: return
+                val normalized = value.coerceAtLeast(0.01f)
+                val selection = selectionInfoProvider()
+                val selectedId = selection.selectedTextId
+                if (selection.selectedVectorText && selectedId != null) {
+                    selectionTextSizeChanged(selectedId, normalized)
+                } else {
+                    vectorTextSettings.size = normalized
+                }
+            }
+        })
+        vectorTextTrackingField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingVectorTextFields) return
+                val value = vectorTextTrackingField.text.toFloatOrNull() ?: return
+                val normalized = value.coerceAtLeast(0f)
+                val selection = selectionInfoProvider()
+                val selectedId = selection.selectedTextId
+                if (selection.selectedVectorText && selectedId != null) {
+                    vectorTextTrackingChanged(selectedId, normalized)
+                } else {
+                    vectorTextSettings.tracking = normalized
+                }
+            }
+        })
+        vectorTextLineSpacingField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingVectorTextFields) return
+                val value = vectorTextLineSpacingField.text.toFloatOrNull() ?: return
+                val normalized = value.coerceAtLeast(0.1f)
+                val selection = selectionInfoProvider()
+                val selectedId = selection.selectedTextId
+                if (selection.selectedVectorText && selectedId != null) {
+                    vectorTextLineSpacingChanged(selectedId, normalized)
+                } else {
+                    vectorTextSettings.lineSpacing = normalized
+                }
+            }
+        })
+        vectorTextLoadGlyphSourceButton.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                val path = vectorTextGlyphSourceField.text.trim()
+                if (path.isBlank()) {
+                    return
+                }
+                vectorGlyphSourceLoadAction(path)
+            }
+        })
+        vectorTextBrowseGlyphSourceButton.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                vectorGlyphSourceBrowseAction()
             }
         })
         return panel
@@ -3827,6 +4016,7 @@ class SketchUiOverlay(
             uiSettingsPanel,
             helpPanel,
             polylineSettingsPanel,
+            vectorTextSettingsPanel,
             architectureWallsPanel,
             architectureSlabsPanel,
             architectureStairsPanel,
@@ -4464,11 +4654,16 @@ class SketchUiOverlay(
             ToolId.CIRCLE -> "circle"
             ToolId.LINEAR_DIMENSION -> "dimension"
             ToolId.TEXT -> "text"
+            ToolId.VECTOR_TEXT -> "vectorial-text"
             ToolId.PUSH_PULL -> "push_pull"
             ToolId.MOVE -> "move"
             ToolId.ROTATE -> "rotate"
             ToolId.SCALE -> "scale"
             ToolId.STRETCH -> "stretch"
+            ToolId.ROTATE_STRETCH -> "stretch-rotate"
+            ToolId.COPY_MULTIPLE -> "multiple-copy-translate"
+            ToolId.PLANAR_ROTATE_MULTIPLE -> "multiple-copy-planar-rotate"
+            ToolId.HELICOIDAL_ROTATE_MULTIPLE -> "multiple-copy-hekicoidal-rotate"
             ToolId.PAINT -> "paint"
             ToolId.OBJECT_PLACE -> "select"
             ToolId.PLUGIN -> "plugins"
@@ -4506,11 +4701,16 @@ class SketchUiOverlay(
             ToolId.CIRCLE -> Color(0.95f, 0.55f, 0.75f, 1f)
             ToolId.LINEAR_DIMENSION -> Color(0.8f, 0.8f, 0.4f, 1f)
             ToolId.TEXT -> Color(0.8f, 0.8f, 0.8f, 1f)
+            ToolId.VECTOR_TEXT -> Color(0.7f, 0.85f, 0.95f, 1f)
             ToolId.PUSH_PULL -> Color(0.45f, 0.95f, 0.55f, 1f)
             ToolId.MOVE -> Color(0.95f, 0.45f, 0.35f, 1f)
             ToolId.ROTATE -> Color(0.75f, 0.55f, 0.95f, 1f)
             ToolId.SCALE -> Color(0.95f, 0.55f, 0.75f, 1f)
             ToolId.STRETCH -> Color(0.95f, 0.65f, 0.25f, 1f)
+            ToolId.ROTATE_STRETCH -> Color(0.85f, 0.6f, 0.25f, 1f)
+            ToolId.COPY_MULTIPLE -> Color(0.95f, 0.75f, 0.25f, 1f)
+            ToolId.PLANAR_ROTATE_MULTIPLE -> Color(0.75f, 0.65f, 0.95f, 1f)
+            ToolId.HELICOIDAL_ROTATE_MULTIPLE -> Color(0.65f, 0.75f, 0.95f, 1f)
             ToolId.PAINT -> Color(0.95f, 0.95f, 0.45f, 1f)
             ToolId.OBJECT_PLACE -> Color(0.85f, 0.85f, 0.85f, 1f)
             ToolId.PLUGIN -> Color(0.75f, 0.85f, 0.95f, 1f)
@@ -4850,7 +5050,11 @@ class SketchUiOverlay(
         val selectedTextId: String? = null,
         val selectedTextValue: String? = null,
         val selectedTextSize: Float? = null,
-        val selectedTextScreen: Boolean? = null
+        val selectedTextScreen: Boolean? = null,
+        val selectedVectorText: Boolean = false,
+        val selectedVectorTextTracking: Float? = null,
+        val selectedVectorTextLineSpacing: Float? = null,
+        val selectedVectorTextGlyphSourcePath: String? = null
     )
 
     data class HotspotSelectionInfo(

@@ -8,6 +8,7 @@ import com.github.alfu32.sketch.model.DraftFaceStore
 import com.github.alfu32.sketch.model.DraftLineStore
 import com.github.alfu32.sketch.model.GroupScene
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.round
 import kotlin.math.sqrt
 
@@ -200,9 +201,9 @@ class Snapper(
     }
 
     private fun snapToGrid(base: Vector3, normal: Vector3, screenX: Int, screenY: Int, ray: com.badlogic.gdx.math.collision.Ray): SnapCandidate? {
-        val gx = round(base.x / gridSpacing) * gridSpacing
-        val gz = round(base.z / gridSpacing) * gridSpacing
-        val candidate = Vector3(gx, 0f, gz)
+        val basis = buildPlaneGridBasis(base, normal) ?: return null
+        val coords = planeCoordinates(base, basis.origin, basis.axisU, basis.axisV)
+        val candidate = pointOnPlane(basis.origin, basis.axisU, basis.axisV, coords.snappedU, coords.snappedV)
         val dist = screenDistance(candidate, screenX, screenY)
         val t = rayT(ray, candidate) ?: return null
         return if (dist <= snapPixels) {
@@ -500,14 +501,14 @@ class Snapper(
     }
 
     private fun snapToGridLines(base: Vector3, normal: Vector3, screenX: Int, screenY: Int, ray: com.badlogic.gdx.math.collision.Ray): SnapCandidate? {
-        val gx = round(base.x / gridSpacing) * gridSpacing
-        val gz = round(base.z / gridSpacing) * gridSpacing
-        val candidateX = Vector3(gx, 0f, base.z)
-        val candidateZ = Vector3(base.x, 0f, gz)
-        val distX = screenDistance(candidateX, screenX, screenY)
-        val distZ = screenDistance(candidateZ, screenX, screenY)
-        val bestCandidate = if (distX <= distZ) candidateX else candidateZ
-        val bestDist = minOf(distX, distZ)
+        val basis = buildPlaneGridBasis(base, normal) ?: return null
+        val coords = planeCoordinates(base, basis.origin, basis.axisU, basis.axisV)
+        val candidateU = pointOnPlane(basis.origin, basis.axisU, basis.axisV, coords.snappedU, coords.v)
+        val candidateV = pointOnPlane(basis.origin, basis.axisU, basis.axisV, coords.u, coords.snappedV)
+        val distU = screenDistance(candidateU, screenX, screenY)
+        val distV = screenDistance(candidateV, screenX, screenY)
+        val bestCandidate = if (distU <= distV) candidateU else candidateV
+        val bestDist = minOf(distU, distV)
         val t = rayT(ray, bestCandidate) ?: return null
         return if (bestDist <= snapPixels) {
             SnapCandidate(bestCandidate, Vector3(normal), SnapType.GRID_LINE, bestDist, t, SnapSource.GRID_LINE)
@@ -528,16 +529,41 @@ class Snapper(
             planes.forEach { plane ->
                 val hit = intersectPlane(ray, guide.origin, plane.normal)
                 if (hit != null) {
-                    val snapped = snapPointOnPlane(hit.point, guide.origin, plane.axisU, plane.axisV)
-                    val dist = screenDistance(snapped, screenX, screenY)
-                    if (dist <= snapPixels) {
-                        val normal = facingNormal(Vector3(plane.normal), ray.direction)
-                        val candidate = SnapCandidate(snapped, normal, SnapType.GRID_GUIDE, dist, hit.t, SnapSource.GRID_GUIDE)
-                        if (hit.t < bestT - epsilon) {
-                            bestT = hit.t
-                            best = candidate
-                        } else if (kotlin.math.abs(hit.t - bestT) <= epsilon) {
-                            best = pickBetter(best, candidate)
+                    val coords = planeCoordinates(hit.point, guide.origin, plane.axisU, plane.axisV)
+                    val snapped = pointOnPlane(guide.origin, plane.axisU, plane.axisV, coords.snappedU, coords.snappedV)
+                    val supported = isSupportedGuidePoint(snapped)
+                    val normal = facingNormal(Vector3(plane.normal), ray.direction)
+                    if (supported) {
+                        val dist = screenDistance(snapped, screenX, screenY)
+                        if (dist <= snapPixels) {
+                            val t = rayT(ray, snapped) ?: hit.t
+                            val candidate = SnapCandidate(snapped, normal, SnapType.GRID_GUIDE, dist, t, SnapSource.GRID_GUIDE)
+                            if (t < bestT - epsilon) {
+                                bestT = t
+                                best = candidate
+                            } else if (kotlin.math.abs(t - bestT) <= epsilon) {
+                                best = pickBetter(best, candidate)
+                            }
+                        }
+                    } else {
+                        val lineU = pointOnPlane(guide.origin, plane.axisU, plane.axisV, coords.snappedU, coords.v)
+                        val lineV = pointOnPlane(guide.origin, plane.axisU, plane.axisV, coords.u, coords.snappedV)
+                        val distU = screenDistance(lineU, screenX, screenY)
+                        val distV = screenDistance(lineV, screenX, screenY)
+                        val (linePoint, lineDist) = if (distU <= distV) {
+                            lineU to distU
+                        } else {
+                            lineV to distV
+                        }
+                        if (lineDist <= snapPixels) {
+                            val t = rayT(ray, linePoint) ?: hit.t
+                            val candidate = SnapCandidate(linePoint, normal, SnapType.GRID_LINE, lineDist, t, SnapSource.GRID_LINE)
+                            if (t < bestT - epsilon) {
+                                bestT = t
+                                best = candidate
+                            } else if (kotlin.math.abs(t - bestT) <= epsilon) {
+                                best = pickBetter(best, candidate)
+                            }
                         }
                     }
                 }
@@ -605,15 +631,39 @@ class Snapper(
         return PlaneHit(hitPoint, facing, t)
     }
 
-    private fun snapPointOnPlane(point: Vector3, origin: Vector3, axisU: Vector3, axisV: Vector3): Vector3 {
+    private fun planeCoordinates(point: Vector3, origin: Vector3, axisU: Vector3, axisV: Vector3): PlaneCoordinates {
         val local = Vector3(point).sub(origin)
         val u = local.dot(axisU)
         val v = local.dot(axisV)
         val snappedU = round(u / gridSpacing) * gridSpacing
         val snappedV = round(v / gridSpacing) * gridSpacing
+        return PlaneCoordinates(u, v, snappedU, snappedV)
+    }
+
+    private fun buildPlaneGridBasis(base: Vector3, normal: Vector3): PlaneGridBasis? {
+        val n = Vector3(normal)
+        if (n.len2() <= 1e-8f) {
+            return null
+        }
+        n.nor()
+        val ref = if (abs(n.y) < 0.95f) Vector3(0f, 1f, 0f) else Vector3(1f, 0f, 0f)
+        var axisU = Vector3(ref).crs(n)
+        if (axisU.len2() <= 1e-8f) {
+            axisU = Vector3(0f, 0f, 1f).crs(n)
+        }
+        if (axisU.len2() <= 1e-8f) {
+            return null
+        }
+        axisU.nor()
+        val axisV = Vector3(n).crs(axisU).nor()
+        val origin = Vector3(n).scl(base.dot(n))
+        return PlaneGridBasis(origin, axisU, axisV)
+    }
+
+    private fun pointOnPlane(origin: Vector3, axisU: Vector3, axisV: Vector3, u: Float, v: Float): Vector3 {
         return Vector3(origin)
-            .mulAdd(axisU, snappedU)
-            .mulAdd(axisV, snappedV)
+            .mulAdd(axisU, u)
+            .mulAdd(axisV, v)
     }
 
     private fun closestPointRayLine(
@@ -663,6 +713,14 @@ class Snapper(
         if (current == null) {
             return next
         }
+        val strongerPriorityDepthTolerance = max(1.5f, gridSpacing * 2f)
+        if (next.source.priority != current.source.priority) {
+            val stronger = if (next.source.priority > current.source.priority) next else current
+            val weaker = if (stronger === next) current else next
+            if (stronger.t <= weaker.t + strongerPriorityDepthTolerance) {
+                return stronger
+            }
+        }
         val depthTolerance = 0.35f
         if (next.t + depthTolerance < current.t) {
             return next
@@ -673,6 +731,105 @@ class Snapper(
         val nextScore = next.scoreKey() + next.t * 0.02f
         val currentScore = current.scoreKey() + current.t * 0.02f
         return if (nextScore + 1e-4f < currentScore) next else current
+    }
+
+    private fun isSupportedGuidePoint(point: Vector3): Boolean {
+        val groundTolerance = max(1e-3f, gridSpacing * 0.05f)
+        if (abs(point.y) <= groundTolerance) {
+            return true
+        }
+        val featureTolerance = max(5e-2f, gridSpacing * 0.15f)
+        if (isNearVisibleLine(point, featureTolerance)) {
+            return true
+        }
+        return isOnVisibleFace(point, featureTolerance)
+    }
+
+    private fun isNearVisibleLine(point: Vector3, tolerance: Float): Boolean {
+        val tol2 = tolerance * tolerance
+        scene.root.lineStore.getSegments().forEach { seg ->
+            if (!isLineSnapVisible(scene.root, seg)) return@forEach
+            if (distanceToSegmentSquared(point, seg.start, seg.end) <= tol2) return true
+        }
+        var found = false
+        scene.walkGroups(scene.root) { group ->
+            if (found) return@walkGroups
+            group.lineStore.getSegments().forEach { seg ->
+                if (!isLineSnapVisible(group, seg)) return@forEach
+                val a = group.toWorld(seg.start)
+                val b = group.toWorld(seg.end)
+                if (distanceToSegmentSquared(point, a, b) <= tol2) {
+                    found = true
+                    return@forEach
+                }
+            }
+        }
+        return found
+    }
+
+    private fun isOnVisibleFace(point: Vector3, tolerance: Float): Boolean {
+        scene.root.faceStore.getTriangles().forEach { tri ->
+            if (!isFaceSnapVisible(scene.root, tri)) return@forEach
+            if (pointNearTriangle(point, tri.a, tri.b, tri.c, tolerance)) return true
+        }
+        var found = false
+        scene.walkGroups(scene.root) { group ->
+            if (found) return@walkGroups
+            group.faceStore.getTriangles().forEach { tri ->
+                if (!isFaceSnapVisible(group, tri)) return@forEach
+                val a = group.toWorld(tri.a)
+                val b = group.toWorld(tri.b)
+                val c = group.toWorld(tri.c)
+                if (pointNearTriangle(point, a, b, c, tolerance)) {
+                    found = true
+                    return@forEach
+                }
+            }
+        }
+        return found
+    }
+
+    private fun pointNearTriangle(point: Vector3, a: Vector3, b: Vector3, c: Vector3, tolerance: Float): Boolean {
+        val ab = Vector3(b).sub(a)
+        val ac = Vector3(c).sub(a)
+        val normal = Vector3(ab).crs(ac)
+        val len = normal.len()
+        if (len <= 1e-8f) {
+            return false
+        }
+        val planeDist = abs(Vector3(point).sub(a).dot(normal) / len)
+        if (planeDist > tolerance) {
+            return false
+        }
+        val v0 = Vector3(c).sub(a)
+        val v1 = Vector3(b).sub(a)
+        val v2 = Vector3(point).sub(a)
+        val dot00 = v0.dot(v0)
+        val dot01 = v0.dot(v1)
+        val dot02 = v0.dot(v2)
+        val dot11 = v1.dot(v1)
+        val dot12 = v1.dot(v2)
+        val denom = dot00 * dot11 - dot01 * dot01
+        if (abs(denom) <= 1e-8f) {
+            return false
+        }
+        val invDenom = 1f / denom
+        val u = (dot11 * dot02 - dot01 * dot12) * invDenom
+        val v = (dot00 * dot12 - dot01 * dot02) * invDenom
+        val edgeTol = tolerance / max(gridSpacing, 1e-4f)
+        return u >= -edgeTol && v >= -edgeTol && u + v <= 1f + edgeTol
+    }
+
+    private fun distanceToSegmentSquared(point: Vector3, a: Vector3, b: Vector3): Float {
+        val ab = Vector3(b).sub(a)
+        val len2 = ab.len2()
+        if (len2 <= 1e-8f) {
+            return point.dst2(a)
+        }
+        val t = Vector3(point).sub(a).dot(ab) / len2
+        val clamped = t.coerceIn(0f, 1f)
+        val closest = Vector3(a).mulAdd(ab, clamped)
+        return point.dst2(closest)
     }
 
     fun collectSelectionPoints(): List<SelectionPoint> {
@@ -723,16 +880,30 @@ class Snapper(
         val axisV: Vector3
     )
 
+    private data class PlaneGridBasis(
+        val origin: Vector3,
+        val axisU: Vector3,
+        val axisV: Vector3
+    )
+
+    private data class PlaneCoordinates(
+        val u: Float,
+        val v: Float,
+        val snappedU: Float,
+        val snappedV: Float
+    )
+
     private enum class SnapSource(val priority: Int) {
-        LINE_ENDPOINT(6),
-        LINE_MIDPOINT(5),
-        FACE_EDGE_MIDPOINT(5),
-        FACE_EDGE(5),
+        // Vertices > grid points > lines > faces.
+        LINE_ENDPOINT(8),
+        LINE_MIDPOINT(7),
+        FACE_EDGE_MIDPOINT(7),
+        GRID(6),
+        GRID_GUIDE(6),
+        AXIS_GUIDE(6),
+        FACE_EDGE(4),
         LINE_SEGMENT(4),
-        GRID(3),
-        GRID_LINE(2),
-        GRID_GUIDE(2),
-        AXIS_GUIDE(2),
+        GRID_LINE(4),
         FACE(1)
     }
 
