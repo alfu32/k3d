@@ -1004,7 +1004,11 @@ class GroupScene(
                 size = text.size,
                 normal = text.normal,
                 axisU = text.axisU,
-                screenText = text.screenText
+                screenText = text.screenText,
+                kind = text.kind,
+                tracking = text.tracking,
+                lineSpacing = text.lineSpacing,
+                glyphSourcePath = text.glyphSourcePath
             )
         }
         source.getSelected().forEach { text ->
@@ -1012,6 +1016,10 @@ class GroupScene(
                 it.text == text.text &&
                     abs(it.size - text.size) <= 1e-6f &&
                     it.screenText == text.screenText &&
+                    it.kind == text.kind &&
+                    abs(it.tracking - text.tracking) <= 1e-6f &&
+                    abs(it.lineSpacing - text.lineSpacing) <= 1e-6f &&
+                    it.glyphSourcePath == text.glyphSourcePath &&
                     it.position.epsilonEquals(text.position, 1e-6f) &&
                     it.normal.epsilonEquals(text.normal, 1e-6f) &&
                     it.axisU.epsilonEquals(text.axisU, 1e-6f)
@@ -4451,7 +4459,18 @@ class GroupScene(
         if (selectedTexts.isNotEmpty()) {
             parent.textStore.deleteSelected()
             selectedTexts.forEach { text ->
-                group.textStore.addText(Vector3(text.position).sub(origin), text.text)
+                group.textStore.addText(
+                    position = Vector3(text.position).sub(origin),
+                    text = text.text,
+                    size = text.size,
+                    normal = text.normal,
+                    axisU = text.axisU,
+                    screenText = text.screenText,
+                    kind = text.kind,
+                    tracking = text.tracking,
+                    lineSpacing = text.lineSpacing,
+                    glyphSourcePath = text.glyphSourcePath
+                )
             }
         }
         if (selectedChildren.isNotEmpty()) {
@@ -4538,7 +4557,18 @@ class GroupScene(
             }
             group.textStore.getTexts().forEach { text ->
                 val position = transformPoint(toParentMatrix, text.position)
-                parent.textStore.addText(position, text.text)
+                parent.textStore.addText(
+                    position = position,
+                    text = text.text,
+                    size = text.size,
+                    normal = text.normal,
+                    axisU = text.axisU,
+                    screenText = text.screenText,
+                    kind = text.kind,
+                    tracking = text.tracking,
+                    lineSpacing = text.lineSpacing,
+                    glyphSourcePath = text.glyphSourcePath
+                )
             }
             group.children.forEach { child ->
                 reparentGroup(child, parent)
@@ -4785,7 +4815,21 @@ class GroupScene(
         }
     }
 
-    fun collectWorldTexts(consumer: (Vector3, String, Float, Vector3, Vector3, Boolean, Boolean) -> Unit) {
+    fun collectWorldTexts(
+        consumer: (
+            position: Vector3,
+            text: String,
+            size: Float,
+            normal: Vector3,
+            axisU: Vector3,
+            selected: Boolean,
+            screenText: Boolean,
+            kind: DraftTextStore.Kind,
+            tracking: Float,
+            lineSpacing: Float,
+            glyphSourcePath: String
+        ) -> Unit
+    ) {
         walkGroups(root) { group ->
             group.textStore.getTexts().forEach { text ->
                 consumer(
@@ -4795,7 +4839,11 @@ class GroupScene(
                     group.vectorToWorld(text.normal),
                     group.vectorToWorld(text.axisU),
                     group.textStore.isSelected(text),
-                    text.screenText
+                    text.screenText,
+                    text.kind,
+                    text.tracking,
+                    text.lineSpacing,
+                    text.glyphSourcePath
                 )
             }
         }
@@ -4807,7 +4855,11 @@ class GroupScene(
                 Vector3(text.normal),
                 Vector3(text.axisU),
                 root.textStore.isSelected(text),
-                text.screenText
+                text.screenText,
+                text.kind,
+                text.tracking,
+                text.lineSpacing,
+                text.glyphSourcePath
             )
         }
     }

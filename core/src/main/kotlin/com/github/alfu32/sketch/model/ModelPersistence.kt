@@ -407,7 +407,11 @@ object ModelPersistence {
                     text.size,
                     text.normal.toVector3(),
                     text.axisU.toVector3(),
-                    text.screenText
+                    text.screenText,
+                    kind = runCatching { DraftTextStore.Kind.valueOf(text.kind) }.getOrDefault(DraftTextStore.Kind.BITMAP),
+                    tracking = text.tracking,
+                    lineSpacing = text.lineSpacing,
+                    glyphSourcePath = text.glyphSourcePath
                 )
             }
             if (prototype.kind == GroupScene.PrototypeKind.VOXEL) {
@@ -748,7 +752,11 @@ object ModelPersistence {
                         text.size,
                         Vec3Dto(text.normal),
                         Vec3Dto(text.axisU),
-                        text.screenText
+                        text.screenText,
+                        text.kind.name,
+                        text.tracking,
+                        text.lineSpacing,
+                        text.glyphSourcePath
                     )
                 }.toMutableList()
                 return dto
@@ -1129,6 +1137,10 @@ object ModelPersistence {
         var normal: Vec3Dto = Vec3Dto()
         var axisU: Vec3Dto = Vec3Dto()
         var screenText: Boolean = true
+        var kind: String = DraftTextStore.Kind.BITMAP.name
+        var tracking: Float = 0.1f
+        var lineSpacing: Float = 1.25f
+        var glyphSourcePath: String = "embedded:alphabet"
 
         constructor(
             position: Vec3Dto,
@@ -1136,7 +1148,11 @@ object ModelPersistence {
             size: Float = 0.1f,
             normal: Vec3Dto = Vec3Dto(Vector3(0f, 1f, 0f)),
             axisU: Vec3Dto = Vec3Dto(Vector3(1f, 0f, 0f)),
-            screenText: Boolean = true
+            screenText: Boolean = true,
+            kind: String = DraftTextStore.Kind.BITMAP.name,
+            tracking: Float = 0.1f,
+            lineSpacing: Float = 1.25f,
+            glyphSourcePath: String = "embedded:alphabet"
         ) : this() {
             this.position = position
             this.text = text
@@ -1144,6 +1160,10 @@ object ModelPersistence {
             this.normal = normal
             this.axisU = axisU
             this.screenText = screenText
+            this.kind = kind
+            this.tracking = tracking
+            this.lineSpacing = lineSpacing
+            this.glyphSourcePath = glyphSourcePath
         }
     }
 
@@ -1247,7 +1267,11 @@ object ModelPersistence {
                         text.size,
                         text.normal.toVector3(),
                         text.axisU.toVector3(),
-                        text.screenText
+                        text.screenText,
+                        kind = runCatching { DraftTextStore.Kind.valueOf(text.kind) }.getOrDefault(DraftTextStore.Kind.BITMAP),
+                        tracking = text.tracking,
+                        lineSpacing = text.lineSpacing,
+                        glyphSourcePath = text.glyphSourcePath
                     )
                 }
                 group.lineStoreOverride = lineOverride
@@ -1322,7 +1346,11 @@ object ModelPersistence {
                             size = text.size,
                             normal = Vec3Dto(text.normal),
                             axisU = Vec3Dto(text.axisU),
-                            screenText = text.screenText
+                            screenText = text.screenText,
+                            kind = text.kind.name,
+                            tracking = text.tracking,
+                            lineSpacing = text.lineSpacing,
+                            glyphSourcePath = text.glyphSourcePath
                         )
                     }.toMutableList()
                 }
