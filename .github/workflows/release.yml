@@ -52,7 +52,7 @@ jobs:
           $appName = "Octodraw"
           $displayName = "Octodraw 3D"
           $publisher = "CN=K3D0"
-          $packageName = "com.github.alfu32.k3d"
+          $packageName = "com.github.alfu32.octodraw"
           $jarDir = "lwjgl3\build\libs"
           $jarPath = Join-Path $jarDir "octodraw-$version.jar"
           $jpackage = Join-Path $env:JAVA_HOME "bin\jpackage.exe"
@@ -74,10 +74,12 @@ jobs:
           $ErrorActionPreference = "Stop"
           $version = "${{ inputs.tag }}"
           $appName = "Octodraw"
-          $displayName = "Octodraw 3D"
+          # Must match the reserved Microsoft Store app name exactly.
+          $displayName = "OctoDraw-Free"
           $publisher = "CN=7F0CBC95-8035-4AF2-9B17-C38D58351CE5"
           $publisherDisplayName = "K3D0"
-          $packageName = "K3D0.k3d-free"
+          # Must match the product identity configured in Partner Center exactly.
+          $packageName = "K3D0.OctoDraw-Free"
 
           $appImage = "dist\jpackage\$appName"
           $msixRoot = "dist\msix"
