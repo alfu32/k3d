@@ -181,12 +181,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val frames: Int = 0
     )
 
-    private data class TutorialLineStep(
-        val from: Vector3,
-        val to: Vector3,
-        val screenshotName: String
-    )
-
     private enum class BasicSelectionFilterKind {
         EDGE,
         FACE,
@@ -344,8 +338,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     )
     private var adaptiveGridCloudState: AdaptiveGridCloudState? = null
     private val screenshotTimestampFormatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
-    private val mcpConstructionLineTutorialCommandId = "mcp.tutorial.capture.construction_line_01"
-    private val mcpConstructionLineTutorialOutputDir = "docs/tutorial/01_construction-line"
     private var mcpPort = 8765
     private lateinit var stdoutTap: StdoutTap
     private lateinit var mcpServer: McpHttpServer
@@ -2023,14 +2015,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             }
         }
         val ok = latch.await(3, TimeUnit.SECONDS)
-        val commands = if (ok) result.get() else emptyList()
-        return (commands + listOf(mcpConstructionLineTutorialCommand())).sortedBy { it.name.lowercase() }
+        return if (ok) result.get() else emptyList()
     }
 
     private fun executePaletteCommandForMcp(commandId: String): com.github.alfu32.sketch.plugin.PluginResult {
-        if (commandId == mcpConstructionLineTutorialCommandId) {
-            return runMcpConstructionLineTutorialCapture()
-        }
         if (!::pluginHost.isInitialized) {
             return com.github.alfu32.sketch.plugin.PluginResult.failure("Plugin host not initialized.")
         }
@@ -2057,23 +2045,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             )
         }
         return result.get() ?: com.github.alfu32.sketch.plugin.PluginResult.failure("Command produced no result.")
-    }
-
-    private fun mcpConstructionLineTutorialCommand(): com.github.alfu32.sketch.plugin.PaletteCommand {
-        return com.github.alfu32.sketch.plugin.PaletteCommand(
-            id = mcpConstructionLineTutorialCommandId,
-            name = "MCP> Tutorial Capture: Construction Line 01",
-            description = "Reset scene, draw the 0,0->11,0->11,1->1,1->1,12->0,12->0,0 line chain, and export step screenshots.",
-            icon = "export",
-            category = "MCP",
-            tags = listOf("mcp", "tutorial", "capture", "construction", "line", "screenshot"),
-            priority = 1,
-            execute = {
-                com.github.alfu32.sketch.plugin.PluginResult.failure(
-                    "This command is MCP-only. Run it through /scene/command?id=$mcpConstructionLineTutorialCommandId"
-                )
-            }
-        )
     }
 
     private fun executeConsoleCommandForMcp(source: String): McpConsoleResult {
@@ -3906,28 +3877,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         }
     }
 
-    private fun saveScreenshotToFile(outFile: File): Boolean {
-        val parent = outFile.parentFile
-        if (parent != null && !parent.exists() && !parent.mkdirs()) {
-            val failure = "Screenshot failed: could not create ${parent.absolutePath}"
-            statusModel.message = failure
-            println(failure)
-            return false
-        }
-        val error = writeScreenshotFile(outFile)
-        return if (error == null) {
-            val success = "Screenshot saved: ${outFile.absolutePath}"
-            statusModel.message = success
-            println(success)
-            true
-        } else {
-            val failure = "Screenshot failed: ${error.message ?: error.javaClass.simpleName}"
-            statusModel.message = failure
-            println(failure)
-            false
-        }
-    }
-
     private fun writeScreenshotFile(outFile: File): Throwable? {
         var pixmap: Pixmap? = null
         var pngWriter: PixmapIO.PNG? = null
@@ -3945,100 +3894,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             pngWriter?.dispose()
             pixmap?.dispose()
         }
-    }
-
-    private fun runMcpConstructionLineTutorialCapture(): com.github.alfu32.sketch.plugin.PluginResult {
-        val outputDir = File(mcpConstructionLineTutorialOutputDir)
-        val steps = listOf(
-            TutorialLineStep(Vector3(0f, 0f, 0f), Vector3(11f, 0f, 0f), "step-01-line-0-0_to_11-0.png"),
-            TutorialLineStep(Vector3(11f, 0f, 0f), Vector3(11f, 0f, 1f), "step-02-line-11-0_to_11-1.png"),
-            TutorialLineStep(Vector3(11f, 0f, 1f), Vector3(1f, 0f, 1f), "step-03-line-11-1_to_1-1.png"),
-            TutorialLineStep(Vector3(1f, 0f, 1f), Vector3(1f, 0f, 12f), "step-04-line-1-1_to_1-12.png"),
-            TutorialLineStep(Vector3(1f, 0f, 12f), Vector3(0f, 0f, 12f), "step-05-line-1-12_to_0-12.png"),
-            TutorialLineStep(Vector3(0f, 0f, 12f), Vector3(0f, 0f, 0f), "step-06-line-0-12_to_0-0.png")
-        )
-        if (!outputDir.exists() && !outputDir.mkdirs()) {
-            return com.github.alfu32.sketch.plugin.PluginResult.failure(
-                "Tutorial capture failed: could not create ${outputDir.absolutePath}"
-            )
-        }
-        val captured = mutableListOf<File>()
-        val prepareError = runOnRenderThreadBlocking(timeoutMs = 5000L) {
-            scene.resetScene()
-            scene.clearAllSelections()
-            setCameraMode(CameraMode.ORTHOGRAPHIC)
-            alignOrthographicView(OrthoView.TOP)
-            uiOverlay.setAutomationHidePanels(true)
-            statusModel.message = "Tutorial capture: scene prepared."
-        }
-        if (prepareError != null) {
-            return com.github.alfu32.sketch.plugin.PluginResult.failure(
-                "Tutorial capture failed during setup: ${prepareError.message ?: prepareError.javaClass.simpleName}"
-            )
-        }
-
-        val startShot = File(outputDir, "step-00-start.png")
-        val startError = runOnRenderThreadBlocking(timeoutMs = 8000L) {
-            if (!saveScreenshotToFile(startShot)) {
-                throw IllegalStateException("Could not save ${startShot.absolutePath}")
-            }
-        }
-        if (startError != null) {
-            return com.github.alfu32.sketch.plugin.PluginResult.failure(
-                "Tutorial capture failed at step-00: ${startError.message ?: startError.javaClass.simpleName}"
-            )
-        }
-        captured += startShot
-
-        steps.forEachIndexed { index, step ->
-            val drawError = runOnRenderThreadBlocking(timeoutMs = 5000L) {
-                scene.activeGroup().addSketchSegment(Vector3(step.from), Vector3(step.to))
-                statusModel.message = "Tutorial capture: drew segment ${index + 1}/${steps.size}."
-            }
-            if (drawError != null) {
-                return com.github.alfu32.sketch.plugin.PluginResult.failure(
-                    "Tutorial capture failed while drawing step-${index + 1}: ${drawError.message ?: drawError.javaClass.simpleName}"
-                )
-            }
-
-            val screenshot = File(outputDir, step.screenshotName)
-            val captureError = runOnRenderThreadBlocking(timeoutMs = 8000L) {
-                if (!saveScreenshotToFile(screenshot)) {
-                    throw IllegalStateException("Could not save ${screenshot.absolutePath}")
-                }
-            }
-            if (captureError != null) {
-                return com.github.alfu32.sketch.plugin.PluginResult.failure(
-                    "Tutorial capture failed while saving ${step.screenshotName}: ${captureError.message ?: captureError.javaClass.simpleName}"
-                )
-            }
-            captured += screenshot
-        }
-
-        val files = captured.joinToString(", ") { it.name }
-        return com.github.alfu32.sketch.plugin.PluginResult(
-            success = true,
-            message = "Captured ${captured.size} tutorial screenshots to ${outputDir.path}: $files"
-        )
-    }
-
-    private fun runOnRenderThreadBlocking(timeoutMs: Long, block: () -> Unit): Throwable? {
-        val latch = CountDownLatch(1)
-        val error = AtomicReference<Throwable?>()
-        Gdx.app.postRunnable {
-            try {
-                block()
-            } catch (t: Throwable) {
-                error.set(t)
-            } finally {
-                latch.countDown()
-            }
-        }
-        val completed = latch.await(timeoutMs, TimeUnit.MILLISECONDS)
-        if (!completed) {
-            return RuntimeException("Timed out waiting for render thread.")
-        }
-        return error.get()
     }
 
     private fun exportSvgView(file: File) {
