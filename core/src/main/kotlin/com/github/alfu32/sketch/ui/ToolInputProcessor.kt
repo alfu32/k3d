@@ -21,11 +21,84 @@ class ToolInputProcessor(
     private val ungroupSelectionAction: () -> Unit,
     private val exitGroupEditAction: () -> Boolean,
     private val lastSnapProvider: () -> SnapResult?,
+    private val startHotspotAddMode: () -> Unit,
+    private val cancelHotspotAddMode: () -> Unit,
+    private val isHotspotAddModeActive: () -> Boolean,
     private val showDistanceInput: () -> Unit,
     private val uiCapturesInput: () -> Boolean
 ) : InputAdapter() {
+    private val cycleD = listOf(
+        ToolId.LINEAR_DIMENSION,
+        ToolId.TEXT,
+        ToolId.VECTOR_TEXT
+    )
+    private val cycleO = listOf(
+        ToolId.LINE_OFFSET,
+        ToolId.PUSH_PULL,
+        ToolId.EXTRUDE_SWIPE,
+        ToolId.PLANE_SECTION
+    )
+    private val cycleM = listOf(
+        ToolId.MOVE,
+        ToolId.ROTATE,
+        ToolId.SCALE,
+        ToolId.STRETCH,
+        ToolId.ROTATE_STRETCH,
+        ToolId.COPY_MULTIPLE,
+        ToolId.PLANAR_ROTATE_MULTIPLE,
+        ToolId.HELICOIDAL_ROTATE_MULTIPLE
+    )
+
     private fun ctrlPressed(): Boolean {
         return InputModifiers.isCtrlPressed()
+    }
+
+    private fun activateNextInCycle(cycle: List<ToolId>): Boolean {
+        if (cycle.isEmpty()) {
+            return false
+        }
+        val active = controller.activeToolId()
+        val next = when {
+            active == ToolId.SELECT -> cycle.first()
+            else -> {
+                val idx = cycle.indexOf(active)
+                if (idx < 0) cycle.first() else cycle[(idx + 1) % cycle.size]
+            }
+        }
+        controller.setTool(next)
+        return true
+    }
+
+    private fun beginHotspotCycleStep(): Boolean {
+        startHotspotAddMode()
+        return true
+    }
+
+    private fun cancelHotspotCycleStepIfActive() {
+        if (isHotspotAddModeActive()) {
+            cancelHotspotAddMode()
+        }
+    }
+
+    private fun handleLCycleKey(): Boolean {
+        if (isHotspotAddModeActive()) {
+            cancelHotspotAddMode()
+            controller.setTool(ToolId.CONSTRUCTION_LINE)
+            return true
+        }
+        return when (controller.activeToolId()) {
+            ToolId.SELECT -> beginHotspotCycleStep()
+            ToolId.CONSTRUCTION_LINE -> { controller.setTool(ToolId.LINE); true }
+            ToolId.LINE -> { controller.setTool(ToolId.POLYLINE); true }
+            ToolId.POLYLINE -> { controller.setTool(ToolId.DOUBLE_LINE); true }
+            ToolId.DOUBLE_LINE -> { controller.setTool(ToolId.RECTANGLE); true }
+            ToolId.RECTANGLE -> { controller.setTool(ToolId.SURFACE_RECTANGLE); true }
+            ToolId.SURFACE_RECTANGLE -> { controller.setTool(ToolId.MESH); true }
+            ToolId.MESH -> { controller.setTool(ToolId.QUAD); true }
+            ToolId.QUAD -> { controller.setTool(ToolId.CIRCLE); true }
+            ToolId.CIRCLE -> beginHotspotCycleStep()
+            else -> beginHotspotCycleStep()
+        }
     }
 
     override fun keyDown(keycode: Int): Boolean {
@@ -115,6 +188,15 @@ class ToolInputProcessor(
                     cleanupAction()
                     return true
                 }
+                return handleLCycleKey()
+            }
+            Input.Keys.D -> {
+                val ctrl = ctrlPressed()
+                if (ctrl) {
+                    return false
+                }
+                cancelHotspotCycleStepIfActive()
+                return activateNextInCycle(cycleD)
             }
             Input.Keys.O -> {
                 val ctrl = ctrlPressed()
@@ -122,6 +204,16 @@ class ToolInputProcessor(
                     objectPrototypeSelectionAction()
                     return true
                 }
+                cancelHotspotCycleStepIfActive()
+                return activateNextInCycle(cycleO)
+            }
+            Input.Keys.M -> {
+                val ctrl = ctrlPressed()
+                if (ctrl) {
+                    return false
+                }
+                cancelHotspotCycleStepIfActive()
+                return activateNextInCycle(cycleM)
             }
             Input.Keys.N -> {
                 val ctrl = ctrlPressed()

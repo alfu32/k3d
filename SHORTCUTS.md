@@ -27,6 +27,13 @@ This is a quick reference for keyboard and mouse shortcuts.
 - Drag right-to-left: Window select (intersect).
 - Click empty space, then click second corner: Volume select.
 
+## Tool cycling shortcuts
+- `L`: `Hotspot -> Construction Line -> Line -> Polyline -> Double Line -> Rectangle -> Surface Rect -> Mesh -> Quad -> Circle -> Hotspot`.
+- `D`: `Linear Dimension -> Screen Text -> Vectorial Text -> Linear Dimension`.
+- `O`: `Line Offset -> Push/Pull (Extrude) -> Extrude-Swipe -> Plane Section -> Line Offset`.
+- `M`: `Move -> Rotate -> Scale -> Stretch -> Rotate-Stretch -> Copy Multiple -> Planar Rotate Multiple -> Helicoidal Rotate Multiple -> Move`.
+- From `Select`, pressing `L`, `D`, `O`, or `M` starts the corresponding cycle from its first tool.
+
 ## Objects
 - `Ctrl+O`: Create object prototype from selection.
 - Double-click prototype in Objects panel: Place instance.

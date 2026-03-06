@@ -534,6 +534,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ungroupSelectionAction = ::ungroupSelection,
             exitGroupEditAction = ::exitGroupEditMode,
             lastSnapProvider = { lastSnap },
+            startHotspotAddMode = ::addHotspotAtCursor,
+            cancelHotspotAddMode = ::cancelHotspotAddPickMode,
+            isHotspotAddModeActive = ::isHotspotAddPickModeActive,
             showDistanceInput = { startDistanceInput() },
             uiCapturesInput = { uiOverlay.isUiCapturingInputByPointer() }
         )
@@ -6272,6 +6275,17 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         hotspotReferencePickTargetGroup = null
         hotspotAddPickTargetGroup = group
         statusModel.message = "Pick hotspot position."
+    }
+
+    private fun isHotspotAddPickModeActive(): Boolean {
+        return hotspotAddPickTargetGroup != null
+    }
+
+    private fun cancelHotspotAddPickMode() {
+        if (hotspotAddPickTargetGroup != null) {
+            hotspotAddPickTargetGroup = null
+            statusModel.message = "Hotspot add canceled."
+        }
     }
 
     private fun deleteSelectedHotspots() {

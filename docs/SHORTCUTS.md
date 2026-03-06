@@ -30,10 +30,15 @@ This is a quick reference for keyboard and mouse shortcuts.
 - Click empty space, then click second corner: Volume select.
 
 ## Tool-specific keys
+- Tool cycle `L`: `Hotspot -> Construction Line -> Line -> Polyline -> Double Line -> Rectangle -> Surface Rect -> Mesh -> Quad -> Circle -> Hotspot`.
+- Tool cycle `D`: `Linear Dimension -> Screen Text -> Vectorial Text -> Linear Dimension`.
+- Tool cycle `O`: `Line Offset -> Push/Pull (Extrude) -> Extrude-Swipe -> Plane Section -> Line Offset`.
+- Tool cycle `M`: `Move -> Rotate -> Scale -> Stretch -> Rotate-Stretch -> Copy Multiple -> Planar Rotate Multiple -> Helicoidal Rotate Multiple -> Move`.
+- From `Select`, pressing `L`, `D`, `O`, or `M` starts the corresponding cycle from its first tool.
 - `Line`: `Enter` finishes the current chain, `Esc` exits to Select.
 - `Construction Line`: `Enter` clears current segment draft, `Esc` exits to Select.
 - `Polyline` / `Double Line`: `Esc` cancel, `Enter` finalize, `Backspace` remove last segment.
-- `Hotspot` (action workflow): no default keybinding; use Actions toolbar button or command palette.
+- `Hotspot` add pick mode: `L` enters from Select/cycle, second click places hotspot, `Esc` cancels.
 - `Wall`: `Enter` finishes current wall chain, `Esc` exits to Select.
 - `Slab` / `Stair` / `Add Hole` / `Window Frame` / `Door Frame`: `Enter` resets current draft, `Esc` exits to Select.
 

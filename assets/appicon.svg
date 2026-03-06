@@ -6,9 +6,9 @@
    version="1.1"
    id="svg1138"
    sodipodi:docname="appicon.svg"
-   inkscape:export-filename="/home/devlin/Development/sketch3d-kt/assets/appicon_512x512.png"
-   inkscape:export-xdpi="48"
-   inkscape:export-ydpi="48"
+   inkscape:export-filename="/home/devlin/Development/sketch3d-kt/assets/appicon_71x71.png"
+   inkscape:export-xdpi="6.65625"
+   inkscape:export-ydpi="6.65625"
    inkscape:version="1.1.2 (0a00cf5339, 2022-02-04)"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
@@ -26,7 +26,7 @@
      inkscape:pagecheckerboard="0"
      showgrid="false"
      inkscape:zoom="0.43660284"
-     inkscape:cx="393.95071"
+     inkscape:cx="306.91509"
      inkscape:cy="391.6603"
      inkscape:window-width="1876"
      inkscape:window-height="1043"
@@ -37,15 +37,6 @@
   <g
      id="g4403"
      transform="matrix(1.7370392,0,0,1.7380027,-924.83345,-332.50289)">
-    <line
-       x1="649.99994"
-       y1="199.84607"
-       x2="649.99994"
-       y2="199.84607"
-       stroke="#5972f2"
-       stroke-width="1"
-       stroke-opacity="1"
-       id="line380" />
     <line
        x1="649.99994"
        y1="263.6922"
@@ -118,15 +109,6 @@
        stroke-width="1"
        stroke-opacity="1"
        id="line412" />
-    <line
-       x1="649.99994"
-       y1="774.46106"
-       x2="649.99994"
-       y2="774.46106"
-       stroke="#5972f2"
-       stroke-width="1"
-       stroke-opacity="1"
-       id="line416" />
     <polygon
        points="797.1398,497.05902 733.29364,470.6131 823.5857,470.6131 "
        fill="#b100c4"
@@ -236,151 +218,151 @@
        stroke="none"
        id="polygon456" />
     <polygon
-       points="797.1398,497.05902 823.5857,470.6131 "
+       points="823.5857,470.6131 797.1398,497.05902 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon458" />
     <polygon
-       points="733.29364,470.6131 797.1398,406.76703 "
+       points="797.1398,406.76703 733.29364,470.6131 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon460" />
     <polygon
-       points="823.5857,662.1515 797.1398,635.70557 "
+       points="797.1398,635.70557 823.5857,662.1515 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon462" />
     <polygon
-       points="797.1398,725.99756 733.29364,662.1515 "
+       points="733.29364,662.1515 797.1398,725.99756 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon464" />
     <polygon
-       points="898.386,662.1515 823.5857,662.1515 "
+       points="823.5857,662.1515 898.386,662.1515 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon466" />
     <polygon
-       points="924.832,725.9976 797.1398,725.99756 "
+       points="797.1398,725.99756 924.832,725.9976 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon468" />
     <polygon
-       points="988.6781,571.8595 898.386,662.1515 "
+       points="898.386,662.1515 988.6781,571.8595 "
        fill="#5200c4"
        fill-opacity="1"
        stroke="none"
        id="polygon470" />
     <polygon
-       points="1052.5242,598.3054 924.832,725.9976 "
+       points="924.832,725.9976 1052.5242,598.3054 "
        fill="#5200c4"
        fill-opacity="1"
        stroke="none"
        id="polygon472" />
     <polygon
-       points="988.6781,342.9209 988.6781,571.8595 "
+       points="988.6781,571.8595 988.6781,342.9209 "
        fill="#0076c4"
        fill-opacity="1"
        stroke="none"
        id="polygon474" />
     <polygon
-       points="1052.5242,342.9209 1052.5242,598.3054 "
+       points="1052.5242,598.3054 1052.5242,342.9209 "
        fill="#0076c4"
        fill-opacity="1"
        stroke="none"
        id="polygon476" />
     <polygon
-       points="1052.5242,342.9209 988.6781,342.9209 "
+       points="988.6781,342.9209 1052.5242,342.9209 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon478" />
     <polygon
-       points="988.6781,279.07477 924.832,279.07477 "
+       points="924.832,279.07477 988.6781,279.07477 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon480" />
     <polygon
-       points="988.6781,342.9209 924.832,342.9209 "
+       points="924.832,342.9209 988.6781,342.9209 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon482" />
     <polygon
-       points="924.832,342.9209 924.832,279.07477 "
+       points="924.832,279.07477 924.832,342.9209 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon484" />
     <polygon
-       points="988.6781,342.9209 988.6781,279.07477 "
+       points="988.6781,279.07477 988.6781,342.9209 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon486" />
     <polygon
-       points="797.1398,635.70557 797.1398,497.05902 "
+       points="797.1398,497.05902 797.1398,635.70557 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon488" />
     <polygon
-       points="733.29364,662.1515 733.29364,470.6131 "
+       points="733.29364,470.6131 733.29364,662.1515 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon490" />
     <polygon
-       points="1116.3704,279.07477 1052.5242,279.07477 "
+       points="1052.5242,279.07477 1116.3704,279.07477 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon492" />
     <polygon
-       points="1116.3704,342.9209 1052.5242,342.9209 "
+       points="1052.5242,342.9209 1116.3704,342.9209 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon494" />
     <polygon
-       points="1052.5242,342.9209 1052.5242,279.07477 "
+       points="1052.5242,279.07477 1052.5242,342.9209 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon496" />
     <polygon
-       points="1116.3704,342.9209 1116.3704,279.07477 "
+       points="1116.3704,279.07477 1116.3704,342.9209 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon498" />
     <polygon
-       points="988.6781,215.2287 988.6781,279.07477 "
+       points="988.6781,279.07477 988.6781,215.2287 "
        fill="#ffee00"
        fill-opacity="1"
        stroke="none"
        id="polygon500" />
     <polygon
-       points="1052.5242,215.2287 1052.5242,279.07477 "
+       points="1052.5242,279.07477 1052.5242,215.2287 "
        fill="#ffee00"
        fill-opacity="1"
        stroke="none"
        id="polygon502" />
     <polygon
-       points="1052.5242,279.07477 988.6781,279.07477 "
+       points="988.6781,279.07477 1052.5242,279.07477 "
        fill="#ffee00"
        fill-opacity="1"
        stroke="none"
        id="polygon504" />
     <polygon
-       points="1052.5242,215.2287 988.6781,215.2287 "
+       points="988.6781,215.2287 1052.5242,215.2287 "
        fill="#ffee00"
        fill-opacity="1"
        stroke="none"
@@ -428,91 +410,91 @@
        stroke="none"
        id="polygon520" />
     <polygon
-       points="797.1398,497.05902 823.5857,470.6131 "
+       points="823.5857,470.6131 797.1398,497.05902 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon522" />
     <polygon
-       points="733.29364,470.6131 797.1398,406.76703 "
+       points="797.1398,406.76703 733.29364,470.6131 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon524" />
     <polygon
-       points="823.5857,662.1515 797.1398,635.70557 "
+       points="797.1398,635.70557 823.5857,662.1515 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon526" />
     <polygon
-       points="797.1398,725.99756 733.29364,662.1515 "
+       points="733.29364,662.1515 797.1398,725.99756 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon528" />
     <polygon
-       points="898.386,662.1515 823.5857,662.1515 "
+       points="823.5857,662.1515 898.386,662.1515 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon530" />
     <polygon
-       points="924.832,725.9976 797.1398,725.99756 "
+       points="797.1398,725.99756 924.832,725.9976 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon532" />
     <polygon
-       points="988.6781,571.8595 898.386,662.1515 "
+       points="898.386,662.1515 988.6781,571.8595 "
        fill="#5200c4"
        fill-opacity="1"
        stroke="none"
        id="polygon534" />
     <polygon
-       points="1052.5242,598.3054 924.832,725.9976 "
+       points="924.832,725.9976 1052.5242,598.3054 "
        fill="#5200c4"
        fill-opacity="1"
        stroke="none"
        id="polygon536" />
     <polygon
-       points="988.6781,342.9209 988.6781,571.8595 "
+       points="988.6781,571.8595 988.6781,342.9209 "
        fill="#0076c4"
        fill-opacity="1"
        stroke="none"
        id="polygon538" />
     <polygon
-       points="1052.5242,342.9209 1052.5242,598.3054 "
+       points="1052.5242,598.3054 1052.5242,342.9209 "
        fill="#0076c4"
        fill-opacity="1"
        stroke="none"
        id="polygon540" />
     <polygon
-       points="1052.5242,342.9209 988.6781,342.9209 "
+       points="988.6781,342.9209 1052.5242,342.9209 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon542" />
     <polygon
-       points="988.6781,279.07477 924.832,279.07477 "
+       points="924.832,279.07477 988.6781,279.07477 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon544" />
     <polygon
-       points="988.6781,342.9209 924.832,342.9209 "
+       points="924.832,342.9209 988.6781,342.9209 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon546" />
     <polygon
-       points="924.832,279.07477 924.832,342.9209 "
+       points="924.832,342.9209 924.832,279.07477 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon548" />
     <polygon
-       points="988.6781,342.9209 988.6781,279.07477 "
+       points="988.6781,279.07477 988.6781,342.9209 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
@@ -530,67 +512,67 @@
        stroke="none"
        id="polygon554" />
     <polygon
-       points="797.1398,635.70557 797.1398,497.05902 "
+       points="797.1398,497.05902 797.1398,635.70557 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon556" />
     <polygon
-       points="733.29364,662.1515 733.29364,470.6131 "
+       points="733.29364,470.6131 733.29364,662.1515 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon558" />
     <polygon
-       points="1116.3704,279.07477 1052.5242,279.07477 "
+       points="1052.5242,279.07477 1116.3704,279.07477 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon560" />
     <polygon
-       points="1116.3704,342.9209 1052.5242,342.9209 "
+       points="1052.5242,342.9209 1116.3704,342.9209 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon562" />
     <polygon
-       points="1052.5242,279.07477 1052.5242,342.9209 "
+       points="1052.5242,342.9209 1052.5242,279.07477 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon564" />
     <polygon
-       points="1116.3704,342.9209 1116.3704,279.07477 "
+       points="1116.3704,279.07477 1116.3704,342.9209 "
        fill="#0a9c00"
        fill-opacity="1"
        stroke="none"
        id="polygon566" />
     <polygon
-       points="988.6781,215.2287 988.6781,279.07477 "
+       points="988.6781,279.07477 988.6781,215.2287 "
        fill="#ffee00"
        fill-opacity="1"
        stroke="none"
        id="polygon568" />
     <polygon
-       points="1052.5242,215.2287 1052.5242,279.07477 "
+       points="1052.5242,279.07477 1052.5242,215.2287 "
        fill="#ffee00"
        fill-opacity="1"
        stroke="none"
        id="polygon570" />
     <polygon
-       points="988.6781,279.07477 1052.5242,279.07477 "
+       points="1052.5242,279.07477 988.6781,279.07477 "
        fill="#ffee00"
        fill-opacity="1"
        stroke="none"
        id="polygon572" />
     <polygon
-       points="1052.5242,215.2287 988.6781,215.2287 "
+       points="988.6781,215.2287 1052.5242,215.2287 "
        fill="#ffee00"
        fill-opacity="1"
        stroke="none"
        id="polygon574" />
     <polygon
-       points="823.5857,470.6131 898.3861,470.61316 "
+       points="898.3861,470.61316 823.5857,470.6131 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
@@ -602,37 +584,37 @@
        stroke="none"
        id="polygon578" />
     <polygon
-       points="605.60144,497.05902 632.04736,470.6131 "
+       points="632.04736,470.6131 605.60144,497.05902 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon580" />
     <polygon
-       points="541.7554,470.6131 605.60144,406.76703 "
+       points="605.60144,406.76703 541.7554,470.6131 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon582" />
     <polygon
-       points="605.60144,635.70557 605.60144,497.05902 "
+       points="605.60144,497.05902 605.60144,635.70557 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon584" />
     <polygon
-       points="541.7554,662.1515 541.7554,470.6131 "
+       points="541.7554,470.6131 541.7554,662.1515 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon586" />
     <polygon
-       points="632.04736,662.1515 605.60144,635.70557 "
+       points="605.60144,635.70557 632.04736,662.1515 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon588" />
     <polygon
-       points="605.60144,725.99756 541.7554,662.1515 "
+       points="541.7554,662.1515 605.60144,725.99756 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
@@ -724,13 +706,13 @@
        id="polygon618"
        style="fill:#cb0000;fill-opacity:1" />
     <polygon
-       points="632.04736,470.6131 706.8477,470.6131 "
+       points="706.8477,470.6131 632.04736,470.6131 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon620" />
     <polygon
-       points="733.29364,725.99756 605.60144,725.99756 "
+       points="605.60144,725.99756 733.29364,725.99756 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
@@ -772,7 +754,7 @@
        stroke="none"
        id="polygon634" />
     <polygon
-       points="797.1398,406.76703 924.83203,406.7671 "
+       points="924.83203,406.7671 797.1398,406.76703 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
@@ -784,49 +766,49 @@
        stroke="none"
        id="polygon638" />
     <polygon
-       points="605.60144,406.76703 733.29364,406.76703 "
+       points="733.29364,406.76703 605.60144,406.76703 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon640" />
     <polygon
-       points="605.60144,497.05902 632.04736,470.6131 "
+       points="632.04736,470.6131 605.60144,497.05902 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon642" />
     <polygon
-       points="541.7554,470.6131 605.60144,406.76703 "
+       points="605.60144,406.76703 541.7554,470.6131 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon644" />
     <polygon
-       points="605.60144,635.70557 605.60144,497.05902 "
+       points="605.60144,497.05902 605.60144,635.70557 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon646" />
     <polygon
-       points="541.7554,662.1515 541.7554,470.6131 "
+       points="541.7554,470.6131 541.7554,662.1515 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon648" />
     <polygon
-       points="632.04736,662.1515 605.60144,635.70557 "
+       points="605.60144,635.70557 632.04736,662.1515 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon650" />
     <polygon
-       points="605.60144,725.99756 541.7554,662.1515 "
+       points="541.7554,662.1515 605.60144,725.99756 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon652" />
     <polygon
-       points="706.8477,662.1515 632.04736,662.1515 "
+       points="632.04736,662.1515 706.8477,662.1515 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
@@ -838,7 +820,7 @@
        stroke="none"
        id="polygon656" />
     <polygon
-       points="797.1398,406.76703 924.83203,406.7671 "
+       points="924.83203,406.7671 797.1398,406.76703 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
@@ -850,13 +832,13 @@
        stroke="none"
        id="polygon660" />
     <polygon
-       points="605.60144,406.76703 733.29364,406.76703 "
+       points="733.29364,406.76703 605.60144,406.76703 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon662" />
     <polygon
-       points="706.8477,662.1515 632.04736,662.1515 "
+       points="632.04736,662.1515 706.8477,662.1515 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
@@ -898,13 +880,13 @@
        stroke="none"
        id="polygon676" />
     <polygon
-       points="706.8477,470.6131 733.29364,497.05902 "
+       points="733.29364,497.05902 706.8477,470.6131 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon678" />
     <polygon
-       points="632.04736,470.6131 706.8477,470.6131 "
+       points="706.8477,470.6131 632.04736,470.6131 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
@@ -946,13 +928,13 @@
        stroke="none"
        id="polygon692" />
     <polygon
-       points="733.29364,725.99756 605.60144,725.99756 "
+       points="605.60144,725.99756 733.29364,725.99756 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon694" />
     <polygon
-       points="797.1398,662.1515 733.29364,725.99756 "
+       points="733.29364,725.99756 797.1398,662.1515 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
@@ -970,13 +952,13 @@
        stroke="none"
        id="polygon700" />
     <polygon
-       points="823.5857,470.6131 898.3861,470.61316 "
+       points="898.3861,470.61316 823.5857,470.6131 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon702" />
     <polygon
-       points="733.29364,406.76703 797.1398,470.6131 "
+       points="797.1398,470.6131 733.29364,406.76703 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
@@ -994,43 +976,43 @@
        stroke="none"
        id="polygon708" />
     <polygon
-       points="733.2937,635.70557 706.8477,662.1515 "
+       points="706.8477,662.1515 733.2937,635.70557 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon710" />
     <polygon
-       points="924.83203,497.05908 924.83203,534.45935 "
+       points="924.83203,534.45935 924.83203,497.05908 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon712" />
     <polygon
-       points="988.6781,470.61316 988.6781,534.45935 "
+       points="988.6781,534.45935 988.6781,470.61316 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon714" />
     <polygon
-       points="988.6781,534.45935 924.83203,534.45935 "
+       points="924.83203,534.45935 988.6781,534.45935 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon716" />
     <polygon
-       points="898.3861,470.61316 924.83203,497.05908 "
+       points="924.83203,497.05908 898.3861,470.61316 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon718" />
     <polygon
-       points="924.83203,406.7671 988.6781,470.61316 "
+       points="988.6781,470.61316 924.83203,406.7671 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon720" />
     <polygon
-       points="733.29364,406.76703 797.1398,470.6131 "
+       points="797.1398,470.6131 733.29364,406.76703 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
@@ -1048,19 +1030,19 @@
        stroke="none"
        id="polygon726" />
     <polygon
-       points="733.2937,635.70557 706.8477,662.1515 "
+       points="706.8477,662.1515 733.2937,635.70557 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon728" />
     <polygon
-       points="733.29364,497.05902 733.29364,635.70557 "
+       points="733.29364,635.70557 733.29364,497.05902 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon730" />
     <polygon
-       points="797.1398,470.6131 797.1398,662.1515 "
+       points="797.1398,662.1515 797.1398,470.6131 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
@@ -1072,43 +1054,43 @@
        stroke="none"
        id="polygon734" />
     <polygon
-       points="706.8477,470.6131 733.29364,497.05902 "
+       points="733.29364,497.05902 706.8477,470.6131 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon736" />
     <polygon
-       points="797.1398,662.1515 733.29364,725.99756 "
+       points="733.29364,725.99756 797.1398,662.1515 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon738" />
     <polygon
-       points="924.83203,497.05908 924.83203,534.45935 "
+       points="924.83203,534.45935 924.83203,497.05908 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon740" />
     <polygon
-       points="988.6781,470.61316 988.6781,534.45935 "
+       points="988.6781,534.45935 988.6781,470.61316 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon742" />
     <polygon
-       points="924.83203,534.45935 988.6781,534.45935 "
+       points="988.6781,534.45935 924.83203,534.45935 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon744" />
     <polygon
-       points="898.3861,470.61316 924.83203,497.05908 "
+       points="924.83203,497.05908 898.3861,470.61316 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
        id="polygon746" />
     <polygon
-       points="924.83203,406.7671 988.6781,470.61316 "
+       points="988.6781,470.61316 924.83203,406.7671 "
        fill="#b100c4"
        fill-opacity="1"
        stroke="none"
@@ -1120,13 +1102,13 @@
        stroke="none"
        id="polygon750" />
     <polygon
-       points="733.29364,497.05902 733.29364,635.70557 "
+       points="733.29364,635.70557 733.29364,497.05902 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
        id="polygon752" />
     <polygon
-       points="797.1398,470.6131 797.1398,662.1515 "
+       points="797.1398,662.1515 797.1398,470.6131 "
        fill="#a800a0"
        fill-opacity="1"
        stroke="none"
