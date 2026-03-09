@@ -16,7 +16,6 @@ appicon_71x71.png
 appsplash.png
 glyphs/alphabet.octd
 glyphs/alphabet.octd.bak
-icon_octodraw.svg
 icons.2.png
 icons.48.png
 icons.64.png
@@ -26,7 +25,6 @@ icons.mapping.ods
 icons.png
 icons.svg
 ketchup3d_visui_icons_32_map.json
-logo_K3D.svg
 new_icon.svg
 selected-tex.png
 shaders/sketch-default.fragment.glsl

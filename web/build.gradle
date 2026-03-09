@@ -9,8 +9,10 @@ if (JavaVersion.current().isJava9Compatible()) {
 }
 
 def bundleVersion = (project.findProperty("releaseNumber") ?: project.version).toString()
+def webOutputName = "octodraw-${bundleVersion}".replaceAll(/[^A-Za-z0-9._-]/, "-")
 def webDistRoot = file("$buildDir/dist")
 def webRuntimeDir = file("$webDistRoot/webapp")
+def webRuntimeAssetsDir = file("$buildDir/generated/web-runtime-assets")
 
 configurations.configureEach {
   exclude group: 'org.apache.groovy', module: 'groovy'
@@ -24,11 +26,19 @@ dependencies {
   implementation "com.github.xpenatan.gdx-teavm:backend-web:$gdxTeaVMVersion"
 }
 
-tasks.register('copyWebRuntimeClasspathResources') {
+tasks.register('prepareWebRuntimeAssets') {
   group = 'distribution'
-  description = 'Copies required classpath resources (VisUI skin) into the TeaVM runtime assets.'
+  description = 'Builds merged TeaVM asset input (project assets + VisUI skin resources).'
 
   doLast {
+    delete(webRuntimeAssetsDir)
+    webRuntimeAssetsDir.mkdirs()
+
+    copy {
+      from(rootProject.file('assets'))
+      into(webRuntimeAssetsDir)
+    }
+
     def visUiJar = configurations.runtimeClasspath.files.find { file ->
       file.name.startsWith('vis-ui-') && file.name.endsWith('.jar')
     }
@@ -39,52 +49,39 @@ tasks.register('copyWebRuntimeClasspathResources') {
       from(zipTree(visUiJar)) {
         include 'com/kotcrab/vis/ui/skin/**'
       }
-      into(new File(webRuntimeDir, 'assets'))
+      into(webRuntimeAssetsDir)
     }
 
-    // TeaVM runtime resolves internal assets through assets/assets.txt.
-    // Ensure copied VisUI skin files are listed there so Gdx.files.internal(...) can find them.
-    def assetsRoot = new File(webRuntimeDir, 'assets')
-    def assetsManifest = new File(assetsRoot, 'assets.txt')
+    def assetsManifest = new File(webRuntimeAssetsDir, 'assets.txt')
     if (!assetsManifest.exists()) {
-      throw new GradleException("Missing TeaVM assets manifest: ${assetsManifest.absolutePath}")
+      throw new GradleException("Missing assets.txt in merged web assets: ${assetsManifest.absolutePath}")
     }
-
     def existingEntries = new LinkedHashSet<String>(assetsManifest.readLines('UTF-8'))
-    def visUiEntries = fileTree(assetsRoot).matching {
+    def visUiEntries = fileTree(webRuntimeAssetsDir).matching {
       include 'com/kotcrab/vis/ui/skin/**'
     }.files.collect { file ->
-      file.absolutePath.substring(assetsRoot.absolutePath.length() + 1).replace('\\', '/')
+      file.absolutePath.substring(webRuntimeAssetsDir.absolutePath.length() + 1).replace('\\', '/')
     }.sort()
-
-    boolean updated = false
-    visUiEntries.each { entry ->
-      if (!existingEntries.contains(entry)) {
-        existingEntries.add(entry)
-        updated = true
-      }
-    }
-    if (updated) {
-      assetsManifest.text = existingEntries.join('\n') + '\n'
-    }
+    visUiEntries.each { existingEntries.add(it) }
+    assetsManifest.text = existingEntries.join('\n') + '\n'
   }
 }
 
 tasks.register('buildWebRuntime', JavaExec) {
   group = 'distribution'
   description = 'Compiles the real TeaVM/WebGL runtime.'
-  dependsOn(tasks.named('classes'))
+  dependsOn(tasks.named('classes'), tasks.named('prepareWebRuntimeAssets'))
+  doFirst {
+    delete(webDistRoot)
+  }
   mainClass.set('com.github.alfu32.sketch.web.BuildWebApp')
   classpath = sourceSets.main.runtimeClasspath
   systemProperty('octodraw.web.output', webDistRoot.absolutePath)
   systemProperty('octodraw.web.folder', 'webapp')
-  systemProperty('octodraw.web.assets', '../assets')
+  systemProperty('octodraw.web.assets', webRuntimeAssetsDir.absolutePath)
   systemProperty('octodraw.web.title', "Octodraw ${bundleVersion}")
+  systemProperty('octodraw.web.outputName', webOutputName)
   systemProperty('octodraw.web.serve', 'false')
-}
-
-tasks.named('buildWebRuntime') {
-  finalizedBy(tasks.named('copyWebRuntimeClasspathResources'))
 }
 
 tasks.register('prepareWebDocs') {

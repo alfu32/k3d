@@ -4,7 +4,6 @@ i:b:/icons.mapping.ods:41330:1
 i:b:/appicon.svg:67306:1
 i:b:/appicon_150x150.png:6685:1
 i:b:/appicon_300x300.png:12983:1
-i:b:/logo_K3D.svg:9333:1
 i:b:/appicon_512x512.png:23452:1
 i:b:/icons.mapping.csv:4085:1
 i:b:/appicon.6.png:51264:1
@@ -17,6 +16,16 @@ i:b:/icons.64.png:70093:1
 i:b:/sketch3d.json:17607:1
 i:b:/icons.svg:464394:1
 i:b:/appicon2.png:2687:1
+i:b:/com/kotcrab/vis/ui/skin/x1/font-small.fnt:58927:1
+i:b:/com/kotcrab/vis/ui/skin/x1/default.fnt:36596:1
+i:b:/com/kotcrab/vis/ui/skin/x1/uiskin.json:15340:1
+i:b:/com/kotcrab/vis/ui/skin/x1/uiskin.atlas:11264:1
+i:b:/com/kotcrab/vis/ui/skin/x1/uiskin.png:67925:1
+i:b:/com/kotcrab/vis/ui/skin/x2/font-small.fnt:72431:1
+i:b:/com/kotcrab/vis/ui/skin/x2/default.fnt:102682:1
+i:b:/com/kotcrab/vis/ui/skin/x2/uiskin.json:15340:1
+i:b:/com/kotcrab/vis/ui/skin/x2/uiskin.atlas:11370:1
+i:b:/com/kotcrab/vis/ui/skin/x2/uiskin.png:168559:1
 i:b:/icons.png:33282:1
 i:b:/appicon.4.png:32924:1
 i:b:/appicon_71x71.png:3326:1
@@ -26,8 +35,7 @@ i:b:/icons.48.png:53708:1
 i:b:/appicon.3.png:52833:1
 i:b:/selected-tex.png:558:1
 i:b:/icons.2.png:19774:1
-i:b:/assets.txt:594:1
-i:b:/icon_octodraw.svg:7361:1
+i:b:/assets.txt:959:1
 i:b:/icons.mapping.48.csv:1536:1
 i:b:/appicon_300x300.ico:4246:1
 i:b:/glyphs/alphabet.octd:1272176:1

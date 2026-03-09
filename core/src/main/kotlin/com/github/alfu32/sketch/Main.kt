@@ -360,6 +360,14 @@ class Main(
     private lateinit var undoManager: com.github.alfu32.sketch.model.UndoRedoManager
     private var restoringSnapshot = false
 
+    private fun requireWebInternalFile(path: String): FileHandle {
+        val file = Gdx.files.internal(path)
+        if (!file.exists()) {
+            throw IllegalStateException("Required web asset not found (internal): $path")
+        }
+        return file
+    }
+
     override fun create() {
         val webSafeRuntime = if (BuildFlags.WEB_BUILD) true else isWebSafeRuntime()
         if (!BuildFlags.WEB_BUILD && !webSafeRuntime) {
@@ -368,6 +376,11 @@ class Main(
         if (!VisUI.isLoaded()) {
             if (BuildFlags.WEB_BUILD) {
                 VisUI.setSkipGdxVersionCheck(true)
+                requireWebInternalFile("com/kotcrab/vis/ui/skin/x1/uiskin.json")
+                requireWebInternalFile("com/kotcrab/vis/ui/skin/x1/uiskin.atlas")
+                requireWebInternalFile("com/kotcrab/vis/ui/skin/x1/uiskin.png")
+                requireWebInternalFile("com/kotcrab/vis/ui/skin/x1/default.fnt")
+                requireWebInternalFile("com/kotcrab/vis/ui/skin/x1/font-small.fnt")
                 val webSkin = Gdx.files.internal("com/kotcrab/vis/ui/skin/x1/uiskin.json")
                 VisUI.load(webSkin)
             } else {
