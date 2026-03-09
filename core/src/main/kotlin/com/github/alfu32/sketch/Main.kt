@@ -2839,7 +2839,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun showSvgExportDialog() {
-        val chooser = FileChooser(System.getProperty("user.dir"), FileChooser.Mode.SAVE)
+        val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.SAVE)
         chooser.getTitleLabel().setText("Export SVG (View)")
         chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
         chooser.setDefaultFileName("view.svg")
@@ -2865,8 +2865,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         if (currentParent != null && currentParent.exists()) {
             return currentParent.absolutePath
         }
-        if (::installDir.isInitialized && installDir.exists()) {
-            return installDir.absolutePath
+        val writable = resolveDesktopWritableDataDir()
+        if (writable.exists() || writable.mkdirs()) {
+            return writable.absolutePath
         }
         return System.getProperty("user.dir") ?: "."
     }
@@ -3353,7 +3354,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun showIfcExportDialog() {
-        val chooser = FileChooser(System.getProperty("user.dir"), FileChooser.Mode.SAVE)
+        val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.SAVE)
         chooser.getTitleLabel().setText("Export IFC (Model)")
         chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
         chooser.setDefaultFileName("model.ifc")
@@ -5716,11 +5717,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun resolveModelFile(args: kotlin.Array<String>): java.io.File {
+        var fromArgs = false
         var fileArg: String? = null
         var i = 0
         while (i < args.size) {
             if (args[i] == "--file" && i + 1 < args.size) {
                 fileArg = args[i + 1]
+                fromArgs = true
                 break
             }
             i++
@@ -5728,7 +5731,19 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         if (fileArg.isNullOrBlank()) {
             fileArg = "octodraw.octd"
         }
-        return java.io.File(fileArg).absoluteFile
+        val requested = java.io.File(fileArg).absoluteFile
+        if (fromArgs) {
+            return requested
+        }
+        val preferredDir = requested.parentFile ?: resolveDesktopWritableDataDir()
+        if (isDirectoryWritable(preferredDir)) {
+            return requested
+        }
+        val fallbackDir = resolveDesktopWritableDataDir()
+        if (!fallbackDir.exists()) {
+            fallbackDir.mkdirs()
+        }
+        return java.io.File(fallbackDir, requested.name)
     }
 
     private fun resolvePluginsDir(args: kotlin.Array<String>, installDir: java.io.File): java.io.File {
@@ -5741,10 +5756,53 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             }
             i++
         }
-        return if (dirArg.isNullOrBlank()) {
-            java.io.File(installDir, "plugins").absoluteFile
-        } else {
-            java.io.File(dirArg).absoluteFile
+        if (!dirArg.isNullOrBlank()) {
+            return java.io.File(dirArg).absoluteFile
+        }
+        val packagedDir = java.io.File(installDir, "plugins").absoluteFile
+        if (isDirectoryWritable(packagedDir)) {
+            return packagedDir
+        }
+        val fallback = java.io.File(resolveDesktopWritableDataDir(), "plugins").absoluteFile
+        if (!fallback.exists()) {
+            fallback.mkdirs()
+        }
+        return fallback
+    }
+
+    private fun resolveDesktopWritableDataDir(): java.io.File {
+        if (isAndroidRuntime()) {
+            return try {
+                Gdx.files.local("").file().absoluteFile
+            } catch (_: Exception) {
+                java.io.File(System.getProperty("user.home", ".")).absoluteFile
+            }
+        }
+        val localAppData = System.getenv("LOCALAPPDATA")?.trim().orEmpty()
+        if (localAppData.isNotBlank()) {
+            return java.io.File(localAppData, "Octodraw").absoluteFile
+        }
+        val userHome = System.getProperty("user.home")?.trim().orEmpty()
+        if (userHome.isNotBlank()) {
+            return java.io.File(userHome, ".octodraw").absoluteFile
+        }
+        return java.io.File(System.getProperty("user.dir", ".")).absoluteFile
+    }
+
+    private fun isDirectoryWritable(dir: java.io.File): Boolean {
+        return try {
+            if (!dir.exists() && !dir.mkdirs()) {
+                return false
+            }
+            if (!dir.isDirectory) {
+                return false
+            }
+            val probe = java.io.File(dir, ".octodraw-write-test-${System.nanoTime()}.tmp")
+            probe.writeText("ok")
+            probe.delete()
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 

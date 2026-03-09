@@ -52,7 +52,7 @@ allprojects {
   }
 }
 
-configure(subprojects.findAll { it.name != 'android' }) {
+configure(subprojects.findAll { !['android', 'web'].contains(it.name) }) {
   apply plugin: 'java-library'
   apply plugin: 'kotlin'
   java.sourceCompatibility = 21

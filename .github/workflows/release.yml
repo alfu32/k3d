@@ -315,9 +315,28 @@ jobs:
             dist/octodraw-*.apk
             dist/octodraw-*.aab
 
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+      - name: Build web bundle
+        run: ./gradlew :web:bundleWeb -PreleaseNumber="${{ inputs.tag }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: octodraw-web
+          path: |
+            dist/octodraw-*-webapp.zip
+            dist/octodraw-*-webapp.tar.gz
+            dist/octodraw-*-webdocs.zip
+            dist/octodraw-*-webdocs.tar.gz
+
   release:
     runs-on: ubuntu-latest
-    needs: [build-linux, build-windows, build-mac, build-android]
+    needs: [build-linux, build-windows, build-mac, build-android, build-web]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
