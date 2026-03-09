@@ -11,11 +11,63 @@ if (JavaVersion.current().isJava9Compatible()) {
 def bundleVersion = (project.findProperty("releaseNumber") ?: project.version).toString()
 def webDistRoot = file("$buildDir/dist")
 def webRuntimeDir = file("$webDistRoot/webapp")
-def webDocsOnlyDir = file("$buildDir/webdocs")
+
+configurations.configureEach {
+  exclude group: 'org.apache.groovy', module: 'groovy'
+}
 
 dependencies {
+  implementation(project(':core')) {
+    exclude group: 'org.apache.groovy', module: 'groovy'
+  }
   implementation "com.badlogicgames.gdx:gdx:$gdxVersion"
   implementation "com.github.xpenatan.gdx-teavm:backend-web:$gdxTeaVMVersion"
+}
+
+tasks.register('copyWebRuntimeClasspathResources') {
+  group = 'distribution'
+  description = 'Copies required classpath resources (VisUI skin) into the TeaVM runtime assets.'
+
+  doLast {
+    def visUiJar = configurations.runtimeClasspath.files.find { file ->
+      file.name.startsWith('vis-ui-') && file.name.endsWith('.jar')
+    }
+    if (visUiJar == null || !visUiJar.exists()) {
+      throw new GradleException("Unable to locate vis-ui runtime jar on web classpath.")
+    }
+    copy {
+      from(zipTree(visUiJar)) {
+        include 'com/kotcrab/vis/ui/skin/**'
+      }
+      into(new File(webRuntimeDir, 'assets'))
+    }
+
+    // TeaVM runtime resolves internal assets through assets/assets.txt.
+    // Ensure copied VisUI skin files are listed there so Gdx.files.internal(...) can find them.
+    def assetsRoot = new File(webRuntimeDir, 'assets')
+    def assetsManifest = new File(assetsRoot, 'assets.txt')
+    if (!assetsManifest.exists()) {
+      throw new GradleException("Missing TeaVM assets manifest: ${assetsManifest.absolutePath}")
+    }
+
+    def existingEntries = new LinkedHashSet<String>(assetsManifest.readLines('UTF-8'))
+    def visUiEntries = fileTree(assetsRoot).matching {
+      include 'com/kotcrab/vis/ui/skin/**'
+    }.files.collect { file ->
+      file.absolutePath.substring(assetsRoot.absolutePath.length() + 1).replace('\\', '/')
+    }.sort()
+
+    boolean updated = false
+    visUiEntries.each { entry ->
+      if (!existingEntries.contains(entry)) {
+        existingEntries.add(entry)
+        updated = true
+      }
+    }
+    if (updated) {
+      assetsManifest.text = existingEntries.join('\n') + '\n'
+    }
+  }
 }
 
 tasks.register('buildWebRuntime', JavaExec) {
@@ -29,6 +81,10 @@ tasks.register('buildWebRuntime', JavaExec) {
   systemProperty('octodraw.web.assets', '../assets')
   systemProperty('octodraw.web.title', "Octodraw ${bundleVersion}")
   systemProperty('octodraw.web.serve', 'false')
+}
+
+tasks.named('buildWebRuntime') {
+  finalizedBy(tasks.named('copyWebRuntimeClasspathResources'))
 }
 
 tasks.register('prepareWebDocs') {
@@ -62,81 +118,6 @@ tasks.register('prepareWebDocs') {
   }
 }
 
-tasks.register('prepareWebDocsOnly') {
-  group = 'distribution'
-  description = 'Builds a docs-only web bundle for static hosting.'
-
-  inputs.property('bundleVersion', bundleVersion)
-  inputs.dir(rootProject.file('docs'))
-  inputs.file(rootProject.file('README.md'))
-  inputs.file(rootProject.file('assets/appicon.png'))
-  outputs.dir(webDocsOnlyDir)
-
-  doLast {
-    delete(webDocsOnlyDir)
-    webDocsOnlyDir.mkdirs()
-
-    copy {
-      from(rootProject.file('docs'))
-      into(new File(webDocsOnlyDir, 'docs'))
-      include('**/*.md')
-      include('**/*.txt')
-      exclude('downloads/**')
-      exclude('tutorial/**')
-      exclude('automation/**')
-    }
-    copy {
-      from(rootProject.file('README.md'))
-      into(webDocsOnlyDir)
-    }
-    copy {
-      from(rootProject.file('assets/appicon.png'))
-      into(new File(webDocsOnlyDir, 'assets'))
-    }
-
-    def nowUtc = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC).toString()
-    def index = new File(webDocsOnlyDir, 'index.html')
-    index.text = """<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Octodraw ${bundleVersion} Docs</title>
-  <style>
-    body { margin: 0; font: 15px/1.5 -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; }
-    .wrap { max-width: 880px; margin: 0 auto; padding: 28px 20px 40px; }
-    .hero { display: flex; gap: 16px; align-items: center; margin-bottom: 20px; }
-    .hero img { width: 64px; height: 64px; border-radius: 10px; }
-    code { background: rgba(127, 127, 127, 0.15); padding: 2px 5px; border-radius: 4px; }
-    .card { border: 1px solid rgba(127,127,127,.35); border-radius: 10px; padding: 14px 16px; margin: 12px 0; }
-    a { color: inherit; }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="hero">
-      <img src="assets/appicon.png" alt="Octodraw icon" />
-      <div>
-        <h1 style="margin:0">Octodraw Documentation</h1>
-        <div>Bundle <code>${bundleVersion}</code></div>
-      </div>
-    </div>
-    <div class="card">
-      <strong>Quick links</strong>
-      <ul>
-        <li><a href="README.md">README</a></li>
-        <li><a href="docs/USER_MANUAL.md">User manual</a></li>
-        <li><a href="docs/specification/">Specifications</a></li>
-      </ul>
-    </div>
-    <div style="opacity:.8">Generated at ${nowUtc} (UTC)</div>
-  </div>
-</body>
-</html>
-"""
-  }
-}
-
 tasks.register('bundleWebZip', Zip) {
   group = 'distribution'
   description = 'Builds the TeaVM/WebGL runtime bundle (with docs) zip in dist/.'
@@ -147,45 +128,8 @@ tasks.register('bundleWebZip', Zip) {
   duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
-tasks.register('bundleWebTar', Tar) {
-  group = 'distribution'
-  description = 'Builds the TeaVM/WebGL runtime bundle (with docs) tar.gz in dist/.'
-  dependsOn(tasks.named('prepareWebDocs'))
-  from(webRuntimeDir)
-  destinationDirectory = rootProject.file('dist')
-  archiveFileName = "octodraw-${bundleVersion}-webapp.tar.gz"
-  compression = Compression.GZIP
-  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
-tasks.register('bundleWebDocsZip', Zip) {
-  group = 'distribution'
-  description = 'Builds docs-only web bundle zip in dist/.'
-  dependsOn(tasks.named('prepareWebDocsOnly'))
-  from(webDocsOnlyDir)
-  destinationDirectory = rootProject.file('dist')
-  archiveFileName = "octodraw-${bundleVersion}-webdocs.zip"
-  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
-tasks.register('bundleWebDocsTar', Tar) {
-  group = 'distribution'
-  description = 'Builds docs-only web bundle tar.gz in dist/.'
-  dependsOn(tasks.named('prepareWebDocsOnly'))
-  from(webDocsOnlyDir)
-  destinationDirectory = rootProject.file('dist')
-  archiveFileName = "octodraw-${bundleVersion}-webdocs.tar.gz"
-  compression = Compression.GZIP
-  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
 tasks.register('bundleWeb') {
   group = 'distribution'
-  description = 'Builds Octodraw TeaVM runtime + docs web artifacts.'
-  dependsOn(
-    tasks.named('bundleWebZip'),
-    tasks.named('bundleWebTar'),
-    tasks.named('bundleWebDocsZip'),
-    tasks.named('bundleWebDocsTar')
-  )
+  description = 'Builds the single Octodraw webapp+docs zip artifact.'
+  dependsOn(tasks.named('bundleWebZip'))
 }

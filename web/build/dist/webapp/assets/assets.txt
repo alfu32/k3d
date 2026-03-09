@@ -32,3 +32,13 @@ selected-tex.png
 shaders/sketch-default.fragment.glsl
 shaders/sketch-default.vertex.glsl
 sketch3d.json
+com/kotcrab/vis/ui/skin/x1/default.fnt
+com/kotcrab/vis/ui/skin/x1/font-small.fnt
+com/kotcrab/vis/ui/skin/x1/uiskin.atlas
+com/kotcrab/vis/ui/skin/x1/uiskin.json
+com/kotcrab/vis/ui/skin/x1/uiskin.png
+com/kotcrab/vis/ui/skin/x2/default.fnt
+com/kotcrab/vis/ui/skin/x2/font-small.fnt
+com/kotcrab/vis/ui/skin/x2/uiskin.atlas
+com/kotcrab/vis/ui/skin/x2/uiskin.json
+com/kotcrab/vis/ui/skin/x2/uiskin.png

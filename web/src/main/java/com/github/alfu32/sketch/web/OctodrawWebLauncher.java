@@ -1,5 +1,7 @@
 package com.github.alfu32.sketch.web;
 
+import com.github.alfu32.sketch.Main;
+import com.github.alfu32.sketch.WebRuntime;
 import com.github.xpenatan.gdx.teavm.backends.web.WebApplication;
 import com.github.xpenatan.gdx.teavm.backends.web.WebApplicationConfiguration;
 
@@ -8,6 +10,8 @@ public final class OctodrawWebLauncher {
     }
 
     public static void main(String[] args) {
+        WebRuntime.INSTANCE.setBridge(new WebRuntimeBridgeImpl());
+
         WebApplicationConfiguration config = new WebApplicationConfiguration("canvas");
         config.width = 0;
         config.height = 0;
@@ -20,6 +24,6 @@ public final class OctodrawWebLauncher {
         config.antialiasing = true;
         config.premultipliedAlpha = true;
 
-        new WebApplication(new OctodrawWebApp(), config);
+        new WebApplication(new Main(new String[0], Main.RuntimeProfile.WEB_SAFE), config);
     }
 }

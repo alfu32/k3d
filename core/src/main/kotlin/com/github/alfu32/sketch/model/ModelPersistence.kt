@@ -14,6 +14,12 @@ import java.util.zip.GZIPOutputStream
 object ModelPersistence {
     private const val VERSION = 15
 
+    private fun createJson(): Json {
+        return Json().apply {
+            setOutputType(JsonWriter.OutputType.json)
+        }
+    }
+
     fun save(
         file: File,
         scene: GroupScene,
@@ -31,12 +37,13 @@ object ModelPersistence {
     }
 
     fun saveSnapshot(file: File, snapshot: ModelSnapshot) {
-        val json = Json().apply {
-            setOutputType(JsonWriter.OutputType.json)
-        }
-        val text = json.prettyPrint(snapshot)
+        val text = saveSnapshotText(snapshot)
         file.parentFile?.mkdirs()
         file.writeText(text)
+    }
+
+    fun saveSnapshotText(snapshot: ModelSnapshot): String {
+        return createJson().prettyPrint(snapshot)
     }
 
     fun snapshot(
@@ -97,12 +104,7 @@ object ModelPersistence {
         if (!file.exists() || file.length() == 0L) {
             return LoadResult(false, false)
         }
-        val json = Json()
-        val snapshot = try {
-            json.fromJson(ModelSnapshot::class.java, file.readText())
-        } catch (ex: Exception) {
-            return LoadResult(false, false)
-        } ?: return LoadResult(false, false)
+        val snapshot = parseSnapshotText(file.readText()) ?: return LoadResult(false, false)
 
         applySnapshot(snapshot, scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilonSetter, gridSpacingSetter)
         val needsResave = snapshot.cameraState == null ||
@@ -117,6 +119,46 @@ object ModelPersistence {
             snapshot.snapEpsilon == null ||
             snapshot.gridSpacing == null
         return LoadResult(true, needsResave, snapshot)
+    }
+
+    fun loadFromText(
+        text: String,
+        scene: GroupScene,
+        camera: com.badlogic.gdx.graphics.PerspectiveCamera,
+        cameraTarget: Vector3,
+        lighting: com.github.alfu32.sketch.ui.LightingSettings,
+        shadow: com.github.alfu32.sketch.ui.ShadowSettings,
+        modelUnit: ModelUnit,
+        snapEpsilonSetter: (Float) -> Unit,
+        gridSpacingSetter: (Float) -> Unit
+    ): LoadResult {
+        if (text.isBlank()) {
+            return LoadResult(false, false)
+        }
+        val snapshot = parseSnapshotText(text) ?: return LoadResult(false, false)
+
+        applySnapshot(snapshot, scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilonSetter, gridSpacingSetter)
+        val needsResave = snapshot.cameraState == null ||
+            snapshot.lightingState == null ||
+            snapshot.shadowState == null ||
+            (snapshot.rootInstance == null && snapshot.rootGroup == null) ||
+            (snapshot.rootInstance != null && snapshot.prototypes.isEmpty()) ||
+            snapshot.cameraState?.hasNulls() == true ||
+            snapshot.lightingState?.hasNulls() == true ||
+            snapshot.shadowState?.hasNulls() == true ||
+            snapshot.modelUnit == null ||
+            snapshot.snapEpsilon == null ||
+            snapshot.gridSpacing == null
+        return LoadResult(true, needsResave, snapshot)
+    }
+
+    fun parseSnapshotText(text: String): ModelSnapshot? {
+        val json = createJson()
+        return try {
+            json.fromJson(ModelSnapshot::class.java, text)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun applySnapshot(

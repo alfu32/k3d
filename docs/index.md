@@ -10,7 +10,7 @@ Octodraw is a Kotlin + libGDX desktop modeler for fast, direct 3D sketching. It 
 https://github.com/alfu32/k3d/releases/latest/download/Octodraw-4.4.1.msi
 - Download Windows: [`Octodraw.msi`](downloads/Octodraw.msi)
 - Download Windows Latest MSI: [`Octodraw.msi`](https://github.com/alfu32/k3d/releases/latest/download/Octodraw-4.4.1.msi)
-- - Download Windows Latest MSIX: [`Octodraw.msi`](https://github.com/alfu32/k3d/releases/latest/download/octodraw-4.4.1.msix)
+- Download Windows Latest MSIX: [`Octodraw.msi`](https://github.com/alfu32/k3d/releases/latest/download/octodraw-4.4.1.msix)
 - Download Windows Latest Portable: [`Octodraw.zip`](https://github.com/alfu32/k3d/releases/latest/download/octodraw-dist-4.4.1-win.zip)
 - Download Linux Latest Portable: [`Octodraw.tar.gz`](https://github.com/alfu32/k3d/releases/latest/download/octodraw-dist-4.4.1-linux.tar.gz)
 - Download Mac Latest Portable: [`Octodraw.tar.hz`](https://github.com/alfu32/k3d/releases/latest/download/octodraw-dist-4.4.1-mac.tar.gz)

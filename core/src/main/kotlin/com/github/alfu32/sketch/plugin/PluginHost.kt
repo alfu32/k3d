@@ -8,10 +8,6 @@ import com.github.alfu32.sketch.model.ModelPersistence
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.ToolId
 import java.io.File
-import groovy.lang.GroovyClassLoader
-import groovy.lang.GroovyShell
-import org.codehaus.groovy.control.CompilerConfiguration
-import org.codehaus.groovy.control.customizers.ImportCustomizer
 import java.net.URL
 import kotlin.math.absoluteValue
 
@@ -546,21 +542,21 @@ class PluginHost(
             return
         }
         try {
-            val config = CompilerConfiguration()
-            val imports = ImportCustomizer().apply {
-                addStarImports("com.github.alfu32.sketch.plugin")
+            val context = createGroovyLoaderContext()
+            if (context == null) {
+                pluginStates[entry.url] = PluginState(null, null, "Groovy runtime unavailable on this platform.")
+                println("Plugin load failed: ${entry.url} (Groovy runtime unavailable)")
+                return
             }
-            config.addCompilationCustomizers(imports)
-            val loader = GroovyClassLoader(javaClass.classLoader, config)
-            addPluginApiJar(loader)
+            addPluginApiJar(context.loader)
             val scriptText = script.readText()
-            val plugin = instantiatePlugin(scriptText, script.name, loader, config)
+            val plugin = instantiatePlugin(scriptText, script.name, context.loader, context.config)
             if (plugin == null) {
-                pluginStates[entry.url] = PluginState(loader, null, "No Plugin instance returned")
+                pluginStates[entry.url] = PluginState(context.loader, null, "No Plugin instance returned")
                 return
             }
             plugins.add(plugin)
-            pluginStates[entry.url] = PluginState(loader, plugin, null)
+            pluginStates[entry.url] = PluginState(context.loader, plugin, null)
             pluginIdToEntry[plugin.id] = entry.url
             if (entry.enabled) {
                 enabledPlugins.add(plugin.id)
@@ -619,36 +615,76 @@ class PluginHost(
     }
 
     private data class PluginState(
-        val loader: GroovyClassLoader?,
+        val loader: AutoCloseable?,
         val plugin: Plugin?,
         var lastError: String?
     )
 
+    private data class GroovyLoaderContext(
+        val loader: AutoCloseable,
+        val config: Any
+    )
+
+    private fun createGroovyLoaderContext(): GroovyLoaderContext? {
+        return try {
+            val configClass = Class.forName("org.codehaus.groovy.control.CompilerConfiguration")
+            val importCustomizerClass = Class.forName("org.codehaus.groovy.control.customizers.ImportCustomizer")
+            val compilationCustomizerClass = Class.forName("org.codehaus.groovy.control.customizers.CompilationCustomizer")
+            val loaderClass = Class.forName("groovy.lang.GroovyClassLoader")
+
+            val config = configClass.getDeclaredConstructor().newInstance()
+            val imports = importCustomizerClass.getDeclaredConstructor().newInstance()
+            importCustomizerClass.getMethod("addStarImports", Array<String>::class.java)
+                .invoke(imports, arrayOf("com.github.alfu32.sketch.plugin"))
+            val customizers = java.lang.reflect.Array.newInstance(compilationCustomizerClass, 1)
+            java.lang.reflect.Array.set(customizers, 0, imports)
+            configClass.getMethod("addCompilationCustomizers", customizers.javaClass)
+                .invoke(config, customizers)
+
+            val loader = loaderClass.getConstructor(ClassLoader::class.java, configClass)
+                .newInstance(javaClass.classLoader, config) as? AutoCloseable
+                ?: return null
+            GroovyLoaderContext(loader, config)
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     private fun instantiatePlugin(
         scriptText: String,
         scriptName: String,
-        loader: GroovyClassLoader,
-        config: CompilerConfiguration
+        loader: AutoCloseable,
+        config: Any
     ): Plugin? {
-        val shell = GroovyShell(loader, groovy.lang.Binding(), config)
-        val result = shell.evaluate(scriptText, scriptName)
+        val bindingClass = Class.forName("groovy.lang.Binding")
+        val shellClass = Class.forName("groovy.lang.GroovyShell")
+        val loaderClass = Class.forName("groovy.lang.GroovyClassLoader")
+        val shell = shellClass.getConstructor(ClassLoader::class.java, bindingClass, config.javaClass)
+            .newInstance(loader as ClassLoader, bindingClass.getDeclaredConstructor().newInstance(), config)
+        val result = shellClass.getMethod("evaluate", String::class.java, String::class.java)
+            .invoke(shell, scriptText, scriptName)
         if (result is Plugin) {
             return result
         }
-        val scriptClass = loader.parseClass(scriptText, scriptName)
+        val scriptClass = loaderClass.getMethod("parseClass", String::class.java, String::class.java)
+            .invoke(loader, scriptText, scriptName) as? Class<*> ?: return null
         if (Plugin::class.java.isAssignableFrom(scriptClass)) {
             return scriptClass.getDeclaredConstructor().newInstance() as Plugin
         }
         return null
     }
 
-    private fun addPluginApiJar(loader: GroovyClassLoader) {
+    private fun addPluginApiJar(loader: AutoCloseable) {
         val apiJar = pluginsDir.listFiles { file ->
             file.isFile &&
                 (file.name.startsWith("octodraw-plugin-api") || file.name.startsWith("k3d-plugin-api")) &&
                 file.extension.equals("jar", true)
         }?.firstOrNull() ?: return
-        loader.addURL(apiJar.toURI().toURL())
+        try {
+            loader.javaClass.getMethod("addURL", URL::class.java).invoke(loader, apiJar.toURI().toURL())
+        } catch (_: Throwable) {
+            // Ignore; loader may not expose addURL.
+        }
     }
 
     private fun isHelperScript(file: File): Boolean {

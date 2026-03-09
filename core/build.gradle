@@ -72,13 +72,34 @@ data class K3DVersion(
   }
 }
 
+tasks.register('generateBuildFlags') {
+  def outFile = file("src/main/kotlin/com/github/alfu32/sketch/BuildFlags.kt")
+  outputs.file(outFile)
+  doLast {
+    def explicit = project.findProperty("webBuild")
+    def taskNames = gradle.startParameter.taskNames
+    def inferredWeb = taskNames.any { name ->
+      def lower = name.toLowerCase()
+      lower.contains(":web:") || lower.startsWith("web:")
+    }
+    def webBuild = explicit != null ? explicit.toString().toBoolean() : inferredWeb
+    outFile.parentFile.mkdirs()
+    outFile.text = """package com.github.alfu32.sketch
+
+object BuildFlags {
+  const val WEB_BUILD: Boolean = ${webBuild}
+}
+"""
+  }
+}
+
 tasks.named('compileKotlin') {
-  dependsOn 'generateK3DVersion'
+  dependsOn 'generateK3DVersion', 'generateBuildFlags'
   compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
 }
 
 tasks.named('compileJava') {
-  dependsOn 'generateK3DVersion'
+  dependsOn 'generateK3DVersion', 'generateBuildFlags'
 }
 
 tasks.named('compileTestKotlin') {

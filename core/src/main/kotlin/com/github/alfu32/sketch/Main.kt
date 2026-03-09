@@ -150,15 +150,21 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.EnumMap
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
-import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.ceil
 import kotlin.math.floor
 
 /** [com.badlogic.gdx.ApplicationListener] implementation shared by all platforms. */
-class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : ApplicationAdapter() {
+class Main(
+    private val startupArgs: kotlin.Array<String> = emptyArray(),
+    private val runtimeProfile: RuntimeProfile = RuntimeProfile.AUTO
+) : ApplicationAdapter() {
+    enum class RuntimeProfile {
+        AUTO,
+        WEB_SAFE
+    }
+
     private data class FeedbackWorldLine(val start: Vector3, val end: Vector3)
 
     private data class EntityDisplayState(
@@ -285,10 +291,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private var autosavePending = false
     private var autosaveDueAtMs = 0L
     private val autosaveDebounceMs = 1500L
-    private val modelSaveExecutor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "k3d-model-save").apply { isDaemon = true }
-    }
-    @Volatile private var asyncModelSaveTask: Future<*>? = null
+    @Volatile private var asyncModelSaveThread: Thread? = null
+    @Volatile private var asyncModelSaveRunning = false
     @Volatile private var asyncModelSaveError: String? = null
     private var cursorStatusSampleInitialized = false
     private var cursorStatusLastSampleAtMs = 0L
@@ -338,8 +342,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     )
     private var adaptiveGridCloudState: AdaptiveGridCloudState? = null
     private val screenshotTimestampFormatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
+    private val webAutosaveStorageKey = "octodraw.web.autosave"
+    private val webModelNameStorageKey = "octodraw.web.modelName"
     private var mcpPort = 8765
-    private lateinit var stdoutTap: StdoutTap
+    private var stdoutTap: StdoutTap? = null
     private lateinit var mcpServer: McpHttpServer
     private val orthoDistance = 250f
     private enum class OrthoView { TOP, BOTTOM, LEFT, RIGHT, FRONT, BACK }
@@ -355,9 +361,18 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     private var restoringSnapshot = false
 
     override fun create() {
-        stdoutTap = StdoutTap.install()
+        val webSafeRuntime = if (BuildFlags.WEB_BUILD) true else isWebSafeRuntime()
+        if (!BuildFlags.WEB_BUILD && !webSafeRuntime) {
+            stdoutTap = StdoutTap.install()
+        }
         if (!VisUI.isLoaded()) {
-            VisUI.load()
+            if (BuildFlags.WEB_BUILD) {
+                VisUI.setSkipGdxVersionCheck(true)
+                val webSkin = Gdx.files.internal("com/kotcrab/vis/ui/skin/x1/uiskin.json")
+                VisUI.load(webSkin)
+            } else {
+                VisUI.load()
+            }
         }
 
         camera = PerspectiveCamera(67f, Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat()).apply {
@@ -557,25 +572,27 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             dither = shadowDither,
             useCsm = shadowUseCsm
         )
-        val pluginsDir = resolvePluginsDir(startupArgs, installDir)
-        pluginHost = PluginHost(
-            scene,
-            statusModel,
-            camera,
-            { orbitCameraController.target },
-            lightingSettings,
-            shadowSettings,
-            { toolController.activeToolId() },
-            { statusModel.copyMode },
-            { lastSnap },
-            { toolId -> toolController.setTool(toolId) },
-            { modelUnit },
-            { snapEpsilon },
-            { gridSpacing },
-            pluginsDir,
-            { modelFile }
-        )
-        toolController.registerTool(PluginToolAdapter(pluginHost))
+        if (!BuildFlags.WEB_BUILD && !webSafeRuntime) {
+            val pluginsDir = resolvePluginsDir(startupArgs, installDir)
+            pluginHost = PluginHost(
+                scene,
+                statusModel,
+                camera,
+                { orbitCameraController.target },
+                lightingSettings,
+                shadowSettings,
+                { toolController.activeToolId() },
+                { statusModel.copyMode },
+                { lastSnap },
+                { toolId -> toolController.setTool(toolId) },
+                { modelUnit },
+                { snapEpsilon },
+                { gridSpacing },
+                pluginsDir,
+                { modelFile }
+            )
+            toolController.registerTool(PluginToolAdapter(pluginHost))
+        }
         uiOverlay = SketchUiOverlay(
             toolController,
             statusModel,
@@ -646,12 +663,13 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ::setCameraMode
         )
 
-        // Set up plugin host for UI
-        uiOverlay.setPluginHost(pluginHost)
-        pluginHost.setShowPluginPanelHandler { panelId ->
-            uiOverlay.showPluginPanel(panelId)
-        }
-        pluginHost.getCommandPalette().registerCommand(
+        if (!BuildFlags.WEB_BUILD && !webSafeRuntime) {
+            // Set up plugin host for UI.
+            uiOverlay.setPluginHost(pluginHost)
+            pluginHost.setShowPluginPanelHandler { panelId ->
+                uiOverlay.showPluginPanel(panelId)
+            }
+            pluginHost.getCommandPalette().registerCommand(
             com.github.alfu32.sketch.plugin.PaletteCommand(
                 id = "view.objects",
                 name = "View> Objects",
@@ -666,7 +684,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 }
             )
         )
-        pluginHost.getCommandPalette().registerCommand(
+            pluginHost.getCommandPalette().registerCommand(
             com.github.alfu32.sketch.plugin.PaletteCommand(
                 id = "view.selection",
                 name = "View> Selection",
@@ -681,7 +699,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 }
             )
         )
-        pluginHost.getCommandPalette().registerCommand(
+            pluginHost.getCommandPalette().registerCommand(
             com.github.alfu32.sketch.plugin.PaletteCommand(
                 id = "view.object_info",
                 name = "View> Object Info",
@@ -696,7 +714,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 }
             )
         )
-        pluginHost.getCommandPalette().registerCommand(
+            pluginHost.getCommandPalette().registerCommand(
             com.github.alfu32.sketch.plugin.PaletteCommand(
                 id = "view.lighting",
                 name = "View> Lighting",
@@ -1126,7 +1144,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 }
             )
         )
-        listOf(
+            listOf(
             ToolId.SELECT,
             ToolId.LINE,
             ToolId.CONSTRUCTION_LINE,
@@ -1164,8 +1182,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             ToolId.PLANAR_ROTATE_MULTIPLE,
             ToolId.HELICOIDAL_ROTATE_MULTIPLE,
             ToolId.PAINT
-        ).forEach { toolId ->
-            pluginHost.getCommandPalette().registerCommand(
+            ).forEach { toolId ->
+                pluginHost.getCommandPalette().registerCommand(
                 com.github.alfu32.sketch.plugin.PaletteCommand(
                     id = "tool.builtin.${toolId.name.lowercase()}",
                     name = "Tool> ${toolId.displayName}",
@@ -1181,7 +1199,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                 )
             )
         }
-        pluginHost.getCommandPalette().registerCommand(
+            pluginHost.getCommandPalette().registerCommand(
             com.github.alfu32.sketch.plugin.PaletteCommand(
                 id = "tool.vector_text",
                 name = "Tool> Vector Text",
@@ -1195,7 +1213,8 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
                     com.github.alfu32.sketch.plugin.PluginResult.success()
                 }
             )
-        )
+            )
+        }
 
         toolPointer = ToolPointerProcessor(toolController, snapper) { distanceOverrideSnap }
         val uiBlocker = object : com.badlogic.gdx.InputAdapter() {
@@ -1303,14 +1322,20 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         applyShadowSettings(shadowSettings)
         uiOverlay.refreshLightingControls()
         scene.setChangeListener { onModelChanged() }
-        pluginHost.loadCatalog()
-        pluginHost.reloadEnabledAndInit()
+        if (!BuildFlags.WEB_BUILD && !webSafeRuntime) {
+            pluginHost.loadCatalog()
+            pluginHost.reloadEnabledAndInit()
+        }
         uiOverlay.refreshPluginPanels()
         setupMeshes()
         setupRenderables()
-        setupMcpServer()
+        if (!BuildFlags.WEB_BUILD && !webSafeRuntime) {
+            setupMcpServer()
+        }
         maybeShowAndroidFirstRunInputDialog()
-        startConsoleIfRequested()
+        if (!BuildFlags.WEB_BUILD && !webSafeRuntime) {
+            startConsoleIfRequested()
+        }
     }
 
     private fun configureOrthoViewport(width: Int, height: Int) {
@@ -1519,9 +1544,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun setupMcpServer() {
+        val tap = stdoutTap ?: return
         mcpServer = McpHttpServer(
             initialPort = mcpPort,
-            stdoutTap = stdoutTap,
+            stdoutTap = tap,
             listCommands = ::listPaletteCommandsForMcp,
             executeCommand = ::executePaletteCommandForMcp,
             executeConsoleCommand = ::executeConsoleCommandForMcp,
@@ -2332,7 +2358,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         undoManager.update()
         flushAutosaveIfDue()
         drainAsyncModelSaveStatus()
-        pluginHost.dispatchUpdate(Gdx.graphics.deltaTime)
+        if (::pluginHost.isInitialized) {
+            pluginHost.dispatchUpdate(Gdx.graphics.deltaTime)
+        }
         toolController.update(Gdx.graphics.deltaTime)
         collectFeedbackWorldLines()
         var rebuiltInstancesThisFrame = false
@@ -2476,7 +2504,6 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             pluginHost.dispatchClose()
         }
         waitForAsyncModelSave()
-        modelSaveExecutor.shutdown()
         if (::mcpServer.isInitialized) {
             mcpServer.stop()
         }
@@ -2839,6 +2866,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun showSvgExportDialog() {
+        if (BuildFlags.WEB_BUILD) {
+            statusModel.message = "SVG export dialog is not available in web runtime yet."
+            return
+        }
         val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.SAVE)
         chooser.getTitleLabel().setText("Export SVG (View)")
         chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
@@ -2883,6 +2914,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun showOpenModelDialog() {
+        if (BuildFlags.WEB_BUILD) {
+            showWebOpenModelDialog()
+            return
+        }
         if (isAndroidRuntime()) {
             if (!showAndroidSafOpenModelDialog()) {
                 showAndroidOpenModelDialog()
@@ -2913,6 +2948,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun showSaveAsModelDialog() {
+        if (BuildFlags.WEB_BUILD) {
+            showWebSaveAsModelDialog()
+            return
+        }
         if (isAndroidRuntime()) {
             if (!showAndroidSafSaveAsModelDialog()) {
                 showAndroidSaveAsModelDialog()
@@ -2949,6 +2988,75 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         val cleaned = raw.trim().replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "octodraw.octd" }
         val ext = cleaned.substringAfterLast('.', "").lowercase()
         return if (ext == "octd" || ext == "k3d") cleaned else "$cleaned.octd"
+    }
+
+    private fun showWebOpenModelDialog() {
+        val bridge = WebRuntime.bridge
+        if (bridge == null) {
+            statusModel.message = "Web file open is unavailable in this build."
+            return
+        }
+        bridge.openTextDocument(".octd,.k3d,application/json,text/plain") { displayName, content ->
+            if (content.isNullOrBlank()) {
+                statusModel.message = "Open cancelled."
+                return@openTextDocument
+            }
+            val result = ModelPersistence.loadFromText(
+                content,
+                scene,
+                camera,
+                cameraTarget,
+                lightingSettings,
+                shadowSettings,
+                modelUnit,
+                { value -> applySnapEpsilon(value, false) },
+                { value -> applyGridSpacing(value, false) }
+            )
+            if (!result.ok) {
+                statusModel.message = "Open failed: invalid model content."
+                return@openTextDocument
+            }
+            modelFile = File(
+                resolveDesktopWritableDataDir(),
+                sanitizeModelFileName(displayName ?: "octodraw-web.octd")
+            ).absoluteFile
+            result.snapshot?.undoHistory?.let { undoManager.importHistory(it) } ?: undoManager.reset("Loaded")
+            if (result.snapshot?.undoHistory?.entries?.isEmpty() != false) {
+                undoManager.reset("Loaded")
+            }
+            orbitCameraController.target.set(cameraTarget)
+            syncCameraModesAfterOrbitStateChange()
+            markSceneRuntimeDirty()
+            if (bridge.writeLocalStorage(webAutosaveStorageKey, content)) {
+                bridge.writeLocalStorage(webModelNameStorageKey, modelFile.name)
+            }
+            updateWindowTitle()
+            statusModel.message = "Opened ${displayName ?: modelFile.name}"
+        }
+    }
+
+    private fun showWebSaveAsModelDialog() {
+        val bridge = WebRuntime.bridge
+        if (bridge == null) {
+            statusModel.message = "Web download is unavailable in this build."
+            return
+        }
+        val suggestedName = sanitizeModelFileName(
+            if (::modelFile.isInitialized) modelFile.name else "octodraw-web.octd"
+        )
+        val snapshot = snapshotForPersistence(includeUndoHistory = true)
+        val text = ModelPersistence.saveSnapshotText(snapshot)
+        bridge.saveTextDocument(suggestedName, text, "application/json") { success, message ->
+            if (success) {
+                modelFile = File(resolveDesktopWritableDataDir(), suggestedName).absoluteFile
+                updateWindowTitle()
+                bridge.writeLocalStorage(webAutosaveStorageKey, text)
+                bridge.writeLocalStorage(webModelNameStorageKey, modelFile.name)
+                statusModel.message = "Saved $suggestedName"
+            } else {
+                statusModel.message = message ?: "Save failed."
+            }
+        }
     }
 
     private fun showAndroidSafOpenModelDialog(): Boolean {
@@ -3354,6 +3462,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun showIfcExportDialog() {
+        if (BuildFlags.WEB_BUILD) {
+            statusModel.message = "IFC export dialog is not available in web runtime yet."
+            return
+        }
         val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.SAVE)
         chooser.getTitleLabel().setText("Export IFC (Model)")
         chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
@@ -3454,6 +3566,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     )
 
     private fun showImportMeshDialog() {
+        if (BuildFlags.WEB_BUILD) {
+            statusModel.message = "Import dialog is not available in web runtime yet."
+            return
+        }
         if (isAndroidRuntime()) {
             if (showAndroidSafImportMeshDialog()) {
                 return
@@ -3490,6 +3606,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun showExportMeshDialog() {
+        if (BuildFlags.WEB_BUILD) {
+            statusModel.message = "Export dialog is not available in web runtime yet."
+            return
+        }
         if (isAndroidRuntime()) {
             if (showAndroidSafExportMeshDialog()) {
                 return
@@ -5581,6 +5701,18 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun saveModel() {
+        if (BuildFlags.WEB_BUILD) {
+            val snapshot = snapshotForPersistence(includeUndoHistory = true)
+            val text = ModelPersistence.saveSnapshotText(snapshot)
+            val bridge = WebRuntime.bridge
+            if (bridge == null || !bridge.writeLocalStorage(webAutosaveStorageKey, text)) {
+                statusModel.message = "Web autosave failed: local storage unavailable."
+            } else {
+                bridge.writeLocalStorage(webModelNameStorageKey, modelFile.name)
+            }
+            autosavePending = false
+            return
+        }
         autosavePending = false
         waitForAsyncModelSave()
         ModelPersistence.saveSnapshot(modelFile, snapshotForPersistence(includeUndoHistory = true))
@@ -5606,31 +5738,41 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
 
     private fun enqueueAsyncModelSave(snapshot: ModelPersistence.ModelSnapshot, file: File = modelFile) {
         autosavePending = false
-        asyncModelSaveTask = modelSaveExecutor.submit {
+        if (asyncModelSaveRunning) {
+            return
+        }
+        asyncModelSaveRunning = true
+        val worker = Thread({
             try {
                 ModelPersistence.saveSnapshot(file, snapshot)
             } catch (t: Throwable) {
                 asyncModelSaveError = "Autosave failed: ${t.message ?: t.javaClass.simpleName}"
+            } finally {
+                asyncModelSaveRunning = false
             }
+        }, "k3d-model-save").apply {
+            isDaemon = true
         }
+        asyncModelSaveThread = worker
+        worker.start()
     }
 
     private fun waitForAsyncModelSave() {
-        val task = asyncModelSaveTask ?: return
+        val worker = asyncModelSaveThread ?: return
         try {
-            task.get()
+            worker.join()
         } catch (t: Throwable) {
             asyncModelSaveError = "Autosave failed: ${t.message ?: t.javaClass.simpleName}"
         } finally {
-            if (asyncModelSaveTask === task) {
-                asyncModelSaveTask = null
+            if (asyncModelSaveThread === worker) {
+                asyncModelSaveThread = null
             }
         }
     }
 
     private fun drainAsyncModelSaveStatus() {
-        asyncModelSaveTask?.let { task ->
-            if (task.isDone) {
+        asyncModelSaveThread?.let { worker ->
+            if (!worker.isAlive) {
                 waitForAsyncModelSave()
             }
         }
@@ -5640,6 +5782,44 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun loadModel() {
+        if (BuildFlags.WEB_BUILD) {
+            val bridge = WebRuntime.bridge
+            val storedText = bridge?.readLocalStorage(webAutosaveStorageKey)
+            val storedName = bridge?.readLocalStorage(webModelNameStorageKey)
+            if (!storedName.isNullOrBlank()) {
+                modelFile = File(resolveDesktopWritableDataDir(), sanitizeModelFileName(storedName)).absoluteFile
+            }
+            if (!storedText.isNullOrBlank()) {
+                val result = ModelPersistence.loadFromText(
+                    storedText,
+                    scene,
+                    camera,
+                    cameraTarget,
+                    lightingSettings,
+                    shadowSettings,
+                    modelUnit,
+                    { value -> applySnapEpsilon(value, false) },
+                    { value -> applyGridSpacing(value, false) }
+                )
+                if (result.ok) {
+                    val history = result.snapshot?.undoHistory
+                    undoManager.importHistory(history)
+                    if (history == null || history.entries.isEmpty()) {
+                        undoManager.reset("Loaded")
+                    }
+                    orbitCameraController.target.set(cameraTarget)
+                    syncCameraModesAfterOrbitStateChange()
+                    statusModel.message = "Loaded ${modelFile.name}"
+                    markSceneRuntimeDirty()
+                    return
+                }
+            }
+            undoManager.reset("Created")
+            saveModel()
+            statusModel.message = "Created ${modelFile.name}"
+            markSceneRuntimeDirty()
+            return
+        }
         waitForAsyncModelSave()
         if (modelFile.exists()) {
             val backup = java.io.File(modelFile.absolutePath + ".bak")
@@ -5708,7 +5888,7 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
         if (!force && now < autosaveDueAtMs) {
             return
         }
-        val runningAsyncSave = asyncModelSaveTask?.let { !it.isDone } == true
+        val runningAsyncSave = asyncModelSaveRunning && (asyncModelSaveThread?.isAlive == true)
         if (!force && runningAsyncSave) {
             autosaveDueAtMs = now + autosaveDebounceMs
             return
@@ -5807,6 +5987,9 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun resolveInstallDir(): java.io.File {
+        if (BuildFlags.WEB_BUILD) {
+            return java.io.File(System.getProperty("user.dir", ".")).absoluteFile
+        }
         if (isAndroidRuntime()) {
             return try {
                 Gdx.files.local("").file().absoluteFile
@@ -5831,6 +6014,24 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
             Gdx.app?.type == Application.ApplicationType.Android
         } catch (_: Exception) {
             false
+        }
+    }
+
+    private fun isWebRuntime(): Boolean {
+        return try {
+            Gdx.app?.type == Application.ApplicationType.WebGL
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun isWebSafeRuntime(): Boolean {
+        if (BuildFlags.WEB_BUILD) {
+            return true
+        }
+        return when (runtimeProfile) {
+            RuntimeProfile.AUTO -> isWebRuntime()
+            RuntimeProfile.WEB_SAFE -> true
         }
     }
 
@@ -7064,6 +7265,10 @@ class Main(private val startupArgs: kotlin.Array<String> = emptyArray()) : Appli
     }
 
     private fun showVectorGlyphSourceDialog() {
+        if (BuildFlags.WEB_BUILD) {
+            statusModel.message = "Vector glyph source picker is not available in web runtime yet."
+            return
+        }
         if (isAndroidRuntime()) {
             if (!showAndroidSafVectorGlyphSourceDialog()) {
                 statusModel.message = "Vector glyph browse is unavailable on this Android runtime."

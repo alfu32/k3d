@@ -24,7 +24,6 @@ import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 import com.github.alfu32.sketch.model.HotspotStore
-import com.kotcrab.vis.ui.widget.VisImageTextButton
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisCheckBox
 import com.kotcrab.vis.ui.widget.VisScrollPane
@@ -309,14 +308,14 @@ class SketchUiOverlay(
     }
 
     val stage: Stage = Stage(ScreenViewport())
-    private val toolButtons = mutableMapOf<ToolId, VisImageTextButton>()
-    private val toolButtonByWidget = mutableMapOf<VisImageTextButton, ToolId>()
-    private val buttonLabels = mutableMapOf<VisImageTextButton, String>()
-    private val buttonMarkers = mutableMapOf<VisImageTextButton, Image>()
-    private val hoveredButtons = mutableSetOf<VisImageTextButton>()
+    private val toolButtons = mutableMapOf<ToolId, AppImageTextButton>()
+    private val toolButtonByWidget = mutableMapOf<AppImageTextButton, ToolId>()
+    private val buttonLabels = mutableMapOf<AppImageTextButton, String>()
+    private val buttonMarkers = mutableMapOf<AppImageTextButton, Image>()
+    private val hoveredButtons = mutableSetOf<AppImageTextButton>()
     private val builtInToolbars = linkedMapOf<String, CollapsibleWindow>()
-    private val pluginToolButtons = mutableMapOf<String, VisImageTextButton>()
-    private val pluginToolByWidget = mutableMapOf<VisImageTextButton, String>()
+    private val pluginToolButtons = mutableMapOf<String, AppImageTextButton>()
+    private val pluginToolByWidget = mutableMapOf<AppImageTextButton, String>()
     private val pluginToolbars = mutableMapOf<String, CollapsibleWindow>()
     private val cameraModeButtons = mutableMapOf<CameraMode, VisTextButton>()
     private val cameraModeLabels = mutableMapOf<CameraMode, String>()
@@ -324,7 +323,7 @@ class SketchUiOverlay(
     private val pluginPanels = mutableMapOf<String, CollapsibleWindow>()
     private val pluginPanelPositions = mutableMapOf<String, PanelPosition>()
     private var hoverPopoverWindow: CollapsibleWindow? = null
-    private var hoverPopoverTarget: VisImageTextButton? = null
+    private var hoverPopoverTarget: AppImageTextButton? = null
     private var hoverPopoverText: String = ""
     private var hoverPopoverElapsed = 0f
     private val hoverPopoverDelay = 0.5f
@@ -417,7 +416,7 @@ class SketchUiOverlay(
     private var lastGroupEditing = false
     private var lastGroupId = ""
     private var updatingGroupFields = false
-    private var paintColorButton: VisImageTextButton? = null
+    private var paintColorButton: AppImageTextButton? = null
     private var lastPaintColor = Color(-1f, -1f, -1f, -1f)
     private var colorPicker: ColorPicker? = null
     private var lightingPanel: DockSection? = null
@@ -455,23 +454,23 @@ class SketchUiOverlay(
     private lateinit var architectureWallInclinationField: VisTextField
     private lateinit var architectureWallExteriorColorLabel: VisLabel
     private lateinit var architectureWallExteriorColorField: VisTextField
-    private lateinit var architectureWallExteriorColorButton: VisImageTextButton
+    private lateinit var architectureWallExteriorColorButton: AppImageTextButton
     private lateinit var architectureWallInteriorColorLabel: VisLabel
     private lateinit var architectureWallInteriorColorField: VisTextField
-    private lateinit var architectureWallInteriorColorButton: VisImageTextButton
+    private lateinit var architectureWallInteriorColorButton: AppImageTextButton
     private lateinit var architectureSlabNameLabel: VisLabel
     private lateinit var architectureSlabNameField: VisTextField
     private lateinit var architectureSlabThicknessLabel: VisLabel
     private lateinit var architectureSlabThicknessField: VisTextField
     private lateinit var architectureSlabTopColorLabel: VisLabel
     private lateinit var architectureSlabTopColorField: VisTextField
-    private lateinit var architectureSlabTopColorButton: VisImageTextButton
+    private lateinit var architectureSlabTopColorButton: AppImageTextButton
     private lateinit var architectureSlabBottomColorLabel: VisLabel
     private lateinit var architectureSlabBottomColorField: VisTextField
-    private lateinit var architectureSlabBottomColorButton: VisImageTextButton
+    private lateinit var architectureSlabBottomColorButton: AppImageTextButton
     private lateinit var architectureSlabSideColorLabel: VisLabel
     private lateinit var architectureSlabSideColorField: VisTextField
-    private lateinit var architectureSlabSideColorButton: VisImageTextButton
+    private lateinit var architectureSlabSideColorButton: AppImageTextButton
     private lateinit var architectureStairNameLabel: VisLabel
     private lateinit var architectureStairNameField: VisTextField
     private lateinit var architectureStairHeightLabel: VisLabel
@@ -486,10 +485,10 @@ class SketchUiOverlay(
     private lateinit var architectureStairRightRailCheck: VisCheckBox
     private lateinit var architectureStairTreadColorLabel: VisLabel
     private lateinit var architectureStairTreadColorField: VisTextField
-    private lateinit var architectureStairTreadColorButton: VisImageTextButton
+    private lateinit var architectureStairTreadColorButton: AppImageTextButton
     private lateinit var architectureStairSupportColorLabel: VisLabel
     private lateinit var architectureStairSupportColorField: VisTextField
-    private lateinit var architectureStairSupportColorButton: VisImageTextButton
+    private lateinit var architectureStairSupportColorButton: AppImageTextButton
     private lateinit var architectureFrameNameLabel: VisLabel
     private lateinit var architectureFrameNameField: VisTextField
     private lateinit var architectureFrameDepthLabel: VisLabel
@@ -498,30 +497,30 @@ class SketchUiOverlay(
     private lateinit var architectureFrameWidthField: VisTextField
     private lateinit var architectureFrameColorLabel: VisLabel
     private lateinit var architectureFrameColorField: VisTextField
-    private lateinit var architectureFrameColorButton: VisImageTextButton
+    private lateinit var architectureFrameColorButton: AppImageTextButton
     private lateinit var architectureFrameGlazingLabel: VisLabel
     private lateinit var architectureFrameGlazingCheck: VisCheckBox
     private lateinit var architectureFrameGlazingColorLabel: VisLabel
     private lateinit var architectureFrameGlazingColorField: VisTextField
-    private lateinit var architectureFrameGlazingColorButton: VisImageTextButton
+    private lateinit var architectureFrameGlazingColorButton: AppImageTextButton
     private lateinit var hvacPlumbingDiameterField: VisTextField
     private lateinit var hvacPlumbingSidesField: VisTextField
     private lateinit var hvacPlumbingColorField: VisTextField
-    private lateinit var hvacPlumbingColorButton: VisImageTextButton
+    private lateinit var hvacPlumbingColorButton: AppImageTextButton
     private lateinit var hvacVentilationAutoJoinCheck: VisCheckBox
     private lateinit var hvacVentilationWidthField: VisTextField
     private lateinit var hvacVentilationHeightField: VisTextField
     private lateinit var hvacVentilationHumpHalfSpanField: VisTextField
     private lateinit var hvacVentilationHumpClearanceField: VisTextField
     private lateinit var hvacVentilationColorField: VisTextField
-    private lateinit var hvacVentilationColorButton: VisImageTextButton
+    private lateinit var hvacVentilationColorButton: AppImageTextButton
     private var updatingHvacFields = false
     private lateinit var hotspotModeLabel: VisLabel
     private lateinit var hotspotNameField: VisTextField
     private lateinit var hotspotOperationSelect: VisSelectBox<HotspotStore.OperationKind>
     private lateinit var hotspotShapeSelect: VisSelectBox<HotspotStore.ShapeKind>
     private lateinit var hotspotColorField: VisTextField
-    private lateinit var hotspotColorButton: VisImageTextButton
+    private lateinit var hotspotColorButton: AppImageTextButton
     private lateinit var hotspotAttachedLabel: VisLabel
     private lateinit var hotspotReferenceLabel: VisLabel
     private lateinit var hotspotAddButton: VisTextButton
@@ -1171,7 +1170,7 @@ class SketchUiOverlay(
     }
 
     private fun buildStandardToolbars(): List<CollapsibleWindow> {
-        val toolGroup = ButtonGroup<VisImageTextButton>()
+        val toolGroup = ButtonGroup<AppImageTextButton>()
         toolGroup.setMaxCheckCount(1)
         toolGroup.setMinCheckCount(1)
         toolGroup.setUncheckLast(false)
@@ -1304,9 +1303,9 @@ class SketchUiOverlay(
         title: String,
         toolbarId: String,
         toolIds: List<ToolId>,
-        group: ButtonGroup<VisImageTextButton>,
-        leadingButtons: List<VisImageTextButton> = emptyList(),
-        extraButtons: List<VisImageTextButton> = emptyList()
+        group: ButtonGroup<AppImageTextButton>,
+        leadingButtons: List<AppImageTextButton> = emptyList(),
+        extraButtons: List<AppImageTextButton> = emptyList()
     ): CollapsibleWindow {
         val window = CollapsibleWindow(title, showCloseButton = false)
         window.isResizable = false
@@ -1329,9 +1328,9 @@ class SketchUiOverlay(
         return window
     }
 
-    private fun createToolButton(toolId: ToolId, group: ButtonGroup<VisImageTextButton>): VisImageTextButton {
+    private fun createToolButton(toolId: ToolId, group: ButtonGroup<AppImageTextButton>): AppImageTextButton {
         val icon = createIconDrawable(toolId)
-        val button = VisImageTextButton(toolId.displayName, icon)
+        val button = AppImageTextButton(toolId.displayName, icon)
         applyWhiteButtonStyle(button)
         applyIconStyle(button, icon)
         button.setText("")
@@ -1499,8 +1498,8 @@ class SketchUiOverlay(
         label: String,
         icon: com.badlogic.gdx.scenes.scene2d.utils.Drawable,
         onClick: () -> Unit
-    ): VisImageTextButton {
-        val button = VisImageTextButton(label, icon)
+    ): AppImageTextButton {
+        val button = AppImageTextButton(label, icon)
         applyWhiteButtonStyle(button)
         applyIconStyle(button, icon)
         button.setText("")
@@ -2821,9 +2820,9 @@ class SketchUiOverlay(
         return panel
     }
 
-    private fun createHvacColorButton(title: String, field: VisTextField): VisImageTextButton {
+    private fun createHvacColorButton(title: String, field: VisTextField): AppImageTextButton {
         val icon = iconFor("color", createActionIconDrawable(Color(0.8f, 0.8f, 0.8f, 1f)))
-        return VisImageTextButton("", icon).apply {
+        return AppImageTextButton("", icon).apply {
             applyWhiteButtonStyle(this)
             applyIconStyle(this, icon)
             addListener(object : ClickListener() {
@@ -2837,7 +2836,7 @@ class SketchUiOverlay(
         }
     }
 
-    private fun applyHvacColorPickerValue(field: VisTextField, button: VisImageTextButton, color: Color) {
+    private fun applyHvacColorPickerValue(field: VisTextField, button: AppImageTextButton, color: Color) {
         val value = formatColorField(color)
         updatingHvacFields = true
         field.text = value
@@ -3256,7 +3255,7 @@ class SketchUiOverlay(
     private data class ArchitectureFieldEntry(
         val label: VisLabel,
         val field: VisTextField? = null,
-        val colorButton: VisImageTextButton? = null,
+        val colorButton: AppImageTextButton? = null,
         val checkBox: VisCheckBox? = null
     )
 
@@ -3424,9 +3423,9 @@ class SketchUiOverlay(
         updatingArchitectureFields = false
     }
 
-    private fun createArchitectureColorButton(title: String, field: VisTextField): VisImageTextButton {
+    private fun createArchitectureColorButton(title: String, field: VisTextField): AppImageTextButton {
         val icon = iconFor("color", createActionIconDrawable(Color(0.8f, 0.8f, 0.8f, 1f)))
-        return VisImageTextButton("", icon).apply {
+        return AppImageTextButton("", icon).apply {
             applyWhiteButtonStyle(this)
             applyIconStyle(this, icon)
             addListener(object : ClickListener() {
@@ -3442,7 +3441,7 @@ class SketchUiOverlay(
 
     private fun applyArchitectureColorPickerValue(
         field: VisTextField,
-        button: VisImageTextButton,
+        button: AppImageTextButton,
         color: Color
     ) {
         val value = formatColorField(color)
@@ -3620,7 +3619,7 @@ class SketchUiOverlay(
         picker.fadeIn()
     }
 
-    private fun updateArchitectureColorButtonSwatch(button: VisImageTextButton, color: Color) {
+    private fun updateArchitectureColorButtonSwatch(button: AppImageTextButton, color: Color) {
         if (iconDrawables.containsKey("color")) {
             button.image?.setColor(color)
         } else {
@@ -4544,7 +4543,7 @@ class SketchUiOverlay(
             tools.forEach { entry ->
                 val fallback = createActionIconDrawable(Color(0.65f, 0.75f, 0.95f, 1f))
                 val icon = entry.iconDrawable ?: iconFor(entry.icon, fallback)
-                val button = VisImageTextButton(entry.name, icon)
+                val button = AppImageTextButton(entry.name, icon)
                 applyWhiteButtonStyle(button)
                 applyIconStyle(button, icon)
                 button.setText("")
@@ -4592,7 +4591,7 @@ class SketchUiOverlay(
         }
     }
 
-    private fun showHoverPopover(button: VisImageTextButton, text: String) {
+    private fun showHoverPopover(button: AppImageTextButton, text: String) {
         if (text.isBlank()) {
             return
         }
@@ -4798,7 +4797,7 @@ class SketchUiOverlay(
         picker.fadeIn()
     }
 
-    private fun updateButtonIcon(button: VisImageTextButton?, color: Color) {
+    private fun updateButtonIcon(button: AppImageTextButton?, color: Color) {
         val target = button ?: return
         val drawable = createActionIconDrawable(color)
         val style = target.style
@@ -4815,7 +4814,7 @@ class SketchUiOverlay(
         return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a
     }
 
-    private fun applyIconStyle(button: VisImageTextButton, icon: com.badlogic.gdx.scenes.scene2d.utils.Drawable) {
+    private fun applyIconStyle(button: AppImageTextButton, icon: com.badlogic.gdx.scenes.scene2d.utils.Drawable) {
         val style = button.style
         style.imageUp = icon
         style.imageDown = icon
@@ -4826,7 +4825,7 @@ class SketchUiOverlay(
         button.imageCell?.size(iconCellSize, iconCellSize)
     }
 
-    private fun attachButtonMarker(button: VisImageTextButton) {
+    private fun attachButtonMarker(button: AppImageTextButton) {
         val drawable = markerDrawable ?: createSolidDrawable(Color.WHITE).also { markerDrawable = it }
         val marker = object : Image(drawable) {
             override fun act(delta: Float) {
@@ -4865,7 +4864,7 @@ class SketchUiOverlay(
         }
     }
 
-    private fun hoverListener(button: VisImageTextButton): ClickListener {
+    private fun hoverListener(button: AppImageTextButton): ClickListener {
         return object : ClickListener() {
             override fun enter(event: InputEvent?, x: Float, y: Float, pointer: Int, fromActor: com.badlogic.gdx.scenes.scene2d.Actor?) {
                 hoveredButtons.add(button)
@@ -4899,7 +4898,7 @@ class SketchUiOverlay(
         }
     }
 
-    private fun applyWhiteButtonStyle(button: VisImageTextButton) {
+    private fun applyWhiteButtonStyle(button: AppImageTextButton) {
         val up = buttonUpDrawable ?: createButtonBackgroundDrawable(
             fill = Color.WHITE,
             border = Color(0.55f, 0.55f, 0.55f, 1f)
