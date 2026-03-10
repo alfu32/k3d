@@ -156,6 +156,7 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.EnumMap
 import java.util.concurrent.CountDownLatch
+import javax.swing.JOptionPane
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.ceil
@@ -3035,6 +3036,12 @@ class Main(
         return !BuildFlags.WEB_BUILD && !isAndroidRuntime() && !GraphicsEnvironment.isHeadless()
     }
 
+    private data class DesktopFileDialogOption(
+        val label: String,
+        val extensions: Set<String>,
+        val defaultExtension: String
+    )
+
     private fun showDesktopFileDialog(
         title: String,
         mode: Int,
@@ -3081,6 +3088,50 @@ class Main(
         }
     }
 
+    private fun chooseDesktopFileDialogOption(
+        title: String,
+        message: String,
+        options: List<DesktopFileDialogOption>,
+        defaultIndex: Int = 0
+    ): DesktopFileDialogOption? {
+        if (options.isEmpty()) {
+            return null
+        }
+        if (options.size == 1 || !isDesktopFileDialogAvailable()) {
+            return options.first()
+        }
+        val labels = options.map { it.label }.toTypedArray()
+        val defaultLabel = labels[defaultIndex.coerceIn(0, labels.lastIndex)]
+        var selectedLabel: String? = null
+        val chooseOption = Runnable {
+            selectedLabel = JOptionPane.showInputDialog(
+                null,
+                message,
+                title,
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                labels,
+                defaultLabel
+            ) as? String
+        }
+        return try {
+            if (EventQueue.isDispatchThread()) {
+                chooseOption.run()
+            } else {
+                EventQueue.invokeAndWait(chooseOption)
+            }
+            options.firstOrNull { it.label == selectedLabel }
+        } catch (t: Throwable) {
+            statusModel.message = "Desktop format picker failed: ${t.message ?: t.javaClass.simpleName}"
+            null
+        }
+    }
+
+    private fun replaceFileExtension(fileName: String, extension: String): String {
+        val base = fileName.substringBeforeLast('.', fileName).ifBlank { "octodraw" }
+        return "$base.$extension"
+    }
+
     private fun ensureFileExtension(target: File, allowedExtensions: Set<String>, defaultExtension: String): File {
         val ext = target.extension.lowercase()
         return if (ext in allowedExtensions) target else File(target.parentFile, "${target.name}.$defaultExtension")
@@ -3097,11 +3148,23 @@ class Main(
             }
             return
         }
+        val option = chooseDesktopFileDialogOption(
+            title = "Open Octodraw Model",
+            message = "Choose the file type to show in the system dialog.",
+            options = listOf(
+                DesktopFileDialogOption("All supported (*.octd, *.k3d)", setOf("octd", "k3d"), "octd"),
+                DesktopFileDialogOption("Octodraw (*.octd)", setOf("octd"), "octd"),
+                DesktopFileDialogOption("Legacy K3D (*.k3d)", setOf("k3d"), "k3d")
+            )
+        ) ?: run {
+            statusModel.message = "Open cancelled."
+            return
+        }
         val statusBefore = statusModel.message
         val target = showDesktopFileDialog(
-            title = "Open Octodraw Model",
+            title = "Open Octodraw Model - ${option.label}",
             mode = FileDialog.LOAD,
-            allowedExtensions = setOf("octd", "k3d")
+            allowedExtensions = option.extensions
         )
         if (target == null) {
             if (statusModel.message == statusBefore) {
@@ -3128,11 +3191,25 @@ class Main(
             }
             return
         }
+        val option = chooseDesktopFileDialogOption(
+            title = "Save Octodraw Model As",
+            message = "Choose the target model format before opening the system dialog.",
+            options = listOf(
+                DesktopFileDialogOption("Octodraw (*.octd)", setOf("octd"), "octd"),
+                DesktopFileDialogOption("Legacy K3D (*.k3d)", setOf("k3d"), "k3d")
+            )
+        ) ?: run {
+            statusModel.message = "Save As cancelled."
+            return
+        }
         val statusBefore = statusModel.message
         val requested = showDesktopFileDialog(
-            title = "Save Octodraw Model As",
+            title = "Save Octodraw Model As - ${option.label}",
             mode = FileDialog.SAVE,
-            defaultFileName = if (::modelFile.isInitialized) modelFile.name else "octodraw.octd"
+            defaultFileName = replaceFileExtension(
+                if (::modelFile.isInitialized) modelFile.name else "octodraw.octd",
+                option.defaultExtension
+            )
         )
         if (requested == null) {
             if (statusModel.message == statusBefore) {
@@ -3140,7 +3217,7 @@ class Main(
             }
             return
         }
-        val target = ensureFileExtension(requested.absoluteFile, setOf("octd", "k3d"), "octd")
+        val target = ensureFileExtension(requested.absoluteFile, option.extensions, option.defaultExtension)
         target.parentFile?.mkdirs()
         modelFile = target
         saveModel()
@@ -3714,11 +3791,27 @@ class Main(
                 return
             }
         }
+        val option = chooseDesktopFileDialogOption(
+            title = "Import Mesh",
+            message = "Choose the mesh format to show in the system dialog.",
+            options = listOf(
+                DesktopFileDialogOption(
+                    "All supported (*.obj, *.stl, *.stla, *.stlb, *.gltf, *.glb, *.dae, *.dxf, *.3mf, *.amf, *.ifc, *.fbx)",
+                    meshExportOptions.flatMap { it.extensions }.toSet(),
+                    "obj"
+                )
+            ) + meshExportOptions.map { option ->
+                DesktopFileDialogOption(option.label, option.extensions.toSet(), option.defaultExtension)
+            }
+        ) ?: run {
+            statusModel.message = "Import canceled."
+            return
+        }
         val statusBefore = statusModel.message
         val requested = showDesktopFileDialog(
-            title = "Import Mesh",
+            title = "Import Mesh - ${option.label}",
             mode = FileDialog.LOAD,
-            allowedExtensions = meshExportOptions.flatMap { it.extensions }.toSet()
+            allowedExtensions = option.extensions
         )
         if (requested == null) {
             if (statusModel.message == statusBefore) {
@@ -3743,11 +3836,24 @@ class Main(
                 return
             }
         }
+        val option = chooseDesktopFileDialogOption(
+            title = "Export Mesh",
+            message = "Choose the mesh export format before opening the system dialog.",
+            options = meshExportOptions.map { option ->
+                DesktopFileDialogOption(option.label, option.extensions.toSet(), option.defaultExtension)
+            }
+        ) ?: run {
+            statusModel.message = "Export canceled."
+            return
+        }
         val statusBefore = statusModel.message
         val requested = showDesktopFileDialog(
-            title = "Export Mesh",
+            title = "Export Mesh - ${option.label}",
             mode = FileDialog.SAVE,
-            defaultFileName = if (::modelFile.isInitialized) "${modelFile.nameWithoutExtension}.obj" else "mesh.obj"
+            defaultFileName = replaceFileExtension(
+                if (::modelFile.isInitialized) "${modelFile.nameWithoutExtension}.obj" else "mesh.obj",
+                option.defaultExtension
+            )
         )
         if (requested == null) {
             if (statusModel.message == statusBefore) {
@@ -8000,11 +8106,22 @@ class Main(
             }
             return
         }
+        val option = chooseDesktopFileDialogOption(
+            title = "Load Vector Glyph Catalog",
+            message = "Choose the source type to show in the system dialog.",
+            options = listOf(
+                DesktopFileDialogOption("Vector Glyph Catalog (*.octd)", setOf("octd"), "octd"),
+                DesktopFileDialogOption("Fonts (*.ttf, *.otf)", setOf("ttf", "otf"), "ttf")
+            )
+        ) ?: run {
+            statusModel.message = "Vector glyph load cancelled."
+            return
+        }
         val statusBefore = statusModel.message
         val requested = showDesktopFileDialog(
-            title = "Load Vector Glyph Catalog",
+            title = "Load Vector Glyph Catalog - ${option.label}",
             mode = FileDialog.LOAD,
-            allowedExtensions = setOf("octd", "ttf", "otf")
+            allowedExtensions = option.extensions
         )
         if (requested == null) {
             if (statusModel.message == statusBefore) {
