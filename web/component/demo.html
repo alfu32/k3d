@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Octodraw Web Component Demo</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #dde6f4; font: 14px/1.4 sans-serif; }
+    body { display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+    header { padding: 10px 12px; background: #16202f; color: #f5f7fb; display: flex; gap: 8px; align-items: center; }
+    button { padding: 6px 10px; }
+    #editor { display: block; width: 100%; height: 100%; min-height: 480px; }
+  </style>
+  <script src="./octodraw-element.js"></script>
+</head>
+<body>
+  <header>
+    <button id="hide-ui">Hide UI</button>
+    <button id="show-ui">Show UI</button>
+    <button id="select-line">Line Tool</button>
+    <button id="draw-sample">Draw Sample</button>
+    <button id="selection">Selection</button>
+    <button id="camera-top">Top View</button>
+    <button id="dump-model">Dump Model</button>
+    <span id="status">Booting...</span>
+  </header>
+  <octodraw-editor id="editor" toolbars-visible="false" panels-visible="false"></octodraw-editor>
+  <script>
+    const editor = document.getElementById('editor');
+    const status = document.getElementById('status');
+    if (window.location.protocol === 'file:') {
+      status.textContent = 'Serve this folder over HTTP. Opening demo.html directly from file:// will not run the runtime correctly.';
+    }
+    editor.addEventListener('ready', (event) => {
+      status.textContent = `Ready (${event.detail.fileName})`;
+      console.log({type:'ready',event})
+    });
+    editor.addEventListener('change', (event) => {
+      status.textContent = `Changed r${event.detail.revision}: ${event.detail.reason}`;
+      console.log({type:'change',event})
+    });
+    editor.addEventListener('selectionchange', (event) => {
+      const counts = event.detail && event.detail.counts ? event.detail.counts : {};
+      status.textContent = `Selection e${counts.edges || 0} f${counts.faces || 0} g${counts.groups || 0}`;
+      console.log({type:'selectionchange',event})
+    });
+    editor.addEventListener('toolchange', (event) => {
+      status.textContent = `Tool ${event.detail.displayName}`;
+      console.log({type:'toolchange',event})
+    });
+    editor.addEventListener('error', (event) => {
+      status.textContent = `Error: ${event.detail.message}`;
+      console.log({type:'error',event})
+    });
+    document.getElementById('hide-ui').onclick = () => editor.setUi({ toolbarsVisible: false, panelsVisible: false });
+    document.getElementById('show-ui').onclick = () => editor.setUi({ toolbarsVisible: true, panelsVisible: true });
+    document.getElementById('select-line').onclick = () => editor.selectTool('LINE');
+    document.getElementById('draw-sample').onclick = async () => {
+      status.textContent = 'Drawing sample line...';
+      await editor.play([
+        { cmd: 'tool.select', tool: 'LINE' },
+        { cmd: 'tool.pointer', action: 'move', world: [0, 0, 0] },
+        { cmd: 'tool.pointer', action: 'click', world: [0, 0, 0] },
+        { cmd: 'tool.pointer', action: 'move', world: [4, 0, 0] },
+        { cmd: 'tool.pointer', action: 'click', world: [4, 0, 0] }
+      ]);
+      status.textContent = 'Sample line drawn.';
+    };
+    document.getElementById('selection').onclick = async () => {
+      const selection = await editor.getSelection();
+      console.log(selection);
+      const counts = selection && selection.counts ? selection.counts : {};
+      status.textContent = `Selection e${counts.edges || 0} f${counts.faces || 0} g${counts.groups || 0}`;
+    };
+    document.getElementById('camera-top').onclick = async () => {
+      await editor.setCamera({
+        mode: 'ORTHOGRAPHIC',
+        target: [0, 0, 0],
+        position: [0, 20, 0]
+      });
+      status.textContent = 'Orthographic top view.';
+    };
+    document.getElementById('dump-model').onclick = async () => {
+      const model = await editor.getModel();
+      console.log(model);
+      status.textContent = `Model length ${model ? model.length : 0}`;
+    };
+  </script>
+</body>
+</html>

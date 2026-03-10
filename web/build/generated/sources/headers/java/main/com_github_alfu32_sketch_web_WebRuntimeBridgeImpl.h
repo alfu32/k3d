@@ -39,6 +39,38 @@ JNIEXPORT jstring JNICALL Java_com_github_alfu32_sketch_web_WebRuntimeBridgeImpl
 JNIEXPORT jboolean JNICALL Java_com_github_alfu32_sketch_web_WebRuntimeBridgeImpl_writeLocalStorageJs
   (JNIEnv *, jclass, jstring, jstring);
 
+/*
+ * Class:     com_github_alfu32_sketch_web_WebRuntimeBridgeImpl
+ * Method:    readEmbedConfigJsonJs
+ * Signature: ()Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_com_github_alfu32_sketch_web_WebRuntimeBridgeImpl_readEmbedConfigJsonJs
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     com_github_alfu32_sketch_web_WebRuntimeBridgeImpl
+ * Method:    pollEmbedCommandJsonJs
+ * Signature: ()Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_com_github_alfu32_sketch_web_WebRuntimeBridgeImpl_pollEmbedCommandJsonJs
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     com_github_alfu32_sketch_web_WebRuntimeBridgeImpl
+ * Method:    resolveEmbedCommandJs
+ * Signature: (Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;)V
+ */
+JNIEXPORT void JNICALL Java_com_github_alfu32_sketch_web_WebRuntimeBridgeImpl_resolveEmbedCommandJs
+  (JNIEnv *, jclass, jstring, jboolean, jstring, jstring);
+
+/*
+ * Class:     com_github_alfu32_sketch_web_WebRuntimeBridgeImpl
+ * Method:    emitEmbedEventJs
+ * Signature: (Ljava/lang/String;Ljava/lang/String;)V
+ */
+JNIEXPORT void JNICALL Java_com_github_alfu32_sketch_web_WebRuntimeBridgeImpl_emitEmbedEventJs
+  (JNIEnv *, jclass, jstring, jstring);
+
 #ifdef __cplusplus
 }
 #endif

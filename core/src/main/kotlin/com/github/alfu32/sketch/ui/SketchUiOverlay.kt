@@ -328,6 +328,7 @@ class SketchUiOverlay(
     private var hoverPopoverElapsed = 0f
     private val hoverPopoverDelay = 0.5f
     private var toolbarsPositioned = false
+    private var toolbarsVisible = true
     private val uiPrefs by lazy { Gdx.app.getPreferences("k3d-ui-layout") }
     private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
     private val toolbarLayoutVersion = 8
@@ -574,6 +575,7 @@ class SketchUiOverlay(
     private var commandPaletteUI: CommandPaletteUI? = null
     private var pluginHost: PluginHost? = null
     private var pluginPanelsPositioned = false
+    private var dockPanelsVisible = true
     private var automationHidePanels = false
     private var distancePopup: CollapsibleWindow? = null
     private var distanceField: VisTextField? = null
@@ -977,7 +979,7 @@ class SketchUiOverlay(
         if (stage.scrollFocus != null && !isUiHit(Gdx.input.x, Gdx.input.y)) {
             stage.scrollFocus = null
         }
-        if (!automationHidePanels && ::rightSidePanel.isInitialized) {
+        if (!automationHidePanels && dockPanelsVisible && ::rightSidePanel.isInitialized) {
             var changed = false
             rightDockPanels().forEach { panel ->
                 if (!panel.isVisible) {
@@ -1122,6 +1124,22 @@ class SketchUiOverlay(
 
     fun showCommandPalette() {
         commandPaletteUI?.show()
+    }
+
+    fun setToolbarsVisible(visible: Boolean) {
+        toolbarsVisible = visible
+        builtInToolbars.values.forEach { it.isVisible = visible }
+        pluginToolbars.values.forEach { it.isVisible = visible }
+        toolbarsPositioned = false
+        needsPanelLayout = true
+    }
+
+    fun setPanelsVisible(visible: Boolean) {
+        dockPanelsVisible = visible
+        if (::rightSidePanel.isInitialized) {
+            rightSidePanel.isVisible = visible
+        }
+        needsPanelLayout = true
     }
 
     fun setAutomationHidePanels(enabled: Boolean) {
@@ -4130,7 +4148,7 @@ class SketchUiOverlay(
     private fun positionPanels() {
         updateRightSidePanelLayout()
         val panels = mutableListOf<CollapsibleWindow>()
-        if (!automationHidePanels) {
+        if (!automationHidePanels && dockPanelsVisible) {
             rightDockPanels().forEach { it.isVisible = true }
             rightSidePanel.isVisible = true
         }

@@ -4,6 +4,7 @@
 .gradle-codex/
 gradle-app.setting
 /build/
+/web/build/
 /android/build/
 /core/build/
 /lwjgl2/build/

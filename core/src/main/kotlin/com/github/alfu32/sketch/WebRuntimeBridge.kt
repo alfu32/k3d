@@ -13,6 +13,10 @@ interface WebRuntimeBridge {
     fun saveTextDocument(fileName: String, content: String, mimeType: String, handler: WebSaveTextHandler)
     fun readLocalStorage(key: String): String?
     fun writeLocalStorage(key: String, value: String): Boolean
+    fun readEmbedConfigJson(): String? = null
+    fun pollEmbedCommandJson(): String? = null
+    fun resolveEmbedCommand(requestId: String, success: Boolean, payloadJson: String?, message: String?) {}
+    fun emitEmbedEvent(eventType: String, detailJson: String?) {}
 }
 
 object WebRuntime {

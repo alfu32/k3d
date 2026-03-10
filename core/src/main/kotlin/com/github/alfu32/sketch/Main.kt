@@ -38,6 +38,10 @@ import com.badlogic.gdx.InputAdapter
 import com.badlogic.gdx.InputProcessor
 import com.badlogic.gdx.utils.ScreenUtils
 import com.badlogic.gdx.utils.Array
+import com.badlogic.gdx.utils.Json
+import com.badlogic.gdx.utils.JsonReader
+import com.badlogic.gdx.utils.JsonValue
+import com.badlogic.gdx.utils.JsonWriter
 import com.badlogic.gdx.utils.Pool
 import com.github.alfu32.sketch.input.GuideManager
 import com.github.alfu32.sketch.input.CameraEventRouter
@@ -171,6 +175,15 @@ class Main(
         var draw: Boolean = true,
         var unlocked: Boolean = true,
         var wireframe: Boolean = false
+    )
+
+    private data class WebEmbedConfig(
+        val hostId: String?,
+        val canvasId: String?,
+        val initialModel: String?,
+        val initialFileName: String?,
+        val toolbarsVisible: Boolean,
+        val panelsVisible: Boolean
     )
 
     private data class SelectionTotalsCache(
@@ -344,10 +357,12 @@ class Main(
     private val screenshotTimestampFormatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
     private val webAutosaveStorageKey = "octodraw.web.autosave"
     private val webModelNameStorageKey = "octodraw.web.modelName"
+    private var webEmbedConfig: WebEmbedConfig? = null
+    private var webEmbedRevision = 0
     private var mcpPort = 8765
     private var stdoutTap: StdoutTap? = null
     private lateinit var mcpServer: McpHttpServer
-    private val orthoDistance = 250f
+    private var orthoDistance = 250f
     private enum class OrthoView { TOP, BOTTOM, LEFT, RIGHT, FRONT, BACK }
     private var consoleThread: ConsoleThread? = null
     private var consoleRuntime: ConsoleGroovyRuntime? = null
@@ -368,8 +383,105 @@ class Main(
         return file
     }
 
+    private fun createEmbedJson(): Json = Json().apply {
+        setOutputType(JsonWriter.OutputType.json)
+    }
+
+    private fun parseWebEmbedConfig(jsonText: String?): WebEmbedConfig? {
+        if (jsonText.isNullOrBlank()) {
+            return null
+        }
+        return try {
+            val root = JsonReader().parse(jsonText)
+            WebEmbedConfig(
+                hostId = root.childString("hostId"),
+                canvasId = root.childString("canvasId"),
+                initialModel = root.childString("initialModel"),
+                initialFileName = root.childString("initialFileName"),
+                toolbarsVisible = root.childBoolean("toolbarsVisible", true),
+                panelsVisible = root.childBoolean("panelsVisible", true)
+            )
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun JsonValue.childString(name: String): String? = get(name)?.asString()
+
+    private fun JsonValue.childInt(name: String, defaultValue: Int? = null): Int? {
+        val child = get(name) ?: return defaultValue
+        return when {
+            child.isLong || child.isDouble || child.isNumber -> child.asInt()
+            child.isString -> child.asString().toIntOrNull() ?: defaultValue
+            child.isBoolean -> if (child.asBoolean()) 1 else 0
+            else -> defaultValue
+        }
+    }
+
+    private fun JsonValue.childFloat(name: String, defaultValue: Float? = null): Float? {
+        val child = get(name) ?: return defaultValue
+        return when {
+            child.isLong || child.isDouble || child.isNumber -> child.asFloat()
+            child.isString -> child.asString().toFloatOrNull() ?: defaultValue
+            child.isBoolean -> if (child.asBoolean()) 1f else 0f
+            else -> defaultValue
+        }
+    }
+
+    private fun JsonValue.childBoolean(name: String, defaultValue: Boolean): Boolean {
+        val child = get(name) ?: return defaultValue
+        return when {
+            child.isBoolean -> child.asBoolean()
+            child.isString -> child.asString().equals("true", ignoreCase = true)
+            child.isNumber -> child.asInt() != 0
+            else -> defaultValue
+        }
+    }
+
+    private fun JsonValue.asFloatOrNull(): Float? {
+        return when {
+            isLong || isDouble || isNumber -> asFloat()
+            isString -> asString().toFloatOrNull()
+            isBoolean -> if (asBoolean()) 1f else 0f
+            else -> null
+        }
+    }
+
+    private fun JsonValue.asVector3OrNull(): Vector3? {
+        return when {
+            isArray && size >= 3 -> {
+                val x = get(0)?.asFloatOrNull() ?: return null
+                val y = get(1)?.asFloatOrNull() ?: return null
+                val z = get(2)?.asFloatOrNull() ?: return null
+                Vector3(x, y, z)
+            }
+
+            isObject -> {
+                val x = get("x")?.asFloatOrNull() ?: return null
+                val y = get("y")?.asFloatOrNull() ?: return null
+                val z = get("z")?.asFloatOrNull() ?: return null
+                Vector3(x, y, z)
+            }
+
+            else -> null
+        }
+    }
+
+    private fun JsonValue.childVector3(name: String): Vector3? = get(name)?.asVector3OrNull()
+
+    private fun JsonValue.childVector3Flexible(name: String): Vector3? {
+        childVector3(name)?.let { return it }
+        val x = childFloat("${name}X") ?: return null
+        val y = childFloat("${name}Y") ?: return null
+        val z = childFloat("${name}Z") ?: return null
+        return Vector3(x, y, z)
+    }
+
     override fun create() {
         val webSafeRuntime = if (BuildFlags.WEB_BUILD) true else isWebSafeRuntime()
+        if (BuildFlags.WEB_BUILD) {
+            webEmbedConfig = parseWebEmbedConfig(WebRuntime.bridge?.readEmbedConfigJson())
+        }
         if (!BuildFlags.WEB_BUILD && !webSafeRuntime) {
             stdoutTap = StdoutTap.install()
         }
@@ -1346,6 +1458,8 @@ class Main(
             setupMcpServer()
         }
         maybeShowAndroidFirstRunInputDialog()
+        applyWebEmbedUiOptions()
+        emitWebEmbedReady()
         if (!BuildFlags.WEB_BUILD && !webSafeRuntime) {
             startConsoleIfRequested()
         }
@@ -2371,6 +2485,9 @@ class Main(
         undoManager.update()
         flushAutosaveIfDue()
         drainAsyncModelSaveStatus()
+        if (BuildFlags.WEB_BUILD) {
+            processWebEmbedCommands()
+        }
         if (::pluginHost.isInitialized) {
             pluginHost.dispatchUpdate(Gdx.graphics.deltaTime)
         }
@@ -3014,37 +3131,22 @@ class Main(
                 statusModel.message = "Open cancelled."
                 return@openTextDocument
             }
-            val result = ModelPersistence.loadFromText(
-                content,
-                scene,
-                camera,
-                cameraTarget,
-                lightingSettings,
-                shadowSettings,
-                modelUnit,
-                { value -> applySnapEpsilon(value, false) },
-                { value -> applyGridSpacing(value, false) }
-            )
-            if (!result.ok) {
-                statusModel.message = "Open failed: invalid model content."
-                return@openTextDocument
-            }
             modelFile = File(
                 resolveDesktopWritableDataDir(),
                 sanitizeModelFileName(displayName ?: "octodraw-web.octd")
             ).absoluteFile
-            result.snapshot?.undoHistory?.let { undoManager.importHistory(it) } ?: undoManager.reset("Loaded")
-            if (result.snapshot?.undoHistory?.entries?.isEmpty() != false) {
-                undoManager.reset("Loaded")
+            if (!loadModelFromText(content, displayName ?: modelFile.name)) {
+                statusModel.message = "Open failed: invalid model content."
+                return@openTextDocument
             }
-            orbitCameraController.target.set(cameraTarget)
-            syncCameraModesAfterOrbitStateChange()
-            markSceneRuntimeDirty()
-            if (bridge.writeLocalStorage(webAutosaveStorageKey, content)) {
+            if (!isEmbeddedWebRuntime() && bridge.writeLocalStorage(webAutosaveStorageKey, content)) {
                 bridge.writeLocalStorage(webModelNameStorageKey, modelFile.name)
             }
             updateWindowTitle()
             statusModel.message = "Opened ${displayName ?: modelFile.name}"
+            if (isEmbeddedWebRuntime()) {
+                emitWebEmbedChange("open", content)
+            }
         }
     }
 
@@ -5717,6 +5819,11 @@ class Main(
         if (BuildFlags.WEB_BUILD) {
             val snapshot = snapshotForPersistence(includeUndoHistory = true)
             val text = ModelPersistence.saveSnapshotText(snapshot)
+            if (isEmbeddedWebRuntime()) {
+                emitWebEmbedChange("save", text)
+                autosavePending = false
+                return
+            }
             val bridge = WebRuntime.bridge
             if (bridge == null || !bridge.writeLocalStorage(webAutosaveStorageKey, text)) {
                 statusModel.message = "Web autosave failed: local storage unavailable."
@@ -5794,8 +5901,623 @@ class Main(
         statusModel.message = message
     }
 
+    private fun isEmbeddedWebRuntime(): Boolean = BuildFlags.WEB_BUILD && webEmbedConfig != null
+
+    private fun currentModelSnapshotText(includeUndoHistory: Boolean = true): String {
+        return ModelPersistence.saveSnapshotText(snapshotForPersistence(includeUndoHistory))
+    }
+
+    private fun loadModelFromText(text: String, displayName: String): Boolean {
+        val result = ModelPersistence.loadFromText(
+            text,
+            scene,
+            camera,
+            cameraTarget,
+            lightingSettings,
+            shadowSettings,
+            modelUnit,
+            { value -> applySnapEpsilon(value, false) },
+            { value -> applyGridSpacing(value, false) }
+        )
+        if (!result.ok) {
+            return false
+        }
+        val history = result.snapshot?.undoHistory
+        undoManager.importHistory(history)
+        if (history == null || history.entries.isEmpty()) {
+            undoManager.reset("Loaded")
+        }
+        orbitCameraController.target.set(cameraTarget)
+        syncCameraModesAfterOrbitStateChange()
+        statusModel.message = "Loaded $displayName"
+        markSceneRuntimeDirty()
+        return true
+    }
+
+    private fun applyWebEmbedUiOptions() {
+        if (!isEmbeddedWebRuntime()) {
+            return
+        }
+        val config = webEmbedConfig ?: return
+        uiOverlay.setToolbarsVisible(config.toolbarsVisible)
+        uiOverlay.setPanelsVisible(config.panelsVisible)
+    }
+
+    private fun emitWebEmbedEvent(eventType: String, payload: Map<String, Any?>) {
+        val bridge = WebRuntime.bridge ?: return
+        bridge.emitEmbedEvent(eventType, createEmbedJson().toJson(payload))
+    }
+
+    private fun emitWebEmbedReady() {
+        if (!isEmbeddedWebRuntime()) {
+            return
+        }
+        emitWebEmbedEvent(
+            "ready",
+            linkedMapOf(
+                "model" to currentModelSnapshotText(includeUndoHistory = true),
+                "fileName" to modelFile.name,
+                "tool" to toolController.activeToolId().name,
+                "revision" to webEmbedRevision,
+                "toolbarsVisible" to (webEmbedConfig?.toolbarsVisible ?: true),
+                "panelsVisible" to (webEmbedConfig?.panelsVisible ?: true)
+            )
+        )
+    }
+
+    private fun emitWebEmbedChange(reason: String, modelText: String? = null) {
+        if (!isEmbeddedWebRuntime()) {
+            return
+        }
+        webEmbedRevision += 1
+        emitWebEmbedEvent(
+            "change",
+            linkedMapOf(
+                "model" to (modelText ?: currentModelSnapshotText(includeUndoHistory = true)),
+                "fileName" to modelFile.name,
+                "reason" to reason,
+                "revision" to webEmbedRevision,
+                "tool" to toolController.activeToolId().name
+            )
+        )
+    }
+
+    private fun emitWebEmbedError(message: String) {
+        if (!isEmbeddedWebRuntime()) {
+            return
+        }
+        emitWebEmbedEvent("error", linkedMapOf("message" to message))
+    }
+
+    private fun webEmbedVectorPayload(vector: Vector3): Map<String, Float> = linkedMapOf(
+        "x" to vector.x,
+        "y" to vector.y,
+        "z" to vector.z
+    )
+
+    private fun currentWebCameraPayload(): Map<String, Any?> {
+        val cameraRef = activeCamera
+        return linkedMapOf(
+            "mode" to activeCameraMode.name,
+            "position" to webEmbedVectorPayload(Vector3(cameraRef.position)),
+            "direction" to webEmbedVectorPayload(Vector3(cameraRef.direction)),
+            "up" to webEmbedVectorPayload(Vector3(cameraRef.up)),
+            "target" to webEmbedVectorPayload(Vector3(cameraTarget)),
+            "orthoDistance" to orthoDistance
+        )
+    }
+
+    private fun currentWebSelectionPayload(): Map<String, Any?> {
+        val info = selectionInfo()
+        val activeGroup = scene.activeGroup()
+        val selectedGroups = scene.selectedGroups().map { group ->
+            linkedMapOf(
+                "id" to group.id,
+                "name" to group.name,
+                "kind" to group.kind.name
+            )
+        }
+        val selectedArchitecture = scene.root.architectureStore?.selectedElements()?.map { element ->
+            linkedMapOf(
+                "kind" to element.kind.name,
+                "id" to element.id
+            )
+        }.orEmpty()
+        val selectedHvac = scene.root.hvacStore?.selectedElements()?.map { element ->
+            linkedMapOf(
+                "kind" to element.kind.name,
+                "id" to element.id
+            )
+        }.orEmpty()
+        val selectedHotspots = hotspotInteractionGroups().flatMap { group ->
+            scene.selectedHotspots(group).map { selection ->
+                val hotspot = group.hotspotStore.hotspotById(selection.id)
+                linkedMapOf(
+                    "groupId" to group.id,
+                    "groupName" to group.name,
+                    "id" to selection.id,
+                    "name" to hotspot?.name,
+                    "operation" to hotspot?.operation?.name,
+                    "shape" to hotspot?.shape?.name
+                )
+            }
+        }
+        return linkedMapOf(
+            "activeGroup" to linkedMapOf(
+                "id" to activeGroup.id,
+                "name" to activeGroup.name,
+                "kind" to activeGroup.kind.name
+            ),
+            "counts" to linkedMapOf(
+                "edges" to info.edgeCount,
+                "faces" to info.faceCount,
+                "voxels" to info.voxelCount,
+                "hotspots" to info.hotspotCount,
+                "groups" to info.groupCount,
+                "dimensions" to info.dimensionCount,
+                "texts" to info.textCount,
+                "walls" to info.wallSelectedCount,
+                "slabs" to info.slabSelectedCount,
+                "stairs" to info.stairSelectedCount,
+                "frames" to info.frameSelectedCount
+            ),
+            "totals" to linkedMapOf(
+                "edges" to info.edgeTotalCount,
+                "faces" to info.faceTotalCount,
+                "voxels" to info.voxelTotalCount,
+                "hotspots" to info.hotspotTotalCount,
+                "groups" to info.groupTotalCount,
+                "dimensions" to info.dimensionTotalCount,
+                "texts" to info.textTotalCount,
+                "walls" to info.wallTotalCount,
+                "slabs" to info.slabTotalCount,
+                "stairs" to info.stairTotalCount,
+                "frames" to info.frameTotalCount
+            ),
+            "selectedGroups" to selectedGroups,
+            "selectedArchitectureElements" to selectedArchitecture,
+            "selectedHvacElements" to selectedHvac,
+            "selectedHotspots" to selectedHotspots,
+            "selectedText" to linkedMapOf(
+                "id" to info.selectedTextId,
+                "value" to info.selectedTextValue,
+                "size" to info.selectedTextSize,
+                "screenText" to info.selectedTextScreen,
+                "vectorText" to info.selectedVectorText
+            )
+        )
+    }
+
+    private fun emitWebEmbedSelectionChange(payload: Map<String, Any?> = currentWebSelectionPayload()) {
+        if (!isEmbeddedWebRuntime()) {
+            return
+        }
+        emitWebEmbedEvent("selectionchange", payload)
+    }
+
+    private fun emitWebEmbedToolChange(toolId: ToolId = toolController.activeToolId()) {
+        if (!isEmbeddedWebRuntime()) {
+            return
+        }
+        emitWebEmbedEvent(
+            "toolchange",
+            linkedMapOf(
+                "tool" to toolId.name,
+                "displayName" to toolId.displayName
+            )
+        )
+    }
+
+    private fun resolveWebEmbedCommand(
+        requestId: String,
+        success: Boolean,
+        payload: Map<String, Any?>? = null,
+        message: String? = null
+    ) {
+        val bridge = WebRuntime.bridge ?: return
+        val payloadJson = payload?.let { createEmbedJson().toJson(it) }
+        bridge.resolveEmbedCommand(requestId, success, payloadJson, message)
+    }
+
+    private fun resolveWebEmbedCommandError(requestId: String?, message: String) {
+        if (requestId.isNullOrBlank()) {
+            emitWebEmbedError(message)
+            return
+        }
+        resolveWebEmbedCommand(requestId, false, message = message)
+    }
+
+    private fun toolIdFromWebName(raw: String?): ToolId? {
+        if (raw.isNullOrBlank()) {
+            return null
+        }
+        val normalized = raw.trim()
+            .uppercase(java.util.Locale.US)
+            .replace(Regex("[^A-Z0-9]+"), "_")
+            .trim('_')
+        return ToolId.entries.firstOrNull { tool ->
+            tool.name == normalized ||
+                tool.displayName.uppercase(java.util.Locale.US)
+                    .replace(Regex("[^A-Z0-9]+"), "_")
+                    .trim('_') == normalized
+        }
+    }
+
+    private fun cameraModeFromWebName(raw: String?): CameraMode? {
+        if (raw.isNullOrBlank()) {
+            return null
+        }
+        return when (raw.trim().uppercase(java.util.Locale.US)) {
+            "ORBIT" -> CameraMode.ORBIT
+            "WALK", "WALKTHROUGH", "FIRST_PERSON" -> CameraMode.WALKTHROUGH
+            "ORTHO", "ORTHOGRAPHIC" -> CameraMode.ORTHOGRAPHIC
+            else -> null
+        }
+    }
+
+    private fun JsonValue.childPointerButton(name: String, defaultValue: Int = Input.Buttons.LEFT): Int {
+        val child = get(name) ?: return defaultValue
+        return when {
+            child.isLong || child.isDouble || child.isNumber -> child.asInt()
+            child.isString -> when (child.asString().trim().uppercase(java.util.Locale.US)) {
+                "LEFT", "PRIMARY" -> Input.Buttons.LEFT
+                "RIGHT", "SECONDARY" -> Input.Buttons.RIGHT
+                "MIDDLE" -> Input.Buttons.MIDDLE
+                "BACK" -> Input.Buttons.BACK
+                "FORWARD" -> Input.Buttons.FORWARD
+                else -> child.asString().toIntOrNull() ?: defaultValue
+            }
+
+            else -> defaultValue
+        }
+    }
+
+    private fun embeddedPointerResultPayload(result: McpPointerEventResult): Map<String, Any?> {
+        return linkedMapOf(
+            "success" to result.success,
+            "handled" to result.handled,
+            "action" to result.action,
+            "pointer" to result.pointer,
+            "button" to result.button,
+            "screenX" to result.screenX,
+            "screenY" to result.screenY,
+            "world" to result.worldX?.let { x ->
+                linkedMapOf(
+                    "x" to x,
+                    "y" to result.worldY,
+                    "z" to result.worldZ
+                )
+            },
+            "normal" to result.normalX?.let { x ->
+                linkedMapOf(
+                    "x" to x,
+                    "y" to result.normalY,
+                    "z" to result.normalZ
+                )
+            },
+            "valid" to result.valid,
+            "message" to result.message
+        )
+    }
+
+    private fun dispatchEmbeddedPointerCommand(payload: JsonValue?): Map<String, Any?> {
+        val action = payload?.childString("action")?.lowercase(java.util.Locale.US)?.ifBlank { "click" } ?: "click"
+        val pointer = payload?.childInt("pointer", 0) ?: 0
+        val button = payload?.childPointerButton("button", Input.Buttons.LEFT) ?: Input.Buttons.LEFT
+        val screenX = payload?.childInt("screenX")
+        val screenY = payload?.childInt("screenY")
+        val world = payload?.childVector3Flexible("world")
+        val normal = payload?.childVector3Flexible("normal")
+        val valid = payload?.get("valid")?.let { payload.childBoolean("valid", true) }
+        val baseRequest = McpPointerEventRequest(
+            action = action,
+            pointer = pointer,
+            button = button,
+            screenX = screenX,
+            screenY = screenY,
+            worldX = world?.x,
+            worldY = world?.y,
+            worldZ = world?.z,
+            normalX = normal?.x,
+            normalY = normal?.y,
+            normalZ = normal?.z,
+            valid = valid
+        )
+        if (action != "click") {
+            return embeddedPointerResultPayload(dispatchPointerEventOnRenderThread(baseRequest))
+        }
+        val moveResult = dispatchPointerEventOnRenderThread(baseRequest.copy(action = "move"))
+        val downResult = dispatchPointerEventOnRenderThread(baseRequest.copy(action = "down"))
+        val upResult = dispatchPointerEventOnRenderThread(baseRequest.copy(action = "up"))
+        return linkedMapOf(
+            "success" to (moveResult.success && downResult.success && upResult.success),
+            "handled" to (moveResult.handled || downResult.handled || upResult.handled),
+            "action" to "click",
+            "move" to embeddedPointerResultPayload(moveResult),
+            "down" to embeddedPointerResultPayload(downResult),
+            "up" to embeddedPointerResultPayload(upResult),
+            "message" to upResult.message
+        )
+    }
+
+    private fun refreshActiveCameraBinding(mode: CameraMode) {
+        if (activeCameraMode != mode) {
+            setCameraMode(mode)
+            return
+        }
+        when (mode) {
+            CameraMode.ORBIT -> {
+                activeCamera = camera
+                activeCameraInputProcessor = orbitCameraController
+                orbitCameraController.target.set(cameraTarget)
+                camera.update()
+            }
+
+            CameraMode.WALKTHROUGH -> {
+                copyPoseToPerspective(camera, walkCamera, keepTarget = false)
+                walkCameraController.syncFromCamera()
+                activeCamera = walkCamera
+                activeCameraInputProcessor = walkCameraController
+                walkCamera.update()
+            }
+
+            CameraMode.ORTHOGRAPHIC -> {
+                orthoCamera.position.set(cameraTarget).sub(Vector3(orthoCamera.direction).nor().scl(orthoDistance))
+                orthoCamera.update()
+                activeCamera = orthoCamera
+                activeCameraInputProcessor = orthoCameraController
+            }
+        }
+        if (::snapper.isInitialized) {
+            snapper.setCamera(activeCamera)
+        }
+    }
+
+    private fun applyEmbeddedCameraCommand(payload: JsonValue?): Map<String, Any?> {
+        val requestedMode = cameraModeFromWebName(payload?.childString("mode")) ?: activeCameraMode
+        val position = payload?.childVector3Flexible("position")
+        val target = payload?.childVector3Flexible("target")
+        val requestedOrthoDistance = payload?.childFloat("orthoDistance")?.takeIf { it.isFinite() && it > 0.05f }
+
+        when (requestedMode) {
+            CameraMode.ORBIT, CameraMode.WALKTHROUGH -> {
+                position?.let { camera.position.set(it) }
+                target?.let {
+                    cameraTarget.set(it)
+                    orbitCameraController.target.set(it)
+                }
+                val orbitLook = Vector3(cameraTarget).sub(camera.position)
+                if (orbitLook.len2() > 1e-6f) {
+                    camera.up.set(0f, 1f, 0f)
+                    camera.lookAt(cameraTarget)
+                }
+                camera.update()
+                refreshActiveCameraBinding(requestedMode)
+            }
+
+            CameraMode.ORTHOGRAPHIC -> {
+                requestedOrthoDistance?.let { orthoDistance = it }
+                target?.let {
+                    cameraTarget.set(it)
+                    orbitCameraController.target.set(it)
+                }
+                if (position != null) {
+                    val lookTarget = target ?: Vector3(cameraTarget)
+                    val direction = Vector3(lookTarget).sub(position)
+                    if (direction.len2() > 1e-6f) {
+                        orthoCamera.direction.set(direction.nor())
+                    }
+                    orthoDistance = position.dst(cameraTarget).coerceAtLeast(0.05f)
+                }
+                refreshActiveCameraBinding(CameraMode.ORTHOGRAPHIC)
+            }
+        }
+        return currentWebCameraPayload()
+    }
+
+    private fun processWebEmbedCommands() {
+        if (!isEmbeddedWebRuntime()) {
+            return
+        }
+        val bridge = WebRuntime.bridge ?: return
+        repeat(16) {
+            val commandJson = bridge.pollEmbedCommandJson() ?: return
+            handleWebEmbedCommand(commandJson)
+        }
+    }
+
+    private fun handleWebEmbedCommand(commandJson: String) {
+        val root = try {
+            JsonReader().parse(commandJson)
+        } catch (_: Throwable) {
+            emitWebEmbedError("Invalid embedded command payload.")
+            return
+        }
+        val requestId = root.childString("requestId")
+        val command = root.childString("command")
+        val payload = root.get("payload")
+        if (command.isNullOrBlank()) {
+            resolveWebEmbedCommandError(requestId, "Missing embedded command id.")
+            return
+        }
+        val beforeTool = toolController.activeToolId()
+        val beforeSelectionPayload = currentWebSelectionPayload()
+        val beforeSelectionSignature = createEmbedJson().toJson(beforeSelectionPayload)
+        var commandSucceeded = false
+        try {
+            when (command) {
+                "model.get" -> {
+                    resolveWebEmbedCommand(
+                        requestId ?: return,
+                        true,
+                        linkedMapOf(
+                            "model" to currentModelSnapshotText(includeUndoHistory = true),
+                            "fileName" to modelFile.name,
+                            "revision" to webEmbedRevision
+                        )
+                    )
+                    commandSucceeded = true
+                }
+
+                "model.set" -> {
+                    val modelText = payload?.childString("model")
+                    if (modelText.isNullOrBlank()) {
+                        resolveWebEmbedCommandError(requestId, "model.set requires payload.model")
+                        return
+                    }
+                    val fileName = payload.childString("fileName")
+                    if (!fileName.isNullOrBlank()) {
+                        modelFile = File(resolveDesktopWritableDataDir(), sanitizeModelFileName(fileName)).absoluteFile
+                    }
+                    if (!loadModelFromText(modelText, modelFile.name)) {
+                        resolveWebEmbedCommandError(requestId, "Invalid model content.")
+                        return
+                    }
+                    emitWebEmbedChange("model.set", modelText)
+                    resolveWebEmbedCommand(
+                        requestId ?: return,
+                        true,
+                        linkedMapOf(
+                            "model" to currentModelSnapshotText(includeUndoHistory = true),
+                            "fileName" to modelFile.name,
+                            "revision" to webEmbedRevision
+                        )
+                    )
+                    commandSucceeded = true
+                }
+
+                "selection.get" -> {
+                    resolveWebEmbedCommand(requestId ?: return, true, currentWebSelectionPayload())
+                    commandSucceeded = true
+                }
+
+                "selection.clear" -> {
+                    clearSelection()
+                    val selectionPayload = currentWebSelectionPayload()
+                    resolveWebEmbedCommand(requestId ?: return, true, selectionPayload)
+                    commandSucceeded = true
+                }
+
+                "ui.setToolbars" -> {
+                    val visible = payload?.childBoolean("visible", true) ?: true
+                    uiOverlay.setToolbarsVisible(visible)
+                    resolveWebEmbedCommand(requestId ?: return, true, linkedMapOf("visible" to visible))
+                    commandSucceeded = true
+                }
+
+                "ui.setPanels" -> {
+                    val visible = payload?.childBoolean("visible", true) ?: true
+                    uiOverlay.setPanelsVisible(visible)
+                    resolveWebEmbedCommand(requestId ?: return, true, linkedMapOf("visible" to visible))
+                    commandSucceeded = true
+                }
+
+                "ui.setVisibility" -> {
+                    val toolbarsVisible = payload?.get("toolbarsVisible")?.let { payload.childBoolean("toolbarsVisible", true) }
+                    val panelsVisible = payload?.get("panelsVisible")?.let { payload.childBoolean("panelsVisible", true) }
+                    toolbarsVisible?.let { uiOverlay.setToolbarsVisible(it) }
+                    panelsVisible?.let { uiOverlay.setPanelsVisible(it) }
+                    resolveWebEmbedCommand(
+                        requestId ?: return,
+                        true,
+                        linkedMapOf(
+                            "toolbarsVisible" to (toolbarsVisible ?: (webEmbedConfig?.toolbarsVisible ?: true)),
+                            "panelsVisible" to (panelsVisible ?: (webEmbedConfig?.panelsVisible ?: true))
+                        )
+                    )
+                    commandSucceeded = true
+                }
+
+                "camera.get" -> {
+                    resolveWebEmbedCommand(requestId ?: return, true, currentWebCameraPayload())
+                    commandSucceeded = true
+                }
+
+                "camera.set" -> {
+                    resolveWebEmbedCommand(requestId ?: return, true, applyEmbeddedCameraCommand(payload))
+                    commandSucceeded = true
+                }
+
+                "tool.select" -> {
+                    val toolName = payload?.childString("tool")
+                    val toolId = toolIdFromWebName(toolName)
+                    if (toolId == null) {
+                        resolveWebEmbedCommandError(requestId, "Unknown tool: ${toolName ?: "<null>"}")
+                        return
+                    }
+                    toolController.setTool(toolId)
+                    resolveWebEmbedCommand(
+                        requestId ?: return,
+                        true,
+                        linkedMapOf(
+                            "tool" to toolController.activeToolId().name,
+                            "message" to statusModel.message
+                        )
+                    )
+                    commandSucceeded = true
+                }
+
+                "tool.cancel" -> {
+                    toolController.cancelActiveTool()
+                    resolveWebEmbedCommand(
+                        requestId ?: return,
+                        true,
+                        linkedMapOf(
+                            "tool" to toolController.activeToolId().name,
+                            "message" to statusModel.message
+                        )
+                    )
+                    commandSucceeded = true
+                }
+
+                "tool.pointer" -> {
+                    resolveWebEmbedCommand(
+                        requestId ?: return,
+                        true,
+                        dispatchEmbeddedPointerCommand(payload)
+                    )
+                    commandSucceeded = true
+                }
+
+                else -> resolveWebEmbedCommandError(requestId, "Unsupported embedded command: $command")
+            }
+            if (commandSucceeded) {
+                val afterTool = toolController.activeToolId()
+                if (afterTool != beforeTool) {
+                    emitWebEmbedToolChange(afterTool)
+                }
+                val afterSelectionPayload = currentWebSelectionPayload()
+                val afterSelectionSignature = createEmbedJson().toJson(afterSelectionPayload)
+                if (afterSelectionSignature != beforeSelectionSignature) {
+                    emitWebEmbedSelectionChange(afterSelectionPayload)
+                }
+            }
+        } catch (t: Throwable) {
+            resolveWebEmbedCommandError(requestId, t.message ?: "Embedded command failed.")
+        }
+    }
+
     private fun loadModel() {
         if (BuildFlags.WEB_BUILD) {
+            val embedConfig = webEmbedConfig
+            if (embedConfig != null) {
+                if (!embedConfig.initialFileName.isNullOrBlank()) {
+                    modelFile = File(
+                        resolveDesktopWritableDataDir(),
+                        sanitizeModelFileName(embedConfig.initialFileName)
+                    ).absoluteFile
+                }
+                if (!embedConfig.initialModel.isNullOrBlank()) {
+                    if (loadModelFromText(embedConfig.initialModel, modelFile.name)) {
+                        return
+                    }
+                    statusModel.message = "Embedded initial model is invalid."
+                }
+                undoManager.reset("Created")
+                statusModel.message = "Created ${modelFile.name}"
+                markSceneRuntimeDirty()
+                return
+            }
             val bridge = WebRuntime.bridge
             val storedText = bridge?.readLocalStorage(webAutosaveStorageKey)
             val storedName = bridge?.readLocalStorage(webModelNameStorageKey)
@@ -5803,27 +6525,7 @@ class Main(
                 modelFile = File(resolveDesktopWritableDataDir(), sanitizeModelFileName(storedName)).absoluteFile
             }
             if (!storedText.isNullOrBlank()) {
-                val result = ModelPersistence.loadFromText(
-                    storedText,
-                    scene,
-                    camera,
-                    cameraTarget,
-                    lightingSettings,
-                    shadowSettings,
-                    modelUnit,
-                    { value -> applySnapEpsilon(value, false) },
-                    { value -> applyGridSpacing(value, false) }
-                )
-                if (result.ok) {
-                    val history = result.snapshot?.undoHistory
-                    undoManager.importHistory(history)
-                    if (history == null || history.entries.isEmpty()) {
-                        undoManager.reset("Loaded")
-                    }
-                    orbitCameraController.target.set(cameraTarget)
-                    syncCameraModesAfterOrbitStateChange()
-                    statusModel.message = "Loaded ${modelFile.name}"
-                    markSceneRuntimeDirty()
+                if (loadModelFromText(storedText, modelFile.name)) {
                     return
                 }
             }

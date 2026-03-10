@@ -13,6 +13,8 @@ def webOutputName = "octodraw-${bundleVersion}".replaceAll(/[^A-Za-z0-9._-]/, "-
 def webDistRoot = file("$buildDir/dist")
 def webRuntimeDir = file("$webDistRoot/webapp")
 def webRuntimeAssetsDir = file("$buildDir/generated/web-runtime-assets")
+def webComponentSourceDir = file("$projectDir/component")
+def webComponentBundleDir = file("$buildDir/dist/webcomponent")
 
 configurations.configureEach {
   exclude group: 'org.apache.groovy', module: 'groovy'
@@ -122,6 +124,51 @@ tasks.register('bundleWebZip', Zip) {
   from(webRuntimeDir)
   destinationDirectory = rootProject.file('dist')
   archiveFileName = "octodraw-${bundleVersion}-webapp.zip"
+  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.register('prepareWebComponentBundle') {
+  group = 'distribution'
+  description = 'Builds the embeddable Octodraw web component bundle.'
+  dependsOn(tasks.named('buildWebRuntime'))
+
+  inputs.dir(webComponentSourceDir)
+  inputs.dir(new File(webRuntimeDir, 'assets'))
+  inputs.dir(new File(webRuntimeDir, 'scripts'))
+  inputs.file(new File(webRuntimeDir, "${webOutputName}.js"))
+  outputs.dir(webComponentBundleDir)
+
+  doLast {
+    delete(webComponentBundleDir)
+    webComponentBundleDir.mkdirs()
+
+    copy {
+      from(new File(webRuntimeDir, 'assets'))
+      into(new File(webComponentBundleDir, 'assets'))
+    }
+    copy {
+      from(new File(webRuntimeDir, 'scripts'))
+      into(new File(webComponentBundleDir, 'scripts'))
+    }
+    copy {
+      from(new File(webRuntimeDir, "${webOutputName}.js"))
+      into(webComponentBundleDir)
+      rename { 'octodraw-runtime.js' }
+    }
+    copy {
+      from(webComponentSourceDir)
+      into(webComponentBundleDir)
+    }
+  }
+}
+
+tasks.register('bundleWebComponentZip', Zip) {
+  group = 'distribution'
+  description = 'Builds the embeddable Octodraw web component zip in dist/.'
+  dependsOn(tasks.named('prepareWebComponentBundle'))
+  from(webComponentBundleDir)
+  destinationDirectory = rootProject.file('dist')
+  archiveFileName = "octodraw-${bundleVersion}-webcomponent.zip"
   duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
