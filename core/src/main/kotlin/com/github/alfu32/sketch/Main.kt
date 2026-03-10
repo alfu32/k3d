@@ -146,10 +146,12 @@ import com.github.alfu32.sketch.ui.ToolInputProcessor
 import com.github.alfu32.sketch.ui.PluginToolAdapter
 import com.github.alfu32.sketch.ui.WalkthroughTuning
 import com.kotcrab.vis.ui.VisUI
-import com.kotcrab.vis.ui.widget.file.FileChooser
-import com.kotcrab.vis.ui.widget.file.FileChooserAdapter
-import com.kotcrab.vis.ui.widget.file.FileTypeFilter
+import java.awt.EventQueue
+import java.awt.FileDialog
+import java.awt.Frame
+import java.awt.GraphicsEnvironment
 import java.io.File
+import java.io.FilenameFilter
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.EnumMap
@@ -1683,6 +1685,12 @@ class Main(
             sceneSummaryProvider = ::buildMcpSceneSummaryForMcp,
             selectionSummaryProvider = ::buildMcpSelectionSummaryForMcp
         )
+        if (isPackagedWindowsRuntime()) {
+            val message = "MCP HTTP server auto-start disabled in packaged Windows builds."
+            statusModel.message = message
+            println(message)
+            return
+        }
         val message = mcpServer.start()
         mcpPort = mcpServer.port()
         statusModel.message = message
@@ -3000,25 +3008,15 @@ class Main(
             statusModel.message = "SVG export dialog is not available in web runtime yet."
             return
         }
-        val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.SAVE)
-        chooser.getTitleLabel().setText("Export SVG (View)")
-        chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
-        chooser.setDefaultFileName("view.svg")
-        val filter = FileTypeFilter(true)
-        filter.addRule("SVG", "svg")
-        chooser.setFileTypeFilter(filter)
-        chooser.setListener(object : FileChooserAdapter() {
-            override fun selected(files: Array<FileHandle>?) {
-                if (files == null || files.size == 0) {
-                    return
-                }
-                val handle = files.first()
-                val target = if (handle.extension().lowercase() == "svg") handle.file()
-                else File(handle.file().parentFile, "${handle.file().name}.svg")
-                exportSvgView(target)
+        val statusBefore = statusModel.message
+        val requested = showDesktopFileDialog("Export SVG (View)", FileDialog.SAVE, "view.svg")
+        if (requested == null) {
+            if (statusModel.message == statusBefore) {
+                statusModel.message = "SVG export cancelled."
             }
-        })
-        showFileChooser(chooser)
+            return
+        }
+        exportSvgView(ensureFileExtension(requested.absoluteFile, setOf("svg"), "svg"))
     }
 
     private fun modelFileChooserDirectory(): String {
@@ -3033,14 +3031,59 @@ class Main(
         return System.getProperty("user.dir") ?: "."
     }
 
-    private fun toOctodrawTargetFile(handle: FileHandle): File {
-        val file = handle.file()
-        val ext = handle.extension().lowercase()
-        return if (ext == "octd" || ext == "k3d") {
-            file
-        } else {
-            File(file.parentFile, "${file.name}.octd")
+    private fun isDesktopFileDialogAvailable(): Boolean {
+        return !BuildFlags.WEB_BUILD && !isAndroidRuntime() && !GraphicsEnvironment.isHeadless()
+    }
+
+    private fun showDesktopFileDialog(
+        title: String,
+        mode: Int,
+        defaultFileName: String? = null,
+        allowedExtensions: Set<String> = emptySet()
+    ): File? {
+        if (!isDesktopFileDialogAvailable()) {
+            return null
         }
+        val resultHolder = arrayOfNulls<File>(1)
+        val openDialog = Runnable {
+            val dialog = FileDialog(null as Frame?, title, mode)
+            try {
+                dialog.directory = modelFileChooserDirectory()
+                if (!defaultFileName.isNullOrBlank()) {
+                    dialog.file = defaultFileName
+                }
+                if (allowedExtensions.isNotEmpty() && mode == FileDialog.LOAD) {
+                    dialog.filenameFilter = FilenameFilter { _, name ->
+                        val ext = name.substringAfterLast('.', "").lowercase()
+                        ext in allowedExtensions
+                    }
+                }
+                dialog.isVisible = true
+                val selectedFile = dialog.file
+                val selectedDirectory = dialog.directory
+                if (!selectedFile.isNullOrBlank() && !selectedDirectory.isNullOrBlank()) {
+                    resultHolder[0] = File(selectedDirectory, selectedFile).absoluteFile
+                }
+            } finally {
+                dialog.dispose()
+            }
+        }
+        return try {
+            if (EventQueue.isDispatchThread()) {
+                openDialog.run()
+            } else {
+                EventQueue.invokeAndWait(openDialog)
+            }
+            resultHolder[0]
+        } catch (t: Throwable) {
+            statusModel.message = "Desktop file dialog failed: ${t.message ?: t.javaClass.simpleName}"
+            null
+        }
+    }
+
+    private fun ensureFileExtension(target: File, allowedExtensions: Set<String>, defaultExtension: String): File {
+        val ext = target.extension.lowercase()
+        return if (ext in allowedExtensions) target else File(target.parentFile, "${target.name}.$defaultExtension")
     }
 
     private fun showOpenModelDialog() {
@@ -3054,27 +3097,24 @@ class Main(
             }
             return
         }
-        val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.OPEN)
-        chooser.getTitleLabel().setText("Open Octodraw Model")
-        chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
-        val filter = FileTypeFilter(true)
-        filter.addRule("Octodraw (*.octd)", "octd")
-        filter.addRule("Legacy K3D (*.k3d)", "k3d")
-        chooser.setFileTypeFilter(filter)
-        chooser.setListener(object : FileChooserAdapter() {
-            override fun selected(files: Array<FileHandle>?) {
-                if (files == null || files.size == 0) return
-                val handle = files.first()
-                if (!handle.exists()) return
-                if (::scene.isInitialized && ::camera.isInitialized && ::modelFile.isInitialized) {
-                    saveModel()
-                }
-                modelFile = handle.file().absoluteFile
-                loadModel()
-                updateWindowTitle()
+        val statusBefore = statusModel.message
+        val target = showDesktopFileDialog(
+            title = "Open Octodraw Model",
+            mode = FileDialog.LOAD,
+            allowedExtensions = setOf("octd", "k3d")
+        )
+        if (target == null) {
+            if (statusModel.message == statusBefore) {
+                statusModel.message = "Open cancelled."
             }
-        })
-        showFileChooser(chooser)
+            return
+        }
+        if (::scene.isInitialized && ::camera.isInitialized && ::modelFile.isInitialized) {
+            saveModel()
+        }
+        modelFile = target.absoluteFile
+        loadModel()
+        updateWindowTitle()
     }
 
     private fun showSaveAsModelDialog() {
@@ -3088,30 +3128,24 @@ class Main(
             }
             return
         }
-        val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.SAVE)
-        chooser.getTitleLabel().setText("Save Octodraw Model As")
-        chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
-        if (::modelFile.isInitialized) {
-            chooser.setDefaultFileName(modelFile.name)
-        } else {
-            chooser.setDefaultFileName("octodraw.octd")
-        }
-        val filter = FileTypeFilter(true)
-        filter.addRule("Octodraw (*.octd)", "octd")
-        filter.addRule("Legacy K3D (*.k3d)", "k3d")
-        chooser.setFileTypeFilter(filter)
-        chooser.setListener(object : FileChooserAdapter() {
-            override fun selected(files: Array<FileHandle>?) {
-                if (files == null || files.size == 0) return
-                val target = toOctodrawTargetFile(files.first()).absoluteFile
-                target.parentFile?.mkdirs()
-                modelFile = target
-                saveModel()
-                updateWindowTitle()
-                statusModel.message = "Saved ${target.name}"
+        val statusBefore = statusModel.message
+        val requested = showDesktopFileDialog(
+            title = "Save Octodraw Model As",
+            mode = FileDialog.SAVE,
+            defaultFileName = if (::modelFile.isInitialized) modelFile.name else "octodraw.octd"
+        )
+        if (requested == null) {
+            if (statusModel.message == statusBefore) {
+                statusModel.message = "Save As cancelled."
             }
-        })
-        showFileChooser(chooser)
+            return
+        }
+        val target = ensureFileExtension(requested.absoluteFile, setOf("octd", "k3d"), "octd")
+        target.parentFile?.mkdirs()
+        modelFile = target
+        saveModel()
+        updateWindowTitle()
+        statusModel.message = "Saved ${target.name}"
     }
 
     private fun sanitizeModelFileName(raw: String): String {
@@ -3581,25 +3615,15 @@ class Main(
             statusModel.message = "IFC export dialog is not available in web runtime yet."
             return
         }
-        val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.SAVE)
-        chooser.getTitleLabel().setText("Export IFC (Model)")
-        chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
-        chooser.setDefaultFileName("model.ifc")
-        val filter = FileTypeFilter(true)
-        filter.addRule("IFC", "ifc")
-        chooser.setFileTypeFilter(filter)
-        chooser.setListener(object : FileChooserAdapter() {
-            override fun selected(files: Array<FileHandle>?) {
-                if (files == null || files.size == 0) {
-                    return
-                }
-                val handle = files.first()
-                val target = if (handle.extension().lowercase() == "ifc") handle.file()
-                else File(handle.file().parentFile, "${handle.file().name}.ifc")
-                exportIfcModel(target)
+        val statusBefore = statusModel.message
+        val requested = showDesktopFileDialog("Export IFC (Model)", FileDialog.SAVE, "model.ifc")
+        if (requested == null) {
+            if (statusModel.message == statusBefore) {
+                statusModel.message = "IFC export cancelled."
             }
-        })
-        showFileChooser(chooser)
+            return
+        }
+        exportIfcModel(ensureFileExtension(requested.absoluteFile, setOf("ifc"), "ifc"))
     }
 
     private data class MeshExportOption(
@@ -3690,34 +3714,23 @@ class Main(
                 return
             }
         }
-        val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.OPEN)
-        chooser.getTitleLabel().setText("Import Mesh")
-        chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
-        val filter = FileTypeFilter(true)
-        filter.addRule("OBJ (*.obj)", "obj")
-        filter.addRule("STL (*.stl, *.stla, *.stlb)", "stl", "stla", "stlb")
-        filter.addRule("glTF/GLB (*.gltf, *.glb)", "gltf", "glb")
-        filter.addRule("DAE/Collada (*.dae)", "dae")
-        filter.addRule("DXF 3DFACE (*.dxf)", "dxf")
-        filter.addRule("3MF (*.3mf)", "3mf")
-        filter.addRule("AMF (*.amf)", "amf")
-        filter.addRule("IFC (*.ifc)", "ifc")
-        filter.addRule("FBX ASCII (*.fbx)", "fbx")
-        chooser.setFileTypeFilter(filter)
-        chooser.setListener(object : FileChooserAdapter() {
-            override fun selected(files: Array<FileHandle>?) {
-                if (files == null || files.size == 0) {
-                    return
-                }
-                val handle = files.first()
-                if (!handle.exists()) {
-                    statusModel.message = "Import failed: selected file does not exist."
-                    return
-                }
-                importMeshPayload(handle.name(), handle.readBytes(), sourcePath = handle.file().absolutePath)
+        val statusBefore = statusModel.message
+        val requested = showDesktopFileDialog(
+            title = "Import Mesh",
+            mode = FileDialog.LOAD,
+            allowedExtensions = meshExportOptions.flatMap { it.extensions }.toSet()
+        )
+        if (requested == null) {
+            if (statusModel.message == statusBefore) {
+                statusModel.message = "Import canceled."
             }
-        })
-        showFileChooser(chooser)
+            return
+        }
+        if (!requested.exists()) {
+            statusModel.message = "Import failed: selected file does not exist."
+            return
+        }
+        importMeshPayload(requested.name, requested.readBytes(), sourcePath = requested.absolutePath)
     }
 
     private fun showExportMeshDialog() {
@@ -3730,27 +3743,19 @@ class Main(
                 return
             }
         }
-        val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.SAVE)
-        chooser.getTitleLabel().setText("Export Mesh")
-        chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
-        chooser.setDefaultFileName(
-            if (::modelFile.isInitialized) "${modelFile.nameWithoutExtension}.obj" else "mesh.obj"
+        val statusBefore = statusModel.message
+        val requested = showDesktopFileDialog(
+            title = "Export Mesh",
+            mode = FileDialog.SAVE,
+            defaultFileName = if (::modelFile.isInitialized) "${modelFile.nameWithoutExtension}.obj" else "mesh.obj"
         )
-        val filter = FileTypeFilter(true)
-        meshExportOptions.forEach { option ->
-            filter.addRule(option.label, *option.extensions.toTypedArray())
-        }
-        chooser.setFileTypeFilter(filter)
-        chooser.setListener(object : FileChooserAdapter() {
-            override fun selected(files: Array<FileHandle>?) {
-                if (files == null || files.size == 0) {
-                    return
-                }
-                val requested = files.first().file().absoluteFile
-                exportMeshToFile(requested)
+        if (requested == null) {
+            if (statusModel.message == statusBefore) {
+                statusModel.message = "Export canceled."
             }
-        })
-        showFileChooser(chooser)
+            return
+        }
+        exportMeshToFile(requested.absoluteFile)
     }
 
     private fun showAndroidSafImportMeshDialog(): Boolean {
@@ -4066,14 +4071,6 @@ class Main(
         } else {
             "$trimmed.$fallbackExtension"
         }
-    }
-
-    private fun showFileChooser(chooser: FileChooser) {
-        uiOverlay.stage.addActor(chooser)
-        chooser.pack()
-        chooser.centerWindow()
-        chooser.toFront()
-        chooser.fadeIn()
     }
 
     private fun exportIfcModel(file: File) {
@@ -6724,6 +6721,19 @@ class Main(
         }
     }
 
+    private fun isWindowsRuntime(): Boolean {
+        val osName = System.getProperty("os.name")?.trim().orEmpty()
+        return osName.contains("windows", ignoreCase = true)
+    }
+
+    private fun isPackagedWindowsRuntime(): Boolean {
+        if (!isWindowsRuntime()) {
+            return false
+        }
+        val installPath = installDir.absolutePath.lowercase()
+        return installPath.contains("windowsapps")
+    }
+
     private fun isAndroidRuntime(): Boolean {
         return try {
             Gdx.app?.type == Application.ApplicationType.Android
@@ -7990,20 +8000,19 @@ class Main(
             }
             return
         }
-        val chooser = FileChooser(modelFileChooserDirectory(), FileChooser.Mode.OPEN)
-        chooser.getTitleLabel().setText("Load Vector Glyph Catalog")
-        chooser.setSelectionMode(FileChooser.SelectionMode.FILES)
-        val filter = FileTypeFilter(true)
-        filter.addRule("Vector Glyph Catalog (*.octd)", "octd")
-        filter.addRule("Fonts (*.ttf, *.otf)", "ttf", "otf")
-        chooser.setFileTypeFilter(filter)
-        chooser.setListener(object : FileChooserAdapter() {
-            override fun selected(files: Array<FileHandle>?) {
-                if (files == null || files.size == 0) return
-                loadVectorGlyphCatalogFromPath(files.first().file().absolutePath)
+        val statusBefore = statusModel.message
+        val requested = showDesktopFileDialog(
+            title = "Load Vector Glyph Catalog",
+            mode = FileDialog.LOAD,
+            allowedExtensions = setOf("octd", "ttf", "otf")
+        )
+        if (requested == null) {
+            if (statusModel.message == statusBefore) {
+                statusModel.message = "Vector glyph load cancelled."
             }
-        })
-        showFileChooser(chooser)
+            return
+        }
+        loadVectorGlyphCatalogFromPath(requested.absolutePath)
     }
 
     private fun showAndroidSafVectorGlyphSourceDialog(): Boolean {
