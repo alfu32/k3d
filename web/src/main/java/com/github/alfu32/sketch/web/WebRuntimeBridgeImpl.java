@@ -76,13 +76,20 @@ public final class WebRuntimeBridgeImpl implements WebRuntimeBridge {
     @JSBody(params = {"accept", "handler"}, script =
             "try {\n" +
             "  var done = false;\n" +
+            "  var activeInput = null;\n" +
+            "  function cleanupInput() {\n" +
+            "    if (activeInput && activeInput.parentNode) activeInput.parentNode.removeChild(activeInput);\n" +
+            "    activeInput = null;\n" +
+            "  }\n" +
             "  function finish(name, text) {\n" +
             "    if (done) return;\n" +
             "    done = true;\n" +
+            "    cleanupInput();\n" +
             "    try { handler.onResult(name, text); } catch (_) {}\n" +
             "  }\n" +
             "  function openWithInput() {\n" +
             "    var input = document.createElement('input');\n" +
+            "    activeInput = input;\n" +
             "    input.type = 'file';\n" +
             "    input.accept = accept || '';\n" +
             "    input.style.display = 'none';\n" +
@@ -95,8 +102,15 @@ public final class WebRuntimeBridgeImpl implements WebRuntimeBridge {
             "      reader.readAsText(file);\n" +
             "    };\n" +
             "    document.body.appendChild(input);\n" +
+            "    window.setTimeout(function() {\n" +
+            "      window.addEventListener('focus', function focusBack() {\n" +
+            "        window.removeEventListener('focus', focusBack);\n" +
+            "        window.setTimeout(function() {\n" +
+            "          if (!done && activeInput === input && (!input.files || input.files.length === 0)) finish(null, null);\n" +
+            "        }, 0);\n" +
+            "      }, { once: true });\n" +
+            "    }, 0);\n" +
             "    input.click();\n" +
-            "    setTimeout(function() { if (input && input.parentNode) input.parentNode.removeChild(input); }, 0);\n" +
             "  }\n" +
             "  if (window.showOpenFilePicker) {\n" +
             "    window.showOpenFilePicker({ multiple: false })\n" +
@@ -119,9 +133,15 @@ public final class WebRuntimeBridgeImpl implements WebRuntimeBridge {
     @JSBody(params = {"accept", "handler"}, script =
             "try {\n" +
             "  var done = false;\n" +
+            "  var activeInput = null;\n" +
+            "  function cleanupInput() {\n" +
+            "    if (activeInput && activeInput.parentNode) activeInput.parentNode.removeChild(activeInput);\n" +
+            "    activeInput = null;\n" +
+            "  }\n" +
             "  function finish(name, data) {\n" +
             "    if (done) return;\n" +
             "    done = true;\n" +
+            "    cleanupInput();\n" +
             "    try { handler.onResult(name, data); } catch (_) {}\n" +
             "  }\n" +
             "  function readFile(file) {\n" +
@@ -137,6 +157,7 @@ public final class WebRuntimeBridgeImpl implements WebRuntimeBridge {
             "  }\n" +
             "  function openWithInput() {\n" +
             "    var input = document.createElement('input');\n" +
+            "    activeInput = input;\n" +
             "    input.type = 'file';\n" +
             "    input.accept = accept || '';\n" +
             "    input.style.display = 'none';\n" +
@@ -145,8 +166,15 @@ public final class WebRuntimeBridgeImpl implements WebRuntimeBridge {
             "      readFile(file);\n" +
             "    };\n" +
             "    document.body.appendChild(input);\n" +
+            "    window.setTimeout(function() {\n" +
+            "      window.addEventListener('focus', function focusBack() {\n" +
+            "        window.removeEventListener('focus', focusBack);\n" +
+            "        window.setTimeout(function() {\n" +
+            "          if (!done && activeInput === input && (!input.files || input.files.length === 0)) finish(null, null);\n" +
+            "        }, 0);\n" +
+            "      }, { once: true });\n" +
+            "    }, 0);\n" +
             "    input.click();\n" +
-            "    setTimeout(function() { if (input && input.parentNode) input.parentNode.removeChild(input); }, 0);\n" +
             "  }\n" +
             "  if (window.showOpenFilePicker) {\n" +
             "    window.showOpenFilePicker({ multiple: false })\n" +
