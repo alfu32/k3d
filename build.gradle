@@ -60,19 +60,19 @@ configure(subprojects.findAll { !['android', 'web'].contains(it.name) }) {
   // From https://lyze.dev/2021/04/29/libGDX-Internal-Assets-List/
   // The article can be helpful when using assets.txt in your project.
   tasks.register('generateAssetList') {
-    inputs.dir("${project.rootDir}/assets/")
-    // projectFolder/assets
     File assetsFolder = new File("${project.rootDir}/assets/")
-    // projectFolder/assets/assets.txt
     File assetsFile = new File(assetsFolder, "assets.txt")
-    // delete that file in case we've already created it
-    assetsFile.delete()
+    inputs.dir(assetsFolder)
+    outputs.file(assetsFile)
 
-    // iterate through all files inside that folder
-    // convert it to a relative path
-    // and append it to the file assets.txt
-    fileTree(assetsFolder).collect { assetsFolder.relativePath(it) }.sort().each {
-      assetsFile.append(it + "\n")
+    doLast {
+      def entries = fileTree(assetsFolder) {
+        exclude "assets.txt"
+      }.files.collect { file ->
+        assetsFolder.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+      }.sort()
+
+      assetsFile.text = entries.isEmpty() ? "" : entries.join("\n") + "\n"
     }
   }
   processResources.dependsOn 'generateAssetList'
