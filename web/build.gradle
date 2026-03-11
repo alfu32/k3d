@@ -50,6 +50,7 @@ tasks.register('prepareWebRuntimeAssets') {
     copy {
       from(zipTree(visUiJar)) {
         include 'com/kotcrab/vis/ui/skin/**'
+        include 'com/kotcrab/vis/ui/widget/color/internal/**'
       }
       into(webRuntimeAssetsDir)
     }
@@ -61,6 +62,7 @@ tasks.register('prepareWebRuntimeAssets') {
     def existingEntries = new LinkedHashSet<String>(assetsManifest.readLines('UTF-8'))
     def visUiEntries = fileTree(webRuntimeAssetsDir).matching {
       include 'com/kotcrab/vis/ui/skin/**'
+      include 'com/kotcrab/vis/ui/widget/color/internal/**'
     }.files.collect { file ->
       file.absolutePath.substring(webRuntimeAssetsDir.absolutePath.length() + 1).replace('\\', '/')
     }.sort()

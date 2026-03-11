@@ -41,7 +41,6 @@ import com.badlogic.gdx.utils.Array
 import com.badlogic.gdx.utils.Json
 import com.badlogic.gdx.utils.JsonReader
 import com.badlogic.gdx.utils.JsonValue
-import com.badlogic.gdx.utils.JsonWriter
 import com.badlogic.gdx.utils.Pool
 import com.github.alfu32.sketch.input.GuideManager
 import com.github.alfu32.sketch.input.CameraEventRouter
@@ -307,6 +306,9 @@ class Main(
     private var autosavePending = false
     private var autosaveDueAtMs = 0L
     private val autosaveDebounceMs = 1500L
+    private var webEmbedChangePending = false
+    private var webEmbedChangeDueAtMs = 0L
+    private val webEmbedChangeDebounceMs = 250L
     @Volatile private var asyncModelSaveThread: Thread? = null
     @Volatile private var asyncModelSaveRunning = false
     @Volatile private var asyncModelSaveError: String? = null
@@ -386,8 +388,50 @@ class Main(
         return file
     }
 
-    private fun createEmbedJson(): Json = Json().apply {
-        setOutputType(JsonWriter.OutputType.json)
+    private fun appendEmbedJsonValue(out: StringBuilder, value: Any?) {
+        when (value) {
+            null -> out.append("null")
+            is String -> out.append('"').append(value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")).append('"')
+            is Number, is Boolean -> out.append(value.toString())
+            is Map<*, *> -> {
+                out.append('{')
+                var first = true
+                value.forEach { (key, entryValue) ->
+                    if (key == null) return@forEach
+                    if (!first) out.append(',')
+                    first = false
+                    appendEmbedJsonValue(out, key.toString())
+                    out.append(':')
+                    appendEmbedJsonValue(out, entryValue)
+                }
+                out.append('}')
+            }
+            is Iterable<*> -> {
+                out.append('[')
+                var first = true
+                value.forEach { entry ->
+                    if (!first) out.append(',')
+                    first = false
+                    appendEmbedJsonValue(out, entry)
+                }
+                out.append(']')
+            }
+            is Array<*> -> {
+                out.append('[')
+                value.forEachIndexed { index, entry ->
+                    if (index > 0) out.append(',')
+                    appendEmbedJsonValue(out, entry)
+                }
+                out.append(']')
+            }
+            else -> appendEmbedJsonValue(out, value.toString())
+        }
+    }
+
+    private fun encodeEmbedJson(value: Any?): String {
+        val out = StringBuilder()
+        appendEmbedJsonValue(out, value)
+        return out.toString()
     }
 
     private fun parseWebEmbedConfig(jsonText: String?): WebEmbedConfig? {
@@ -2493,6 +2537,7 @@ class Main(
         updateCursorStatus()
         undoManager.update()
         flushAutosaveIfDue()
+        flushWebEmbedChangeIfDue()
         drainAsyncModelSaveStatus()
         if (BuildFlags.WEB_BUILD) {
             processWebEmbedCommands()
@@ -3279,6 +3324,9 @@ class Main(
                 bridge.writeLocalStorage(webAutosaveStorageKey, text)
                 bridge.writeLocalStorage(webModelNameStorageKey, modelFile.name)
                 statusModel.message = "Saved $suggestedName"
+                if (isEmbeddedWebRuntime()) {
+                    emitWebEmbedChange("saveAs", text)
+                }
             } else {
                 statusModel.message = message ?: "Save failed."
             }
@@ -3783,7 +3831,7 @@ class Main(
 
     private fun showImportMeshDialog() {
         if (BuildFlags.WEB_BUILD) {
-            statusModel.message = "Import dialog is not available in web runtime yet."
+            showWebImportMeshDialog()
             return
         }
         if (isAndroidRuntime()) {
@@ -3828,7 +3876,7 @@ class Main(
 
     private fun showExportMeshDialog() {
         if (BuildFlags.WEB_BUILD) {
-            statusModel.message = "Export dialog is not available in web runtime yet."
+            showWebExportMeshDialog()
             return
         }
         if (isAndroidRuntime()) {
@@ -3862,6 +3910,73 @@ class Main(
             return
         }
         exportMeshToFile(requested.absoluteFile)
+    }
+
+    private fun webMeshAcceptFilter(): String {
+        return meshExportOptions
+            .flatMap { it.extensions }
+            .distinct()
+            .joinToString(",") { ".${it.lowercase()}" }
+    }
+
+    private fun webMimeTypeForMeshOption(option: MeshExportOption): String {
+        return when {
+            option.ifcExport -> "application/octet-stream"
+            option.defaultExtension == "obj" -> "text/plain"
+            option.defaultExtension == "gltf" -> "model/gltf+json"
+            option.defaultExtension == "dae" -> "model/vnd.collada+xml"
+            option.defaultExtension == "dxf" -> "application/dxf"
+            option.defaultExtension == "amf" -> "application/xml"
+            option.defaultExtension == "fbx" -> "text/plain"
+            else -> "application/octet-stream"
+        }
+    }
+
+    private fun showWebImportMeshDialog() {
+        val bridge = WebRuntime.bridge
+        if (bridge == null) {
+            statusModel.message = "Web import is unavailable in this build."
+            return
+        }
+        bridge.openBinaryDocument(webMeshAcceptFilter()) { displayName, base64Content ->
+            if (base64Content.isNullOrBlank()) {
+                statusModel.message = "Import canceled."
+                return@openBinaryDocument
+            }
+            val bytes = try {
+                java.util.Base64.getDecoder().decode(base64Content)
+            } catch (t: Throwable) {
+                statusModel.message = "Import failed: ${t.message ?: t.javaClass.simpleName}"
+                return@openBinaryDocument
+            }
+            importMeshPayload(displayName ?: "imported-mesh", bytes)
+        }
+    }
+
+    private fun showWebExportMeshDialog() {
+        val bridge = WebRuntime.bridge
+        if (bridge == null) {
+            statusModel.message = "Web export is unavailable in this build."
+            return
+        }
+        val webOptions = meshExportOptions.filterNot { it.ifcExport }
+        showMeshExportOptionDialog(webOptions) { option ->
+            val suggestedBase = if (::modelFile.isInitialized) modelFile.nameWithoutExtension else "mesh"
+            val suggestedName = "$suggestedBase.${option.defaultExtension}"
+            val payload = createWebExportPayloadForOption(option) ?: return@showMeshExportOptionDialog
+            val base64 = java.util.Base64.getEncoder().encodeToString(payload.bytes)
+            bridge.saveBinaryDocument(
+                suggestedName,
+                base64,
+                webMimeTypeForMeshOption(option)
+            ) { success, message ->
+                if (success) {
+                    statusModel.message = payload.statusMessage(suggestedName)
+                } else {
+                    statusModel.message = message ?: "Export failed."
+                }
+            }
+        }
     }
 
     private fun showAndroidSafImportMeshDialog(): Boolean {
@@ -3913,7 +4028,10 @@ class Main(
         return true
     }
 
-    private fun showMeshExportOptionDialog(onSelected: (MeshExportOption) -> Unit) {
+    private fun showMeshExportOptionDialog(
+        options: List<MeshExportOption> = meshExportOptions,
+        onSelected: (MeshExportOption) -> Unit
+    ) {
         val stage = uiOverlay.stage
         val dialog = com.kotcrab.vis.ui.widget.VisWindow("Export Mesh Format", true).apply {
             isModal = true
@@ -3924,7 +4042,7 @@ class Main(
         val content = com.kotcrab.vis.ui.widget.VisTable()
         content.defaults().pad(4f).growX()
         content.add(com.kotcrab.vis.ui.widget.VisLabel("Choose format (extension drives writer):")).left().row()
-        meshExportOptions.forEach { option ->
+        options.forEach { option ->
             val button = com.kotcrab.vis.ui.widget.VisTextButton(option.label)
             button.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
                 override fun clicked(
@@ -4029,6 +4147,19 @@ class Main(
         }
         val scopeLabel = if (selected.isNotEmpty()) "selection" else "full model"
         return MeshExportPayload(bytes, triangles.size, scopeLabel)
+    }
+
+    private fun createWebExportPayloadForOption(option: MeshExportOption): MeshExportPayload? {
+        option.unsupportedReason?.let { reason ->
+            statusModel.message = reason
+            return null
+        }
+        if (option.ifcExport) {
+            statusModel.message = "IFC export is not available in the web runtime yet."
+            return null
+        }
+        val format = option.format ?: return null
+        return exportMeshBytes(format)
     }
 
     private fun collectAllWorldTrianglesForExport(): List<MeshIo.Triangle> {
@@ -5799,6 +5930,7 @@ class Main(
         markSceneRuntimeDirty()
         undoManager.markChanged()
         scheduleAutosave()
+        scheduleWebEmbedChange()
     }
 
     private fun runCleanup() {
@@ -6048,7 +6180,7 @@ class Main(
 
     private fun emitWebEmbedEvent(eventType: String, payload: Map<String, Any?>) {
         val bridge = WebRuntime.bridge ?: return
-        bridge.emitEmbedEvent(eventType, createEmbedJson().toJson(payload))
+        bridge.emitEmbedEvent(eventType, encodeEmbedJson(payload))
     }
 
     private fun emitWebEmbedReady() {
@@ -6072,6 +6204,8 @@ class Main(
         if (!isEmbeddedWebRuntime()) {
             return
         }
+        webEmbedChangePending = false
+        webEmbedChangeDueAtMs = 0L
         webEmbedRevision += 1
         emitWebEmbedEvent(
             "change",
@@ -6218,7 +6352,7 @@ class Main(
         message: String? = null
     ) {
         val bridge = WebRuntime.bridge ?: return
-        val payloadJson = payload?.let { createEmbedJson().toJson(it) }
+        val payloadJson = payload?.let { encodeEmbedJson(it) }
         bridge.resolveEmbedCommand(requestId, success, payloadJson, message)
     }
 
@@ -6445,7 +6579,7 @@ class Main(
         }
         val beforeTool = toolController.activeToolId()
         val beforeSelectionPayload = currentWebSelectionPayload()
-        val beforeSelectionSignature = createEmbedJson().toJson(beforeSelectionPayload)
+        val beforeSelectionSignature = encodeEmbedJson(beforeSelectionPayload)
         var commandSucceeded = false
         try {
             when (command) {
@@ -6590,7 +6724,7 @@ class Main(
                     emitWebEmbedToolChange(afterTool)
                 }
                 val afterSelectionPayload = currentWebSelectionPayload()
-                val afterSelectionSignature = createEmbedJson().toJson(afterSelectionPayload)
+                val afterSelectionSignature = encodeEmbedJson(afterSelectionPayload)
                 if (afterSelectionSignature != beforeSelectionSignature) {
                     emitWebEmbedSelectionChange(afterSelectionPayload)
                 }
@@ -6699,11 +6833,47 @@ class Main(
         autosaveDueAtMs = now + autosaveDebounceMs
     }
 
+    private fun scheduleWebEmbedChange(now: Long = System.currentTimeMillis()) {
+        if (!isEmbeddedWebRuntime()) {
+            return
+        }
+        webEmbedChangePending = true
+        webEmbedChangeDueAtMs = now + webEmbedChangeDebounceMs
+    }
+
+    private fun flushWebEmbedChangeIfDue(now: Long = System.currentTimeMillis(), force: Boolean = false) {
+        if (!webEmbedChangePending) {
+            return
+        }
+        if (!force && now < webEmbedChangeDueAtMs) {
+            return
+        }
+        emitWebEmbedChange("edit")
+    }
+
     private fun flushAutosaveIfDue(now: Long = System.currentTimeMillis(), force: Boolean = false) {
         if (!autosavePending) {
             return
         }
         if (!force && now < autosaveDueAtMs) {
+            return
+        }
+        if (BuildFlags.WEB_BUILD) {
+            autosavePending = false
+            if (isEmbeddedWebRuntime()) {
+                return
+            }
+            val bridge = WebRuntime.bridge
+            if (bridge == null) {
+                statusModel.message = "Web autosave failed: runtime bridge unavailable."
+                return
+            }
+            val text = currentModelSnapshotText(includeUndoHistory = false)
+            if (!bridge.writeLocalStorage(webAutosaveStorageKey, text)) {
+                statusModel.message = "Web autosave failed: local storage unavailable."
+                return
+            }
+            bridge.writeLocalStorage(webModelNameStorageKey, modelFile.name)
             return
         }
         val runningAsyncSave = asyncModelSaveRunning && (asyncModelSaveThread?.isAlive == true)

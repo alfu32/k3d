@@ -4,13 +4,19 @@ fun interface WebOpenTextHandler {
     fun onResult(fileName: String?, content: String?)
 }
 
+fun interface WebOpenBinaryHandler {
+    fun onResult(fileName: String?, base64Content: String?)
+}
+
 fun interface WebSaveTextHandler {
     fun onResult(success: Boolean, message: String?)
 }
 
 interface WebRuntimeBridge {
     fun openTextDocument(accept: String, handler: WebOpenTextHandler)
+    fun openBinaryDocument(accept: String, handler: WebOpenBinaryHandler)
     fun saveTextDocument(fileName: String, content: String, mimeType: String, handler: WebSaveTextHandler)
+    fun saveBinaryDocument(fileName: String, base64Content: String, mimeType: String, handler: WebSaveTextHandler)
     fun readLocalStorage(key: String): String?
     fun writeLocalStorage(key: String, value: String): Boolean
     fun readEmbedConfigJson(): String? = null

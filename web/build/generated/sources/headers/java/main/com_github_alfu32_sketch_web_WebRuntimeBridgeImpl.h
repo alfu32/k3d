@@ -17,10 +17,26 @@ JNIEXPORT void JNICALL Java_com_github_alfu32_sketch_web_WebRuntimeBridgeImpl_op
 
 /*
  * Class:     com_github_alfu32_sketch_web_WebRuntimeBridgeImpl
+ * Method:    openBinaryDocumentJs
+ * Signature: (Ljava/lang/String;Lcom/github/alfu32/sketch/WebOpenBinaryHandler;)V
+ */
+JNIEXPORT void JNICALL Java_com_github_alfu32_sketch_web_WebRuntimeBridgeImpl_openBinaryDocumentJs
+  (JNIEnv *, jclass, jstring, jobject);
+
+/*
+ * Class:     com_github_alfu32_sketch_web_WebRuntimeBridgeImpl
  * Method:    saveTextDocumentJs
  * Signature: (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/github/alfu32/sketch/WebSaveTextHandler;)V
  */
 JNIEXPORT void JNICALL Java_com_github_alfu32_sketch_web_WebRuntimeBridgeImpl_saveTextDocumentJs
+  (JNIEnv *, jclass, jstring, jstring, jstring, jobject);
+
+/*
+ * Class:     com_github_alfu32_sketch_web_WebRuntimeBridgeImpl
+ * Method:    saveBinaryDocumentJs
+ * Signature: (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/github/alfu32/sketch/WebSaveTextHandler;)V
+ */
+JNIEXPORT void JNICALL Java_com_github_alfu32_sketch_web_WebRuntimeBridgeImpl_saveBinaryDocumentJs
   (JNIEnv *, jclass, jstring, jstring, jstring, jobject);
 
 /*
