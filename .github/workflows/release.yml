@@ -323,16 +323,14 @@ jobs:
         with:
           distribution: "temurin"
           java-version: "21"
-      - name: Build web bundle
-        run: ./gradlew :web:bundleWeb -PreleaseNumber="${{ inputs.tag }}"
+      - name: Build web bundles
+        run: ./gradlew :web:bundleWeb :web:bundleWebComponentZip -PreleaseNumber="${{ inputs.tag }}"
       - uses: actions/upload-artifact@v4
         with:
           name: octodraw-web
           path: |
             dist/octodraw-*-webapp.zip
-            dist/octodraw-*-webapp.tar.gz
-            dist/octodraw-*-webdocs.zip
-            dist/octodraw-*-webdocs.tar.gz
+            dist/octodraw-*-webcomponent.zip
 
   release:
     runs-on: ubuntu-latest
