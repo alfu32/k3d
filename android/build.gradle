@@ -130,6 +130,12 @@ tasks.matching { it.name == "preBuild" }.configureEach {
   dependsOn "copyAndroidNatives"
 }
 
+tasks.matching { task ->
+  task.name.startsWith("merge") && task.name.endsWith("Assets")
+}.configureEach {
+  dependsOn rootProject.tasks.named("generateAssetList")
+}
+
 registerRenamedApkTask(
   "bundleAndroidApk",
   "assembleRelease",

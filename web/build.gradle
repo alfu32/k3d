@@ -32,6 +32,7 @@ dependencies {
 tasks.register('prepareWebRuntimeAssets') {
   group = 'distribution'
   description = 'Builds merged TeaVM asset input (project assets + VisUI skin resources).'
+  dependsOn(rootProject.tasks.named('generateAssetList'))
 
   doLast {
     delete(webRuntimeAssetsDir)

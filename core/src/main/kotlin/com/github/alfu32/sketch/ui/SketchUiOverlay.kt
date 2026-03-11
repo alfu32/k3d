@@ -42,9 +42,6 @@ import com.github.alfu32.sketch.tools.HotspotSettings
 import com.github.alfu32.sketch.tools.HvacSettings
 import com.github.alfu32.sketch.tools.PolylineSettings
 import com.github.alfu32.sketch.tools.VectorTextSettings
-import java.awt.GraphicsEnvironment
-import javax.swing.JColorChooser
-import javax.swing.SwingUtilities
 import java.util.Locale
 import kotlin.math.abs
 
@@ -4833,26 +4830,53 @@ class SketchUiOverlay(
     }
 
     private fun isDesktopColorDialogAvailable(): Boolean {
-        return Gdx.app?.type == Application.ApplicationType.Desktop && !GraphicsEnvironment.isHeadless()
+        if (Gdx.app?.type != Application.ApplicationType.Desktop) {
+            return false
+        }
+        return try {
+            val graphicsEnvironmentClass = Class.forName("java.awt.GraphicsEnvironment")
+            val isHeadless = graphicsEnvironmentClass
+                .getMethod("isHeadless")
+                .invoke(null) as? Boolean ?: true
+            !isHeadless
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun showDesktopColorDialog(title: String, start: Color): Color? {
         return try {
-            val chosen = arrayOfNulls<java.awt.Color>(1)
-            val initial = java.awt.Color(start.r, start.g, start.b, start.a)
+            val awtColorClass = Class.forName("java.awt.Color")
+            val awtComponentClass = Class.forName("java.awt.Component")
+            val swingUtilitiesClass = Class.forName("javax.swing.SwingUtilities")
+            val colorChooserClass = Class.forName("javax.swing.JColorChooser")
+            val chosen = arrayOfNulls<Any>(1)
+            val initial = awtColorClass
+                .getConstructor(Float::class.javaPrimitiveType, Float::class.javaPrimitiveType, Float::class.javaPrimitiveType, Float::class.javaPrimitiveType)
+                .newInstance(start.r, start.g, start.b, start.a)
             val chooserTask = Runnable {
-                chosen[0] = JColorChooser.showDialog(null, title, initial)
+                chosen[0] = colorChooserClass
+                    .getMethod("showDialog", awtComponentClass, String::class.java, awtColorClass)
+                    .invoke(null, null, title, initial)
             }
-            if (SwingUtilities.isEventDispatchThread()) {
+            val isEdt = swingUtilitiesClass
+                .getMethod("isEventDispatchThread")
+                .invoke(null) as? Boolean ?: false
+            if (isEdt) {
                 chooserTask.run()
             } else {
-                SwingUtilities.invokeAndWait(chooserTask)
+                swingUtilitiesClass
+                    .getMethod("invokeAndWait", Runnable::class.java)
+                    .invoke(null, chooserTask)
             }
             chosen[0]?.let { awt ->
+                val red = awtColorClass.getMethod("getRed").invoke(awt) as Number
+                val green = awtColorClass.getMethod("getGreen").invoke(awt) as Number
+                val blue = awtColorClass.getMethod("getBlue").invoke(awt) as Number
                 Color(
-                    awt.red / 255f,
-                    awt.green / 255f,
-                    awt.blue / 255f,
+                    red.toFloat() / 255f,
+                    green.toFloat() / 255f,
+                    blue.toFloat() / 255f,
                     start.a
                 )
             }

@@ -24,6 +24,23 @@ allprojects {
   ext.projectVersion = bundleVersion
 }
 
+tasks.register('generateAssetList') {
+  File assetsFolder = new File("${project.rootDir}/assets/")
+  File assetsFile = new File(assetsFolder, "assets.txt")
+  inputs.dir(assetsFolder)
+  outputs.file(assetsFile)
+
+  doLast {
+    def entries = fileTree(assetsFolder) {
+      exclude "assets.txt"
+    }.files.collect { file ->
+      assetsFolder.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+    }.sort()
+
+    assetsFile.text = entries.isEmpty() ? "" : entries.join("\n") + "\n"
+  }
+}
+
 buildscript {
   repositories {
     mavenCentral()
@@ -56,26 +73,7 @@ configure(subprojects.findAll { !['android', 'web'].contains(it.name) }) {
   apply plugin: 'java-library'
   apply plugin: 'kotlin'
   java.sourceCompatibility = 21
-
-  // From https://lyze.dev/2021/04/29/libGDX-Internal-Assets-List/
-  // The article can be helpful when using assets.txt in your project.
-  tasks.register('generateAssetList') {
-    File assetsFolder = new File("${project.rootDir}/assets/")
-    File assetsFile = new File(assetsFolder, "assets.txt")
-    inputs.dir(assetsFolder)
-    outputs.file(assetsFile)
-
-    doLast {
-      def entries = fileTree(assetsFolder) {
-        exclude "assets.txt"
-      }.files.collect { file ->
-        assetsFolder.toPath().relativize(file.toPath()).toString().replace('\\', '/')
-      }.sort()
-
-      assetsFile.text = entries.isEmpty() ? "" : entries.join("\n") + "\n"
-    }
-  }
-  processResources.dependsOn 'generateAssetList'
+  processResources.dependsOn rootProject.tasks.named('generateAssetList')
 
   compileJava {
     options.incremental = true
