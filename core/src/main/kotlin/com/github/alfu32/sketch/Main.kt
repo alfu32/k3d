@@ -3317,7 +3317,8 @@ class Main(
         )
         val snapshot = snapshotForPersistence(includeUndoHistory = true)
         val text = ModelPersistence.saveSnapshotText(snapshot)
-        bridge.saveTextDocument(suggestedName, text, "application/json") { success, message ->
+        val base64 = java.util.Base64.getEncoder().encodeToString(text.toByteArray(Charsets.UTF_8))
+        bridge.saveBinaryDocument(suggestedName, base64, "application/json") { success, message ->
             if (success) {
                 modelFile = File(resolveDesktopWritableDataDir(), suggestedName).absoluteFile
                 updateWindowTitle()

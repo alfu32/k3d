@@ -13,6 +13,7 @@ def webOutputName = "octodraw-${bundleVersion}".replaceAll(/[^A-Za-z0-9._-]/, "-
 def webDistRoot = file("$buildDir/dist")
 def webRuntimeDir = file("$webDistRoot/webapp")
 def webRuntimeAssetsDir = file("$buildDir/generated/web-runtime-assets")
+def webClasspathResourcesDir = file("$buildDir/generated/web-classpath-resources")
 def webComponentSourceDir = file("$projectDir/component")
 def webComponentBundleDir = file("$buildDir/dist/webcomponent")
 
@@ -69,6 +70,36 @@ tasks.register('prepareWebRuntimeAssets') {
     visUiEntries.each { existingEntries.add(it) }
     assetsManifest.text = existingEntries.join('\n') + '\n'
   }
+}
+
+tasks.register('prepareWebClasspathResources') {
+  group = 'build'
+  description = 'Copies dependency classpath resources required by the TeaVM runtime.'
+
+  doLast {
+    delete(webClasspathResourcesDir)
+    webClasspathResourcesDir.mkdirs()
+
+    def visUiJar = configurations.runtimeClasspath.files.find { file ->
+      file.name.startsWith('vis-ui-') && file.name.endsWith('.jar')
+    }
+    if (visUiJar == null || !visUiJar.exists()) {
+      throw new GradleException("Unable to locate vis-ui runtime jar on web classpath.")
+    }
+    copy {
+      from(zipTree(visUiJar)) {
+        include 'com/kotcrab/vis/ui/skin/**'
+        include 'com/kotcrab/vis/ui/widget/color/internal/**'
+        exclude '**/*.class'
+      }
+      into(webClasspathResourcesDir)
+    }
+  }
+}
+
+tasks.named('processResources') {
+  dependsOn(tasks.named('prepareWebClasspathResources'))
+  from(webClasspathResourcesDir)
 }
 
 tasks.register('buildWebRuntime', JavaExec) {
