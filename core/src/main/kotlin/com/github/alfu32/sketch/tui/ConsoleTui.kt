@@ -54,8 +54,9 @@ class ConsoleTui(
             builder.append(padLine(line, width)).append('\n')
         }
         builder.append("""
-            █▄▀ ▀▀█ █▀▄   █▀▀ █▀█ █▄ █ █▀▀ █▀█ █   █▀▀
-            █ █ ▄██ █▄▀   █▄▄ █▄█ █ ▀█ ▄▄█ █▄█ █▄▄ ██▄
+            ┏━┓┏━╸╺┳╸┏━┓╺┳┓┏━┓┏━┓╻ ╻   ┏━╸┏━┓┏┓╻┏━┓┏━┓╻  ┏━╸
+            ┃ ┃┃   ┃ ┃ ┃ ┃┃┣┳┛┣━┫┃╻┃   ┃  ┃ ┃┃┗┫┗━┓┃ ┃┃  ┣╸
+            ┗━┛┗━╸ ╹ ┗━┛╺┻┛╹┗╸╹ ╹┗┻┛   ┗━╸┗━┛╹ ╹┗━┛┗━┛┗━╸┗━╸
         """.trimIndent()).append('\n')
         builder.append("-".repeat(width)).append('\n')
 
