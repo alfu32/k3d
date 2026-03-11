@@ -42,6 +42,9 @@ import com.github.alfu32.sketch.tools.HotspotSettings
 import com.github.alfu32.sketch.tools.HvacSettings
 import com.github.alfu32.sketch.tools.PolylineSettings
 import com.github.alfu32.sketch.tools.VectorTextSettings
+import java.awt.GraphicsEnvironment
+import javax.swing.JColorChooser
+import javax.swing.SwingUtilities
 import java.util.Locale
 import kotlin.math.abs
 
@@ -3610,6 +3613,13 @@ class SketchUiOverlay(
     }
 
     private fun showArchitectureColorPicker(title: String, start: Color, onApply: (Color) -> Unit) {
+        if (isDesktopColorDialogAvailable()) {
+            val picked = showDesktopColorDialog(title, start)
+            if (picked != null) {
+                onApply(picked)
+            }
+            return
+        }
         val picker = ColorPicker(title)
         picker.color = Color(start)
         picker.setListener(object : ColorPickerListener {
@@ -4777,6 +4787,13 @@ class SketchUiOverlay(
     }
 
     private fun showColorPicker() {
+        if (isDesktopColorDialogAvailable()) {
+            val picked = showDesktopColorDialog("Paint Color", status.paintColor)
+            if (picked != null) {
+                status.paintColor.set(picked)
+            }
+            return
+        }
         if (colorPicker == null) {
             colorPicker = ColorPicker("Paint Color").apply {
                 setListener(object : ColorPickerListener {
@@ -4813,6 +4830,35 @@ class SketchUiOverlay(
         }
         picker.centerWindow()
         picker.fadeIn()
+    }
+
+    private fun isDesktopColorDialogAvailable(): Boolean {
+        return Gdx.app?.type == Application.ApplicationType.Desktop && !GraphicsEnvironment.isHeadless()
+    }
+
+    private fun showDesktopColorDialog(title: String, start: Color): Color? {
+        return try {
+            val chosen = arrayOfNulls<java.awt.Color>(1)
+            val initial = java.awt.Color(start.r, start.g, start.b, start.a)
+            val chooserTask = Runnable {
+                chosen[0] = JColorChooser.showDialog(null, title, initial)
+            }
+            if (SwingUtilities.isEventDispatchThread()) {
+                chooserTask.run()
+            } else {
+                SwingUtilities.invokeAndWait(chooserTask)
+            }
+            chosen[0]?.let { awt ->
+                Color(
+                    awt.red / 255f,
+                    awt.green / 255f,
+                    awt.blue / 255f,
+                    start.a
+                )
+            }
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     private fun updateButtonIcon(button: AppImageTextButton?, color: Color) {
