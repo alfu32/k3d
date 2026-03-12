@@ -167,9 +167,6 @@ tasks.register('prepareWebComponentBundle') {
   dependsOn(tasks.named('prepareWebDocs'))
 
   inputs.dir(webComponentSourceDir)
-  inputs.dir(new File(webRuntimeDir, 'assets'))
-  inputs.dir(new File(webRuntimeDir, 'scripts'))
-  inputs.file(new File(webRuntimeDir, "${webOutputName}.js"))
   outputs.dir(webComponentBundleDir)
 
   doLast {
