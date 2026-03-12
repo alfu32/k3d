@@ -164,7 +164,7 @@ tasks.register('bundleWebZip', Zip) {
 tasks.register('prepareWebComponentBundle') {
   group = 'distribution'
   description = 'Builds the embeddable Octodraw web component bundle.'
-  dependsOn(tasks.named('buildWebRuntime'))
+  dependsOn(tasks.named('prepareWebDocs'))
 
   inputs.dir(webComponentSourceDir)
   inputs.dir(new File(webRuntimeDir, 'assets'))
