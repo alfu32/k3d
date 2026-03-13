@@ -5460,6 +5460,12 @@ class Main(
             )
         }
 
+        toolController.activeTool().feedbackLines().forEach { (a, b) ->
+            if (a.dst2(b) > 1e-8f) {
+                capturedFeedbackLines += FeedbackWorldLine(Vector3(a), Vector3(b))
+            }
+        }
+
         if (::pluginHost.isInitialized) {
             pluginHost.collectDrawLines().forEach { line ->
                 capturedFeedbackLines += FeedbackWorldLine(Vector3(line.start), Vector3(line.end))

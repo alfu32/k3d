@@ -15,6 +15,8 @@ import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
 import com.github.alfu32.sketch.ui.ToolMeasurement
 import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -784,27 +786,424 @@ class ArchitectureStairTool(
 }
 
 class ArchitectureWindowFrameTool(
-    scene: GroupScene,
-    settings: ArchitectureSettings,
-    onSelectTool: () -> Unit,
-    ensureArchitectureGroup: (() -> GroupScene.GroupNode?)? = null
-) : ArchitectureFrameTool(
-    scene = scene,
-    settings = settings,
-    onSelectTool = onSelectTool,
-    ensureArchitectureGroup = ensureArchitectureGroup,
-    toolId = ToolId.ARCH_WINDOW_FRAME,
-    frameKind = ArchitectureStore.FrameKind.WINDOW,
-    baseMessage = "Pick first window frame corner.",
-    drawColor = ToolFeedbackColors.SECONDARY
-)
+    private val scene: GroupScene,
+    private val settings: ArchitectureSettings,
+    private val onSelectTool: () -> Unit,
+    private val ensureArchitectureGroup: (() -> GroupScene.GroupNode?)? = null
+) : Tool {
+    override val id: ToolId = ToolId.ARCH_WINDOW_FRAME
+    override val message: String = "Pick first window contour point. A/C/L switch arc modes. Enter finishes."
+
+    private val pointsWorld = mutableListOf<Vector3>()
+    private var planeOriginWorld: Vector3? = null
+    private var planeNormalWorld: Vector3? = null
+    private val hoverWorld = Vector3()
+    private var hasHover = false
+    private var arcMode = FrameArcMode.LINE
+    private var arcCenterWorld: Vector3? = null
+    private var arcPass1World: Vector3? = null
+    private val closeDistance = 0.15f
+    private val epsilon = 1e-4f
+    private val arcMaxLength = 0.5f
+
+    override fun onEnter(status: StatusModel) {
+        clear()
+        status.message = message
+    }
+
+    override fun onExit(status: StatusModel) {
+        clear()
+        super.onExit(status)
+    }
+
+    override fun onCancel(status: StatusModel) {
+        clear()
+        status.message = "Canceled."
+    }
+
+    override fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
+        val origin = planeOriginWorld
+        val planeNormal = planeNormalWorld
+        if (valid && world != null) {
+            hoverWorld.set(
+                if (origin != null && planeNormal != null) {
+                    projectPointToPlane(world, origin, planeNormal)
+                } else {
+                    world
+                }
+            )
+            hasHover = true
+        } else {
+            hasHover = false
+        }
+    }
+
+    override fun onPointerDown(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean, button: Int): Boolean {
+        if (button != Input.Buttons.LEFT || !valid || world == null) {
+            return false
+        }
+        val group = resolveArchitectureGroup(scene, status, ensureArchitectureGroup) ?: return true
+        if (pointsWorld.isEmpty()) {
+            val start = Vector3(world)
+            pointsWorld.add(start)
+            planeOriginWorld = Vector3(start)
+            planeNormalWorld = normal?.let { Vector3(it).nor() } ?: Vector3(0f, 1f, 0f)
+            status.message = "Pick next window contour point. A/C/L switch arc modes. Enter finishes."
+            return true
+        }
+        val origin = planeOriginWorld ?: Vector3(world)
+        val planeNormal = planeNormalWorld ?: (normal?.let { Vector3(it).nor() } ?: Vector3(0f, 1f, 0f))
+        val hit = projectPointToPlane(world, origin, planeNormal)
+        if (arcMode == FrameArcMode.LINE && isClosing(hit) && pointsWorld.size >= 3) {
+            return finalizeContour(status, group, closeContour = true)
+        }
+        when (arcMode) {
+            FrameArcMode.CENTER -> {
+                if (arcCenterWorld == null) {
+                    arcCenterWorld = Vector3(hit)
+                    status.message = "Pick window arc end point."
+                } else {
+                    appendArcPoints(arcPointsFromCenter(pointsWorld.last(), hit, arcCenterWorld!!))
+                    arcCenterWorld = null
+                    status.message = "Pick next window contour point. A/C/L switch arc modes. Enter finishes."
+                }
+                return true
+            }
+            FrameArcMode.THREE -> {
+                if (arcPass1World == null) {
+                    arcPass1World = Vector3(hit)
+                    status.message = "Pick third point of the window arc."
+                } else {
+                    appendArcPoints(arcPointsThrough(pointsWorld.last(), arcPass1World!!, hit))
+                    arcPass1World = null
+                    status.message = "Pick next window contour point. A/C/L switch arc modes. Enter finishes."
+                }
+                return true
+            }
+            FrameArcMode.LINE -> {
+                pointsWorld.add(Vector3(hit))
+                return true
+            }
+        }
+    }
+
+    override fun onKeyDown(status: StatusModel, keycode: Int): Boolean {
+        when (keycode) {
+            Input.Keys.A -> {
+                arcMode = FrameArcMode.THREE
+                arcCenterWorld = null
+                arcPass1World = null
+                status.message = "Window tool | arc through 3 points."
+                return true
+            }
+            Input.Keys.C -> {
+                arcMode = FrameArcMode.CENTER
+                arcCenterWorld = null
+                arcPass1World = null
+                status.message = "Window tool | arc from center."
+                return true
+            }
+            Input.Keys.L -> {
+                arcMode = FrameArcMode.LINE
+                arcCenterWorld = null
+                arcPass1World = null
+                status.message = "Window tool | line mode."
+                return true
+            }
+            Input.Keys.BACKSPACE -> {
+                when {
+                    arcMode == FrameArcMode.CENTER && arcCenterWorld != null -> arcCenterWorld = null
+                    arcMode == FrameArcMode.THREE && arcPass1World != null -> arcPass1World = null
+                    pointsWorld.isNotEmpty() -> {
+                        pointsWorld.removeAt(pointsWorld.lastIndex)
+                        if (pointsWorld.isEmpty()) {
+                            clear()
+                        }
+                    }
+                }
+                status.message = if (pointsWorld.isEmpty()) message else "Pick next window contour point. A/C/L switch arc modes. Enter finishes."
+                return true
+            }
+            Input.Keys.ENTER -> {
+                val group = resolveArchitectureGroup(scene, status, ensureArchitectureGroup) ?: return true
+                return finalizeContour(status, group, closeContour = true)
+            }
+            Input.Keys.ESCAPE -> {
+                clear()
+                status.message = "Canceled."
+                onSelectTool()
+                return true
+            }
+        }
+        return false
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        if (pointsWorld.isEmpty() || !hasHover) {
+            return null
+        }
+        return ToolMeasurement(
+            startWorld = Vector3(pointsWorld.last()),
+            endWorld = Vector3(hoverWorld),
+            lineColor = Color(ToolFeedbackColors.SECONDARY)
+        )
+    }
+
+    override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
+        if (pointsWorld.isEmpty()) {
+            return emptyList()
+        }
+        val lines = mutableListOf<Pair<Vector3, Vector3>>()
+        for (i in 0 until pointsWorld.size - 1) {
+            lines.add(Vector3(pointsWorld[i]) to Vector3(pointsWorld[i + 1]))
+        }
+        previewSegments().forEach { (a, b) ->
+            lines.add(Vector3(a) to Vector3(b))
+        }
+        return lines
+    }
+
+    override fun render(renderer: ShapeRenderer) {
+        // Feedback is routed through the thick 2D overlay lines.
+    }
+
+    private fun previewSegments(): List<Pair<Vector3, Vector3>> {
+        if (!hasHover || pointsWorld.isEmpty()) {
+            return emptyList()
+        }
+        val preview = when {
+            arcMode == FrameArcMode.CENTER && arcCenterWorld != null ->
+                arcPointsFromCenter(pointsWorld.last(), hoverWorld, arcCenterWorld!!)
+            arcMode == FrameArcMode.THREE && arcPass1World != null ->
+                arcPointsThrough(pointsWorld.last(), arcPass1World!!, hoverWorld)
+            arcMode == FrameArcMode.LINE && isClosing(hoverWorld) && pointsWorld.size >= 3 ->
+                listOf(pointsWorld.last(), pointsWorld.first())
+            else -> emptyList()
+        }
+        if (preview.size > 1) {
+            return preview.zipWithNext { a, b -> Vector3(a) to Vector3(b) }
+        }
+        if (arcMode == FrameArcMode.LINE) {
+            return listOf(Vector3(pointsWorld.last()) to Vector3(hoverWorld))
+        }
+        return emptyList()
+    }
+
+    private fun isClosing(candidate: Vector3): Boolean {
+        if (pointsWorld.size < 3) {
+            return false
+        }
+        return pointsWorld.first().dst(candidate) <= closeDistance
+    }
+
+    private fun finalizeContour(
+        status: StatusModel,
+        group: GroupScene.GroupNode,
+        closeContour: Boolean
+    ): Boolean {
+        if (pointsWorld.size < 2) {
+            clear()
+            status.message = message
+            return true
+        }
+        val planeNormal = planeNormalWorld ?: Vector3(0f, 1f, 0f)
+        val contourWorld = when {
+            pointsWorld.size == 2 -> {
+                val basis = planeBasisFromNormal(planeNormal)
+                rectangleCorners(pointsWorld.first(), pointsWorld.last(), basis)
+            }
+            else -> {
+                val pts = pointsWorld.map { Vector3(it) }.toMutableList()
+                if (closeContour && pts.size >= 3 && pts.last().dst(pts.first()) <= closeDistance) {
+                    pts.removeAt(pts.lastIndex)
+                }
+                pts
+            }
+        }
+        if (contourWorld.size < 3) {
+            clear()
+            status.message = "Frame not created."
+            return true
+        }
+        val origin = planeOriginWorld ?: contourWorld.first()
+        val basis = planeBasisFromNormal(planeNormal)
+        var uMin = Float.POSITIVE_INFINITY
+        var uMax = Float.NEGATIVE_INFINITY
+        var vMin = Float.POSITIVE_INFINITY
+        var vMax = Float.NEGATIVE_INFINITY
+        contourWorld.forEach { point ->
+            val rel = Vector3(point).sub(origin)
+            val u = rel.dot(basis.axisU)
+            val v = rel.dot(basis.axisV)
+            uMin = min(uMin, u)
+            uMax = max(uMax, u)
+            vMin = min(vMin, v)
+            vMax = max(vMax, v)
+        }
+        if (!uMin.isFinite() || !uMax.isFinite() || !vMin.isFinite() || !vMax.isFinite()) {
+            clear()
+            status.message = "Frame not created."
+            return true
+        }
+        val cornerAWorld = Vector3(origin).mulAdd(basis.axisU, uMin).mulAdd(basis.axisV, vMin)
+        val cornerBWorld = Vector3(origin).mulAdd(basis.axisU, uMax).mulAdd(basis.axisV, vMax)
+        val created = scene.addArchitectureFrame(
+            group = group,
+            cornerA = group.toLocal(cornerAWorld),
+            cornerB = group.toLocal(cornerBWorld),
+            contourPoints = contourWorld.map { group.toLocal(it) },
+            normal = group.vectorToLocal(planeNormal).nor(),
+            depth = settings.frameDepth,
+            frameWidth = settings.frameWidth,
+            kind = ArchitectureStore.FrameKind.WINDOW,
+            color = settings.frameColor,
+            glazingEnabled = settings.frameGlazingEnabled,
+            glazingColor = settings.frameGlazingColor
+        )
+        status.message = if (created) "Window frame created." else "Frame not created."
+        clear()
+        return true
+    }
+
+    private fun appendArcPoints(arcPoints: List<Vector3>) {
+        if (arcPoints.size <= 1) {
+            return
+        }
+        for (i in 1 until arcPoints.size) {
+            val next = arcPoints[i]
+            if (pointsWorld.last().dst(next) > epsilon) {
+                pointsWorld.add(Vector3(next))
+            }
+        }
+    }
+
+    private fun arcPointsFromCenter(start: Vector3, end: Vector3, center: Vector3): List<Vector3> {
+        val startVec = Vector3(start).sub(center)
+        val endVec = Vector3(end).sub(center)
+        val radius = startVec.len()
+        if (radius <= epsilon) {
+            return emptyList()
+        }
+        val normal = Vector3(startVec).crs(endVec)
+        if (normal.len2() <= epsilon * epsilon) {
+            return if (start.dst(end) <= epsilon) emptyList() else listOf(start, end)
+        }
+        val u = startVec.nor()
+        val w = normal.nor()
+        val v = Vector3(w).crs(u).nor()
+        val endAngle = kotlin.math.atan2(endVec.dot(v), endVec.dot(u)).toFloat()
+        val delta = normalizeAngle(endAngle)
+        if (abs(delta) <= epsilon) {
+            return listOf(start, end)
+        }
+        return buildArcPoints(center, u, v, radius, delta, stepsForArc(radius, delta))
+    }
+
+    private fun arcPointsThrough(start: Vector3, mid: Vector3, end: Vector3): List<Vector3> {
+        val ab = Vector3(mid).sub(start)
+        val ac = Vector3(end).sub(start)
+        val normal = Vector3(ab).crs(ac)
+        if (normal.len2() <= epsilon * epsilon) {
+            return if (start.dst(end) <= epsilon) emptyList() else listOf(start, end)
+        }
+        val u = Vector3(ab).nor()
+        val w = Vector3(normal).nor()
+        val v = Vector3(w).crs(u).nor()
+        val bx = ab.len()
+        val cx = ac.dot(u)
+        val cy = ac.dot(v)
+        val d = 2f * (bx * cy)
+        if (abs(d) <= epsilon) {
+            return listOf(start, end)
+        }
+        val ux = (bx * bx * cy) / d
+        val uy = (cx * cx + cy * cy - bx * bx) / (2f * cy)
+        val center = Vector3(start).add(Vector3(u).scl(ux)).add(Vector3(v).scl(uy))
+        val startVec = Vector3(start).sub(center)
+        val midVec = Vector3(mid).sub(center)
+        val endVec = Vector3(end).sub(center)
+        val radius = startVec.len()
+        if (radius <= epsilon) {
+            return emptyList()
+        }
+        val u2 = startVec.nor()
+        val v2 = Vector3(w).crs(u2).nor()
+        val midAngle = kotlin.math.atan2(midVec.dot(v2), midVec.dot(u2)).toFloat()
+        val endAngle = kotlin.math.atan2(endVec.dot(v2), endVec.dot(u2)).toFloat()
+        var delta = normalizeAngle(endAngle)
+        val midNorm = normalizeAngle(midAngle)
+        if (!isBetweenCCW(0f, midNorm, delta)) {
+            delta -= (Math.PI * 2.0).toFloat()
+        }
+        if (abs(delta) <= epsilon) {
+            return listOf(start, end)
+        }
+        return buildArcPoints(center, u2, v2, radius, delta, stepsForArc(radius, delta))
+    }
+
+    private fun buildArcPoints(
+        center: Vector3,
+        u: Vector3,
+        v: Vector3,
+        radius: Float,
+        delta: Float,
+        steps: Int
+    ): List<Vector3> {
+        val points = mutableListOf(Vector3(center).add(Vector3(u).scl(radius)))
+        val step = delta / steps
+        for (i in 1..steps) {
+            val angle = step * i
+            val cos = kotlin.math.cos(angle.toDouble()).toFloat()
+            val sin = kotlin.math.sin(angle.toDouble()).toFloat()
+            points.add(
+                Vector3(center)
+                    .add(Vector3(u).scl(radius * cos))
+                    .add(Vector3(v).scl(radius * sin))
+            )
+        }
+        return points
+    }
+
+    private fun normalizeAngle(angle: Float): Float {
+        val twoPi = (Math.PI * 2.0).toFloat()
+        val a = angle % twoPi
+        return if (a < 0f) a + twoPi else a
+    }
+
+    private fun stepsForArc(radius: Float, delta: Float): Int {
+        val steps = kotlin.math.ceil((abs(delta) * radius) / arcMaxLength.coerceAtLeast(1e-4f)).toInt()
+        return maxOf(1, minOf(steps, 512))
+    }
+
+    private fun isBetweenCCW(start: Float, mid: Float, end: Float): Boolean {
+        var endValue = end
+        var midValue = mid
+        if (endValue < start) {
+            endValue += (Math.PI * 2.0).toFloat()
+        }
+        if (midValue < start) {
+            midValue += (Math.PI * 2.0).toFloat()
+        }
+        return midValue >= start && midValue <= endValue
+    }
+
+    private fun clear() {
+        pointsWorld.clear()
+        planeOriginWorld = null
+        planeNormalWorld = null
+        hasHover = false
+        arcMode = FrameArcMode.LINE
+        arcCenterWorld = null
+        arcPass1World = null
+    }
+}
 
 class ArchitectureDoorFrameTool(
     scene: GroupScene,
     settings: ArchitectureSettings,
     onSelectTool: () -> Unit,
     ensureArchitectureGroup: (() -> GroupScene.GroupNode?)? = null
-) : ArchitectureFrameTool(
+) : ArchitectureRectFrameTool(
     scene = scene,
     settings = settings,
     onSelectTool = onSelectTool,
@@ -815,7 +1214,9 @@ class ArchitectureDoorFrameTool(
     drawColor = ToolFeedbackColors.PRIMARY
 )
 
-abstract class ArchitectureFrameTool(
+private enum class FrameArcMode { LINE, CENTER, THREE }
+
+abstract class ArchitectureRectFrameTool(
     private val scene: GroupScene,
     private val settings: ArchitectureSettings,
     private val onSelectTool: () -> Unit,

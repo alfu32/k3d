@@ -1950,8 +1950,8 @@ class SelectTool(
         }
         val marker = bestMarker ?: return null
         val wall = scene.architectureWallById(group, marker.wallId) ?: return null
-        val startWorld = group.toWorld(wall.start)
-        val endWorld = group.toWorld(wall.end)
+        val startWorld = Vector3(wall.start)
+        val endWorld = Vector3(wall.end)
         return when (marker.draggingStart) {
             true -> {
             WallEndpointHit(
@@ -1979,8 +1979,8 @@ class SelectTool(
     ): SlabEndpointHit? {
         val marker = pickArchitectureEndpointMarker(ray, scene.architectureSlabEndpointHandleMarkersWorld(group)) ?: return null
         val slab = scene.architectureSlabById(group, marker.id) ?: return null
-        val minWorld = group.toWorld(slab.min)
-        val maxWorld = group.toWorld(slab.max)
+        val minWorld = Vector3(slab.min)
+        val maxWorld = Vector3(slab.max)
         return if (marker.draggingStart) {
             SlabEndpointHit(
                 slabId = slab.id,
@@ -2004,8 +2004,8 @@ class SelectTool(
     ): FrameEndpointHit? {
         val marker = pickArchitectureEndpointMarker(ray, scene.architectureFrameEndpointHandleMarkersWorld(group)) ?: return null
         val frame = scene.architectureFrameById(group, marker.id) ?: return null
-        val cornerAWorld = group.toWorld(frame.cornerA)
-        val cornerBWorld = group.toWorld(frame.cornerB)
+        val cornerAWorld = Vector3(frame.cornerA)
+        val cornerBWorld = Vector3(frame.cornerB)
         return if (marker.draggingStart) {
             FrameEndpointHit(
                 frameId = frame.id,

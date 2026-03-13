@@ -42,6 +42,8 @@ interface Tool {
 
     fun measurement(status: StatusModel): ToolMeasurement? = null
 
+    fun feedbackLines(): List<Pair<Vector3, Vector3>> = emptyList()
+
     fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
         // Default no-op.
     }

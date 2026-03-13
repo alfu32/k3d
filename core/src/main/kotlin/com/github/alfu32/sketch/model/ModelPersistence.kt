@@ -12,7 +12,7 @@ import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
 object ModelPersistence {
-    private const val VERSION = 15
+    private const val VERSION = 16
 
     private fun createJson(): Json {
         return Json().apply {
@@ -547,6 +547,7 @@ object ModelPersistence {
                 architecture.addFrame(
                     cornerA = frame.cornerA.toVector3(),
                     cornerB = frame.cornerB.toVector3(),
+                    contourPoints = frame.contour.map { it.toVector3() },
                     normal = frame.normal.toVector3(),
                     depth = frame.depth,
                     frameWidth = frame.frameWidth,
@@ -707,6 +708,7 @@ object ModelPersistence {
                         name = frame.name,
                         cornerA = Vec3Dto(frame.cornerA),
                         cornerB = Vec3Dto(frame.cornerB),
+                        contour = frame.contour.map { Vec3Dto(it) }.toMutableList(),
                         normal = Vec3Dto(frame.normal),
                         depth = frame.depth,
                         frameWidth = frame.frameWidth,
@@ -975,6 +977,7 @@ object ModelPersistence {
         var name: String = ""
         var cornerA: Vec3Dto = Vec3Dto()
         var cornerB: Vec3Dto = Vec3Dto()
+        var contour: MutableList<Vec3Dto> = mutableListOf()
         var normal: Vec3Dto = Vec3Dto(Vector3(0f, 1f, 0f))
         var depth: Float = 0.12f
         var frameWidth: Float = 0.06f
@@ -988,6 +991,7 @@ object ModelPersistence {
             name: String,
             cornerA: Vec3Dto,
             cornerB: Vec3Dto,
+            contour: MutableList<Vec3Dto>,
             normal: Vec3Dto,
             depth: Float,
             frameWidth: Float,
@@ -1000,6 +1004,7 @@ object ModelPersistence {
             this.name = name
             this.cornerA = cornerA
             this.cornerB = cornerB
+            this.contour = contour
             this.normal = normal
             this.depth = depth
             this.frameWidth = frameWidth

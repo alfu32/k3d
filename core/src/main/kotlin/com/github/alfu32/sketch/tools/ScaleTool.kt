@@ -94,11 +94,21 @@ class ScaleTool(
             pointTransform = { point -> scalePoint(point, cLocal, scale, constraint) },
             vectorTransform = { vector -> scaleVector(vector, scale, constraint) }
         )
+        val scaledArchitecture = scene.transformSelectedArchitectureElements(
+            group = group,
+            pointTransform = { point -> scalePoint(point, cWorld, scale, constraint) },
+            vectorTransform = { vector -> scaleVector(vector, scale, constraint) }
+        )
+        val scaledHvac = scene.transformSelectedHvacElements(
+            group = group,
+            pointTransform = { point -> scalePoint(point, cWorld, scale, constraint) }
+        )
         val scaledGroups = scene.transformSelectedGroups(
             { point -> scalePoint(point, cWorld, scale, constraint) },
             { vector -> scaleVector(vector, scale, constraint) }
         )
-        status.message = "Scaled | edges $scaledEdges faces $scaledFaces texts $scaledTexts groups $scaledGroups"
+        status.message =
+            "Scaled | architecture $scaledArchitecture hvac $scaledHvac edges $scaledEdges faces $scaledFaces texts $scaledTexts groups $scaledGroups"
         clearTransient()
         return true
     }

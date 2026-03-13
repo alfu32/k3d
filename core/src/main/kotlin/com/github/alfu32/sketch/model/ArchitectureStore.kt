@@ -81,6 +81,7 @@ class ArchitectureStore {
         var name: String,
         var cornerA: Vector3,
         var cornerB: Vector3,
+        var contour: MutableList<Vector3>,
         var normal: Vector3,
         var depth: Float,
         var frameWidth: Float,
@@ -361,6 +362,7 @@ class ArchitectureStore {
     fun addFrame(
         cornerA: Vector3,
         cornerB: Vector3,
+        contourPoints: List<Vector3> = emptyList(),
         normal: Vector3,
         depth: Float,
         frameWidth: Float,
@@ -376,6 +378,7 @@ class ArchitectureStore {
             name = nextFrameName(name),
             cornerA = Vector3(cornerA),
             cornerB = Vector3(cornerB),
+            contour = contourPoints.map { Vector3(it) }.toMutableList(),
             normal = Vector3(normal),
             depth = depth,
             frameWidth = frameWidth,
@@ -600,10 +603,19 @@ class ArchitectureStore {
         return true
     }
 
-    fun updateFrameCorners(id: String, cornerA: Vector3, cornerB: Vector3): Boolean {
+    fun updateFrameCorners(
+        id: String,
+        cornerA: Vector3,
+        cornerB: Vector3,
+        contourPoints: List<Vector3>? = null
+    ): Boolean {
         val frame = frames.firstOrNull { it.id == id } ?: return false
         frame.cornerA.set(cornerA)
         frame.cornerB.set(cornerB)
+        if (contourPoints != null) {
+            frame.contour.clear()
+            frame.contour.addAll(contourPoints.map { Vector3(it) })
+        }
         return true
     }
 

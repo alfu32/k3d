@@ -1885,6 +1885,7 @@ class GroupScene(
                     clone.addFrame(
                         cornerA = frame.cornerA,
                         cornerB = frame.cornerB,
+                        contourPoints = frame.contour,
                         normal = frame.normal,
                         depth = frame.depth,
                         frameWidth = frame.frameWidth,
@@ -2142,6 +2143,7 @@ class GroupScene(
         group: GroupNode,
         cornerA: Vector3,
         cornerB: Vector3,
+        contourPoints: List<Vector3> = emptyList(),
         normal: Vector3,
         depth: Float,
         frameWidth: Float,
@@ -2156,11 +2158,13 @@ class GroupScene(
         if (cornerAWorld.dst2(cornerBWorld) <= 1e-6f) {
             return false
         }
+        val contourWorld = contourPoints.map { group.toWorld(it) }
         val normalWorld = group.vectorToWorld(normal)
         val safeNormal = if (normalWorld.len2() <= 1e-6f) Vector3(0f, 1f, 0f) else Vector3(normalWorld).nor()
         store.addFrame(
             cornerA = cornerAWorld,
             cornerB = cornerBWorld,
+            contourPoints = contourWorld,
             normal = safeNormal,
             depth = depth.coerceAtLeast(0.01f),
             frameWidth = frameWidth.coerceAtLeast(0.01f),
@@ -2303,12 +2307,14 @@ class GroupScene(
         cornerB: Vector3
     ): Boolean {
         val store = architectureStoreFor(group)
+        val frame = store.allFrames().firstOrNull { it.id == id } ?: return false
         val cornerAWorld = group.toWorld(cornerA)
         val cornerBWorld = group.toWorld(cornerB)
         if (cornerAWorld.dst2(cornerBWorld) <= 1e-6f) {
             return false
         }
-        if (!store.updateFrameCorners(id, cornerAWorld, cornerBWorld)) {
+        val resizedContour = rescaleFrameContour(frame, cornerAWorld, cornerBWorld) ?: return false
+        if (!store.updateFrameCorners(id, cornerAWorld, cornerBWorld, resizedContour)) {
             return false
         }
         rebuildArchitectureGeometry(rootPrototype)
@@ -3171,6 +3177,11 @@ class GroupScene(
                     val frame = store.allFrames().firstOrNull { it.id == selection.id } ?: return@forEach
                     frame.cornerA.set(pointTransform(Vector3(frame.cornerA)))
                     frame.cornerB.set(pointTransform(Vector3(frame.cornerB)))
+                    if (frame.contour.isNotEmpty()) {
+                        frame.contour = frame.contour
+                            .map { pointTransform(Vector3(it)) }
+                            .toMutableList()
+                    }
                     val newNormal = vectorTransform(Vector3(frame.normal))
                     if (newNormal.len2() > 1e-6f) {
                         frame.normal.set(newNormal.nor())
@@ -3330,6 +3341,7 @@ class GroupScene(
                     val copiedFrame = store.addFrame(
                         cornerA = pointTransform(Vector3(frame.cornerA)),
                         cornerB = pointTransform(Vector3(frame.cornerB)),
+                        contourPoints = frame.contour.map { pointTransform(Vector3(it)) },
                         normal = if (normal.len2() <= 1e-6f) Vector3(frame.normal) else normal.nor(),
                         depth = frame.depth,
                         frameWidth = frame.frameWidth,
@@ -5288,12 +5300,20 @@ class GroupScene(
         val p1 = wallPoint(basis, wall, hole.u1, hole.v0, 1f, eps)
         val p2 = wallPoint(basis, wall, hole.u1, hole.v1, 1f, eps)
         val p3 = wallPoint(basis, wall, hole.u0, hole.v1, 1f, eps)
-        val segments = mutableListOf(
-            p0 to p1,
-            p1 to p2,
-            p2 to p3,
-            p3 to p0
-        )
+        val edgeEps = 1e-4f
+        val segments = mutableListOf<Pair<Vector3, Vector3>>()
+        if (abs(hole.v0) > edgeEps) {
+            segments.add(p0 to p1)
+        }
+        if (abs(hole.u1 - basis.length) > edgeEps) {
+            segments.add(p1 to p2)
+        }
+        if (abs(hole.v1 - wall.height) > edgeEps) {
+            segments.add(p2 to p3)
+        }
+        if (abs(hole.u0) > edgeEps) {
+            segments.add(p3 to p0)
+        }
         if (includeDiagonals) {
             segments.add(p0 to p2)
             segments.add(p1 to p3)
@@ -5324,12 +5344,24 @@ class GroupScene(
         val p1 = slabPoint(basis, hole.u1, hole.v0, basis.thickness + eps)
         val p2 = slabPoint(basis, hole.u1, hole.v1, basis.thickness + eps)
         val p3 = slabPoint(basis, hole.u0, hole.v1, basis.thickness + eps)
-        val segments = mutableListOf(
-            p0 to p1,
-            p1 to p2,
-            p2 to p3,
-            p3 to p0
-        )
+        val edgeEps = 1e-4f
+        val uMin = min(0f, basis.sizeU)
+        val uMax = max(0f, basis.sizeU)
+        val vMin = min(0f, basis.sizeV)
+        val vMax = max(0f, basis.sizeV)
+        val segments = mutableListOf<Pair<Vector3, Vector3>>()
+        if (abs(hole.v0 - vMin) > edgeEps) {
+            segments.add(p0 to p1)
+        }
+        if (abs(hole.u1 - uMax) > edgeEps) {
+            segments.add(p1 to p2)
+        }
+        if (abs(hole.v1 - vMax) > edgeEps) {
+            segments.add(p2 to p3)
+        }
+        if (abs(hole.u0 - uMin) > edgeEps) {
+            segments.add(p3 to p0)
+        }
         if (includeDiagonals) {
             segments.add(p0 to p2)
             segments.add(p1 to p3)
@@ -5748,8 +5780,13 @@ class GroupScene(
         return Vector3(point).sub(closest).len2()
     }
 
-    private fun frameSelectionBasis(frame: ArchitectureStore.Frame): FrameSelectionBasis? {
-        val normal = Vector3(frame.normal)
+    private fun buildFrameSelectionBasis(
+        cornerA: Vector3,
+        cornerB: Vector3,
+        normalInput: Vector3,
+        depth: Float
+    ): FrameSelectionBasis? {
+        val normal = Vector3(normalInput)
         if (normal.len2() <= 1e-6f) {
             normal.set(0f, 1f, 0f)
         } else {
@@ -5772,9 +5809,8 @@ class GroupScene(
             return null
         }
         axisV.nor()
-
-        val origin = Vector3(frame.cornerA)
-        val delta = Vector3(frame.cornerB).sub(origin)
+        val origin = Vector3(cornerA)
+        val delta = Vector3(cornerB).sub(origin)
         var uLen = delta.dot(axisU)
         var vLen = delta.dot(axisV)
         if (abs(uLen) <= 0.01f || abs(vLen) <= 0.01f) {
@@ -5799,8 +5835,228 @@ class GroupScene(
             vMin = min(0f, vLen),
             vMax = max(0f, vLen),
             nMin = 0f,
-            nMax = frame.depth.coerceAtLeast(0.01f)
+            nMax = depth.coerceAtLeast(0.01f)
         )
+    }
+
+    private fun frameSelectionBasis(frame: ArchitectureStore.Frame): FrameSelectionBasis? {
+        val base = buildFrameSelectionBasis(frame.cornerA, frame.cornerB, frame.normal, frame.depth) ?: return null
+        if (frame.contour.size < 3) {
+            return base
+        }
+        var uMin = Float.POSITIVE_INFINITY
+        var uMax = Float.NEGATIVE_INFINITY
+        var vMin = Float.POSITIVE_INFINITY
+        var vMax = Float.NEGATIVE_INFINITY
+        frame.contour.forEach { point ->
+            val rel = Vector3(point).sub(base.origin)
+            val u = rel.dot(base.axisU)
+            val v = rel.dot(base.axisV)
+            uMin = min(uMin, u)
+            uMax = max(uMax, u)
+            vMin = min(vMin, v)
+            vMax = max(vMax, v)
+        }
+        if (!uMin.isFinite() || !uMax.isFinite() || !vMin.isFinite() || !vMax.isFinite()) {
+            return base
+        }
+        return base.copy(
+            uMin = uMin,
+            uMax = uMax,
+            vMin = vMin,
+            vMax = vMax
+        )
+    }
+
+    private fun framePoint(basis: FrameSelectionBasis, u: Float, v: Float, depth: Float = 0f): Vector3 {
+        return Vector3(basis.origin)
+            .mulAdd(basis.axisU, u)
+            .mulAdd(basis.axisV, v)
+            .mulAdd(basis.normal, depth)
+    }
+
+    private fun frameContourProjected(frame: ArchitectureStore.Frame, basis: FrameSelectionBasis): List<FloatArray> {
+        if (frame.contour.size >= 3) {
+            return frame.contour.map { point ->
+                val rel = Vector3(point).sub(basis.origin)
+                floatArrayOf(rel.dot(basis.axisU), rel.dot(basis.axisV))
+            }
+        }
+        return listOf(
+            floatArrayOf(basis.uMin, basis.vMin),
+            floatArrayOf(basis.uMax, basis.vMin),
+            floatArrayOf(basis.uMax, basis.vMax),
+            floatArrayOf(basis.uMin, basis.vMax)
+        )
+    }
+
+    private fun frameProjectedToWorld(
+        basis: FrameSelectionBasis,
+        points: List<FloatArray>,
+        depth: Float = 0f
+    ): List<Vector3> {
+        return points.map { point -> framePoint(basis, point[0], point[1], depth) }
+    }
+
+    private fun polygonSignedArea2d(points: List<FloatArray>): Float {
+        var area = 0f
+        for (i in points.indices) {
+            val a = points[i]
+            val b = points[(i + 1) % points.size]
+            area += a[0] * b[1] - b[0] * a[1]
+        }
+        return area * 0.5f
+    }
+
+    private fun normalize2d(x: Float, y: Float): FloatArray? {
+        val len = sqrt(x * x + y * y)
+        if (len <= 1e-6f) {
+            return null
+        }
+        return floatArrayOf(x / len, y / len)
+    }
+
+    private fun intersectLines2d(
+        p0x: Float,
+        p0y: Float,
+        d0x: Float,
+        d0y: Float,
+        p1x: Float,
+        p1y: Float,
+        d1x: Float,
+        d1y: Float
+    ): FloatArray? {
+        val det = d0x * d1y - d0y * d1x
+        if (abs(det) <= 1e-6f) {
+            return null
+        }
+        val dx = p1x - p0x
+        val dy = p1y - p0y
+        val t = (dx * d1y - dy * d1x) / det
+        return floatArrayOf(p0x + d0x * t, p0y + d0y * t)
+    }
+
+    private fun insetClosedPolygon(points: List<FloatArray>, inset: Float): List<FloatArray>? {
+        if (points.size < 3) {
+            return null
+        }
+        val signedArea = polygonSignedArea2d(points)
+        if (abs(signedArea) <= 1e-6f) {
+            return null
+        }
+        val orientation = if (signedArea > 0f) 1f else -1f
+        val result = mutableListOf<FloatArray>()
+        for (i in points.indices) {
+            val prev = points[(i - 1 + points.size) % points.size]
+            val curr = points[i]
+            val next = points[(i + 1) % points.size]
+            val dirPrev = normalize2d(curr[0] - prev[0], curr[1] - prev[1]) ?: return null
+            val dirNext = normalize2d(next[0] - curr[0], next[1] - curr[1]) ?: return null
+            val nPrev = floatArrayOf(-dirPrev[1] * orientation, dirPrev[0] * orientation)
+            val nNext = floatArrayOf(-dirNext[1] * orientation, dirNext[0] * orientation)
+            val offsetPrevX = curr[0] + nPrev[0] * inset
+            val offsetPrevY = curr[1] + nPrev[1] * inset
+            val offsetNextX = curr[0] + nNext[0] * inset
+            val offsetNextY = curr[1] + nNext[1] * inset
+            val intersect = intersectLines2d(
+                offsetPrevX, offsetPrevY, dirPrev[0], dirPrev[1],
+                offsetNextX, offsetNextY, dirNext[0], dirNext[1]
+            )
+            val point = intersect ?: run {
+                val miterX = nPrev[0] + nNext[0]
+                val miterY = nPrev[1] + nNext[1]
+                val miter = normalize2d(miterX, miterY)
+                if (miter == null) {
+                    floatArrayOf(offsetPrevX, offsetPrevY)
+                } else {
+                    val denom = miter[0] * nPrev[0] + miter[1] * nPrev[1]
+                    if (abs(denom) <= 1e-4f) {
+                        floatArrayOf(offsetPrevX, offsetPrevY)
+                    } else {
+                        val scale = inset / denom
+                        floatArrayOf(curr[0] + miter[0] * scale, curr[1] + miter[1] * scale)
+                    }
+                }
+            }
+            result.add(point)
+        }
+        if (result.size < 3 || abs(polygonSignedArea2d(result)) <= 1e-6f) {
+            return null
+        }
+        return result
+    }
+
+    private fun triangulateProjectedPolygon(points: List<FloatArray>): List<IntArray> {
+        if (points.size < 3) {
+            return emptyList()
+        }
+        val projected = points.map { floatArrayOf(it[0], it[1]) }
+        var indices = projected.indices.toList()
+        if (polygonSignedArea2d(projected) < 0f) {
+            indices = indices.reversed()
+        }
+        val triangles = mutableListOf<IntArray>()
+        var guard = 0
+        while (indices.size > 2 && guard < 10000) {
+            guard++
+            var earFound = false
+            for (i in indices.indices) {
+                val prev = indices[(i - 1 + indices.size) % indices.size]
+                val curr = indices[i]
+                val next = indices[(i + 1) % indices.size]
+                if (!isConvex2d(projected[prev], projected[curr], projected[next])) {
+                    continue
+                }
+                if (containsPointInTriangle2d(projected, indices, prev, curr, next)) {
+                    continue
+                }
+                triangles.add(intArrayOf(prev, curr, next))
+                indices = indices.toMutableList().also { it.removeAt(i) }
+                earFound = true
+                break
+            }
+            if (!earFound) {
+                break
+            }
+        }
+        return triangles
+    }
+
+    private fun isConvex2d(a: FloatArray, b: FloatArray, c: FloatArray): Boolean {
+        val cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+        return cross > 1e-6f
+    }
+
+    private fun containsPointInTriangle2d(
+        points: List<FloatArray>,
+        indices: List<Int>,
+        prev: Int,
+        curr: Int,
+        next: Int
+    ): Boolean {
+        val a = points[prev]
+        val b = points[curr]
+        val c = points[next]
+        val area = abs(triangleArea2d(a, b, c))
+        for (idx in indices) {
+            if (idx == prev || idx == curr || idx == next) {
+                continue
+            }
+            val p = points[idx]
+            val a1 = abs(triangleArea2d(p, b, c))
+            val a2 = abs(triangleArea2d(a, p, c))
+            val a3 = abs(triangleArea2d(a, b, p))
+            if (abs(area - (a1 + a2 + a3)) < 1e-4f) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun triangleArea2d(a: FloatArray, b: FloatArray, c: FloatArray): Float {
+        return (a[0] * (b[1] - c[1]) +
+            b[0] * (c[1] - a[1]) +
+            c[0] * (a[1] - b[1])) * 0.5f
     }
 
     private fun rangeDistance(value: Float, minValue: Float, maxValue: Float): Float {
@@ -5808,6 +6064,37 @@ class GroupScene(
             value < minValue -> minValue - value
             value > maxValue -> value - maxValue
             else -> 0f
+        }
+    }
+
+    private fun rescaleFrameContour(
+        frame: ArchitectureStore.Frame,
+        newCornerA: Vector3,
+        newCornerB: Vector3
+    ): List<Vector3>? {
+        if (frame.contour.size < 3) {
+            return emptyList()
+        }
+        val oldBasis = frameSelectionBasis(frame) ?: return null
+        val newBasis = buildFrameSelectionBasis(newCornerA, newCornerB, frame.normal, frame.depth) ?: return null
+        val oldWidth = oldBasis.uMax - oldBasis.uMin
+        val oldHeight = oldBasis.vMax - oldBasis.vMin
+        val newWidth = newBasis.uMax - newBasis.uMin
+        val newHeight = newBasis.vMax - newBasis.vMin
+        if (oldWidth <= 1e-6f || oldHeight <= 1e-6f || newWidth <= 1e-6f || newHeight <= 1e-6f) {
+            return null
+        }
+        return frame.contour.map { point ->
+            val rel = Vector3(point).sub(oldBasis.origin)
+            val u = rel.dot(oldBasis.axisU)
+            val v = rel.dot(oldBasis.axisV)
+            val tu = (u - oldBasis.uMin) / oldWidth
+            val tv = (v - oldBasis.vMin) / oldHeight
+            framePoint(
+                newBasis,
+                newBasis.uMin + tu * newWidth,
+                newBasis.vMin + tv * newHeight
+            )
         }
     }
 
@@ -5821,10 +6108,10 @@ class GroupScene(
     ) {
         val basis = wallBasis(wall) ?: return
         val holes = wall.holes.map { hole ->
-            val u0 = min(hole.u0, hole.u1).coerceIn(0.01f, basis.length - 0.01f)
-            val u1 = max(hole.u0, hole.u1).coerceIn(0.01f, basis.length - 0.01f)
-            val v0 = min(hole.v0, hole.v1).coerceIn(0.01f, wall.height - 0.01f)
-            val v1 = max(hole.v0, hole.v1).coerceIn(0.01f, wall.height - 0.01f)
+            val u0 = min(hole.u0, hole.u1).coerceIn(0f, basis.length)
+            val u1 = max(hole.u0, hole.u1).coerceIn(0f, basis.length)
+            val v0 = min(hole.v0, hole.v1).coerceIn(0f, wall.height)
+            val v1 = max(hole.v0, hole.v1).coerceIn(0f, wall.height)
             ArchitectureStore.RectHole(hole.id, hole.name, u0, u1, v0, v1)
         }.filter { it.u1 - it.u0 > 0.02f && it.v1 - it.v0 > 0.02f }
 
@@ -5969,10 +6256,10 @@ class GroupScene(
             return
         }
         val holes = slab.holes.map { hole ->
-            val hu0 = min(hole.u0, hole.u1).coerceIn(uMin + 0.01f, uMax - 0.01f)
-            val hu1 = max(hole.u0, hole.u1).coerceIn(uMin + 0.01f, uMax - 0.01f)
-            val hv0 = min(hole.v0, hole.v1).coerceIn(vMin + 0.01f, vMax - 0.01f)
-            val hv1 = max(hole.v0, hole.v1).coerceIn(vMin + 0.01f, vMax - 0.01f)
+            val hu0 = min(hole.u0, hole.u1).coerceIn(uMin, uMax)
+            val hu1 = max(hole.u0, hole.u1).coerceIn(uMin, uMax)
+            val hv0 = min(hole.v0, hole.v1).coerceIn(vMin, vMax)
+            val hv1 = max(hole.v0, hole.v1).coerceIn(vMin, vMax)
             ArchitectureStore.RectHole(hole.id, hole.name, hu0, hu1, hv0, hv1)
         }.filter { it.u1 - it.u0 > 0.02f && it.v1 - it.v0 > 0.02f }
 
@@ -6854,89 +7141,77 @@ class GroupScene(
         frame: ArchitectureStore.Frame,
         color: Color
     ) {
-        val normal = Vector3(frame.normal)
-        if (normal.len2() <= 1e-6f) {
-            normal.set(0f, 1f, 0f)
-        } else {
-            normal.nor()
-        }
-        var axisU = if (abs(normal.y) < 0.9f) {
-            Vector3(0f, 1f, 0f).crs(normal)
-        } else {
-            Vector3(1f, 0f, 0f).crs(normal)
-        }
-        if (axisU.len2() <= 1e-6f) {
-            axisU = Vector3(0f, 0f, 1f).crs(normal)
-        }
-        if (axisU.len2() <= 1e-6f) {
+        val basis = frameSelectionBasis(frame) ?: return
+        val outerProjected = frameContourProjected(frame, basis)
+        if (outerProjected.size < 3) {
             return
         }
-        axisU.nor()
-
-        var axisV = Vector3(normal).crs(axisU)
-        if (axisV.len2() <= 1e-6f) {
+        val signedArea = polygonSignedArea2d(outerProjected)
+        if (abs(signedArea) <= 1e-6f) {
             return
         }
-        axisV.nor()
-
-        val origin = Vector3(frame.cornerA)
-        val delta = Vector3(frame.cornerB).sub(origin)
-        var uLen = delta.dot(axisU)
-        var vLen = delta.dot(axisV)
-
-        // If the initial basis collapses one extent, align U on the rectangle diagonal projection.
-        if (abs(uLen) <= 0.01f || abs(vLen) <= 0.01f) {
-            val diagProjected = Vector3(delta).sub(Vector3(normal).scl(delta.dot(normal)))
-            if (diagProjected.len2() > 1e-6f) {
-                axisU = diagProjected.nor()
-                axisV = Vector3(normal).crs(axisU).nor()
-                uLen = delta.dot(axisU)
-                vLen = delta.dot(axisV)
+        val outerWorld = frameProjectedToWorld(basis, outerProjected)
+        val minExtent = run {
+            var minX = Float.POSITIVE_INFINITY
+            var maxX = Float.NEGATIVE_INFINITY
+            var minY = Float.POSITIVE_INFINITY
+            var maxY = Float.NEGATIVE_INFINITY
+            outerProjected.forEach { point ->
+                minX = min(minX, point[0])
+                maxX = max(maxX, point[0])
+                minY = min(minY, point[1])
+                maxY = max(maxY, point[1])
             }
+            min(maxX - minX, maxY - minY)
         }
-        if (abs(uLen) <= 0.01f || abs(vLen) <= 0.01f) {
-            return
-        }
-
-        val uMin = min(0f, uLen)
-        val uMax = max(0f, uLen)
-        val vMin = min(0f, vLen)
-        val vMax = max(0f, vLen)
-        val minExtent = min(uMax - uMin, vMax - vMin)
-        val width = frame.frameWidth.coerceAtLeast(0.01f).coerceAtMost(minExtent * 0.45f)
-        val iuMin = uMin + width
-        val iuMax = uMax - width
-        val ivMin = vMin + width
-        val ivMax = vMax - width
-        if (iuMax - iuMin <= 0.01f || ivMax - ivMin <= 0.01f) {
-            return
-        }
-
-        fun framePoint(u: Float, v: Float): Vector3 {
-            return Vector3(origin).mulAdd(axisU, u).mulAdd(axisV, v)
-        }
-
-        val a = framePoint(uMin, vMin)
-        val b = framePoint(uMax, vMin)
-        val c = framePoint(uMax, vMax)
-        val d = framePoint(uMin, vMax)
-        val ia = framePoint(iuMin, ivMin)
-        val ib = framePoint(iuMax, ivMin)
-        val ic = framePoint(iuMax, ivMax)
-        val id = framePoint(iuMin, ivMax)
-
+        val inset = frame.frameWidth.coerceAtLeast(0.01f).coerceAtMost(minExtent * 0.45f)
+        val innerProjected = insetClosedPolygon(outerProjected, inset) ?: return
+        val innerWorld = frameProjectedToWorld(basis, innerProjected)
+        val normal = Vector3(basis.normal).nor()
+        val backNormal = Vector3(normal).scl(-1f)
         val depth = frame.depth.coerceAtLeast(0.01f)
-        appendPrismFromRect(faceStore, lineStore, a, b, ib, ia, normal, depth, color)
-        appendPrismFromRect(faceStore, lineStore, b, c, ic, ib, normal, depth, color)
-        appendPrismFromRect(faceStore, lineStore, id, ic, c, d, normal, depth, color)
-        appendPrismFromRect(faceStore, lineStore, a, ia, id, d, normal, depth, color)
+        val areaPositive = signedArea > 0f
+
+        for (i in outerWorld.indices) {
+            val next = (i + 1) % outerWorld.size
+            val o0 = outerWorld[i]
+            val o1 = outerWorld[next]
+            val i1 = innerWorld[next]
+            val i0 = innerWorld[i]
+            val o0b = Vector3(o0).mulAdd(normal, depth)
+            val o1b = Vector3(o1).mulAdd(normal, depth)
+            val i1b = Vector3(i1).mulAdd(normal, depth)
+            val i0b = Vector3(i0).mulAdd(normal, depth)
+
+            addQuad(faceStore, lineStore, o0, o1, i1, i0, backNormal, color)
+            addQuad(faceStore, lineStore, o0b, i0b, i1b, o1b, normal, color)
+
+            val edgeDir = Vector3(o1).sub(o0)
+            val outerNormal = if (areaPositive) {
+                Vector3(edgeDir).crs(normal).nor()
+            } else {
+                Vector3(normal).crs(edgeDir).nor()
+            }
+            addQuad(faceStore, lineStore, o0, o0b, o1b, o1, outerNormal, color)
+
+            val innerEdgeDir = Vector3(i1).sub(i0)
+            val innerNormal = if (areaPositive) {
+                Vector3(normal).crs(innerEdgeDir).nor()
+            } else {
+                Vector3(innerEdgeDir).crs(normal).nor()
+            }
+            addQuad(faceStore, lineStore, i0, i1, i1b, i0b, innerNormal, color)
+        }
+
         if (frame.glazingEnabled) {
-            val panelOffset = depth * 0.5f
-            val ga = Vector3(ia).mulAdd(normal, panelOffset)
-            val gb = Vector3(ib).mulAdd(normal, panelOffset)
-            val gc = Vector3(ic).mulAdd(normal, panelOffset)
-            val gd = Vector3(id).mulAdd(normal, panelOffset)
-            addDoubleSidedQuad(faceStore, lineStore, ga, gb, gc, gd, frame.glazingColor)
+            val panelWorld = innerProjected.map { point -> framePoint(basis, point[0], point[1], depth * 0.5f) }
+            triangulateProjectedPolygon(innerProjected).forEach { tri ->
+                val a = panelWorld[tri[0]]
+                val b = panelWorld[tri[1]]
+                val c = panelWorld[tri[2]]
+                faceStore.addTriangle(Vector3(a), Vector3(b), Vector3(c), frame.glazingColor)
+                faceStore.addTriangle(Vector3(a), Vector3(c), Vector3(b), frame.glazingColor)
+            }
         }
     }
 
