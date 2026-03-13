@@ -91,6 +91,15 @@ class RectangleTool(
         }
     }
 
+    override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
+        val start = anchorWorld ?: return emptyList()
+        if (!hasHover) {
+            return emptyList()
+        }
+        val currentBasis = chooseRectangleBasis(start, hover, pickNormalWorld ?: Vector3(0f, 1f, 0f))
+        return pathFeedbackLines(rectangleCorners(start, hover, currentBasis), close = true)
+    }
+
     private fun rectangleCorners(start: Vector3, end: Vector3, basis: PlaneBasis): List<Vector3> {
         val delta = Vector3(end).sub(start)
         val u = delta.dot(basis.axisU)

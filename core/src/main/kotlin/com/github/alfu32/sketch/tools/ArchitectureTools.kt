@@ -227,6 +227,14 @@ class ArchitectureSlabTool(
         drawLoop(renderer, corners, ToolFeedbackColors.SECONDARY)
     }
 
+    override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
+        val first = firstCornerWorld ?: return emptyList()
+        if (!hasHover) {
+            return emptyList()
+        }
+        return pathFeedbackLines(horizontalRectCorners(first, hover), close = true)
+    }
+
     private fun clear() {
         firstCornerWorld = null
         hasHover = false
@@ -335,6 +343,15 @@ class ArchitectureAddHoleTool(
         val basis = chooseRectangleBasis(first, hover, firstNormalWorld ?: Vector3(0f, 1f, 0f))
         val corners = rectangleCorners(first, hover, basis)
         drawLoop(renderer, corners, ToolFeedbackColors.PRIMARY)
+    }
+
+    override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
+        val first = firstCornerWorld ?: return emptyList()
+        if (!hasHover) {
+            return emptyList()
+        }
+        val basis = chooseRectangleBasis(first, hover, firstNormalWorld ?: Vector3(0f, 1f, 0f))
+        return pathFeedbackLines(rectangleCorners(first, hover, basis), close = true)
     }
 
     private fun clear() {

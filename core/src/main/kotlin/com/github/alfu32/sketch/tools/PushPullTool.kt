@@ -112,6 +112,39 @@ class PushPullTool(
         }
     }
 
+    override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
+        if (!hasHover || activeTriangles.isEmpty()) {
+            return emptyList()
+        }
+        val faceNormal = normalLocal ?: return emptyList()
+        val group = scene.activeGroup()
+        val offset = Vector3(faceNormal).scl(currentDistance)
+        val boundaryEdges = collectBoundaryEdges(activeTriangles)
+        val verticalKeys = mutableSetOf<VertexKey>()
+        val out = mutableListOf<Pair<Vector3, Vector3>>()
+        boundaryEdges.forEach { edge ->
+            val aLocal = edge.from
+            val bLocal = edge.to
+            val apLocal = Vector3(aLocal).add(offset)
+            val bpLocal = Vector3(bLocal).add(offset)
+            val a = group.toWorld(aLocal)
+            val b = group.toWorld(bLocal)
+            val ap = group.toWorld(apLocal)
+            val bp = group.toWorld(bpLocal)
+            out += a to b
+            out += ap to bp
+            val aKey = vertexKey(a)
+            val bKey = vertexKey(b)
+            if (verticalKeys.add(aKey)) {
+                out += a to ap
+            }
+            if (verticalKeys.add(bKey)) {
+                out += b to bp
+            }
+        }
+        return out
+    }
+
     private fun commitExtrusion(faceNormal: Vector3, distance: Float) {
         if (activeTriangles.isEmpty() || kotlin.math.abs(distance) <= 1e-4f) {
             return

@@ -118,6 +118,17 @@ class QuadTool(
         renderer.line(c.x, c.y, c.z, a.x, a.y, a.z)
     }
 
+    override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
+        val a = originWorld ?: return emptyList()
+        if (!hasHover) {
+            return emptyList()
+        }
+        val b = pointBWorld ?: return listOf(a to Vector3(hover))
+        val c = Vector3(hover)
+        val d = Vector3(b).add(Vector3(c).sub(a))
+        return pathFeedbackLines(listOf(Vector3(a), Vector3(b), d, c), close = true)
+    }
+
     private fun clearTransient() {
         originWorld = null
         pointBWorld = null

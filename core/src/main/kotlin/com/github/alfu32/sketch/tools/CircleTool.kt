@@ -78,6 +78,19 @@ class CircleTool(
         }
     }
 
+    override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
+        val c = centerWorld ?: return emptyList()
+        val currentBasis = basis ?: return emptyList()
+        if (!hasHover) {
+            return emptyList()
+        }
+        val radius = radiusOnPlane(c, hover, currentBasis)
+        if (radius <= 0f) {
+            return emptyList()
+        }
+        return pathFeedbackLines(circlePoints(c, currentBasis, radius, 24), close = true)
+    }
+
     private fun radiusOnPlane(center: Vector3, point: Vector3, basis: PlaneBasis): Float {
         val delta = Vector3(point).sub(center)
         val u = delta.dot(basis.axisU)

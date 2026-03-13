@@ -96,6 +96,16 @@ class SurfaceRectangleTool(
         }
     }
 
+    override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
+        val start = anchorWorld ?: return emptyList()
+        val u = axisUWorld ?: return emptyList()
+        val v = axisVWorld ?: return emptyList()
+        if (!hasHover) {
+            return emptyList()
+        }
+        return pathFeedbackLines(rectangleCorners(start, hover, u, v), close = true)
+    }
+
     private fun rectangleCorners(start: Vector3, end: Vector3, axisU: Vector3, axisV: Vector3): List<Vector3> {
         val delta = Vector3(end).sub(start)
         val u = delta.dot(axisU)

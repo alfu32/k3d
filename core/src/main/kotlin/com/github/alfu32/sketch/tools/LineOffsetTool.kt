@@ -108,6 +108,39 @@ class LineOffsetTool(
         renderer.line(start.x, start.y, start.z, hover.x, hover.y, hover.z)
     }
 
+    override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
+        if (!hasHover) {
+            return emptyList()
+        }
+        val start = referenceWorld ?: return emptyList()
+        val group = scene.activeGroup()
+        val selected = group.lineStore.getSelected().toList()
+        if (selected.isEmpty()) {
+            return listOf(Vector3(start) to Vector3(hover))
+        }
+        val out = mutableListOf<Pair<Vector3, Vector3>>()
+        out += Vector3(start) to Vector3(hover)
+        collectComponents(selected).forEach { component ->
+            val ordered = orderSegments(component)
+            if (ordered.points.size < 2) {
+                return@forEach
+            }
+            val (offsetPoints, _) = offsetPathFor(component, ordered.points, ordered.closed, Vector3(hover).sub(start))
+            if (offsetPoints.isEmpty()) {
+                return@forEach
+            }
+            val baseWorld = ordered.points.map { group.toWorld(it) }
+            val offsetWorld = offsetPoints.map { group.toWorld(it) }
+            appendPathFeedbackLines(out, baseWorld, ordered.closed)
+            appendPathFeedbackLines(out, offsetWorld, ordered.closed)
+            val limit = minOf(baseWorld.size, offsetWorld.size)
+            for (i in 0 until limit) {
+                out += baseWorld[i] to offsetWorld[i]
+            }
+        }
+        return out
+    }
+
     private fun addStripFaces(
         group: GroupScene.GroupNode,
         a: Vector3,

@@ -255,6 +255,20 @@ class ExtrudeSwipeTool(
         }
     }
 
+    override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
+        val group = scene.activeGroup()
+        val out = mutableListOf<Pair<Vector3, Vector3>>()
+        sourceSegments.forEach { segment ->
+            out += group.toWorld(segment.start) to group.toWorld(segment.end)
+        }
+        if (pathLocal.isEmpty()) {
+            return out
+        }
+        val points = previewPathPoints()
+        appendPathFeedbackLines(out, points.map { group.toWorld(it) })
+        return out
+    }
+
     private fun commitSwipe(): Int {
         val group = scene.activeGroup()
         val path = dedupePath(pathLocal)
@@ -324,6 +338,26 @@ class ExtrudeSwipeTool(
         }
 
         return generatedFaces
+    }
+
+    private fun previewPathPoints(): List<Vector3> {
+        if (pathLocal.isEmpty()) {
+            return emptyList()
+        }
+        if (!hasHover) {
+            return pathLocal.map { Vector3(it) }
+        }
+        val preview = when {
+            arcMode == ArcMode.CENTER && arcCenterLocal != null ->
+                arcPointsFromCenter(pathLocal.last(), hoverLocal, arcCenterLocal!!)
+            arcMode == ArcMode.THREE && arcPass1Local != null ->
+                arcPointsThrough(pathLocal.last(), arcPass1Local!!, hoverLocal)
+            else -> listOf(pathLocal.last(), hoverLocal)
+        }
+        return buildList {
+            addAll(pathLocal.map { Vector3(it) })
+            addAll(preview.drop(1).map { Vector3(it) })
+        }
     }
 
     private fun addQuad(

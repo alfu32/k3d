@@ -177,6 +177,19 @@ class PolylineToolInternal(
         }
     }
 
+    override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
+        if (pointsLocal.isEmpty()) {
+            return emptyList()
+        }
+        val group = scene.activeGroup()
+        val points = previewPolylinePoints()
+        if (points.isEmpty()) {
+            return emptyList()
+        }
+        val closeLoop = closed || (hasHover && arcMode == ArcMode.LINE && isClosing(hoverLocal) && points.size >= 3)
+        return pathFeedbackLines(points.map { group.toWorld(it) }, closeLoop)
+    }
+
     private fun clear() {
         pointsLocal.clear()
         arcMode = ArcMode.LINE
@@ -191,6 +204,31 @@ class PolylineToolInternal(
             return false
         }
         return pointsLocal.first().dst(candidate) <= closeDistance
+    }
+
+    private fun previewPolylinePoints(): List<Vector3> {
+        if (pointsLocal.isEmpty()) {
+            return emptyList()
+        }
+        if (!hasHover) {
+            return pointsLocal.map { Vector3(it) }
+        }
+        val preview = when {
+            arcMode == ArcMode.CENTER && arcCenterLocal != null ->
+                arcPointsFromCenter(pointsLocal.last(), hoverLocal, arcCenterLocal!!)
+            arcMode == ArcMode.THREE && arcPass1Local != null ->
+                arcPointsThrough(pointsLocal.last(), arcPass1Local!!, hoverLocal)
+            arcMode == ArcMode.LINE && !isClosing(hoverLocal) ->
+                listOf(pointsLocal.last(), hoverLocal)
+            else -> null
+        }
+        if (preview.isNullOrEmpty()) {
+            return pointsLocal.map { Vector3(it) }
+        }
+        return buildList {
+            addAll(pointsLocal.map { Vector3(it) })
+            addAll(preview.drop(1).map { Vector3(it) })
+        }
     }
 
     private fun finalizePolyline(group: GroupScene.GroupNode) {
@@ -620,6 +658,24 @@ class DoubleLineToolInternal(
         }
     }
 
+    override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
+        if (pointsLocal.isEmpty()) {
+            return emptyList()
+        }
+        val group = scene.activeGroup()
+        val renderPoints = previewRibbonPoints()
+        if (renderPoints.size < 2) {
+            return emptyList()
+        }
+        val left = buildOffsetPath(renderPoints, offsetA(), closed)
+        val right = buildOffsetPath(renderPoints, offsetB(), closed)
+        if (left.isEmpty() || right.isEmpty()) {
+            return emptyList()
+        }
+        val loop = buildLoop(left, right).map { group.toWorld(it) }
+        return pathFeedbackLines(loop, close = true)
+    }
+
     private fun clear() {
         pointsLocal.clear()
         arcMode = ArcMode.LINE
@@ -634,6 +690,26 @@ class DoubleLineToolInternal(
             return false
         }
         return pointsLocal.first().dst(candidate) <= closeDistance
+    }
+
+    private fun previewRibbonPoints(): List<Vector3> {
+        val renderPoints = pointsLocal.map { Vector3(it) }.toMutableList()
+        if (!hasHover || pointsLocal.isEmpty()) {
+            return renderPoints
+        }
+        val preview = when {
+            arcMode == ArcMode.CENTER && arcCenterLocal != null ->
+                arcPointsFromCenter(pointsLocal.last(), hoverLocal, arcCenterLocal!!)
+            arcMode == ArcMode.THREE && arcPass1Local != null ->
+                arcPointsThrough(pointsLocal.last(), arcPass1Local!!, hoverLocal)
+            arcMode == ArcMode.LINE && !isClosing(hoverLocal) ->
+                listOf(pointsLocal.last(), hoverLocal)
+            else -> null
+        }
+        if (!preview.isNullOrEmpty()) {
+            renderPoints.addAll(preview.drop(1).map { Vector3(it) })
+        }
+        return renderPoints
     }
 
     private fun finalizeDoubleLine(group: GroupScene.GroupNode) {
