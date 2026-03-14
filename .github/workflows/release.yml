@@ -27,12 +27,15 @@ jobs:
         with:
           distribution: "temurin"
           java-version: "21"
-      - name: Build Linux bundle
-        run: ./gradlew :lwjgl3:bundleLinuxTar -PreleaseNumber="${{ inputs.tag }}"
+      - name: Build Linux bundle + JVM jars
+        run: ./gradlew :lwjgl3:bundleLinuxTar :lwjgl3:jarLinux :core:pluginApiJar -PreleaseNumber="${{ inputs.tag }}"
       - uses: actions/upload-artifact@v4
         with:
           name: octodraw-linux
-          path: dist/*.tar.gz
+          path: |
+            dist/*.tar.gz
+            lwjgl3/build/libs/*.jar
+            core/build/libs/octodraw-plugin*.jar
 
   build-windows:
     runs-on: windows-latest
@@ -354,7 +357,7 @@ jobs:
           else
             gh release edit "$TAG" --draft="$DRAFT" --prerelease="$PRERELEASE"
           fi
-          files=$(find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.msi" -o -name "*.msix" -o -name "*.apk" -o -name "*.aab" \))
+          files=$(find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.jar" -o -name "*.msi" -o -name "*.msix" -o -name "*.apk" -o -name "*.aab" \))
           if [ -z "$files" ]; then
             echo "No release artifacts found."
             exit 1
