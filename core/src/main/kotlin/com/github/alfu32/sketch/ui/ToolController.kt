@@ -8,6 +8,7 @@ class ToolController(
     tools: List<Tool>
 ) {
     private val toolMap = tools.associateBy { it.id }.toMutableMap()
+    private val toolChangeListeners = mutableListOf<(ToolId, ToolId) -> Unit>()
     private var activeTool: Tool = toolMap[ToolId.SELECT]
         ?: error("Select tool is required")
 
@@ -19,6 +20,7 @@ class ToolController(
     fun setTool(id: ToolId) {
         val next = toolMap[id] ?: return
         if (next == activeTool) return
+        val previousId = activeTool.id
         activeTool.onExit(status)
         activeTool = next
         status.activeTool = activeTool.id
@@ -29,6 +31,7 @@ class ToolController(
         if (activeTool.supportsCopyMode()) {
             activeTool.onCopyModeChanged(status, status.copyMode)
         }
+        toolChangeListeners.forEach { it.invoke(previousId, activeTool.id) }
     }
 
     fun resetToDefault() {
@@ -45,6 +48,10 @@ class ToolController(
 
     fun registerTool(tool: Tool) {
         toolMap[tool.id] = tool
+    }
+
+    fun addToolChangeListener(listener: (ToolId, ToolId) -> Unit) {
+        toolChangeListeners += listener
     }
 
     fun cancelActiveTool() {

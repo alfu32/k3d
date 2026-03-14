@@ -134,6 +134,9 @@ import com.github.alfu32.sketch.tools.VectorGlyphCatalog
 import com.github.alfu32.sketch.tools.VoxelFrameTool
 import com.github.alfu32.sketch.tools.VoxelTool
 import com.github.alfu32.sketch.tools.VoxelVolumeTool
+import com.github.alfu32.sketch.tutorial.TutorialManager
+import com.github.alfu32.sketch.tutorial.TutorialMode
+import com.github.alfu32.sketch.tutorial.TutorialUiState
 import com.github.alfu32.sketch.ui.SketchUiOverlay
 import com.github.alfu32.sketch.ui.LightingSettings
 import com.github.alfu32.sketch.ui.CameraMode
@@ -154,6 +157,7 @@ import java.io.FilenameFilter
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.EnumMap
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import javax.swing.JOptionPane
 import java.util.concurrent.TimeUnit
@@ -330,6 +334,7 @@ class Main(
     private var shadowUseCsm = true
     private lateinit var shadowSettings: ShadowSettings
     private lateinit var pluginHost: PluginHost
+    private lateinit var tutorialManager: TutorialManager
     private val architectureDisplayState = EnumMap<ArchitectureStore.ElementKind, EntityDisplayState>(ArchitectureStore.ElementKind::class.java).apply {
         put(ArchitectureStore.ElementKind.WALL, EntityDisplayState())
         put(ArchitectureStore.ElementKind.SLAB, EntityDisplayState())
@@ -587,6 +592,7 @@ class Main(
         orthoCameraController = OrthographicCameraController(orthoCamera, cameraTarget)
         setCameraMode(CameraMode.ORBIT)
         installDir = resolveInstallDir()
+        tutorialManager = TutorialManager { resolveTutorialsDir(installDir) }
         statusModel = StatusModel(
             activeTool = ToolId.SELECT,
             message = "Select entities.",
@@ -765,6 +771,23 @@ class Main(
             )
             toolController.registerTool(PluginToolAdapter(pluginHost))
         }
+        toolController.addToolChangeListener { previous, next ->
+            if (BuildFlags.WEB_BUILD) {
+                return@addToolChangeListener
+            }
+            if (previous != ToolId.SELECT) {
+                tutorialManager.observeAction(
+                    "tool.end.${previous.name.lowercase(Locale.US)}",
+                    previous.displayName
+                )
+            }
+            if (next != ToolId.SELECT) {
+                tutorialManager.observeAction(
+                    "tool.start.${next.name.lowercase(Locale.US)}",
+                    next.displayName
+                )
+            }
+        }
         uiOverlay = SketchUiOverlay(
             toolController,
             statusModel,
@@ -832,7 +855,15 @@ class Main(
             ::beginHotspotReferencePick,
             ::clearHotspotReference,
             { activeCameraMode },
-            ::setCameraMode
+            ::setCameraMode,
+            ::tutorialUiState,
+            ::startTutorialRecording,
+            ::stopTutorialRecording,
+            ::playTutorial,
+            ::toggleTutorialPause,
+            ::stopTutorialPlayback,
+            ::advanceTutorialStep,
+            ::observeTutorialUiAction
         )
 
         if (!BuildFlags.WEB_BUILD && !webSafeRuntime) {
@@ -6943,6 +6974,109 @@ class Main(
             fallback.mkdirs()
         }
         return fallback
+    }
+
+    private fun resolveTutorialsDir(installDir: java.io.File): java.io.File {
+        val packagedDir = java.io.File(installDir, "tutorials").absoluteFile
+        if (isDirectoryWritable(packagedDir)) {
+            return packagedDir
+        }
+        val fallback = java.io.File(resolveDesktopWritableDataDir(), "tutorials").absoluteFile
+        if (!fallback.exists()) {
+            fallback.mkdirs()
+        }
+        return fallback
+    }
+
+    private fun tutorialUiState(): TutorialUiState {
+        if (BuildFlags.WEB_BUILD) {
+            return TutorialUiState()
+        }
+        return tutorialManager.uiState()
+    }
+
+    private fun startTutorialRecording() {
+        if (BuildFlags.WEB_BUILD) {
+            statusModel.message = "Tutorial recording is unavailable in web builds."
+            return
+        }
+        val file = tutorialManager.startRecording()
+        statusModel.message = "Recording tutorial: ${file.name}"
+    }
+
+    private fun stopTutorialRecording() {
+        if (BuildFlags.WEB_BUILD) {
+            statusModel.message = "Tutorial recording is unavailable in web builds."
+            return
+        }
+        val file = tutorialManager.stopRecording()
+        statusModel.message = if (file != null) {
+            "Saved tutorial: ${file.name}"
+        } else {
+            "Tutorial recording stopped."
+        }
+    }
+
+    private fun playTutorial(path: String?) {
+        if (BuildFlags.WEB_BUILD) {
+            statusModel.message = "Tutorial playback is unavailable in web builds."
+            return
+        }
+        if (path.isNullOrBlank()) {
+            statusModel.message = "Select a tutorial to play."
+            return
+        }
+        if (tutorialManager.startPlayback(path)) {
+            statusModel.message = "Playing tutorial: ${java.io.File(path).name}"
+        } else {
+            statusModel.message = "Unable to load tutorial: ${java.io.File(path).name}"
+        }
+    }
+
+    private fun toggleTutorialPause() {
+        if (BuildFlags.WEB_BUILD) {
+            statusModel.message = "Tutorial playback is unavailable in web builds."
+            return
+        }
+        tutorialManager.togglePausePlayback()
+        statusModel.message = when (tutorialManager.uiState().mode) {
+            TutorialMode.PAUSED -> "Tutorial paused."
+            TutorialMode.PLAYING -> "Tutorial resumed."
+            else -> statusModel.message
+        }
+    }
+
+    private fun stopTutorialPlayback() {
+        if (BuildFlags.WEB_BUILD) {
+            statusModel.message = "Tutorial playback is unavailable in web builds."
+            return
+        }
+        tutorialManager.stopPlayback()
+        statusModel.message = "Tutorial stopped."
+    }
+
+    private fun advanceTutorialStep() {
+        if (BuildFlags.WEB_BUILD) {
+            statusModel.message = "Tutorial playback is unavailable in web builds."
+            return
+        }
+        if (!tutorialManager.markCurrentStepDone()) {
+            statusModel.message = "Perform the expected tutorial action before pressing Done."
+            return
+        }
+        val state = tutorialManager.uiState()
+        statusModel.message = if (state.mode == TutorialMode.IDLE) {
+            "Tutorial complete."
+        } else {
+            "Tutorial step ${state.currentStepIndex}/${state.totalSteps} ready."
+        }
+    }
+
+    private fun observeTutorialUiAction(actionId: String, label: String) {
+        if (BuildFlags.WEB_BUILD) {
+            return
+        }
+        tutorialManager.observeAction(actionId, label)
     }
 
     private fun resolveDesktopWritableDataDir(): java.io.File {
