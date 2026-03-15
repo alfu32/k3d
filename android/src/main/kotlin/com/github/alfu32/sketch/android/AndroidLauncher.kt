@@ -15,11 +15,13 @@ import com.github.alfu32.sketch.AndroidSafBridge
 import com.github.alfu32.sketch.InputModifiers
 import com.github.alfu32.sketch.Main
 import java.io.File
+import java.io.FileOutputStream
 
 class AndroidLauncher : AndroidApplication() {
     private companion object {
         const val REQUEST_OPEN_DOCUMENT = 48011
         const val REQUEST_CREATE_DOCUMENT = 48012
+        const val BUNDLED_CONTENT_VERSION_FILE = ".bundled_content_version"
     }
 
     private var openDocumentCallback: ((String?, String?) -> Unit)? = null
@@ -96,6 +98,69 @@ class AndroidLauncher : AndroidApplication() {
         }
     }
 
+    private fun ensureBundledContent(appDir: File) {
+        val bundledVersionFile = File(appDir, BUNDLED_CONTENT_VERSION_FILE)
+        val currentVersion = try {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "0"
+        } catch (_: Throwable) {
+            "0"
+        }
+
+        copyAssetTree("bootstrap/tutorials", File(appDir, "tutorials"), overwriteExisting = false)
+        copyAssetTree("bootstrap/scripts", File(appDir, "scripts"), overwriteExisting = false)
+        seedPluginsFromScripts(appDir, overwriteExisting = false)
+
+        bundledVersionFile.writeText(currentVersion)
+    }
+
+    private fun seedPluginsFromScripts(appDir: File, overwriteExisting: Boolean) {
+        val scriptsDir = File(appDir, "scripts").apply { mkdirs() }
+        val pluginsDir = File(appDir, "plugins").apply { mkdirs() }
+        scriptsDir.listFiles { file ->
+            file.isFile &&
+                file.extension.equals("groovy", ignoreCase = true) &&
+                !isHelperScript(file.name)
+        }?.forEach { source ->
+            val target = File(pluginsDir, source.name)
+            if (!target.exists() || overwriteExisting) {
+                source.copyTo(target, overwrite = true)
+            }
+        }
+    }
+
+    private fun isHelperScript(name: String): Boolean {
+        return name.equals("encode_base64.groovy", ignoreCase = true) ||
+            name.equals("polyline.groovy", ignoreCase = true)
+    }
+
+    private fun copyAssetTree(assetPath: String, targetDir: File, overwriteExisting: Boolean) {
+        val entries = assets.list(assetPath) ?: return
+        targetDir.mkdirs()
+        entries.forEach { entry ->
+            val childAssetPath = "$assetPath/$entry"
+            val childEntries = assets.list(childAssetPath) ?: emptyArray()
+            if (childEntries.isNotEmpty()) {
+                copyAssetTree(childAssetPath, File(targetDir, entry), overwriteExisting)
+            } else {
+                copyAssetFile(childAssetPath, File(targetDir, entry), overwriteExisting)
+            }
+        }
+    }
+
+    private fun copyAssetFile(assetPath: String, target: File, overwriteExisting: Boolean) {
+        if (target.exists() && !overwriteExisting) {
+            return
+        }
+        target.parentFile?.mkdirs()
+        assets.open(assetPath).use { input ->
+            FileOutputStream(target, false).use { output ->
+                input.copyTo(output)
+                output.flush()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installSafBridge()
@@ -112,6 +177,7 @@ class AndroidLauncher : AndroidApplication() {
         if (!appDir.exists()) {
             appDir.mkdirs()
         }
+        ensureBundledContent(appDir)
         val pluginsDir = File(appDir, "plugins").apply { mkdirs() }
         val modelFile = File(appDir, "octodraw.octd")
 

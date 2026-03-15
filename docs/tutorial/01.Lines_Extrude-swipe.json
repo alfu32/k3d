@@ -1,0 +1,30 @@
+{
+"name": "01.Lines/Extrude-swipe",
+"createdAt": "2026-03-14T22:27:20.016589473",
+"steps": [
+	{
+		"action": "tool.start.line",
+		"message": "Click the Line button."
+	},
+	{
+		"action": "tool.end.line",
+		"message": "Finish the Line tool.(Escape when you are done drawing)"
+	},
+	{
+		"action": "tool.start.rotate",
+		"message": "Click the Rotate button."
+	},
+	{
+		"action": "tool.end.rotate",
+		"message": "Finish the Rotate tool.(escape/switch to another tool/select-mode)"
+	},
+	{
+		"action": "tool.start.extrude_swipe",
+		"message": "Click the Extrude Swipe button."
+	},
+	{
+		"action": "tool.end.extrude_swipe",
+		"message": "Finish the Extrude Swipe tool."
+	}
+]
+}

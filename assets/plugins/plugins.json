@@ -1,0 +1,12 @@
+{
+"plugins": [
+	{
+		"url": "file:/home/devlin/Development/sketch3d-kt/dist/octodraw-dist-4.5.9-linux/plugins/exporters.groovy",
+		"fileName": "exporters.groovy"
+	},
+	{
+		"url": "file:/home/devlin/Development/sketch3d-kt/dist/octodraw-dist-4.5.9-linux/plugins/examplePlugins.groovy",
+		"fileName": "examplePlugins.groovy"
+	}
+]
+}

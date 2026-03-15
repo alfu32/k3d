@@ -22,6 +22,20 @@ def releaseKeyPassword = (project.findProperty("ANDROID_UPLOAD_KEY_PASSWORD")
   ?: System.getenv("ANDROID_UPLOAD_KEY_PASSWORD"))?.toString()
 def hasReleaseSigning = releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
 
+def androidBundledAssetsDir = layout.buildDirectory.dir("generated/android-bundled-assets")
+
+tasks.register("prepareAndroidBundledAssets", Sync) {
+  into(androidBundledAssetsDir)
+  from(rootProject.file("scripts")) {
+    into("bootstrap/scripts")
+    include("*.groovy")
+  }
+  from(rootProject.file("docs/tutorial")) {
+    into("bootstrap/tutorials")
+    include("*.json", "*.groovy")
+  }
+}
+
 android {
   namespace = "com.github.alfu32.sketch.android"
   compileSdk = 36
@@ -68,7 +82,10 @@ android {
     main {
       manifest.srcFile "src/main/AndroidManifest.xml"
       java.srcDirs = ["src/main/kotlin"]
-      assets.srcDirs = [rootProject.file("assets").path]
+      assets.srcDirs = [
+        rootProject.file("assets").path,
+        androidBundledAssetsDir.get().asFile.path
+      ]
       res.srcDirs = ["src/main/res"]
       jniLibs.srcDirs = ["${buildDir}/androidNatives"]
     }
@@ -127,7 +144,7 @@ tasks.register("copyAndroidNatives") {
 }
 
 tasks.matching { it.name == "preBuild" }.configureEach {
-  dependsOn "copyAndroidNatives"
+  dependsOn "copyAndroidNatives", "prepareAndroidBundledAssets"
 }
 
 tasks.matching { task ->
