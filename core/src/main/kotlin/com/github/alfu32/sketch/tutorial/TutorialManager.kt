@@ -10,7 +10,9 @@ import java.util.Locale
 
 data class TutorialFileEntry(
     var path: String = "",
-    var displayName: String = ""
+    var fileName: String = "",
+    var name: String = "",
+    var stepCount: Int = 0
 )
 
 data class TutorialStep(
@@ -41,7 +43,9 @@ data class TutorialUiState(
     val currentMessage: String = "",
     val expectedAction: String? = null,
     val currentStepMatched: Boolean = false,
-    val messageVisible: Boolean = false
+    val messageVisible: Boolean = false,
+    val canGoPrevious: Boolean = false,
+    val canGoNext: Boolean = false
 )
 
 class TutorialManager(
@@ -67,17 +71,27 @@ class TutorialManager(
         val activePath = recordingFile?.absolutePath ?: playingFile?.absolutePath
         val activeName = recordingScript?.name ?: playingScript?.name
         val currentStep = currentStep()
+        val totalSteps = playingScript?.steps?.size ?: recordingScript?.steps?.size ?: 0
+        val displayStepIndex = when (mode) {
+            TutorialMode.RECORDING -> totalSteps
+            TutorialMode.PLAYING, TutorialMode.PAUSED -> {
+                if (currentStep == null) totalSteps else (currentStepIndex + 1).coerceAtMost(totalSteps)
+            }
+            TutorialMode.IDLE -> 0
+        }
         return TutorialUiState(
             mode = mode,
             tutorials = files,
             activeTutorialPath = activePath,
             activeTutorialName = activeName,
-            currentStepIndex = if (currentStep == null) 0 else currentStepIndex + 1,
-            totalSteps = playingScript?.steps?.size ?: recordingScript?.steps?.size ?: 0,
+            currentStepIndex = displayStepIndex,
+            totalSteps = totalSteps,
             currentMessage = currentStep?.message ?: "",
             expectedAction = currentStep?.action,
             currentStepMatched = currentStepMatched,
-            messageVisible = mode == TutorialMode.PLAYING || mode == TutorialMode.PAUSED
+            messageVisible = mode == TutorialMode.PLAYING || mode == TutorialMode.PAUSED,
+            canGoPrevious = (mode == TutorialMode.PLAYING || mode == TutorialMode.PAUSED) && currentStepIndex > 0,
+            canGoNext = (mode == TutorialMode.PLAYING || mode == TutorialMode.PAUSED) && currentStep != null && currentStepMatched
         )
     }
 
@@ -159,7 +173,7 @@ class TutorialManager(
         }
     }
 
-    fun markCurrentStepDone(): Boolean {
+    fun goToNextStep(): Boolean {
         if (mode != TutorialMode.PLAYING && mode != TutorialMode.PAUSED) {
             return false
         }
@@ -177,6 +191,21 @@ class TutorialManager(
         }
         return true
     }
+
+    fun goToPreviousStep(): Boolean {
+        if (mode != TutorialMode.PLAYING && mode != TutorialMode.PAUSED) {
+            return false
+        }
+        if (currentStepIndex <= 0) {
+            return false
+        }
+        currentStepIndex -= 1
+        currentStepMatched = false
+        queuedActions.clear()
+        return true
+    }
+
+    fun markCurrentStepDone(): Boolean = goToNextStep()
 
     private fun consumeQueuedActions() {
         while (mode == TutorialMode.PLAYING && !currentStepMatched && queuedActions.isNotEmpty()) {
@@ -239,9 +268,12 @@ class TutorialManager(
         return files
             .sortedWith(compareByDescending<File> { it.lastModified() }.thenBy { it.name.lowercase(Locale.US) })
             .map { file ->
+                val script = loadScript(file)
                 TutorialFileEntry(
                     path = file.absolutePath,
-                    displayName = file.name
+                    fileName = file.name,
+                    name = script?.name?.takeIf { it.isNotBlank() } ?: file.nameWithoutExtension,
+                    stepCount = script?.steps?.size ?: 0
                 )
             }
     }
@@ -259,6 +291,7 @@ class TutorialManager(
         return when {
             actionId.startsWith("tool.start.") -> "Click the $display button."
             actionId.startsWith("tool.end.") -> "Finish the $display tool."
+            actionId.startsWith("tool.select.") -> display
             actionId.startsWith("ui.action.") -> "Click the $display button."
             else -> "Perform: $display"
         }

@@ -122,7 +122,8 @@ class SketchUiOverlay(
     private val tutorialPlay: (String?) -> Unit,
     private val tutorialPauseToggle: () -> Unit,
     private val tutorialStop: () -> Unit,
-    private val tutorialDone: () -> Unit,
+    private val tutorialPrevious: () -> Unit,
+    private val tutorialNext: () -> Unit,
     private val tutorialUiActionObserved: (String, String) -> Unit
 ) {
     private inner open class CollapsibleWindow(
@@ -463,12 +464,14 @@ class SketchUiOverlay(
     private lateinit var tutorialMessageWindow: CollapsibleWindow
     private lateinit var tutorialMessageLabel: VisLabel
     private lateinit var tutorialMessageStatusLabel: VisLabel
-    private lateinit var tutorialDoneButton: VisTextButton
+    private lateinit var tutorialPreviousButton: VisTextButton
+    private lateinit var tutorialNextButton: VisTextButton
     private var tutorialEntries: List<TutorialFileEntry> = emptyList()
     private var selectedTutorialPath: String? = null
     private var tutorialMessagePositionInitialized = false
     private val tutorialMessageWindowXKey = "tutorial_message_window_x"
     private val tutorialMessageWindowYKey = "tutorial_message_window_y"
+    private val tutorialActionTargets = mutableMapOf<String, Actor>()
     private lateinit var architectureModeLabel: VisLabel
     private lateinit var architectureWallSectionLabel: VisLabel
     private lateinit var architectureSlabSectionLabel: VisLabel
@@ -1399,6 +1402,7 @@ class SketchUiOverlay(
         toolButtons[toolId] = button
         toolButtonByWidget[button] = toolId
         buttonLabels[button] = toolId.displayName
+        registerTutorialActionTarget("tool.start.${toolId.name.lowercase(Locale.US)}", button)
         return button
     }
 
@@ -1544,6 +1548,7 @@ class SketchUiOverlay(
                     syncCameraModeButtons()
                 }
             })
+            registerTutorialActionTarget("ui.action.camera_mode.${mode.name.lowercase(Locale.US)}", button)
             cameraModeButtons[mode] = button
             cameraModeLabels[mode] = label
             group.add(button)
@@ -1571,6 +1576,7 @@ class SketchUiOverlay(
         buttonLabels[button] = label
         button.addListener(hoverListener(button))
         attachButtonMarker(button)
+        tutorialActionId?.let { registerTutorialActionTarget(it, button) }
         button.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 tutorialActionId?.let { tutorialUiActionObserved(it, label) }
@@ -1789,6 +1795,7 @@ class SketchUiOverlay(
         }
         content.add(scroll).growX().height(160f).row()
         objectsDeleteButton = VisTextButton("Delete Prototype")
+        registerTutorialActionTarget("ui.action.objects.delete_prototype", objectsDeleteButton)
         objectsDeleteButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 val selected = selectedObjectPrototype() ?: return
@@ -2893,6 +2900,7 @@ class SketchUiOverlay(
         return AppImageTextButton("", icon).apply {
             applyWhiteButtonStyle(this)
             applyIconStyle(this, icon)
+            registerTutorialActionTarget("ui.action.color.${normalizeTutorialActionKey(title)}", this)
             addListener(object : ClickListener() {
                 override fun clicked(event: InputEvent?, x: Float, y: Float) {
                     tutorialUiActionObserved("ui.action.color.${normalizeTutorialActionKey(title)}", title)
@@ -3099,42 +3107,49 @@ class SketchUiOverlay(
                 }
             }
         })
+        registerTutorialActionTarget("ui.action.color.hotspot", hotspotColorButton)
         hotspotAddButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 tutorialUiActionObserved("ui.action.hotspot.add_at_cursor", "Add At Cursor")
                 hotspotAddAtCursor()
             }
         })
+        registerTutorialActionTarget("ui.action.hotspot.add_at_cursor", hotspotAddButton)
         hotspotDeleteButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 tutorialUiActionObserved("ui.action.hotspot.delete_selected", "Delete Selected")
                 hotspotDeleteSelected()
             }
         })
+        registerTutorialActionTarget("ui.action.hotspot.delete_selected", hotspotDeleteButton)
         hotspotAttachButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 tutorialUiActionObserved("ui.action.hotspot.attach_selection", "Attach Selection")
                 selectedHotspotId?.let { hotspotAttachSelection(it) }
             }
         })
+        registerTutorialActionTarget("ui.action.hotspot.attach_selection", hotspotAttachButton)
         hotspotSelectAttachedButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 tutorialUiActionObserved("ui.action.hotspot.select_attached", "Select Attached")
                 selectedHotspotId?.let { hotspotSelectAttached(it) }
             }
         })
+        registerTutorialActionTarget("ui.action.hotspot.select_attached", hotspotSelectAttachedButton)
         hotspotPickReferenceButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 tutorialUiActionObserved("ui.action.hotspot.pick_reference", "Pick Reference")
                 selectedHotspotId?.let { hotspotBeginReferencePick(it) }
             }
         })
+        registerTutorialActionTarget("ui.action.hotspot.pick_reference", hotspotPickReferenceButton)
         hotspotClearReferenceButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 tutorialUiActionObserved("ui.action.hotspot.clear_reference", "Clear Reference")
                 selectedHotspotId?.let { hotspotClearReference(it) }
             }
         })
+        registerTutorialActionTarget("ui.action.hotspot.clear_reference", hotspotClearReferenceButton)
 
         val panel = buildDockSection("Hotspot Settings", content, visible = false, collapsed = true)
         updateHotspotSettingsPanel()
@@ -3216,19 +3231,27 @@ class SketchUiOverlay(
         window.isResizable = false
         tutorialMessageLabel = VisLabel("").apply { setWrap(true) }
         tutorialMessageStatusLabel = VisLabel("")
-        tutorialDoneButton = VisTextButton("Done").apply {
-            isDisabled = true
-            addListener(object : ClickListener() {
-                override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                    tutorialDone()
-                }
-            })
-        }
+        tutorialPreviousButton = VisTextButton("Previous")
+        tutorialNextButton = VisTextButton("Next").apply { isDisabled = true }
+        tutorialPreviousButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                tutorialPrevious()
+            }
+        })
+        tutorialNextButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                tutorialNext()
+            }
+        })
         val content = VisTable()
         content.defaults().pad(4f).left().growX()
         content.add(tutorialMessageLabel).width(320f).left().growX().row()
         content.add(tutorialMessageStatusLabel).left().growX().row()
-        content.add(tutorialDoneButton).left().padTop(2f).row()
+        val controls = VisTable()
+        controls.defaults().pad(2f).left()
+        controls.add(tutorialPreviousButton)
+        controls.add(tutorialNextButton)
+        content.add(controls).left().padTop(2f).row()
         window.add(content).pad(4f).grow()
         window.pack()
         window.isVisible = false
@@ -3302,9 +3325,9 @@ class SketchUiOverlay(
 
         if (state.tutorials != tutorialEntries) {
             tutorialEntries = state.tutorials
-            tutorialsList.setItems(*tutorialEntries.map { it.displayName }.toTypedArray())
             needsPanelLayout = true
         }
+        tutorialsList.setItems(*tutorialEntries.map { formatTutorialEntryLabel(it, state) }.toTypedArray())
         val availablePaths = tutorialEntries.map { it.path }.toSet()
         selectedTutorialPath = when {
             !state.activeTutorialPath.isNullOrBlank() && availablePaths.contains(state.activeTutorialPath) -> state.activeTutorialPath
@@ -3336,19 +3359,32 @@ class SketchUiOverlay(
             tutorialMessageWindow.isVisible = false
             return
         }
-        tutorialMessageLabel.setText(state.currentMessage.ifBlank { "Follow the current tutorial step." })
+        val stepPrefix = if (state.totalSteps > 0) "${state.currentStepIndex}/${state.totalSteps} " else ""
+        tutorialMessageLabel.setText(stepPrefix + state.currentMessage.ifBlank { "Follow the current tutorial step." })
         tutorialMessageStatusLabel.setText(
             if (state.currentStepMatched) {
-                "Action matched. Press Done to continue."
+                "Action matched. Press Next to continue."
             } else {
                 "Waiting for: ${state.expectedAction ?: "current step"}"
             }
         )
-        tutorialDoneButton.isDisabled = !state.currentStepMatched
+        tutorialPreviousButton.isDisabled = !state.canGoPrevious
+        tutorialNextButton.isDisabled = !state.canGoNext
         tutorialMessageWindow.pack()
         ensureTutorialMessageWindowPosition()
         tutorialMessageWindow.isVisible = true
         tutorialMessageWindow.toFront()
+    }
+
+    private fun formatTutorialEntryLabel(entry: TutorialFileEntry, state: TutorialUiState): String {
+        val suffix = when {
+            state.mode == TutorialMode.RECORDING && state.activeTutorialPath == entry.path ->
+                "${state.totalSteps} steps"
+            (state.mode == TutorialMode.PLAYING || state.mode == TutorialMode.PAUSED) && state.activeTutorialPath == entry.path ->
+                "${state.currentStepIndex}/${state.totalSteps}"
+            else -> "${entry.stepCount} steps"
+        }
+        return "${entry.name} [${entry.fileName}] - $suffix"
     }
 
     private fun ensureTutorialMessageWindowPosition() {
@@ -3698,6 +3734,7 @@ class SketchUiOverlay(
         return AppImageTextButton("", icon).apply {
             applyWhiteButtonStyle(this)
             applyIconStyle(this, icon)
+            registerTutorialActionTarget("ui.action.color.${normalizeTutorialActionKey(title)}", this)
             addListener(object : ClickListener() {
                 override fun clicked(event: InputEvent?, x: Float, y: Float) {
                     tutorialUiActionObserved("ui.action.color.${normalizeTutorialActionKey(title)}", title)
@@ -4797,6 +4834,25 @@ class SketchUiOverlay(
         return normalized.ifBlank { "action" }
     }
 
+    private fun registerTutorialActionTarget(actionId: String, actor: Actor) {
+        tutorialActionTargets[actionId] = actor
+    }
+
+    fun tutorialArrow(): Pair<Vector2, Vector2>? {
+        val state = tutorialStateProvider()
+        if (!state.messageVisible) {
+            return null
+        }
+        val expectedAction = state.expectedAction ?: return null
+        val target = tutorialActionTargets[expectedAction] ?: return null
+        if (target.stage != stage || !target.isVisible) {
+            return null
+        }
+        val start = tutorialMessageWindow.localToStageCoordinates(Vector2(tutorialMessageWindow.width * 0.5f, tutorialMessageWindow.height))
+        val end = target.localToStageCoordinates(Vector2(target.width * 0.5f, target.height * 0.5f))
+        return start to end
+    }
+
     private fun refreshPluginToolbar() {
         val host = pluginHost ?: return
         val entries = host.pluginToolEntries()
@@ -4843,6 +4899,7 @@ class SketchUiOverlay(
                         host.activatePluginTool(entry.id)
                     }
                 })
+                registerTutorialActionTarget("ui.action.plugin_tool.${normalizeTutorialActionKey(entry.id)}", button)
                 group.addActor(button)
                 pluginToolButtons[entry.id] = button
                 pluginToolByWidget[button] = entry.id
@@ -5121,8 +5178,8 @@ class SketchUiOverlay(
                 setPosition((button.width - width - 2f).coerceAtLeast(1f), (button.height - height - 2f).coerceAtLeast(1f))
             }
         }.apply {
-            color = Color(0.35f, 0.35f, 0.35f, 0.8f)
-            val markerSize = (toolbarButtonSize * 0.125f).coerceIn(4f, 8f)
+            color = Color.WHITE
+            val markerSize = (toolbarButtonSize * 0.22f).coerceIn(8f, 16f)
             setSize(markerSize, markerSize)
             touchable = Touchable.disabled
         }
@@ -5133,9 +5190,9 @@ class SketchUiOverlay(
     private fun updateButtonLabels() {
         val host = pluginHost
         val activePluginToolId = host?.activePluginToolId()
-        val activeColor = Color(0.2f, 0.75f, 0.25f, 1f)
-        val hoverColor = Color(0.95f, 0.65f, 0.15f, 1f)
-        val neutralColor = Color(0.35f, 0.35f, 0.35f, 0.8f)
+        val activeColor = Color(0.9f, 0.1f, 0.1f, 1f)
+        val hoverColor = Color(1f, 0.55f, 0.1f, 1f)
+        val neutralColor = Color.WHITE
 
         buttonLabels.forEach { (button, _) ->
             button.setText("")
@@ -5144,7 +5201,6 @@ class SketchUiOverlay(
             val isActivePluginTool = pluginToolByWidget[button] != null && pluginToolByWidget[button] == activePluginToolId
             val marker = buttonMarkers[button]
             marker?.color = when {
-                (isActiveTool || isActivePluginTool) && isHovered -> hoverColor
                 isActiveTool || isActivePluginTool -> activeColor
                 isHovered -> hoverColor
                 else -> neutralColor

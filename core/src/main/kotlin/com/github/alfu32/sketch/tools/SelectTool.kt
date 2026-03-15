@@ -30,9 +30,11 @@ class SelectTool(
     private val architectureKindWireframe: (ArchitectureStore.ElementKind) -> Boolean = { false },
     private val basicKindVisible: (BasicSelectionKind) -> Boolean = { true },
     private val basicKindUnlocked: (BasicSelectionKind) -> Boolean = { true },
-    private val basicKindWireframe: (BasicSelectionKind) -> Boolean = { false }
+    private val basicKindWireframe: (BasicSelectionKind) -> Boolean = { false },
+    private val tutorialSelectionActionObserved: (String, String) -> Unit = { _, _ -> }
 ) : Tool {
     data class WindowRect(val x: Float, val y: Float, val width: Float, val height: Float, val dashed: Boolean)
+    private enum class SelectionMode { REPLACE, ADD, REMOVE }
 
     override val id: ToolId = ToolId.SELECT
     override val message: String = "Select entities."
@@ -61,7 +63,6 @@ class SelectTool(
     private var frameDrag: FrameDragState? = null
     private var hvacDrag: HvacDragState? = null
     private var hotspotDrag: HotspotDragState? = null
-    private enum class SelectionMode { REPLACE, ADD, REMOVE }
 
     private data class HoleHandleHit(
         val wallId: String,
@@ -298,7 +299,7 @@ class SelectTool(
         if (selectingVolume) {
             if (valid && world != null) {
                 volumeEndRaw = Vector3(world)
-                finalizeVolumeSelection(status)
+                finalizeVolumeSelection(status, selectionMode())
                 selectingVolume = false
                 return true
             }
@@ -341,6 +342,7 @@ class SelectTool(
                 GroupScene.HotspotSelectionMode.ADD -> "Hotspot added to selection."
                 GroupScene.HotspotSelectionMode.REPLACE -> if (changed) "Hotspot selected. Drag and release to apply." else "Hotspot selection unchanged."
             }
+            recordPickSelection(selectionMode())
             return true
         }
         val isVoxelGroup = scene.isVoxelGroup(activeGroup)
@@ -513,6 +515,7 @@ class SelectTool(
                     } else {
                         "Wall hole selection unchanged."
                     }
+                    recordPickSelection(selectionMode())
                     return true
                 }
             }
@@ -537,6 +540,7 @@ class SelectTool(
                     } else {
                         "Slab hole selection unchanged."
                     }
+                    recordPickSelection(selectionMode())
                     return true
                 }
             }
@@ -564,6 +568,7 @@ class SelectTool(
                         architectureSelectionMode()
                     )
                     status.message = if (selected) "Architecture selection updated." else "Architecture selection unchanged."
+                    recordPickSelection(selectionMode())
                     return true
                 }
             }
@@ -574,6 +579,7 @@ class SelectTool(
                     architectureSelectionMode()
                 )
                 status.message = "Architecture selection updated."
+                recordPickSelection(selectionMode())
                 return true
             }
             val hotspotHit = pickArchitectureConstructionHotspot(
@@ -595,6 +601,7 @@ class SelectTool(
                 } else {
                     "No architecture element selected."
                 }
+                recordPickSelection(selectionMode())
                 return true
             }
         }
@@ -653,6 +660,7 @@ class SelectTool(
                         hvacSelectionMode()
                     )
                     status.message = if (selected) "HVAC selection updated." else "HVAC selection unchanged."
+                    recordPickSelection(selectionMode())
                     return true
                 }
                 if (hvacPointHit != null) {
@@ -662,6 +670,7 @@ class SelectTool(
                         hvacSelectionMode()
                     )
                     status.message = "HVAC selection updated."
+                    recordPickSelection(selectionMode())
                     return true
                 }
                 val hotspotHit = pickHvacConstructionHotspot(architectureGroup, ray, Gdx.input.x, Gdx.input.y)
@@ -677,6 +686,7 @@ class SelectTool(
                     } else {
                         "No HVAC element selected."
                     }
+                    recordPickSelection(selectionMode())
                     return true
                 }
             }
@@ -751,6 +761,7 @@ class SelectTool(
             } else {
                 "Voxel deselected."
             }
+            recordPickSelection(selectionMode())
             return true
         }
         if (clickType == 2 && pickedGroup) {
@@ -788,6 +799,7 @@ class SelectTool(
                     status.message = "Connected edges selected."
                 }
             }
+            recordPickSelection(selectionMode())
             return true
         }
         if (allowFaceSelection && clickType == 2 && pickedFace) {
@@ -800,16 +812,19 @@ class SelectTool(
                 group.forEach { scene.activeGroup().faceStore.addSelection(it) }
                 status.message = "Coplanar faces selected."
             }
+            recordPickSelection(selectionMode())
             return true
         }
         if (pickedText && isClosest(textHit!!.t, faceHit?.t, edgeHit?.t, dimensionHit?.t, groupHit?.t)) {
             scene.activeGroup().textStore.toggleSelection(textHit.text)
             status.message = "Text toggled."
+            recordPickSelection(selectionMode())
             return true
         }
         if (pickedDimension && isClosest(dimensionHit!!.t, faceHit?.t, edgeHit?.t, groupHit?.t)) {
             scene.activeGroup().dimensionStore.toggleSelection(dimensionHit.dimension)
             status.message = "Dimension toggled."
+            recordPickSelection(selectionMode())
             return true
         }
         if (
@@ -821,6 +836,7 @@ class SelectTool(
         ) {
             scene.toggleGroupSelection(groupHit!!.group)
             status.message = "Group toggled."
+            recordPickSelection(selectionMode())
             return true
         }
         if (allowFaceSelection && pickedFace && pickedEdge) {
@@ -831,16 +847,19 @@ class SelectTool(
                 scene.activeGroup().lineStore.toggleSelection(edgeHit.segment)
                 status.message = "Edge toggled."
             }
+            recordPickSelection(selectionMode())
             return true
         }
         if (allowFaceSelection && pickedFace) {
             scene.activeGroup().faceStore.toggleSelection(faceHit!!.triangle)
             status.message = "Face toggled."
+            recordPickSelection(selectionMode())
             return true
         }
         if (!isVoxelGroup && pickedEdge) {
             scene.activeGroup().lineStore.toggleSelection(edgeHit!!.segment)
             status.message = "Edge toggled."
+            recordPickSelection(selectionMode())
             return true
         }
         return false
@@ -1025,6 +1044,7 @@ class SelectTool(
                 } else {
                     0
                 }
+                recordWindowSelection(includeIntersect, mode)
                 status.message =
                     "Window select | architecture $architectureCount hvac $hvacCount hotspots $hotspotCount voxels $voxelCount edges $edges faces $faces dims $dimensions texts $texts groups $groups"
                 return true
@@ -1147,7 +1167,7 @@ class SelectTool(
         val t: Float
     )
 
-    private fun finalizeVolumeSelection(status: StatusModel) {
+    private fun finalizeVolumeSelection(status: StatusModel, mode: SelectionMode) {
         val bounds = volumeBounds() ?: return
         val group = scene.activeGroup()
         val localBounds = volumeBoundsLocal(group, bounds.first, bounds.second)
@@ -1187,6 +1207,7 @@ class SelectTool(
             }
         }
         val groupCount = selectGroupsInVolume(bounds.first, bounds.second)
+        recordVolumeSelection(mode)
         status.message = "Volume select | voxels $voxelCount edges $edgeCount faces $faceCount groups $groupCount"
     }
 
@@ -2430,6 +2451,49 @@ class SelectTool(
             shift -> SelectionMode.ADD
             else -> SelectionMode.REPLACE
         }
+    }
+
+    private fun selectionOperationKey(mode: SelectionMode): String {
+        return when (mode) {
+            SelectionMode.REPLACE -> "replace"
+            SelectionMode.ADD -> "add"
+            SelectionMode.REMOVE -> "remove"
+        }
+    }
+
+    private fun selectionOperationLabel(mode: SelectionMode): String {
+        return when (mode) {
+            SelectionMode.REPLACE -> "replace the current selection"
+            SelectionMode.ADD -> "add to the current selection"
+            SelectionMode.REMOVE -> "remove from the current selection"
+        }
+    }
+
+    private fun recordPickSelection(mode: SelectionMode) {
+        tutorialSelectionActionObserved(
+            "tool.select.pick.${selectionOperationKey(mode)}",
+            "Use pick-select to ${selectionOperationLabel(mode)}."
+        )
+    }
+
+    private fun recordWindowSelection(includeIntersect: Boolean, mode: SelectionMode) {
+        val directionKey = if (includeIntersect) "right_to_left" else "left_to_right"
+        val directionLabel = if (includeIntersect) {
+            "Use a right-to-left selection window to ${selectionOperationLabel(mode)}."
+        } else {
+            "Use a left-to-right selection window to ${selectionOperationLabel(mode)}."
+        }
+        tutorialSelectionActionObserved(
+            "tool.select.window.$directionKey.${selectionOperationKey(mode)}",
+            directionLabel
+        )
+    }
+
+    private fun recordVolumeSelection(mode: SelectionMode) {
+        tutorialSelectionActionObserved(
+            "tool.select.volume.${selectionOperationKey(mode)}",
+            "Use select-volume to ${selectionOperationLabel(mode)}."
+        )
     }
 
     private fun architectureSelectionMode(): GroupScene.ArchitectureSelectionMode {

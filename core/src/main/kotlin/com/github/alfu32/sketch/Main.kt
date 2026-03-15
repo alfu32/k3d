@@ -32,6 +32,7 @@ import com.badlogic.gdx.graphics.PixmapIO
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.math.Quaternion
 import com.badlogic.gdx.math.Matrix4
+import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.files.FileHandle
 import com.badlogic.gdx.InputAdapter
@@ -663,7 +664,8 @@ class Main(
                                 SelectTool.BasicSelectionKind.OBJECT -> BasicSelectionFilterKind.OBJECT
                             }
                         )
-                    }
+                    },
+                    ::observeTutorialUiAction
                 ),
                 LineTool(scene) { toolController.setTool(ToolId.SELECT) },
                 ConstructionLineTool(scene) { toolController.setTool(ToolId.SELECT) },
@@ -862,7 +864,8 @@ class Main(
             ::playTutorial,
             ::toggleTutorialPause,
             ::stopTutorialPlayback,
-            ::advanceTutorialStep,
+            ::tutorialPreviousStep,
+            ::tutorialNextStep,
             ::observeTutorialUiAction
         )
 
@@ -2689,7 +2692,42 @@ class Main(
         uiOverlay.stage.viewport.apply()
         uiOverlay.act(Gdx.graphics.deltaTime)
         uiOverlay.draw()
+        drawTutorialArrowOverlay()
         Gdx.gl.glDisable(GL20.GL_BLEND)
+    }
+
+    private fun drawTutorialArrowOverlay() {
+        val arrow = uiOverlay.tutorialArrow() ?: return
+        val start = arrow.first
+        val end = arrow.second
+        val direction = Vector2(end).sub(start)
+        if (direction.len2() < 1f) {
+            return
+        }
+        val dir = direction.nor()
+        val headLength = 18f
+        val headWidth = 8f
+        val base = Vector2(end).mulAdd(dir, -headLength)
+        val perp = Vector2(-dir.y, dir.x).scl(headWidth)
+
+        shapeRenderer.projectionMatrix = uiOverlay.stage.camera.combined
+        shapeRenderer.transformMatrix = Matrix4().idt()
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
+        shapeRenderer.color = Color(0.9f, 0.1f, 0.1f, 1f)
+        shapeRenderer.line(start.x, start.y, base.x, base.y)
+        shapeRenderer.end()
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
+        shapeRenderer.color = Color(0.9f, 0.1f, 0.1f, 1f)
+        shapeRenderer.triangle(
+            end.x,
+            end.y,
+            base.x + perp.x,
+            base.y + perp.y,
+            base.x - perp.x,
+            base.y - perp.y
+        )
+        shapeRenderer.end()
     }
 
     override fun resize(width: Int, height: Int) {
@@ -7055,13 +7093,26 @@ class Main(
         statusModel.message = "Tutorial stopped."
     }
 
-    private fun advanceTutorialStep() {
+    private fun tutorialPreviousStep() {
         if (BuildFlags.WEB_BUILD) {
             statusModel.message = "Tutorial playback is unavailable in web builds."
             return
         }
-        if (!tutorialManager.markCurrentStepDone()) {
-            statusModel.message = "Perform the expected tutorial action before pressing Done."
+        if (!tutorialManager.goToPreviousStep()) {
+            statusModel.message = "Already at the first tutorial step."
+            return
+        }
+        val state = tutorialManager.uiState()
+        statusModel.message = "Tutorial step ${state.currentStepIndex}/${state.totalSteps} ready."
+    }
+
+    private fun tutorialNextStep() {
+        if (BuildFlags.WEB_BUILD) {
+            statusModel.message = "Tutorial playback is unavailable in web builds."
+            return
+        }
+        if (!tutorialManager.goToNextStep()) {
+            statusModel.message = "Perform the expected tutorial action before pressing Next."
             return
         }
         val state = tutorialManager.uiState()
