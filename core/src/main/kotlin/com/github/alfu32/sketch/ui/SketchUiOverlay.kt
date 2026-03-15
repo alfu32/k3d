@@ -354,7 +354,7 @@ class SketchUiOverlay(
     private var toolbarsVisible = true
     private val uiPrefs by lazy { Gdx.app.getPreferences("k3d-ui-layout") }
     private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
-    private val toolbarLayoutVersion = 8
+    private val toolbarLayoutVersion = 9
     private val toolbarsVisibleKey = "toolbars.visible"
     private val uiToolbarButtonSizeKey = "ui_toolbar_button_size_px"
     private var toolbarButtonSize = 32f
@@ -4621,7 +4621,10 @@ class SketchUiOverlay(
                 max(titleHeight, targetHeight)
             )
             if (state?.hasPosition() == true) {
-                window.setPosition(state.x ?: margin, state.y ?: (yTop - window.height))
+                val restoredX = state.x ?: margin
+                val restoredTopY = state.y ?: margin
+                val restoredBottomY = height - restoredTopY - window.height
+                window.setPosition(restoredX, restoredBottomY)
                 clampToolbarWindowToViewport(window, width, height, margin)
             } else {
                 if (x > margin && x + window.width > width - margin) {
@@ -4643,20 +4646,16 @@ class SketchUiOverlay(
         if (current == toolbarLayoutVersion) {
             return
         }
-        val toolbarIds = listOf(
-            "builtin_toolbar_construction",
-            "builtin_toolbar_construction_points",
-            "builtin_toolbar_construction_entities",
-            "builtin_toolbar_modification",
-            "builtin_toolbar_architecture",
-            "builtin_toolbar_hvac",
-            "builtin_toolbar_voxel",
-            "builtin_toolbar_actions",
-            "builtin_toolbar_camera"
-        )
-        toolbarIds.forEach { id ->
-            uiPrefs.remove("$id.x")
-            uiPrefs.remove("$id.y")
+        uiPrefs.get().keys
+            .filter { key ->
+                (key.startsWith("builtin_toolbar_") || key.startsWith("plugin_toolbar_")) &&
+                    (key.endsWith(".x") || key.endsWith(".y"))
+            }
+            .forEach { key ->
+                uiPrefs.remove(key)
+            }
+        listOf("builtin_toolbar_construction.x", "builtin_toolbar_construction.y").forEach { key ->
+            uiPrefs.remove(key)
         }
         uiPrefs.putInteger(toolbarLayoutVersionKey, toolbarLayoutVersion)
         uiPrefs.flush()
@@ -4741,6 +4740,7 @@ class SketchUiOverlay(
     }
 
     private fun saveToolbarState(toolbarId: String, window: CollapsibleWindow) {
+        val viewportHeight = if (stage.viewport.screenHeight > 0) stage.viewport.screenHeight.toFloat() else Gdx.graphics.height.toFloat()
         val xKey = "$toolbarId.x"
         val yKey = "$toolbarId.y"
         val wKey = "$toolbarId.w"
@@ -4750,6 +4750,7 @@ class SketchUiOverlay(
         val prevY = uiPrefs.getFloat(yKey, Float.NaN)
         val prevW = uiPrefs.getFloat(wKey, Float.NaN)
         val prevH = uiPrefs.getFloat(hKey, Float.NaN)
+        val topLeftY = viewportHeight - window.y - window.height
         val desiredVisible = toolbarDesiredVisibility[toolbarId] ?: true
         val prevVisible = if (uiPrefs.contains(visibleKey)) uiPrefs.getBoolean(visibleKey) else desiredVisible
         if (!prevX.isNaN() &&
@@ -4757,7 +4758,7 @@ class SketchUiOverlay(
             !prevW.isNaN() &&
             !prevH.isNaN() &&
             abs(prevX - window.x) < 0.25f &&
-            abs(prevY - window.y) < 0.25f &&
+            abs(prevY - topLeftY) < 0.25f &&
             abs(prevW - window.width) < 0.25f &&
             abs(prevH - window.height) < 0.25f &&
             prevVisible == desiredVisible
@@ -4765,7 +4766,7 @@ class SketchUiOverlay(
             return
         }
         uiPrefs.putFloat(xKey, window.x)
-        uiPrefs.putFloat(yKey, window.y)
+        uiPrefs.putFloat(yKey, topLeftY)
         uiPrefs.putFloat(wKey, window.width)
         uiPrefs.putFloat(hKey, window.height)
         uiPrefs.putBoolean(visibleKey, desiredVisible)
