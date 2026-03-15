@@ -26,10 +26,6 @@ def androidBundledAssetsDir = layout.buildDirectory.dir("generated/android-bundl
 
 tasks.register("prepareAndroidBundledAssets", Sync) {
   into(androidBundledAssetsDir)
-  from(rootProject.file("scripts")) {
-    into("bootstrap/scripts")
-    include("*.groovy")
-  }
   from(rootProject.file("docs/tutorial")) {
     into("bootstrap/tutorials")
     include("*.json", "*.groovy")

@@ -1,0 +1,82 @@
+{
+"name": "03.Doubleline_ribbon-sweep",
+"createdAt": "2026-03-15T21:20:09.300666192",
+"steps": [
+	{
+		"action": "tool.start.double_line",
+		"message": "Click the Double Line button."
+	},
+	{
+		"action": "tool.end.double_line",
+		"message": "Finish the Double Line tool."
+	},
+	{
+		"action": "tool.select.window.left_to_right.replace",
+		"message": "Use a left-to-right selection window to replace the current selection."
+	},
+	{
+		"action": "tool.start.rotate",
+		"message": "Click the Rotate button."
+	},
+	{
+		"action": "guide.axis.place",
+		"message": "Press T to place an axis helper at the cursor."
+	},
+	{
+		"action": "tool.end.rotate",
+		"message": "Finish the Rotate tool."
+	},
+	{
+		"action": "tool.select.window.right_to_left.replace",
+		"message": "Use a right-to-left selection window to replace the current selection."
+	},
+	{
+		"action": "tool.start.circle",
+		"message": "Click the Circle button."
+	},
+	{
+		"action": "tool.end.circle",
+		"message": "Finish the Circle tool."
+	},
+	{
+		"action": "tool.select.pick.replace",
+		"message": "Use pick-select to replace the current selection."
+	},
+	{
+		"action": "tool.select.pick.replace",
+		"message": "Use pick-select to replace the current selection."
+	},
+	{
+		"action": "tool.select.window.left_to_right.replace",
+		"message": "Use a left-to-right selection window to replace the current selection."
+	},
+	{
+		"action": "tool.start.extrude_swipe",
+		"message": "Click the Extrude Swipe button."
+	},
+	{
+		"action": "tool.end.extrude_swipe",
+		"message": "Finish the Extrude Swipe tool."
+	},
+	{
+		"action": "tool.select.pick.replace",
+		"message": "Use pick-select to replace the current selection."
+	},
+	{
+		"action": "tool.select.pick.replace",
+		"message": "Use pick-select to replace the current selection."
+	},
+	{
+		"action": "tool.select.pick.replace",
+		"message": "Use pick-select to replace the current selection."
+	},
+	{
+		"action": "ui.action.flip_faces",
+		"message": "Click the Flip Faces button."
+	},
+	{
+		"action": "tool.select.window.right_to_left.replace",
+		"message": "Use a right-to-left selection window to replace the current selection."
+	}
+]
+}

@@ -108,30 +108,8 @@ class AndroidLauncher : AndroidApplication() {
         }
 
         copyAssetTree("bootstrap/tutorials", File(appDir, "tutorials"), overwriteExisting = false)
-        copyAssetTree("bootstrap/scripts", File(appDir, "scripts"), overwriteExisting = false)
-        seedPluginsFromScripts(appDir, overwriteExisting = false)
 
         bundledVersionFile.writeText(currentVersion)
-    }
-
-    private fun seedPluginsFromScripts(appDir: File, overwriteExisting: Boolean) {
-        val scriptsDir = File(appDir, "scripts").apply { mkdirs() }
-        val pluginsDir = File(appDir, "plugins").apply { mkdirs() }
-        scriptsDir.listFiles { file ->
-            file.isFile &&
-                file.extension.equals("groovy", ignoreCase = true) &&
-                !isHelperScript(file.name)
-        }?.forEach { source ->
-            val target = File(pluginsDir, source.name)
-            if (!target.exists() || overwriteExisting) {
-                source.copyTo(target, overwrite = true)
-            }
-        }
-    }
-
-    private fun isHelperScript(name: String): Boolean {
-        return name.equals("encode_base64.groovy", ignoreCase = true) ||
-            name.equals("polyline.groovy", ignoreCase = true)
     }
 
     private fun copyAssetTree(assetPath: String, targetDir: File, overwriteExisting: Boolean) {
