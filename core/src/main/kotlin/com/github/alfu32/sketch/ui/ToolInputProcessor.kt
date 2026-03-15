@@ -5,7 +5,6 @@ import com.badlogic.gdx.Input
 import com.badlogic.gdx.InputAdapter
 import com.github.alfu32.sketch.InputModifiers
 import com.github.alfu32.sketch.input.GuideManager
-import com.github.alfu32.sketch.input.SnapResult
 import com.github.alfu32.sketch.ui.ToolId
 
 class ToolInputProcessor(
@@ -19,8 +18,9 @@ class ToolInputProcessor(
     private val groupSelectionAction: () -> Unit,
     private val objectPrototypeSelectionAction: () -> Unit,
     private val ungroupSelectionAction: () -> Unit,
+    private val axisGuideAction: () -> Unit,
+    private val gridGuideAction: () -> Unit,
     private val exitGroupEditAction: () -> Boolean,
-    private val lastSnapProvider: () -> SnapResult?,
     private val startHotspotAddMode: () -> Unit,
     private val cancelHotspotAddMode: () -> Unit,
     private val isHotspotAddModeActive: () -> Boolean,
@@ -156,11 +156,7 @@ class ToolInputProcessor(
                 return true
             }
             Input.Keys.T -> {
-                val snap = lastSnapProvider()
-                val point = snap?.world
-                if (snap != null && snap.valid && point != null) {
-                    guideManager.addAxisGuide(point, snap.normal)
-                }
+                axisGuideAction()
                 return true
             }
             Input.Keys.G -> {
@@ -175,11 +171,7 @@ class ToolInputProcessor(
                     groupSelectionAction()
                     return true
                 }
-                val snap = lastSnapProvider()
-                val point = snap?.world
-                if (snap != null && snap.valid && point != null) {
-                    guideManager.addGridGuide(point, snap.normal)
-                }
+                gridGuideAction()
                 return true
             }
             Input.Keys.L -> {

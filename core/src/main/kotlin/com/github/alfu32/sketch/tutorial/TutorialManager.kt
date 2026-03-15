@@ -292,6 +292,7 @@ class TutorialManager(
             actionId.startsWith("tool.start.") -> "Click the $display button."
             actionId.startsWith("tool.end.") -> "Finish the $display tool."
             actionId.startsWith("tool.select.") -> display
+            actionId.startsWith("guide.") -> display
             actionId.startsWith("ui.action.") -> "Click the $display button."
             else -> "Perform: $display"
         }

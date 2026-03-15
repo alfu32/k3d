@@ -727,8 +727,9 @@ class Main(
             groupSelectionAction = ::groupSelection,
             objectPrototypeSelectionAction = ::objectPrototypeSelection,
             ungroupSelectionAction = ::ungroupSelection,
+            axisGuideAction = ::addAxisGuide,
+            gridGuideAction = ::addGridGuide,
             exitGroupEditAction = ::exitGroupEditMode,
-            lastSnapProvider = { lastSnap },
             startHotspotAddMode = ::addHotspotAtCursor,
             cancelHotspotAddMode = ::cancelHotspotAddPickMode,
             isHotspotAddModeActive = ::isHotspotAddPickModeActive,
@@ -8364,6 +8365,10 @@ class Main(
         val point = snap?.world
         if (snap != null && snap.valid && point != null) {
             guideManager.addAxisGuide(point, snap.normal)
+            tutorialManager.observeAction(
+                "guide.axis.place",
+                "Press T to place an axis helper at the cursor."
+            )
             statusModel.message = "Axis guide added."
         }
     }
@@ -8373,6 +8378,10 @@ class Main(
         val point = snap?.world
         if (snap != null && snap.valid && point != null) {
             guideManager.addGridGuide(point, snap.normal)
+            tutorialManager.observeAction(
+                "guide.grid.place",
+                "Press G to place a grid helper at the cursor."
+            )
             statusModel.message = "Grid guide added."
         }
     }
