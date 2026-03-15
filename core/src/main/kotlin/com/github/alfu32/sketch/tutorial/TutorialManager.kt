@@ -91,7 +91,7 @@ class TutorialManager(
             currentStepMatched = currentStepMatched,
             messageVisible = mode == TutorialMode.PLAYING || mode == TutorialMode.PAUSED,
             canGoPrevious = (mode == TutorialMode.PLAYING || mode == TutorialMode.PAUSED) && currentStepIndex > 0,
-            canGoNext = (mode == TutorialMode.PLAYING || mode == TutorialMode.PAUSED) && currentStep != null && currentStepMatched
+            canGoNext = (mode == TutorialMode.PLAYING || mode == TutorialMode.PAUSED) && currentStep != null
         )
     }
 
@@ -163,10 +163,8 @@ class TutorialManager(
         when (mode) {
             TutorialMode.RECORDING -> recordStep(actionId, label)
             TutorialMode.PLAYING -> {
-                if (currentStepMatched) {
-                    queuedActions.addLast(actionId)
-                } else {
-                    tryMatchCurrentStep(actionId)
+                if (tryMatchCurrentStep(actionId)) {
+                    goToNextStep()
                 }
             }
             TutorialMode.PAUSED, TutorialMode.IDLE -> Unit
@@ -177,7 +175,7 @@ class TutorialManager(
         if (mode != TutorialMode.PLAYING && mode != TutorialMode.PAUSED) {
             return false
         }
-        if (!currentStepMatched) {
+        if (currentStep() == null) {
             return false
         }
         currentStepIndex += 1

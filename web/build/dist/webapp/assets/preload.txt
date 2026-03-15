@@ -14,6 +14,10 @@ i:b:/appicon_64x64.ico:844:1
 i:b:/appicon.png:23452:1
 i:b:/icons.64.png:70093:1
 i:b:/sketch3d.json:17607:1
+i:b:/plugins/encode_base64.groovy:439:1
+i:b:/plugins/plugins.json:327:1
+i:b:/plugins/exporters.groovy:16276:1
+i:b:/plugins/examplePlugins.groovy:299:1
 i:b:/icons.svg:464394:1
 i:b:/appicon2.png:2687:1
 i:b:/com/kotcrab/vis/ui/skin/x1/font-small.fnt:58927:1
@@ -64,11 +68,12 @@ i:b:/icons.48.png:53708:1
 i:b:/appicon.3.png:52833:1
 i:b:/selected-tex.png:558:1
 i:b:/icons.2.png:19774:1
-i:b:/assets.txt:2795:1
+i:b:/assets.txt:2976:1
 i:b:/icons.mapping.48.csv:1536:1
 i:b:/appicon_300x300.ico:4246:1
 i:b:/glyphs/alphabet.octd:1272176:1
 i:b:/glyphs/alphabet.octd.bak:186229:1
+i:b:/tutorials/01.Lines_Extrude-swipe.json:664:1
 i:b:/.gitkeep:178:1
 c:b:/com/badlogic/gdx/utils/lsans-15.png:10270:1
 c:b:/com/badlogic/gdx/graphics/g3d/shaders/default.vertex.glsl:9096:1

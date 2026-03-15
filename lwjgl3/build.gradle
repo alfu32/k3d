@@ -464,6 +464,9 @@ def configureBundleTask = { String name, String osLabel, TaskProvider jdkTask, F
       include("*.groovy")
       into("plugins")
     }
+    from(rootProject.file("docs/tutorial")) {
+      into("tutorials")
+    }
     from(project(":core").tasks.named("pluginApiJar").flatMap { it.archiveFile }) {
       into("plugins")
     }
@@ -502,6 +505,9 @@ def configureBundleTarTask = { String name, String osLabel, TaskProvider jdkTask
       include("*.groovy")
       into("plugins")
     }
+    from(rootProject.file("docs/tutorial")) {
+      into("tutorials")
+    }
     from(project(":core").tasks.named("pluginApiJar").flatMap { it.archiveFile }) {
       into("plugins")
     }
@@ -534,6 +540,9 @@ def configureBundleDirTask = { String name, String osLabel, TaskProvider jdkTask
     from(rootProject.file("scripts")) {
       include("*.groovy")
       into("plugins")
+    }
+    from(rootProject.file("docs/tutorial")) {
+      into("tutorials")
     }
     from(project(":core").tasks.named("pluginApiJar").flatMap { it.archiveFile }) {
       into("plugins")

@@ -26,10 +26,16 @@ icons.png
 icons.svg
 ketchup3d_visui_icons_32_map.json
 new_icon.svg
+plugins/encode_base64.groovy
+plugins/examplePlugins.groovy
+plugins/exporters.groovy
+plugins/octodraw-plugin-api-4.5.9.jar
+plugins/plugins.json
 selected-tex.png
 shaders/sketch-default.fragment.glsl
 shaders/sketch-default.vertex.glsl
 sketch3d.json
+tutorials/01.Lines_Extrude-swipe.json
 com/kotcrab/vis/ui/skin/x1/default.fnt
 com/kotcrab/vis/ui/skin/x1/font-small.fnt
 com/kotcrab/vis/ui/skin/x1/uiskin.atlas

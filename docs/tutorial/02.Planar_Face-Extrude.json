@@ -1,0 +1,42 @@
+{
+"name": "02.Planar Face/Extrude",
+"createdAt": "2026-03-15T15:52:38.375760987",
+"steps": [
+	{
+		"action": "tool.start.polyline",
+		"message": "Click the Polyline button."
+	},
+	{
+		"action": "tool.end.polyline",
+		"message": "Pick succesive points on the ground plane and then finish the Polyline tool."
+	},
+	{
+		"action": "tool.select.window.left_to_right.replace",
+		"message": "Use a left-to-right to select all the faces and lines created by the polyline tool"
+	},
+	{
+		"action": "tool.start.push_pull",
+		"message": "Click the Push/Pull button."
+	},
+	{
+		"action": "guide.axis.place",
+		"message": "Press T to place an axis helper somewhere on the ground plane ( at the cursor)."
+	},
+	{
+		"action": "tool.end.push_pull",
+		"message": "Finish the Push/Pull tool: click the surface you created previously and then pick a second point on the blue axis of the helper to tell the extrude tool how much you want to extrude in that direction"
+	},
+	{
+		"action": "tool.select.window.right_to_left.replace",
+		"message": "Use a right-to-left selection window to replace the current selection and select all the blueish colored faces ( that are flipped towards the inside of the created volume)."
+	},
+	{
+		"action": "ui.action.flip_faces",
+		"message": "Click the Flip Faces button to flip the face normals and make them point towards the exterior of the volume. the result should be that the faces are no longer blue but white-"
+	},
+	{
+		"action": "tool.select.window.right_to_left.replace",
+		"message": "Use a right-to-left selection window to replace the current selection with nothing by selecting an area that doesnt display any shapes."
+	}
+]
+}

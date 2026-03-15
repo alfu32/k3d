@@ -295,7 +295,8 @@ class Main(
     private var directionalLightAlpha = 1f
     private var ambientLightValue = 0.59f
     private val shadowModelBoundsCenter = Vector3()
-    private var shadowModelBoundsRadius = 12f
+    private val minimumShadowBoundsRadius = 17.320509f
+    private var shadowModelBoundsRadius = minimumShadowBoundsRadius
     private var shadowModelBoundsValid = false
     private var shadowModelTrackedEdgeCount = -1
     private var shadowModelTrackedFaceCount = -1
@@ -328,7 +329,7 @@ class Main(
     private var specularLightValue = 0.2f
     private var specularLightAlpha = 0.95f
     private lateinit var lightingSettings: LightingSettings
-    private var shadowBias = 365f
+    private var shadowBias = 2500f
     private var shadowNormalBias = 5620f
     private var shadowPcfMode = 1
     private var shadowDither = false
@@ -8932,13 +8933,13 @@ class Main(
         val bounds = scene.root.worldBounds()
         if (bounds == null) {
             shadowModelBoundsCenter.setZero()
-            shadowModelBoundsRadius = 12f
+            shadowModelBoundsRadius = minimumShadowBoundsRadius
             shadowModelBoundsValid = false
         } else {
             bounds.getCenter(shadowBoundsCenterTmp)
             bounds.getDimensions(shadowBoundsDimensionsTmp)
             shadowModelBoundsCenter.set(shadowBoundsCenterTmp)
-            shadowModelBoundsRadius = (shadowBoundsDimensionsTmp.len() * 0.5f).coerceAtLeast(1f)
+            shadowModelBoundsRadius = (shadowBoundsDimensionsTmp.len() * 0.5f).coerceAtLeast(minimumShadowBoundsRadius)
             shadowModelBoundsValid = true
         }
         shadowModelTrackedEdgeCount = totalEdgeCount()
@@ -8949,7 +8950,7 @@ class Main(
         val bounds = scene.root.worldBounds()
         if (bounds == null) {
             shadowModelBoundsCenter.setZero()
-            shadowModelBoundsRadius = 12f
+            shadowModelBoundsRadius = minimumShadowBoundsRadius
             shadowModelBoundsValid = false
             return
         }
@@ -8965,7 +8966,7 @@ class Main(
     private fun expandShadowModelBoundsWithPoint(point: Vector3) {
         if (!shadowModelBoundsValid) {
             shadowModelBoundsCenter.set(point)
-            shadowModelBoundsRadius = 1f
+            shadowModelBoundsRadius = minimumShadowBoundsRadius
             shadowModelBoundsValid = true
             return
         }
@@ -8988,9 +8989,9 @@ class Main(
     }
 
     private fun updateShadowCameraFromModelBounds() {
-        val radius = if (shadowModelBoundsValid) shadowModelBoundsRadius.coerceAtLeast(1f) else 12f
+        val radius = if (shadowModelBoundsValid) shadowModelBoundsRadius.coerceAtLeast(minimumShadowBoundsRadius) else minimumShadowBoundsRadius
         val diameter = radius * 2f
-        val paddedSize = (diameter * 1.15f).coerceAtLeast(24f)
+        val paddedSize = (diameter * 1.15f).coerceAtLeast(minimumShadowBoundsRadius * 2f)
         val near = 0.5f
         val far = (near + diameter * 4f).coerceAtLeast(64f)
         shadowLight.setShadowVolume(paddedSize, paddedSize, near, far)
@@ -9452,11 +9453,11 @@ class Main(
             shadowBounds.getCenter(shadowBoundsCenterTmp)
             shadowBounds.getDimensions(shadowBoundsDimensionsTmp)
             shadowModelBoundsCenter.set(shadowBoundsCenterTmp)
-            shadowModelBoundsRadius = (shadowBoundsDimensionsTmp.len() * 0.5f).coerceAtLeast(1f)
+            shadowModelBoundsRadius = (shadowBoundsDimensionsTmp.len() * 0.5f).coerceAtLeast(minimumShadowBoundsRadius)
             shadowModelBoundsValid = true
         } else {
             shadowModelBoundsCenter.setZero()
-            shadowModelBoundsRadius = 12f
+            shadowModelBoundsRadius = minimumShadowBoundsRadius
             shadowModelBoundsValid = false
         }
         val vertexCount = triangles.size * 3

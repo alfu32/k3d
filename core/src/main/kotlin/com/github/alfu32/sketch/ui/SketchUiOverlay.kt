@@ -47,6 +47,7 @@ import com.github.alfu32.sketch.tools.PolylineSettings
 import com.github.alfu32.sketch.tools.VectorTextSettings
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.max
 
 class SketchUiOverlay(
     private val controller: ToolController,
@@ -126,6 +127,16 @@ class SketchUiOverlay(
     private val tutorialNext: () -> Unit,
     private val tutorialUiActionObserved: (String, String) -> Unit
 ) {
+    private data class ToolbarLayoutState(
+        val x: Float? = null,
+        val y: Float? = null,
+        val width: Float? = null,
+        val height: Float? = null,
+        val visible: Boolean? = null
+    ) {
+        fun hasPosition(): Boolean = x != null && y != null
+    }
+
     private inner open class CollapsibleWindow(
         title: String,
         private val fixedHeight: Float? = null,
@@ -344,9 +355,11 @@ class SketchUiOverlay(
     private val uiPrefs by lazy { Gdx.app.getPreferences("k3d-ui-layout") }
     private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
     private val toolbarLayoutVersion = 8
+    private val toolbarsVisibleKey = "toolbars.visible"
     private val uiToolbarButtonSizeKey = "ui_toolbar_button_size_px"
     private var toolbarButtonSize = 32f
     private var toolbarIconSizePx = 32
+    private val toolbarDesiredVisibility = mutableMapOf<String, Boolean>()
     private val archDefaultWallThicknessKey = "arch_default_wall_thickness"
     private val archDefaultWallHeightKey = "arch_default_wall_height"
     private val archDefaultWallInclinationKey = "arch_default_wall_inclination"
@@ -468,6 +481,7 @@ class SketchUiOverlay(
     private lateinit var tutorialNextButton: VisTextButton
     private var tutorialEntries: List<TutorialFileEntry> = emptyList()
     private var selectedTutorialPath: String? = null
+    private var updatingTutorialListSelection = false
     private var tutorialMessagePositionInitialized = false
     private val tutorialMessageWindowXKey = "tutorial_message_window_x"
     private val tutorialMessageWindowYKey = "tutorial_message_window_y"
@@ -619,6 +633,7 @@ class SketchUiOverlay(
         loadUiVisualSettings()
         iconDrawables.putAll(loadIconDrawables())
         migrateBuiltinToolbarPrefs()
+        toolbarsVisible = uiPrefs.getBoolean(toolbarsVisibleKey, true)
         loadArchitectureDefaults()
         loadHvacDefaults()
         loadHotspotDefaults()
@@ -1164,8 +1179,8 @@ class SketchUiOverlay(
 
     fun setToolbarsVisible(visible: Boolean) {
         toolbarsVisible = visible
-        builtInToolbars.values.forEach { it.isVisible = visible }
-        pluginToolbars.values.forEach { it.isVisible = visible }
+        saveToolbarsVisible()
+        applyToolbarsVisibility()
         toolbarsPositioned = false
         needsPanelLayout = true
     }
@@ -1351,6 +1366,9 @@ class SketchUiOverlay(
         builtInToolbars["builtin_toolbar_voxel"] = voxel
         builtInToolbars["builtin_toolbar_actions"] = actions
         builtInToolbars["builtin_toolbar_camera"] = camera
+        builtInToolbars.forEach { (toolbarId, window) ->
+            applyToolbarState(toolbarId, window)
+        }
         toolbarsPositioned = false
         return listOf(pointConstruction, entityConstruction, modification, architecture, hvac, voxel, actions, camera)
     }
@@ -3188,10 +3206,17 @@ class SketchUiOverlay(
         buttonsRow.add(tutorialsStopButton)
         content.add(buttonsRow).growX().row()
 
-        tutorialsList.addListener(object : ClickListener() {
-            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+        tutorialsList.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingTutorialListSelection) {
+                    return
+                }
                 val index = tutorialsList.selectedIndex
                 selectedTutorialPath = tutorialEntries.getOrNull(index)?.path
+            }
+        })
+        tutorialsList.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 if (tapCount >= 2) {
                     tutorialPlay(selectedTutorialPath)
                 }
@@ -3335,10 +3360,15 @@ class SketchUiOverlay(
             else -> tutorialEntries.firstOrNull()?.path
         }
         val selectedIndex = tutorialEntries.indexOfFirst { it.path == selectedTutorialPath }
-        if (selectedIndex >= 0 && tutorialsList.selectedIndex != selectedIndex) {
-            tutorialsList.selectedIndex = selectedIndex
-        } else if (selectedIndex < 0 && tutorialsList.selectedIndex != -1) {
-            tutorialsList.selectedIndex = -1
+        updatingTutorialListSelection = true
+        try {
+            if (selectedIndex >= 0 && tutorialsList.selectedIndex != selectedIndex) {
+                tutorialsList.selectedIndex = selectedIndex
+            } else if (selectedIndex < 0 && tutorialsList.selectedIndex != -1) {
+                tutorialsList.selectedIndex = -1
+            }
+        } finally {
+            updatingTutorialListSelection = false
         }
 
         tutorialsRecordButton.isDisabled = state.mode == TutorialMode.RECORDING || state.mode == TutorialMode.PLAYING || state.mode == TutorialMode.PAUSED
@@ -3368,8 +3398,8 @@ class SketchUiOverlay(
                 "Waiting for: ${state.expectedAction ?: "current step"}"
             }
         )
-        tutorialPreviousButton.isDisabled = !state.canGoPrevious
-        tutorialNextButton.isDisabled = !state.canGoNext
+        tutorialPreviousButton.isDisabled = false
+        tutorialNextButton.isDisabled = false
         tutorialMessageWindow.pack()
         ensureTutorialMessageWindowPosition()
         tutorialMessageWindow.isVisible = true
@@ -4572,8 +4602,8 @@ class SketchUiOverlay(
         }
         pluginToolbars.entries
             .sortedBy { it.key }
-            .forEach { (_, window) ->
-                toolbarEntries.add(null to window)
+            .forEach { (pluginId, window) ->
+                toolbarEntries.add(pluginToolbarStateId(pluginId) to window)
             }
 
         toolbarEntries.forEach { (toolbarId, window) ->
@@ -4582,17 +4612,29 @@ class SketchUiOverlay(
             }
             window.invalidateHierarchy()
             window.pack()
-            window.setSize(window.prefWidth, window.prefHeight)
-            if (x > margin && x + window.width > width - margin) {
-                x = margin
-                yTop -= rowHeight + gapY
-                rowHeight = 0f
+            val state = toolbarId?.let { readToolbarState(it) }
+            val titleHeight = window.getTitleTable().prefHeight
+            val targetWidth = state?.width ?: window.prefWidth
+            val targetHeight = state?.height ?: window.prefHeight
+            window.setSize(
+                max(64f, targetWidth),
+                max(titleHeight, targetHeight)
+            )
+            if (state?.hasPosition() == true) {
+                window.setPosition(state.x ?: margin, state.y ?: (yTop - window.height))
+                clampToolbarWindowToViewport(window, width, height, margin)
+            } else {
+                if (x > margin && x + window.width > width - margin) {
+                    x = margin
+                    yTop -= rowHeight + gapY
+                    rowHeight = 0f
+                }
+                window.setPosition(x, yTop - window.height)
+                x += window.width + gapX
+                rowHeight = kotlin.math.max(rowHeight, window.height)
             }
-            window.setPosition(x, yTop - window.height)
             window.toFront()
-            toolbarId?.let { saveToolbarPosition(it, window) }
-            x += window.width + gapX
-            rowHeight = kotlin.math.max(rowHeight, window.height)
+            toolbarId?.let { saveToolbarState(it, window) }
         }
     }
 
@@ -4629,30 +4671,104 @@ class SketchUiOverlay(
                 pointer: Int,
                 button: Int
             ) {
-                saveToolbarPosition(toolbarId, window)
+                saveToolbarState(toolbarId, window)
             }
         })
     }
 
-    private fun readToolbarPosition(toolbarId: String): Vector2? {
-        val xKey = "$toolbarId.x"
-        val yKey = "$toolbarId.y"
-        if (!uiPrefs.contains(xKey) || !uiPrefs.contains(yKey)) {
-            return null
-        }
-        return Vector2(uiPrefs.getFloat(xKey), uiPrefs.getFloat(yKey))
+    private fun pluginToolbarStateId(pluginId: String): String {
+        return "plugin_toolbar_${normalizeTutorialActionKey(pluginId)}"
     }
 
-    private fun saveToolbarPosition(toolbarId: String, window: CollapsibleWindow) {
+    private fun readToolbarState(toolbarId: String): ToolbarLayoutState {
         val xKey = "$toolbarId.x"
         val yKey = "$toolbarId.y"
+        val wKey = "$toolbarId.w"
+        val hKey = "$toolbarId.h"
+        val visibleKey = "$toolbarId.visible"
+        return ToolbarLayoutState(
+            x = if (uiPrefs.contains(xKey)) uiPrefs.getFloat(xKey) else null,
+            y = if (uiPrefs.contains(yKey)) uiPrefs.getFloat(yKey) else null,
+            width = if (uiPrefs.contains(wKey)) uiPrefs.getFloat(wKey) else null,
+            height = if (uiPrefs.contains(hKey)) uiPrefs.getFloat(hKey) else null,
+            visible = if (uiPrefs.contains(visibleKey)) uiPrefs.getBoolean(visibleKey) else null
+        )
+    }
+
+    private fun applyToolbarState(toolbarId: String, window: CollapsibleWindow, defaultVisible: Boolean = true) {
+        val state = readToolbarState(toolbarId)
+        val desiredVisible = state.visible ?: defaultVisible
+        toolbarDesiredVisibility[toolbarId] = desiredVisible
+        window.invalidateHierarchy()
+        window.pack()
+        val titleHeight = window.getTitleTable().prefHeight
+        val targetWidth = state.width ?: window.prefWidth
+        val targetHeight = state.height ?: window.prefHeight
+        window.setSize(
+            max(64f, targetWidth),
+            max(titleHeight, targetHeight)
+        )
+        window.isVisible = toolbarsVisible && desiredVisible
+    }
+
+    private fun applyToolbarsVisibility() {
+        builtInToolbars.forEach { (toolbarId, window) ->
+            window.isVisible = toolbarsVisible && (toolbarDesiredVisibility[toolbarId] ?: true)
+        }
+        pluginToolbars.forEach { (pluginId, window) ->
+            val toolbarId = pluginToolbarStateId(pluginId)
+            window.isVisible = toolbarsVisible && (toolbarDesiredVisibility[toolbarId] ?: true)
+        }
+    }
+
+    private fun clampToolbarWindowToViewport(
+        window: CollapsibleWindow,
+        viewportWidth: Float,
+        viewportHeight: Float,
+        margin: Float
+    ) {
+        val maxX = (viewportWidth - margin - window.width).coerceAtLeast(margin)
+        val maxY = (viewportHeight - margin - window.height).coerceAtLeast(margin)
+        window.setPosition(
+            window.x.coerceIn(margin, maxX),
+            window.y.coerceIn(margin, maxY)
+        )
+    }
+
+    private fun saveToolbarsVisible() {
+        uiPrefs.putBoolean(toolbarsVisibleKey, toolbarsVisible)
+        uiPrefs.flush()
+    }
+
+    private fun saveToolbarState(toolbarId: String, window: CollapsibleWindow) {
+        val xKey = "$toolbarId.x"
+        val yKey = "$toolbarId.y"
+        val wKey = "$toolbarId.w"
+        val hKey = "$toolbarId.h"
+        val visibleKey = "$toolbarId.visible"
         val prevX = uiPrefs.getFloat(xKey, Float.NaN)
         val prevY = uiPrefs.getFloat(yKey, Float.NaN)
-        if (!prevX.isNaN() && !prevY.isNaN() && abs(prevX - window.x) < 0.25f && abs(prevY - window.y) < 0.25f) {
+        val prevW = uiPrefs.getFloat(wKey, Float.NaN)
+        val prevH = uiPrefs.getFloat(hKey, Float.NaN)
+        val desiredVisible = toolbarDesiredVisibility[toolbarId] ?: true
+        val prevVisible = if (uiPrefs.contains(visibleKey)) uiPrefs.getBoolean(visibleKey) else desiredVisible
+        if (!prevX.isNaN() &&
+            !prevY.isNaN() &&
+            !prevW.isNaN() &&
+            !prevH.isNaN() &&
+            abs(prevX - window.x) < 0.25f &&
+            abs(prevY - window.y) < 0.25f &&
+            abs(prevW - window.width) < 0.25f &&
+            abs(prevH - window.height) < 0.25f &&
+            prevVisible == desiredVisible
+        ) {
             return
         }
         uiPrefs.putFloat(xKey, window.x)
         uiPrefs.putFloat(yKey, window.y)
+        uiPrefs.putFloat(wKey, window.width)
+        uiPrefs.putFloat(hKey, window.height)
+        uiPrefs.putBoolean(visibleKey, desiredVisible)
         uiPrefs.flush()
     }
 
@@ -4905,9 +5021,13 @@ class SketchUiOverlay(
                 pluginToolByWidget[button] = entry.id
             }
             window.add(group).grow()
+            val toolbarId = pluginToolbarStateId(pluginId)
+            attachToolbarPersistence(window, toolbarId)
+            applyToolbarState(toolbarId, window)
             stage.addActor(window)
             pluginToolbars[pluginId] = window
         }
+        applyToolbarsVisibility()
         updatePluginToolSelection()
         updateButtonLabels()
         toolbarsPositioned = false
