@@ -561,9 +561,18 @@ class PluginHost(
             if (entry.enabled) {
                 enabledPlugins.add(plugin.id)
             }
-        } catch (ex: Exception) {
-            pluginStates[entry.url] = PluginState(null, null, ex.message ?: "Load failed")
-            println("Plugin load failed: ${entry.url} (${ex.message ?: "Load failed"})")
+        } catch (ex: Throwable) {
+            val errorDetail = buildString {
+                val typeName = ex::class.java.simpleName.takeIf { it.isNotBlank() } ?: "Load failed"
+                append(typeName)
+                ex.message?.takeIf { it.isNotBlank() }?.let {
+                    append(": ")
+                    append(it)
+                }
+            }
+            pluginStates[entry.url] = PluginState(null, null, errorDetail)
+            println("Plugin load failed: ${entry.url} ($errorDetail)")
+            ex.printStackTrace()
         }
     }
 

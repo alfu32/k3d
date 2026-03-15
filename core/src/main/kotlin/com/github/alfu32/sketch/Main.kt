@@ -7173,6 +7173,7 @@ class Main(
             return java.io.File(System.getProperty("user.dir", ".")).absoluteFile
         }
         if (isAndroidRuntime()) {
+            resolveAndroidInstallDirFromArgs(startupArgs)?.let { return it }
             return try {
                 Gdx.files.local("").file().absoluteFile
             } catch (_: Exception) {
@@ -7210,6 +7211,22 @@ class Main(
         } catch (_: Exception) {
             false
         }
+    }
+
+    private fun resolveAndroidInstallDirFromArgs(args: kotlin.Array<String>): java.io.File? {
+        var i = 0
+        while (i < args.size) {
+            when {
+                (args[i] == "--plugins-dir" || args[i] == "--pluginsDir") && i + 1 < args.size -> {
+                    return java.io.File(args[i + 1]).absoluteFile.parentFile
+                }
+                args[i] == "--file" && i + 1 < args.size -> {
+                    return java.io.File(args[i + 1]).absoluteFile.parentFile
+                }
+            }
+            i++
+        }
+        return null
     }
 
     private fun isWebRuntime(): Boolean {
