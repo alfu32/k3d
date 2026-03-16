@@ -21,6 +21,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.WidgetGroup
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
+import com.badlogic.gdx.utils.Scaling
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 import com.github.alfu32.sketch.model.HotspotStore
@@ -45,6 +46,7 @@ import com.github.alfu32.sketch.tools.HotspotSettings
 import com.github.alfu32.sketch.tools.HvacSettings
 import com.github.alfu32.sketch.tools.PolylineSettings
 import com.github.alfu32.sketch.tools.VectorTextSettings
+import java.util.Base64
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
@@ -401,6 +403,7 @@ class SketchUiOverlay(
     private var darkBarDrawable: TextureRegionDrawable? = null
     private var dockSectionHeaderOpenDrawable: TextureRegionDrawable? = null
     private var dockSectionHeaderClosedDrawable: TextureRegionDrawable? = null
+    private var tutorialPreviewSlotDrawable: TextureRegionDrawable? = null
     private val toolLabel = VisLabel()
     private val messageLabel = VisLabel()
     private val copyLabel = VisLabel()
@@ -479,6 +482,12 @@ class SketchUiOverlay(
     private lateinit var tutorialMessageStatusLabel: VisLabel
     private lateinit var tutorialPreviousButton: VisTextButton
     private lateinit var tutorialNextButton: VisTextButton
+    private lateinit var tutorialPreviewBeforeImage: Image
+    private lateinit var tutorialPreviewAfterImage: Image
+    private var tutorialPreviewBeforeTexture: Texture? = null
+    private var tutorialPreviewAfterTexture: Texture? = null
+    private var tutorialPreviewBeforeKey: String? = null
+    private var tutorialPreviewAfterKey: String? = null
     private var tutorialEntries: List<TutorialFileEntry> = emptyList()
     private var selectedTutorialPath: String? = null
     private var updatingTutorialListSelection = false
@@ -1234,6 +1243,7 @@ class SketchUiOverlay(
     }
 
     fun dispose() {
+        disposeTutorialPreviewTextures()
         stage.dispose()
         iconTextures.forEach { it.dispose() }
     }
@@ -3256,6 +3266,14 @@ class SketchUiOverlay(
         window.isResizable = false
         tutorialMessageLabel = VisLabel("").apply { setWrap(true) }
         tutorialMessageStatusLabel = VisLabel("")
+        tutorialPreviewBeforeImage = Image().apply {
+            setScaling(Scaling.fit)
+            touchable = Touchable.disabled
+        }
+        tutorialPreviewAfterImage = Image().apply {
+            setScaling(Scaling.fit)
+            touchable = Touchable.disabled
+        }
         tutorialPreviousButton = VisTextButton("Previous")
         tutorialNextButton = VisTextButton("Next").apply { isDisabled = true }
         tutorialPreviousButton.addListener(object : ClickListener() {
@@ -3272,6 +3290,11 @@ class SketchUiOverlay(
         content.defaults().pad(4f).left().growX()
         content.add(tutorialMessageLabel).width(320f).left().growX().row()
         content.add(tutorialMessageStatusLabel).left().growX().row()
+        val previews = VisTable()
+        previews.defaults().pad(2f).top()
+        previews.add(buildTutorialPreviewPane("Initial", tutorialPreviewBeforeImage))
+        previews.add(buildTutorialPreviewPane("Final", tutorialPreviewAfterImage))
+        content.add(previews).left().padTop(2f).row()
         val controls = VisTable()
         controls.defaults().pad(2f).left()
         controls.add(tutorialPreviousButton)
@@ -3292,6 +3315,98 @@ class SketchUiOverlay(
             }
         })
         return window
+    }
+
+    private fun buildTutorialPreviewPane(title: String, image: Image): VisTable {
+        val pane = VisTable()
+        pane.defaults().pad(2f).left().growX()
+        pane.add(VisLabel(title)).left().row()
+        val slot = VisTable().apply {
+            background = tutorialPreviewSlotDrawable
+                ?: createButtonBackgroundDrawable(Color(0.12f, 0.12f, 0.14f, 1f), Color(0.35f, 0.35f, 0.4f, 1f))
+                    .also { tutorialPreviewSlotDrawable = it }
+            touchable = Touchable.disabled
+        }
+        slot.add(image).grow().center()
+        pane.add(slot).width(380f).height(200f).grow().row()
+        return pane
+    }
+
+    private fun updateTutorialPreviewTextures(state: TutorialUiState) {
+        updateTutorialPreviewTexture(
+            encoded = state.currentPreviewBeforePngBase64,
+            image = tutorialPreviewBeforeImage,
+            currentKey = tutorialPreviewBeforeKey,
+            currentTexture = tutorialPreviewBeforeTexture
+        ) { newKey, newTexture ->
+            tutorialPreviewBeforeKey = newKey
+            tutorialPreviewBeforeTexture = newTexture
+        }
+        updateTutorialPreviewTexture(
+            encoded = state.currentPreviewAfterPngBase64,
+            image = tutorialPreviewAfterImage,
+            currentKey = tutorialPreviewAfterKey,
+            currentTexture = tutorialPreviewAfterTexture
+        ) { newKey, newTexture ->
+            tutorialPreviewAfterKey = newKey
+            tutorialPreviewAfterTexture = newTexture
+        }
+    }
+
+    private fun updateTutorialPreviewTexture(
+        encoded: String?,
+        image: Image,
+        currentKey: String?,
+        currentTexture: Texture?,
+        store: (String?, Texture?) -> Unit
+    ) {
+        val normalized = encoded?.takeIf { it.isNotBlank() }
+        if (normalized == currentKey) {
+            return
+        }
+        currentTexture?.dispose()
+        if (normalized.isNullOrBlank()) {
+            image.drawable = null
+            store(null, null)
+            return
+        }
+        val newTexture = decodeTutorialPreviewTexture(normalized)
+        if (newTexture == null) {
+            image.drawable = null
+            store(null, null)
+            return
+        }
+        val region = TextureRegion(newTexture)
+        region.flip(false, true)
+        image.drawable = TextureRegionDrawable(region)
+        store(normalized, newTexture)
+    }
+
+    private fun decodeTutorialPreviewTexture(encoded: String): Texture? {
+        return try {
+            val bytes = Base64.getDecoder().decode(encoded)
+            val pixmap = Pixmap(bytes, 0, bytes.size)
+            val texture = Texture(pixmap)
+            pixmap.dispose()
+            texture
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun disposeTutorialPreviewTextures() {
+        tutorialPreviewBeforeTexture?.dispose()
+        tutorialPreviewAfterTexture?.dispose()
+        tutorialPreviewBeforeTexture = null
+        tutorialPreviewAfterTexture = null
+        tutorialPreviewBeforeKey = null
+        tutorialPreviewAfterKey = null
+        if (::tutorialPreviewBeforeImage.isInitialized) {
+            tutorialPreviewBeforeImage.drawable = null
+        }
+        if (::tutorialPreviewAfterImage.isInitialized) {
+            tutorialPreviewAfterImage.drawable = null
+        }
     }
 
     private fun updateHotspotSettingsPanel() {
@@ -3386,6 +3501,7 @@ class SketchUiOverlay(
             return
         }
         if (!state.messageVisible) {
+            disposeTutorialPreviewTextures()
             tutorialMessageWindow.isVisible = false
             return
         }
@@ -3398,6 +3514,7 @@ class SketchUiOverlay(
                 "Waiting for: ${state.expectedAction ?: "current step"}"
             }
         )
+        updateTutorialPreviewTextures(state)
         tutorialPreviousButton.isDisabled = false
         tutorialNextButton.isDisabled = false
         tutorialMessageWindow.pack()

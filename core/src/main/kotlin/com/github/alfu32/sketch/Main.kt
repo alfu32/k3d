@@ -153,10 +153,13 @@ import java.awt.EventQueue
 import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.GraphicsEnvironment
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FilenameFilter
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.ArrayDeque
+import java.util.Base64
 import java.util.EnumMap
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
@@ -165,6 +168,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.roundToInt
 
 /** [com.badlogic.gdx.ApplicationListener] implementation shared by all platforms. */
 class Main(
@@ -177,6 +181,7 @@ class Main(
     }
 
     private data class FeedbackWorldLine(val start: Vector3, val end: Vector3)
+    private data class PendingTutorialPreviewCapture(val stepIndex: Int)
 
     private data class EntityDisplayState(
         var draw: Boolean = true,
@@ -304,6 +309,10 @@ class Main(
     private val shadowBoundsDimensionsTmp = Vector3()
     private var instanceGeometryDirty = true
     private val capturedFeedbackLines = mutableListOf<FeedbackWorldLine>()
+    private val pendingTutorialPreviewCaptures = ArrayDeque<PendingTutorialPreviewCapture>()
+    private var pendingTutorialPreviewDelayFrames = 0
+    private val tutorialThumbnailWidth = 380
+    private val tutorialThumbnailHeight = 200
     private var faceMeshDirty = true
     private var faceMeshVisualStamp = Long.MIN_VALUE
     private var shadowPassDirty = true
@@ -781,13 +790,13 @@ class Main(
                 return@addToolChangeListener
             }
             if (previous != ToolId.SELECT) {
-                tutorialManager.observeAction(
+                recordTutorialAction(
                     "tool.end.${previous.name.lowercase(Locale.US)}",
                     previous.displayName
                 )
             }
             if (next != ToolId.SELECT) {
-                tutorialManager.observeAction(
+                recordTutorialAction(
                     "tool.start.${next.name.lowercase(Locale.US)}",
                     next.displayName
                 )
@@ -2696,6 +2705,7 @@ class Main(
         uiOverlay.act(Gdx.graphics.deltaTime)
         uiOverlay.draw()
         drawTutorialArrowOverlay()
+        processPendingTutorialPreviewCaptures()
         Gdx.gl.glDisable(GL20.GL_BLEND)
     }
 
@@ -4437,6 +4447,79 @@ class Main(
             pngWriter?.dispose()
             pixmap?.dispose()
         }
+    }
+
+    private fun captureTutorialThumbnailBase64(): String? {
+        var pixmap: Pixmap? = null
+        var thumbnail: Pixmap? = null
+        var pngWriter: PixmapIO.PNG? = null
+        val output = ByteArrayOutputStream()
+        return try {
+            val width = Gdx.graphics.backBufferWidth.coerceAtLeast(1)
+            val height = Gdx.graphics.backBufferHeight.coerceAtLeast(1)
+            pixmap = ScreenUtils.getFrameBufferPixmap(0, 0, width, height)
+            thumbnail = buildTutorialThumbnailPixmap(pixmap)
+            pngWriter = PixmapIO.PNG((tutorialThumbnailWidth * tutorialThumbnailHeight * 4).coerceAtLeast(1024))
+            pngWriter?.write(output, thumbnail)
+            Base64.getEncoder().encodeToString(output.toByteArray())
+        } catch (_: Throwable) {
+            null
+        } finally {
+            pngWriter?.dispose()
+            thumbnail?.dispose()
+            pixmap?.dispose()
+            output.close()
+        }
+    }
+
+    private fun buildTutorialThumbnailPixmap(source: Pixmap): Pixmap {
+        val canvas = Pixmap(tutorialThumbnailWidth, tutorialThumbnailHeight, Pixmap.Format.RGBA8888)
+        canvas.setColor(0.12f, 0.12f, 0.14f, 1f)
+        canvas.fill()
+        val scale = minOf(
+            tutorialThumbnailWidth.toFloat() / source.width.toFloat().coerceAtLeast(1f),
+            tutorialThumbnailHeight.toFloat() / source.height.toFloat().coerceAtLeast(1f)
+        )
+        val scaledWidth = (source.width * scale).roundToInt().coerceIn(1, tutorialThumbnailWidth)
+        val scaledHeight = (source.height * scale).roundToInt().coerceIn(1, tutorialThumbnailHeight)
+        val offsetX = ((tutorialThumbnailWidth - scaledWidth) * 0.5f).roundToInt().coerceAtLeast(0)
+        val offsetY = ((tutorialThumbnailHeight - scaledHeight) * 0.5f).roundToInt().coerceAtLeast(0)
+        canvas.setFilter(Pixmap.Filter.BiLinear)
+        canvas.drawPixmap(
+            source,
+            0,
+            0,
+            source.width,
+            source.height,
+            offsetX,
+            offsetY,
+            scaledWidth,
+            scaledHeight
+        )
+        return canvas
+    }
+
+    private fun processPendingTutorialPreviewCaptures() {
+        if (pendingTutorialPreviewCaptures.isEmpty()) {
+            return
+        }
+        if (pendingTutorialPreviewDelayFrames > 0) {
+            pendingTutorialPreviewDelayFrames -= 1
+            return
+        }
+        flushPendingTutorialPreviewCapturesNow()
+    }
+
+    private fun flushPendingTutorialPreviewCapturesNow() {
+        if (pendingTutorialPreviewCaptures.isEmpty()) {
+            return
+        }
+        val preview = captureTutorialThumbnailBase64()
+        while (pendingTutorialPreviewCaptures.isNotEmpty()) {
+            val pending = pendingTutorialPreviewCaptures.removeFirst()
+            tutorialManager.setRecordedStepAfterPreview(pending.stepIndex, preview)
+        }
+        pendingTutorialPreviewDelayFrames = 0
     }
 
     private fun exportSvgView(file: File) {
@@ -7086,7 +7169,9 @@ class Main(
             statusModel.message = "Tutorial recording is unavailable in web builds."
             return
         }
-        val file = tutorialManager.startRecording()
+        pendingTutorialPreviewCaptures.clear()
+        pendingTutorialPreviewDelayFrames = 0
+        val file = tutorialManager.startRecording(captureTutorialThumbnailBase64())
         statusModel.message = "Recording tutorial: ${file.name}"
     }
 
@@ -7095,6 +7180,7 @@ class Main(
             statusModel.message = "Tutorial recording is unavailable in web builds."
             return
         }
+        flushPendingTutorialPreviewCapturesNow()
         val file = tutorialManager.stopRecording()
         statusModel.message = if (file != null) {
             "Saved tutorial: ${file.name}"
@@ -7175,7 +7261,18 @@ class Main(
         if (BuildFlags.WEB_BUILD) {
             return
         }
-        tutorialManager.observeAction(actionId, label)
+        recordTutorialAction(actionId, label)
+    }
+
+    private fun recordTutorialAction(actionId: String, label: String) {
+        if (BuildFlags.WEB_BUILD) {
+            return
+        }
+        val recordedStepIndex = tutorialManager.observeAction(actionId, label)
+        if (recordedStepIndex != null) {
+            pendingTutorialPreviewCaptures.addLast(PendingTutorialPreviewCapture(recordedStepIndex))
+            pendingTutorialPreviewDelayFrames = 1
+        }
     }
 
     private fun resolveDesktopWritableDataDir(): java.io.File {
@@ -8429,7 +8526,7 @@ class Main(
         val point = snap?.world
         if (snap != null && snap.valid && point != null) {
             guideManager.addAxisGuide(point, snap.normal)
-            tutorialManager.observeAction(
+            recordTutorialAction(
                 "guide.axis.place",
                 "Press T to place an axis helper at the cursor."
             )
@@ -8442,7 +8539,7 @@ class Main(
         val point = snap?.world
         if (snap != null && snap.valid && point != null) {
             guideManager.addGridGuide(point, snap.normal)
-            tutorialManager.observeAction(
+            recordTutorialAction(
                 "guide.grid.place",
                 "Press G to place a grid helper at the cursor."
             )

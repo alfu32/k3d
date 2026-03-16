@@ -17,7 +17,9 @@ data class TutorialFileEntry(
 
 data class TutorialStep(
     var action: String = "",
-    var message: String = ""
+    var message: String = "",
+    var previewBeforePngBase64: String = "",
+    var previewAfterPngBase64: String = ""
 )
 
 data class TutorialScript(
@@ -42,6 +44,8 @@ data class TutorialUiState(
     val totalSteps: Int = 0,
     val currentMessage: String = "",
     val expectedAction: String? = null,
+    val currentPreviewBeforePngBase64: String? = null,
+    val currentPreviewAfterPngBase64: String? = null,
     val currentStepMatched: Boolean = false,
     val messageVisible: Boolean = false,
     val canGoPrevious: Boolean = false,
@@ -64,7 +68,10 @@ class TutorialManager(
     private var playingFile: File? = null
     private var currentStepIndex = 0
     private var currentStepMatched = false
+    private var recordingBaselinePreviewPngBase64: String? = null
     private val queuedActions = ArrayDeque<String>()
+    private var tutorialEntriesCache: List<TutorialFileEntry> = emptyList()
+    private var tutorialEntriesSignature: String = ""
 
     fun uiState(): TutorialUiState {
         val files = listTutorials()
@@ -88,6 +95,8 @@ class TutorialManager(
             totalSteps = totalSteps,
             currentMessage = currentStep?.message ?: "",
             expectedAction = currentStep?.action,
+            currentPreviewBeforePngBase64 = currentStep?.previewBeforePngBase64?.takeIf { it.isNotBlank() },
+            currentPreviewAfterPngBase64 = currentStep?.previewAfterPngBase64?.takeIf { it.isNotBlank() },
             currentStepMatched = currentStepMatched,
             messageVisible = mode == TutorialMode.PLAYING || mode == TutorialMode.PAUSED,
             canGoPrevious = (mode == TutorialMode.PLAYING || mode == TutorialMode.PAUSED) && currentStepIndex > 0,
@@ -95,7 +104,7 @@ class TutorialManager(
         )
     }
 
-    fun startRecording(): File {
+    fun startRecording(initialPreviewPngBase64: String? = null): File {
         stopPlayback()
         val dir = ensureTutorialsDir()
         val now = LocalDateTime.now()
@@ -106,6 +115,7 @@ class TutorialManager(
             createdAt = now.toString(),
             steps = mutableListOf()
         )
+        recordingBaselinePreviewPngBase64 = initialPreviewPngBase64?.takeIf { it.isNotBlank() }
         mode = TutorialMode.RECORDING
         saveRecordingScript()
         return file
@@ -118,6 +128,7 @@ class TutorialManager(
         }
         recordingScript = null
         recordingFile = null
+        recordingBaselinePreviewPngBase64 = null
         if (mode == TutorialMode.RECORDING) {
             mode = TutorialMode.IDLE
         }
@@ -159,9 +170,9 @@ class TutorialManager(
         }
     }
 
-    fun observeAction(actionId: String, label: String? = null) {
+    fun observeAction(actionId: String, label: String? = null): Int? {
         when (mode) {
-            TutorialMode.RECORDING -> recordStep(actionId, label)
+            TutorialMode.RECORDING -> return recordStep(actionId, label)
             TutorialMode.PLAYING -> {
                 if (tryMatchCurrentStep(actionId)) {
                     goToNextStep()
@@ -169,6 +180,7 @@ class TutorialManager(
             }
             TutorialMode.PAUSED, TutorialMode.IDLE -> Unit
         }
+        return null
     }
 
     fun goToNextStep(): Boolean {
@@ -225,15 +237,28 @@ class TutorialManager(
 
     private fun currentStep(): TutorialStep? = playingScript?.steps?.getOrNull(currentStepIndex)
 
-    private fun recordStep(actionId: String, label: String?) {
+    fun setRecordedStepAfterPreview(stepIndex: Int, previewPngBase64: String?) {
         val script = recordingScript ?: return
+        val step = script.steps.getOrNull(stepIndex) ?: return
+        val value = previewPngBase64?.trim().orEmpty()
+        step.previewAfterPngBase64 = value
+        if (value.isNotBlank()) {
+            recordingBaselinePreviewPngBase64 = value
+        }
+        saveRecordingScript()
+    }
+
+    private fun recordStep(actionId: String, label: String?): Int? {
+        val script = recordingScript ?: return null
         script.steps.add(
             TutorialStep(
                 action = actionId,
-                message = defaultMessageFor(actionId, label)
+                message = defaultMessageFor(actionId, label),
+                previewBeforePngBase64 = recordingBaselinePreviewPngBase64.orEmpty()
             )
         )
         saveRecordingScript()
+        return script.steps.lastIndex
     }
 
     private fun saveRecordingScript() {
@@ -263,17 +288,24 @@ class TutorialManager(
         val files = dir.listFiles { file ->
             file.isFile && file.extension.equals("json", ignoreCase = true)
         } ?: return emptyList()
-        return files
-            .sortedWith(compareByDescending<File> { it.lastModified() }.thenBy { it.name.lowercase(Locale.US) })
-            .map { file ->
-                val script = loadScript(file)
-                TutorialFileEntry(
-                    path = file.absolutePath,
-                    fileName = file.name,
-                    name = script?.name?.takeIf { it.isNotBlank() } ?: file.nameWithoutExtension,
-                    stepCount = script?.steps?.size ?: 0
-                )
-            }
+        val sortedFiles = files.sortedWith(compareByDescending<File> { it.lastModified() }.thenBy { it.name.lowercase(Locale.US) })
+        val signature = sortedFiles.joinToString(separator = "|") { file ->
+            "${file.absolutePath}:${file.lastModified()}:${file.length()}"
+        }
+        if (signature == tutorialEntriesSignature) {
+            return tutorialEntriesCache
+        }
+        tutorialEntriesSignature = signature
+        tutorialEntriesCache = sortedFiles.map { file ->
+            val script = loadScript(file)
+            TutorialFileEntry(
+                path = file.absolutePath,
+                fileName = file.name,
+                name = script?.name?.takeIf { it.isNotBlank() } ?: file.nameWithoutExtension,
+                stepCount = script?.steps?.size ?: 0
+            )
+        }
+        return tutorialEntriesCache
     }
 
     private fun ensureTutorialsDir(): File {
