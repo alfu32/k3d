@@ -3376,9 +3376,7 @@ class SketchUiOverlay(
             store(null, null)
             return
         }
-        val region = TextureRegion(newTexture)
-        region.flip(false, true)
-        image.drawable = TextureRegionDrawable(region)
+        image.drawable = TextureRegionDrawable(TextureRegion(newTexture))
         store(normalized, newTexture)
     }
 
