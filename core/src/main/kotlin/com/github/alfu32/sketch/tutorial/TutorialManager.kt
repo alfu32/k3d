@@ -12,7 +12,8 @@ data class TutorialFileEntry(
     var path: String = "",
     var fileName: String = "",
     var name: String = "",
-    var stepCount: Int = 0
+    var stepCount: Int = 0,
+    var relativeFolder: String = ""
 )
 
 data class TutorialStep(
@@ -285,26 +286,43 @@ class TutorialManager(
 
     private fun listTutorials(): List<TutorialFileEntry> {
         val dir = ensureTutorialsDir()
-        val files = dir.listFiles { file ->
-            file.isFile && file.extension.equals("json", ignoreCase = true)
-        } ?: return emptyList()
-        val sortedFiles = files.sortedWith(compareByDescending<File> { it.lastModified() }.thenBy { it.name.lowercase(Locale.US) })
-        val signature = sortedFiles.joinToString(separator = "|") { file ->
+        val files = dir.walkTopDown()
+            .filter { file ->
+                file.isFile && file.extension.equals("json", ignoreCase = true)
+            }
+            .toList()
+        if (files.isEmpty()) {
+            tutorialEntriesSignature = ""
+            tutorialEntriesCache = emptyList()
+            return emptyList()
+        }
+        val signature = files.sortedBy { it.absolutePath.lowercase(Locale.US) }.joinToString(separator = "|") { file ->
             "${file.absolutePath}:${file.lastModified()}:${file.length()}"
         }
         if (signature == tutorialEntriesSignature) {
             return tutorialEntriesCache
         }
         tutorialEntriesSignature = signature
-        tutorialEntriesCache = sortedFiles.map { file ->
+        tutorialEntriesCache = files.map { file ->
             val script = loadScript(file)
+            val relativeFolder = file.parentFile
+                ?.relativeTo(dir)
+                ?.path
+                ?.replace(File.separatorChar, '/')
+                ?.takeIf { it.isNotBlank() && it != "." }
+                .orEmpty()
             TutorialFileEntry(
                 path = file.absolutePath,
                 fileName = file.name,
                 name = script?.name?.takeIf { it.isNotBlank() } ?: file.nameWithoutExtension,
-                stepCount = script?.steps?.size ?: 0
+                stepCount = script?.steps?.size ?: 0,
+                relativeFolder = relativeFolder
             )
-        }
+        }.sortedWith(
+            compareBy<TutorialFileEntry> { it.relativeFolder.lowercase(Locale.US) }
+                .thenBy { it.name.lowercase(Locale.US) }
+                .thenBy { it.fileName.lowercase(Locale.US) }
+        )
         return tutorialEntriesCache
     }
 
