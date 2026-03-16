@@ -28,7 +28,7 @@ tasks.register("prepareAndroidBundledAssets", Sync) {
   into(androidBundledAssetsDir)
   from(rootProject.file("docs/tutorial")) {
     into("bootstrap/tutorials")
-    include("*.json", "*.groovy")
+    include("**/*.json", "**/*.groovy")
   }
 }
 

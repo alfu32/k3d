@@ -15,12 +15,14 @@ import com.badlogic.gdx.scenes.scene2d.ui.ImageTextButton
 import com.badlogic.gdx.scenes.scene2d.ui.ButtonGroup
 import com.badlogic.gdx.scenes.scene2d.ui.Cell
 import com.badlogic.gdx.scenes.scene2d.ui.Table
+import com.badlogic.gdx.scenes.scene2d.ui.TextButton
 import com.badlogic.gdx.scenes.scene2d.ui.HorizontalGroup
 import com.badlogic.gdx.scenes.scene2d.ui.Image
 import com.badlogic.gdx.scenes.scene2d.ui.WidgetGroup
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
+import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.Scaling
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.utils.viewport.ScreenViewport
@@ -471,7 +473,7 @@ class SketchUiOverlay(
     private lateinit var tutorialsPanel: DockSection
     private lateinit var tutorialsModeLabel: VisLabel
     private lateinit var tutorialsStepLabel: VisLabel
-    private lateinit var tutorialsList: com.kotcrab.vis.ui.widget.VisList<String>
+    private lateinit var tutorialsListContent: VisTable
     private lateinit var tutorialsRecordButton: VisTextButton
     private lateinit var tutorialsStopRecordButton: VisTextButton
     private lateinit var tutorialsPlayButton: VisTextButton
@@ -490,11 +492,14 @@ class SketchUiOverlay(
     private var tutorialPreviewAfterKey: String? = null
     private var tutorialEntries: List<TutorialFileEntry> = emptyList()
     private var selectedTutorialPath: String? = null
-    private var updatingTutorialListSelection = false
     private var tutorialMessagePositionInitialized = false
     private val tutorialMessageWindowXKey = "tutorial_message_window_x"
     private val tutorialMessageWindowYKey = "tutorial_message_window_y"
     private val tutorialActionTargets = mutableMapOf<String, Actor>()
+    private val tutorialListItemMaxChars = 32
+    private val tutorialCollapsedSections = mutableMapOf<String, Boolean>()
+    private var tutorialListRenderSignature: String = ""
+    private var tutorialSectionToggleStyle: TextButton.TextButtonStyle? = null
     private lateinit var architectureModeLabel: VisLabel
     private lateinit var architectureWallSectionLabel: VisLabel
     private lateinit var architectureSlabSectionLabel: VisLabel
@@ -3191,8 +3196,11 @@ class SketchUiOverlay(
 
         tutorialsModeLabel = VisLabel("Mode: Idle")
         tutorialsStepLabel = VisLabel("Step: 0/0")
-        tutorialsList = com.kotcrab.vis.ui.widget.VisList<String>()
-        val listScroll = com.kotcrab.vis.ui.widget.VisScrollPane(tutorialsList).apply {
+        tutorialsListContent = VisTable().apply {
+            defaults().left().growX().pad(1f)
+            top()
+        }
+        val listScroll = com.kotcrab.vis.ui.widget.VisScrollPane(tutorialsListContent).apply {
             setFadeScrollBars(false)
             setScrollingDisabled(true, false)
         }
@@ -3215,23 +3223,6 @@ class SketchUiOverlay(
         buttonsRow.add(tutorialsPauseButton)
         buttonsRow.add(tutorialsStopButton)
         content.add(buttonsRow).growX().row()
-
-        tutorialsList.addListener(object : ChangeListener() {
-            override fun changed(event: ChangeEvent?, actor: Actor?) {
-                if (updatingTutorialListSelection) {
-                    return
-                }
-                val index = tutorialsList.selectedIndex
-                selectedTutorialPath = tutorialEntries.getOrNull(index)?.path
-            }
-        })
-        tutorialsList.addListener(object : ClickListener() {
-            override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                if (tapCount >= 2) {
-                    tutorialPlay(selectedTutorialPath)
-                }
-            }
-        })
         tutorialsRecordButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 tutorialStartRecording()
@@ -3465,24 +3456,13 @@ class SketchUiOverlay(
             tutorialEntries = state.tutorials
             needsPanelLayout = true
         }
-        tutorialsList.setItems(*tutorialEntries.map { formatTutorialEntryLabel(it, state) }.toTypedArray())
         val availablePaths = tutorialEntries.map { it.path }.toSet()
         selectedTutorialPath = when {
             !state.activeTutorialPath.isNullOrBlank() && availablePaths.contains(state.activeTutorialPath) -> state.activeTutorialPath
             !selectedTutorialPath.isNullOrBlank() && availablePaths.contains(selectedTutorialPath) -> selectedTutorialPath
             else -> tutorialEntries.firstOrNull()?.path
         }
-        val selectedIndex = tutorialEntries.indexOfFirst { it.path == selectedTutorialPath }
-        updatingTutorialListSelection = true
-        try {
-            if (selectedIndex >= 0 && tutorialsList.selectedIndex != selectedIndex) {
-                tutorialsList.selectedIndex = selectedIndex
-            } else if (selectedIndex < 0 && tutorialsList.selectedIndex != -1) {
-                tutorialsList.selectedIndex = -1
-            }
-        } finally {
-            updatingTutorialListSelection = false
-        }
+        rebuildTutorialListContent(state)
 
         tutorialsRecordButton.isDisabled = state.mode == TutorialMode.RECORDING || state.mode == TutorialMode.PLAYING || state.mode == TutorialMode.PAUSED
         tutorialsStopRecordButton.isDisabled = state.mode != TutorialMode.RECORDING
@@ -3529,7 +3509,122 @@ class SketchUiOverlay(
                 "${state.currentStepIndex}/${state.totalSteps}"
             else -> "${entry.stepCount} steps"
         }
-        return "${entry.name} [${entry.fileName}] - $suffix"
+        return truncateTutorialListItem("${entry.name} [${entry.fileName}] - $suffix")
+    }
+
+    private fun rebuildTutorialListContent(state: TutorialUiState) {
+        if (!::tutorialsListContent.isInitialized) {
+            return
+        }
+        val signature = buildTutorialListRenderSignature(state)
+        if (signature == tutorialListRenderSignature) {
+            return
+        }
+        tutorialListRenderSignature = signature
+        tutorialsListContent.clearChildren()
+
+        val rootEntries = tutorialEntries.filter { it.relativeFolder.isBlank() }
+        rootEntries.forEach { entry ->
+            tutorialsListContent.add(createTutorialEntryButton(entry, state, indent = 0f)).growX().row()
+        }
+
+        val grouped = tutorialEntries
+            .filter { it.relativeFolder.isNotBlank() }
+            .groupBy { it.relativeFolder }
+            .toSortedMap(String.CASE_INSENSITIVE_ORDER)
+        grouped.forEach { (section, entries) ->
+            val collapsed = tutorialCollapsedSections[section] ?: false
+            tutorialsListContent.add(createTutorialSectionHeader(section, collapsed)).growX().row()
+            if (!collapsed) {
+                entries.forEach { entry ->
+                    tutorialsListContent.add(createTutorialEntryButton(entry, state, indent = 16f)).growX().row()
+                }
+            }
+        }
+        tutorialsListContent.invalidateHierarchy()
+    }
+
+    private fun buildTutorialListRenderSignature(state: TutorialUiState): String {
+        val entriesSignature = tutorialEntries.joinToString(separator = "|") { entry ->
+            "${entry.relativeFolder}\u0001${entry.path}\u0001${entry.name}\u0001${entry.fileName}\u0001${entry.stepCount}"
+        }
+        val sectionsSignature = tutorialCollapsedSections.toSortedMap(String.CASE_INSENSITIVE_ORDER)
+            .entries
+            .joinToString(separator = "|") { (section, collapsed) -> "$section=$collapsed" }
+        return listOf(
+            entriesSignature,
+            sectionsSignature,
+            selectedTutorialPath.orEmpty(),
+            state.mode.name,
+            state.activeTutorialPath.orEmpty(),
+            state.currentStepIndex.toString(),
+            state.totalSteps.toString()
+        ).joinToString("::")
+    }
+
+    private fun createTutorialEntryButton(entry: TutorialFileEntry, state: TutorialUiState, indent: Float): VisTextButton {
+        val selected = entry.path == selectedTutorialPath
+        return VisTextButton(formatTutorialEntryLabel(entry, state)).apply {
+            label.setAlignment(Align.left)
+            labelCell.expandX().fillX().left()
+            isChecked = selected
+            addListener(object : ClickListener() {
+                override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                    selectedTutorialPath = entry.path
+                    tutorialListRenderSignature = ""
+                    if (tapCount >= 2) {
+                        tutorialPlay(selectedTutorialPath)
+                    }
+                }
+            })
+            padLeft(indent)
+        }
+    }
+
+    private fun createTutorialSectionHeader(section: String, collapsed: Boolean): VisTable {
+        val row = VisTable()
+        row.defaults().left().pad(1f)
+        val toggle = TextButton(if (collapsed) "+" else "-", tutorialSectionToggleButtonStyle()).apply {
+            label.setAlignment(Align.center)
+            labelCell.pad(0f)
+            addListener(object : ClickListener() {
+                override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                    tutorialCollapsedSections[section] = !(tutorialCollapsedSections[section] ?: false)
+                    tutorialListRenderSignature = ""
+                    rebuildTutorialListContent(tutorialStateProvider())
+                }
+            })
+        }
+        val label = VisLabel(truncateTutorialListItem(section))
+        row.add(toggle).width(label.prefHeight).height(label.prefHeight)
+        row.add(label).growX().left()
+        return row
+    }
+
+    private fun tutorialSectionToggleButtonStyle(): TextButton.TextButtonStyle {
+        tutorialSectionToggleStyle?.let { return it }
+        val base = VisTextButton(" ").style
+        return TextButton.TextButtonStyle(base).apply {
+            up = null
+            down = null
+            over = null
+            checked = null
+            checkedOver = null
+            disabled = null
+            fontColor = Color.WHITE
+            downFontColor = Color.ORANGE
+            overFontColor = Color.ORANGE
+            checkedFontColor = Color.RED
+            checkedOverFontColor = Color.RED
+            disabledFontColor = Color.DARK_GRAY
+        }.also { tutorialSectionToggleStyle = it }
+    }
+
+    private fun truncateTutorialListItem(text: String): String {
+        if (text.length <= tutorialListItemMaxChars) {
+            return text
+        }
+        return text.take((tutorialListItemMaxChars - 3).coerceAtLeast(1)) + "..."
     }
 
     private fun ensureTutorialMessageWindowPosition() {
