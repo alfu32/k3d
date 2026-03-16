@@ -4,6 +4,10 @@ import com.badlogic.gdx.math.Vector3
 import java.util.UUID
 
 class DraftLineStore {
+    companion object {
+        private const val SPATIAL_HASH_CELL_SIZE = 10f
+    }
+
     data class Segment(val start: Vector3, val end: Vector3) {
         var id: String = UUID.randomUUID().toString()
     }
@@ -17,6 +21,11 @@ class DraftLineStore {
     private var autoProcessingIgnorePredicate: ((Segment) -> Boolean)? = null
     private val epsilon = 1e-3f
     private val epsilonSq = epsilon * epsilon
+    private val spatialIndex = SpatialHash3D<Segment>(SPATIAL_HASH_CELL_SIZE) { segment -> segment.id }
+    private var spatialIndexDirty = true
+    private val spatialBoundsMin = Vector3()
+    private val spatialBoundsMax = Vector3()
+    private var hasSpatialBounds = false
 
     fun setChangeListener(listener: () -> Unit) {
         onChange = listener
@@ -198,7 +207,7 @@ class DraftLineStore {
             selected.clear()
         }
         var count = 0
-        segments.forEach { segment ->
+        segmentsIntersectingQuery(min, max).forEach { segment ->
             if (segmentIntersectsAabb(segment.start, segment.end, min, max)) {
                 if (selected.add(segment)) {
                     count++
@@ -233,7 +242,7 @@ class DraftLineStore {
     ): Hit? {
         var best: Hit? = null
         val dir = Vector3(ray.direction).nor()
-        segments.forEach { segment ->
+        rayCandidates(ray).forEach { segment ->
             val hit = closestRaySegment(ray.origin, dir, segment) ?: return@forEach
             val screenDist = screenDistance(camera, hit.point, screenX, screenY)
             if (screenDist <= maxPixels) {
@@ -417,6 +426,7 @@ class DraftLineStore {
     }
 
     private fun notifyChange() {
+        spatialIndexDirty = true
         if (!suppressChange) {
             onChange?.invoke()
         }
@@ -424,6 +434,80 @@ class DraftLineStore {
 
     fun notifyExternalChange() {
         notifyChange()
+    }
+
+    fun rayCandidates(ray: com.badlogic.gdx.math.collision.Ray): List<Segment> = segmentCandidatesForRay(ray)
+
+    fun aabbCandidates(min: Vector3, max: Vector3): List<Segment> = segmentsIntersectingQuery(min, max)
+
+    private fun ensureSpatialIndex() {
+        if (!spatialIndexDirty) {
+            return
+        }
+        spatialIndex.clear()
+        hasSpatialBounds = false
+        segments.forEach { segment ->
+            val min = segmentMin(segment)
+            val max = segmentMax(segment)
+            if (!hasSpatialBounds) {
+                spatialBoundsMin.set(min)
+                spatialBoundsMax.set(max)
+                hasSpatialBounds = true
+            } else {
+                spatialBoundsMin.x = kotlin.math.min(spatialBoundsMin.x, min.x)
+                spatialBoundsMin.y = kotlin.math.min(spatialBoundsMin.y, min.y)
+                spatialBoundsMin.z = kotlin.math.min(spatialBoundsMin.z, min.z)
+                spatialBoundsMax.x = kotlin.math.max(spatialBoundsMax.x, max.x)
+                spatialBoundsMax.y = kotlin.math.max(spatialBoundsMax.y, max.y)
+                spatialBoundsMax.z = kotlin.math.max(spatialBoundsMax.z, max.z)
+            }
+            spatialIndex.insertAabb(min, max, segment)
+        }
+        spatialIndexDirty = false
+    }
+
+    private fun segmentCandidatesForRay(ray: com.badlogic.gdx.math.collision.Ray): List<Segment> {
+        ensureSpatialIndex()
+        if (!hasSpatialBounds) {
+            return emptyList()
+        }
+        val range = SpatialHash3D.rayAabbRange(ray.origin, ray.direction, spatialBoundsMin, spatialBoundsMax, epsilon)
+            ?: return emptyList()
+        val start = Vector3(ray.origin).mulAdd(ray.direction, range[0])
+        val end = Vector3(ray.origin).mulAdd(ray.direction, range[1])
+        return spatialIndex.queryAabb(
+            Vector3(
+                kotlin.math.min(start.x, end.x),
+                kotlin.math.min(start.y, end.y),
+                kotlin.math.min(start.z, end.z)
+            ),
+            Vector3(
+                kotlin.math.max(start.x, end.x),
+                kotlin.math.max(start.y, end.y),
+                kotlin.math.max(start.z, end.z)
+            )
+        )
+    }
+
+    private fun segmentsIntersectingQuery(min: Vector3, max: Vector3): List<Segment> {
+        ensureSpatialIndex()
+        return if (hasSpatialBounds) spatialIndex.queryAabb(min, max) else emptyList()
+    }
+
+    private fun segmentMin(segment: Segment): Vector3 {
+        return Vector3(
+            kotlin.math.min(segment.start.x, segment.end.x) - epsilon,
+            kotlin.math.min(segment.start.y, segment.end.y) - epsilon,
+            kotlin.math.min(segment.start.z, segment.end.z) - epsilon
+        )
+    }
+
+    private fun segmentMax(segment: Segment): Vector3 {
+        return Vector3(
+            kotlin.math.max(segment.start.x, segment.end.x) + epsilon,
+            kotlin.math.max(segment.start.y, segment.end.y) + epsilon,
+            kotlin.math.max(segment.start.z, segment.end.z) + epsilon
+        )
     }
 
     fun cleanupJts() {

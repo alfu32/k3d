@@ -85,11 +85,11 @@ class Snapper(
                 best = pickBetter(best, it)
             }
 
-            snapToLineEndpoints(group, baseNormal, screenX, screenY, ray)?.let { candidate ->
+            snapToLineEndpoints(group, baseNormal, screenX, screenY, ray, localRay)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
 
-            snapToLineMidpoints(group, baseNormal, screenX, screenY, ray)?.let { candidate ->
+            snapToLineMidpoints(group, baseNormal, screenX, screenY, ray, localRay)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
 
@@ -105,12 +105,12 @@ class Snapper(
                 best = pickBetter(best, candidate)
             }
 
-            snapToLineSegments(group, basePoint, baseNormal, screenX, screenY, ray)?.let { candidate ->
+            snapToLineSegments(group, basePoint, baseNormal, screenX, screenY, ray, localRay)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
 
             val ref = faceReferencePoint ?: basePoint
-            snapToFaceEdges(group, ref, baseNormal, screenX, screenY, ray)?.let { candidate ->
+            snapToFaceEdges(group, ref, baseNormal, screenX, screenY, ray, localRay)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
 
@@ -127,7 +127,7 @@ class Snapper(
             }
             val ref = faceReferencePoint
             if (ref != null) {
-                snapToFaceEdges(group, ref, fallbackNormal, screenX, screenY, ray)?.let { candidate ->
+                snapToFaceEdges(group, ref, fallbackNormal, screenX, screenY, ray, localRay)?.let { candidate ->
                     best = pickBetter(best, candidate)
                 }
                 snapToFaceEdgesAllGroups(group, ref, fallbackNormal, screenX, screenY, ray)?.let { candidate ->
@@ -218,10 +218,11 @@ class Snapper(
         normal: Vector3,
         screenX: Int,
         screenY: Int,
-        ray: com.badlogic.gdx.math.collision.Ray
+        ray: com.badlogic.gdx.math.collision.Ray,
+        localRay: com.badlogic.gdx.math.collision.Ray
     ): SnapCandidate? {
         var best: SnapCandidate? = null
-        group.lineStore.getSegments().forEach { segment ->
+        group.lineStore.rayCandidates(localRay).forEach { segment ->
             if (!isLineSnapVisible(group, segment)) return@forEach
             listOf(segment.start, segment.end).forEach { local ->
                 val point = group.toWorld(local)
@@ -241,10 +242,11 @@ class Snapper(
         normal: Vector3,
         screenX: Int,
         screenY: Int,
-        ray: com.badlogic.gdx.math.collision.Ray
+        ray: com.badlogic.gdx.math.collision.Ray,
+        localRay: com.badlogic.gdx.math.collision.Ray
     ): SnapCandidate? {
         var best: SnapCandidate? = null
-        group.lineStore.getSegments().forEach { segment ->
+        group.lineStore.rayCandidates(localRay).forEach { segment ->
             if (!isLineSnapVisible(group, segment)) return@forEach
             val midpointLocal = Vector3(segment.start).add(segment.end).scl(0.5f)
             val midpoint = group.toWorld(midpointLocal)
@@ -266,28 +268,18 @@ class Snapper(
         activeGroup: GroupScene.GroupNode
     ): SnapCandidate? {
         var best: SnapCandidate? = null
-        val root = scene.root
-        if (activeGroup !== root) {
-            root.lineStore.getSegments().forEach { segment ->
-                if (!isLineSnapVisible(root, segment)) return@forEach
-                listOf(segment.start, segment.end).forEach { point ->
-                    val dist = screenDistance(point, screenX, screenY)
-                    if (dist <= snapPixels) {
-                        val t = rayT(ray, point) ?: return@forEach
-                        val candidate = SnapCandidate(Vector3(point), Vector3(normal), SnapType.ENDPOINT, dist, t, SnapSource.LINE_ENDPOINT)
-                        best = pickBetter(best, candidate)
-                    }
-                }
-            }
-        }
-        scene.walkGroups(root) { group ->
+        scene.queryGroupsByRay(ray, includeRoot = true).forEach { group ->
             if (group === activeGroup) {
-                return@walkGroups
+                return@forEach
             }
-            group.lineStore.getSegments().forEach { segment ->
+            val localRay = if (group === scene.root) ray else com.badlogic.gdx.math.collision.Ray(
+                group.toLocal(ray.origin),
+                group.vectorToLocal(ray.direction).nor()
+            )
+            group.lineStore.rayCandidates(localRay).forEach { segment ->
                 if (!isLineSnapVisible(group, segment)) return@forEach
                 listOf(segment.start, segment.end).forEach { local ->
-                    val point = group.toWorld(local)
+                    val point = if (group === scene.root) Vector3(local) else group.toWorld(local)
                     val dist = screenDistance(point, screenX, screenY)
                     if (dist <= snapPixels) {
                         val t = rayT(ray, point) ?: return@forEach
@@ -308,27 +300,18 @@ class Snapper(
         activeGroup: GroupScene.GroupNode
     ): SnapCandidate? {
         var best: SnapCandidate? = null
-        val root = scene.root
-        if (activeGroup !== root) {
-            root.lineStore.getSegments().forEach { segment ->
-                if (!isLineSnapVisible(root, segment)) return@forEach
-                val midpoint = Vector3(segment.start).add(segment.end).scl(0.5f)
-                val dist = screenDistance(midpoint, screenX, screenY)
-                if (dist <= snapPixels) {
-                    val t = rayT(ray, midpoint) ?: return@forEach
-                    val candidate = SnapCandidate(midpoint, Vector3(normal), SnapType.MIDPOINT, dist, t, SnapSource.LINE_MIDPOINT)
-                    best = pickBetter(best, candidate)
-                }
-            }
-        }
-        scene.walkGroups(root) { group ->
+        scene.queryGroupsByRay(ray, includeRoot = true).forEach { group ->
             if (group === activeGroup) {
-                return@walkGroups
+                return@forEach
             }
-            group.lineStore.getSegments().forEach { segment ->
+            val localRay = if (group === scene.root) ray else com.badlogic.gdx.math.collision.Ray(
+                group.toLocal(ray.origin),
+                group.vectorToLocal(ray.direction).nor()
+            )
+            group.lineStore.rayCandidates(localRay).forEach { segment ->
                 if (!isLineSnapVisible(group, segment)) return@forEach
                 val midpointLocal = Vector3(segment.start).add(segment.end).scl(0.5f)
-                val midpoint = group.toWorld(midpointLocal)
+                val midpoint = if (group === scene.root) midpointLocal else group.toWorld(midpointLocal)
                 val dist = screenDistance(midpoint, screenX, screenY)
                 if (dist <= snapPixels) {
                     val t = rayT(ray, midpoint) ?: return@forEach
@@ -346,10 +329,11 @@ class Snapper(
         normal: Vector3,
         screenX: Int,
         screenY: Int,
-        ray: com.badlogic.gdx.math.collision.Ray
+        ray: com.badlogic.gdx.math.collision.Ray,
+        localRay: com.badlogic.gdx.math.collision.Ray
     ): SnapCandidate? {
         var best: SnapCandidate? = null
-        group.lineStore.getSegments().forEach { segment ->
+        group.lineStore.rayCandidates(localRay).forEach { segment ->
             if (!isLineSnapVisible(group, segment)) return@forEach
             val start = group.toWorld(segment.start)
             val end = group.toWorld(segment.end)
@@ -369,17 +353,17 @@ class Snapper(
         activeGroup: GroupScene.GroupNode
     ): SnapCandidate? {
         var best: SnapCandidate? = null
-        scene.walkGroups(scene.root) { group ->
+        scene.queryGroupsByRay(ray, includeRoot = true).forEach { group ->
             if (group === activeGroup) {
-                return@walkGroups
+                return@forEach
             }
-            val localRay = com.badlogic.gdx.math.collision.Ray(
+            val localRay = if (group === scene.root) ray else com.badlogic.gdx.math.collision.Ray(
                 group.toLocal(ray.origin),
                 group.vectorToLocal(ray.direction).nor()
             )
             group.faceStore.pickTriangle(localRay) { tri -> isFaceSnapVisible(group, tri) }?.let { hit ->
-                val worldPoint = group.toWorld(hit.point)
-                val faceNormal = facingNormal(group.vectorToWorld(hit.normal), ray.direction)
+                val worldPoint = if (group === scene.root) Vector3(hit.point) else group.toWorld(hit.point)
+                val faceNormal = if (group === scene.root) facingNormal(Vector3(hit.normal), ray.direction) else facingNormal(group.vectorToWorld(hit.normal), ray.direction)
                 val t = rayT(ray, worldPoint) ?: return@let
                 val candidate = SnapCandidate(worldPoint, faceNormal, SnapType.FACE, 0f, t, SnapSource.FACE)
                 best = pickBetter(best, candidate)
@@ -394,10 +378,11 @@ class Snapper(
         normal: Vector3,
         screenX: Int,
         screenY: Int,
-        ray: com.badlogic.gdx.math.collision.Ray
+        ray: com.badlogic.gdx.math.collision.Ray,
+        localRay: com.badlogic.gdx.math.collision.Ray
     ): SnapCandidate? {
         var best: SnapCandidate? = null
-        group.faceStore.getTriangles().forEach { tri ->
+        group.faceStore.rayCandidates(localRay).forEach { tri ->
             if (!isFaceSnapVisible(group, tri)) return@forEach
             val a = group.toWorld(tri.a)
             val b = group.toWorld(tri.b)
@@ -433,15 +418,19 @@ class Snapper(
         ray: com.badlogic.gdx.math.collision.Ray
     ): SnapCandidate? {
         var best: SnapCandidate? = null
-        scene.walkGroups(scene.root) { group ->
+        scene.queryGroupsByRay(ray, includeRoot = true).forEach { group ->
             if (group === activeGroup) {
-                return@walkGroups
+                return@forEach
             }
-            group.faceStore.getTriangles().forEach { tri ->
+            val localRay = if (group === scene.root) ray else com.badlogic.gdx.math.collision.Ray(
+                group.toLocal(ray.origin),
+                group.vectorToLocal(ray.direction).nor()
+            )
+            group.faceStore.rayCandidates(localRay).forEach { tri ->
                 if (!isFaceSnapVisible(group, tri)) return@forEach
-                val a = group.toWorld(tri.a)
-                val b = group.toWorld(tri.b)
-                val c = group.toWorld(tri.c)
+                val a = if (group === scene.root) Vector3(tri.a) else group.toWorld(tri.a)
+                val b = if (group === scene.root) Vector3(tri.b) else group.toWorld(tri.b)
+                val c = if (group === scene.root) Vector3(tri.c) else group.toWorld(tri.c)
                 snapEdgeMidpointCandidate(a, b, normal, screenX, screenY, ray)?.let { candidate ->
                     best = pickBetter(best, candidate)
                 }
@@ -747,17 +736,21 @@ class Snapper(
 
     private fun isNearVisibleLine(point: Vector3, tolerance: Float): Boolean {
         val tol2 = tolerance * tolerance
-        scene.root.lineStore.getSegments().forEach { seg ->
-            if (!isLineSnapVisible(scene.root, seg)) return@forEach
-            if (distanceToSegmentSquared(point, seg.start, seg.end) <= tol2) return true
-        }
+        val rootMin = Vector3(point.x - tolerance, point.y - tolerance, point.z - tolerance)
+        val rootMax = Vector3(point.x + tolerance, point.y + tolerance, point.z + tolerance)
         var found = false
-        scene.walkGroups(scene.root) { group ->
-            if (found) return@walkGroups
-            group.lineStore.getSegments().forEach { seg ->
+        scene.queryGroupsByAabb(rootMin, rootMax, includeRoot = true).forEach { group ->
+            if (found) return@forEach
+            val candidates = if (group === scene.root) {
+                group.lineStore.aabbCandidates(rootMin, rootMax)
+            } else {
+                val (localMin, localMax) = worldAabbToLocalQueryBounds(group, point, tolerance)
+                group.lineStore.aabbCandidates(localMin, localMax)
+            }
+            candidates.forEach { seg ->
                 if (!isLineSnapVisible(group, seg)) return@forEach
-                val a = group.toWorld(seg.start)
-                val b = group.toWorld(seg.end)
+                val a = if (group === scene.root) Vector3(seg.start) else group.toWorld(seg.start)
+                val b = if (group === scene.root) Vector3(seg.end) else group.toWorld(seg.end)
                 if (distanceToSegmentSquared(point, a, b) <= tol2) {
                     found = true
                     return@forEach
@@ -768,18 +761,22 @@ class Snapper(
     }
 
     private fun isOnVisibleFace(point: Vector3, tolerance: Float): Boolean {
-        scene.root.faceStore.getTriangles().forEach { tri ->
-            if (!isFaceSnapVisible(scene.root, tri)) return@forEach
-            if (pointNearTriangle(point, tri.a, tri.b, tri.c, tolerance)) return true
-        }
+        val rootMin = Vector3(point.x - tolerance, point.y - tolerance, point.z - tolerance)
+        val rootMax = Vector3(point.x + tolerance, point.y + tolerance, point.z + tolerance)
         var found = false
-        scene.walkGroups(scene.root) { group ->
-            if (found) return@walkGroups
-            group.faceStore.getTriangles().forEach { tri ->
+        scene.queryGroupsByAabb(rootMin, rootMax, includeRoot = true).forEach { group ->
+            if (found) return@forEach
+            val candidates = if (group === scene.root) {
+                group.faceStore.aabbCandidates(rootMin, rootMax)
+            } else {
+                val (localMin, localMax) = worldAabbToLocalQueryBounds(group, point, tolerance)
+                group.faceStore.aabbCandidates(localMin, localMax)
+            }
+            candidates.forEach { tri ->
                 if (!isFaceSnapVisible(group, tri)) return@forEach
-                val a = group.toWorld(tri.a)
-                val b = group.toWorld(tri.b)
-                val c = group.toWorld(tri.c)
+                val a = if (group === scene.root) Vector3(tri.a) else group.toWorld(tri.a)
+                val b = if (group === scene.root) Vector3(tri.b) else group.toWorld(tri.b)
+                val c = if (group === scene.root) Vector3(tri.c) else group.toWorld(tri.c)
                 if (pointNearTriangle(point, a, b, c, tolerance)) {
                     found = true
                     return@forEach
@@ -830,6 +827,36 @@ class Snapper(
         val clamped = t.coerceIn(0f, 1f)
         val closest = Vector3(a).mulAdd(ab, clamped)
         return point.dst2(closest)
+    }
+
+    private fun worldAabbToLocalQueryBounds(
+        group: GroupScene.GroupNode,
+        center: Vector3,
+        radius: Float
+    ): Pair<Vector3, Vector3> {
+        val corners = arrayOf(
+            Vector3(center.x - radius, center.y - radius, center.z - radius),
+            Vector3(center.x - radius, center.y - radius, center.z + radius),
+            Vector3(center.x - radius, center.y + radius, center.z - radius),
+            Vector3(center.x - radius, center.y + radius, center.z + radius),
+            Vector3(center.x + radius, center.y - radius, center.z - radius),
+            Vector3(center.x + radius, center.y - radius, center.z + radius),
+            Vector3(center.x + radius, center.y + radius, center.z - radius),
+            Vector3(center.x + radius, center.y + radius, center.z + radius)
+        )
+        val first = group.toLocal(corners[0])
+        val min = Vector3(first)
+        val max = Vector3(first)
+        for (i in 1 until corners.size) {
+            val local = group.toLocal(corners[i])
+            min.x = kotlin.math.min(min.x, local.x)
+            min.y = kotlin.math.min(min.y, local.y)
+            min.z = kotlin.math.min(min.z, local.z)
+            max.x = kotlin.math.max(max.x, local.x)
+            max.y = kotlin.math.max(max.y, local.y)
+            max.z = kotlin.math.max(max.z, local.z)
+        }
+        return min to max
     }
 
     fun collectSelectionPoints(): List<SelectionPoint> {

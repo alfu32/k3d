@@ -18,6 +18,10 @@ import java.util.UUID
 class DraftFaceStore(
     private val defaultColor: com.badlogic.gdx.graphics.Color = com.badlogic.gdx.graphics.Color(0.93f, 0.93f, 0.93f, 1f)
 ) {
+    companion object {
+        private const val SPATIAL_HASH_CELL_SIZE = 10f
+    }
+
     data class Triangle(val a: Vector3, val b: Vector3, val c: Vector3) {
         var id: String = UUID.randomUUID().toString()
     }
@@ -35,6 +39,11 @@ class DraftFaceStore(
     private val epsilon2d = (epsilon * jtsScale).toFloat()
     private val cutEps2d = 1e-2f
     private val planeEps = 1e-2f
+    private val spatialIndex = SpatialHash3D<Triangle>(SPATIAL_HASH_CELL_SIZE) { triangle -> triangle.id }
+    private var spatialIndexDirty = true
+    private val spatialBoundsMin = Vector3()
+    private val spatialBoundsMax = Vector3()
+    private var hasSpatialBounds = false
 
     fun setChangeListener(listener: () -> Unit) {
         onChange = listener
@@ -318,7 +327,7 @@ class DraftFaceStore(
             selected.clear()
         }
         var count = 0
-        triangles.forEach { tri ->
+        trianglesIntersectingQuery(min, max).forEach { tri ->
             if (triangleIntersectsAabb(tri, min, max)) {
                 if (selected.add(tri)) {
                     count++
@@ -330,7 +339,7 @@ class DraftFaceStore(
 
     fun pickTriangle(ray: com.badlogic.gdx.math.collision.Ray): Hit? {
         var best: Hit? = null
-        triangles.forEach { tri ->
+        rayCandidates(ray).forEach { tri ->
             val hit = intersectRayTriangle(ray, tri) ?: return@forEach
             if (best == null || hit.t < best!!.t) {
                 best = hit
@@ -344,7 +353,7 @@ class DraftFaceStore(
         predicate: (Triangle) -> Boolean
     ): Hit? {
         var best: Hit? = null
-        triangles.forEach { tri ->
+        rayCandidates(ray).forEach { tri ->
             if (!predicate(tri)) {
                 return@forEach
             }
@@ -2180,6 +2189,7 @@ class DraftFaceStore(
     }
 
     private fun notifyChange() {
+        spatialIndexDirty = true
         markVisualChanged()
         if (!suppressChange) {
             onChange?.invoke()
@@ -2192,7 +2202,81 @@ class DraftFaceStore(
 
     fun visualVersion(): Long = visualVersion
 
+    fun rayCandidates(ray: com.badlogic.gdx.math.collision.Ray): List<Triangle> = triangleCandidatesForRay(ray)
+
+    fun aabbCandidates(min: Vector3, max: Vector3): List<Triangle> = trianglesIntersectingQuery(min, max)
+
     private fun markVisualChanged() {
         visualVersion++
+    }
+
+    private fun ensureSpatialIndex() {
+        if (!spatialIndexDirty) {
+            return
+        }
+        spatialIndex.clear()
+        hasSpatialBounds = false
+        triangles.forEach { triangle ->
+            val min = triangleMin(triangle)
+            val max = triangleMax(triangle)
+            if (!hasSpatialBounds) {
+                spatialBoundsMin.set(min)
+                spatialBoundsMax.set(max)
+                hasSpatialBounds = true
+            } else {
+                spatialBoundsMin.x = kotlin.math.min(spatialBoundsMin.x, min.x)
+                spatialBoundsMin.y = kotlin.math.min(spatialBoundsMin.y, min.y)
+                spatialBoundsMin.z = kotlin.math.min(spatialBoundsMin.z, min.z)
+                spatialBoundsMax.x = kotlin.math.max(spatialBoundsMax.x, max.x)
+                spatialBoundsMax.y = kotlin.math.max(spatialBoundsMax.y, max.y)
+                spatialBoundsMax.z = kotlin.math.max(spatialBoundsMax.z, max.z)
+            }
+            spatialIndex.insertAabb(min, max, triangle)
+        }
+        spatialIndexDirty = false
+    }
+
+    private fun triangleCandidatesForRay(ray: com.badlogic.gdx.math.collision.Ray): List<Triangle> {
+        ensureSpatialIndex()
+        if (!hasSpatialBounds) {
+            return emptyList()
+        }
+        val range = SpatialHash3D.rayAabbRange(ray.origin, ray.direction, spatialBoundsMin, spatialBoundsMax, epsilon)
+            ?: return emptyList()
+        val start = Vector3(ray.origin).mulAdd(ray.direction, range[0])
+        val end = Vector3(ray.origin).mulAdd(ray.direction, range[1])
+        return spatialIndex.queryAabb(
+            Vector3(
+                kotlin.math.min(start.x, end.x),
+                kotlin.math.min(start.y, end.y),
+                kotlin.math.min(start.z, end.z)
+            ),
+            Vector3(
+                kotlin.math.max(start.x, end.x),
+                kotlin.math.max(start.y, end.y),
+                kotlin.math.max(start.z, end.z)
+            )
+        )
+    }
+
+    private fun trianglesIntersectingQuery(min: Vector3, max: Vector3): List<Triangle> {
+        ensureSpatialIndex()
+        return if (hasSpatialBounds) spatialIndex.queryAabb(min, max) else emptyList()
+    }
+
+    private fun triangleMin(triangle: Triangle): Vector3 {
+        return Vector3(
+            kotlin.math.min(triangle.a.x, kotlin.math.min(triangle.b.x, triangle.c.x)) - epsilon,
+            kotlin.math.min(triangle.a.y, kotlin.math.min(triangle.b.y, triangle.c.y)) - epsilon,
+            kotlin.math.min(triangle.a.z, kotlin.math.min(triangle.b.z, triangle.c.z)) - epsilon
+        )
+    }
+
+    private fun triangleMax(triangle: Triangle): Vector3 {
+        return Vector3(
+            kotlin.math.max(triangle.a.x, kotlin.math.max(triangle.b.x, triangle.c.x)) + epsilon,
+            kotlin.math.max(triangle.a.y, kotlin.math.max(triangle.b.y, triangle.c.y)) + epsilon,
+            kotlin.math.max(triangle.a.z, kotlin.math.max(triangle.b.z, triangle.c.z)) + epsilon
+        )
     }
 }

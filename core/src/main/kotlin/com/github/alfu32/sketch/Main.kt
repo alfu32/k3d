@@ -2504,6 +2504,7 @@ class Main(
     private fun walkSupportHeightAt(worldX: Float, worldZ: Float, currentY: Float): Float {
         val rayOrigin = Vector3(worldX, currentY + 0.25f, worldZ)
         val rayDir = Vector3(0f, -1f, 0f)
+        val ray = com.badlogic.gdx.math.collision.Ray(rayOrigin, rayDir)
         var bestY: Float? = null
 
         fun testGroup(group: GroupScene.GroupNode) {
@@ -2522,8 +2523,7 @@ class Main(
             }
         }
 
-        testGroup(scene.root)
-        scene.walkGroups(scene.root) { group ->
+        scene.queryGroupsByRay(ray, includeRoot = true).forEach { group ->
             testGroup(group)
         }
         return bestY ?: 0f
@@ -2570,8 +2570,7 @@ class Main(
             }
         }
 
-        testGroup(scene.root)
-        scene.walkGroups(scene.root) { group ->
+        scene.queryGroupsByRay(ray, includeRoot = true).forEach { group ->
             testGroup(group)
         }
         return bestPoint

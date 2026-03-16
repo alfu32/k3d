@@ -5,6 +5,7 @@ import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Quaternion
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.math.collision.BoundingBox
+import com.badlogic.gdx.math.collision.Ray
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -309,6 +310,34 @@ class GroupScene(
             return if (hasAny) bounds else null
         }
 
+        fun geometryWorldBounds(): BoundingBox? {
+            val bounds = BoundingBox()
+            var hasAny = false
+            lineStore.getSegments().forEach { seg ->
+                val a = toWorld(seg.start)
+                val b = toWorld(seg.end)
+                if (!hasAny) {
+                    bounds.set(a, a)
+                    hasAny = true
+                }
+                bounds.ext(a)
+                bounds.ext(b)
+            }
+            faceStore.getTriangles().forEach { tri ->
+                val a = toWorld(tri.a)
+                val b = toWorld(tri.b)
+                val c = toWorld(tri.c)
+                if (!hasAny) {
+                    bounds.set(a, a)
+                    hasAny = true
+                }
+                bounds.ext(a)
+                bounds.ext(b)
+                bounds.ext(c)
+            }
+            return if (hasAny) bounds else null
+        }
+
         fun localBounds(): BoundingBox? {
             val bounds = BoundingBox()
             var hasAny = false
@@ -437,6 +466,11 @@ class GroupScene(
     private var selectedArchitectureHole: ArchitectureHoleSelection? = null
     private var selectedArchitectureSlabHole: ArchitectureSlabHoleSelection? = null
     private var changeListener: (() -> Unit)? = null
+    private val groupSpatialIndex = SpatialHash3D<GroupNode>(GROUP_SPATIAL_HASH_CELL_SIZE) { group -> group.id }
+    private var groupSpatialIndexDirty = true
+    private val groupSpatialBoundsMin = Vector3()
+    private val groupSpatialBoundsMax = Vector3()
+    private var hasGroupSpatialBounds = false
 
     init {
         configureRootLineStoreAutoProcessingFilters()
@@ -4736,6 +4770,36 @@ class GroupScene(
         }
     }
 
+    fun queryGroupsByAabb(min: Vector3, max: Vector3, includeRoot: Boolean = true): List<GroupNode> {
+        ensureGroupSpatialIndex()
+        if (!hasGroupSpatialBounds) {
+            return emptyList()
+        }
+        return groupSpatialIndex.queryAabb(min, max).filter { includeRoot || it !== root }
+    }
+
+    fun queryGroupsByRay(ray: Ray, includeRoot: Boolean = true): List<GroupNode> {
+        ensureGroupSpatialIndex()
+        if (!hasGroupSpatialBounds) {
+            return emptyList()
+        }
+        val range = SpatialHash3D.rayAabbRange(ray.origin, ray.direction, groupSpatialBoundsMin, groupSpatialBoundsMax, 1e-4f)
+            ?: return emptyList()
+        val start = Vector3(ray.origin).mulAdd(ray.direction, range[0])
+        val end = Vector3(ray.origin).mulAdd(ray.direction, range[1])
+        val minPoint = Vector3(
+            kotlin.math.min(start.x, end.x),
+            kotlin.math.min(start.y, end.y),
+            kotlin.math.min(start.z, end.z)
+        )
+        val maxPoint = Vector3(
+            kotlin.math.max(start.x, end.x),
+            kotlin.math.max(start.y, end.y),
+            kotlin.math.max(start.z, end.z)
+        )
+        return queryGroupsByAabb(minPoint, maxPoint, includeRoot)
+    }
+
     fun collectWorldTriangles(consumer: (Vector3, Vector3, Vector3, Color, Boolean) -> Unit) {
         walkGroups(root) { group ->
             group.faceStore.getTriangles().forEach { tri ->
@@ -8498,7 +8562,40 @@ class GroupScene(
     }
 
     private fun notifyChange() {
+        groupSpatialIndexDirty = true
         changeListener?.invoke()
+    }
+
+    private fun ensureGroupSpatialIndex() {
+        if (!groupSpatialIndexDirty) {
+            return
+        }
+        groupSpatialIndex.clear()
+        hasGroupSpatialBounds = false
+        indexGroupBounds(root)
+        walkGroups(root) { group ->
+            indexGroupBounds(group)
+        }
+        groupSpatialIndexDirty = false
+    }
+
+    private fun indexGroupBounds(group: GroupNode) {
+        val bounds = group.geometryWorldBounds() ?: return
+        val min = bounds.min
+        val max = bounds.max
+        if (!hasGroupSpatialBounds) {
+            groupSpatialBoundsMin.set(min)
+            groupSpatialBoundsMax.set(max)
+            hasGroupSpatialBounds = true
+        } else {
+            groupSpatialBoundsMin.x = kotlin.math.min(groupSpatialBoundsMin.x, min.x)
+            groupSpatialBoundsMin.y = kotlin.math.min(groupSpatialBoundsMin.y, min.y)
+            groupSpatialBoundsMin.z = kotlin.math.min(groupSpatialBoundsMin.z, min.z)
+            groupSpatialBoundsMax.x = kotlin.math.max(groupSpatialBoundsMax.x, max.x)
+            groupSpatialBoundsMax.y = kotlin.math.max(groupSpatialBoundsMax.y, max.y)
+            groupSpatialBoundsMax.z = kotlin.math.max(groupSpatialBoundsMax.z, max.z)
+        }
+        groupSpatialIndex.insertAabb(min, max, group)
     }
 
     private fun colorsEqual(a: Color, b: Color): Boolean {
@@ -8509,6 +8606,8 @@ class GroupScene(
     }
 
     companion object {
+        private const val GROUP_SPATIAL_HASH_CELL_SIZE = 10f
+
         private fun transformPoint(matrix: Matrix4, point: Vector3): Vector3 {
             val v = matrix.`val`
             val x = point.x
