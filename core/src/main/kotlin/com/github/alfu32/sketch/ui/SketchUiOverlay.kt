@@ -496,7 +496,7 @@ class SketchUiOverlay(
     private val tutorialMessageWindowXKey = "tutorial_message_window_x"
     private val tutorialMessageWindowYKey = "tutorial_message_window_y"
     private val tutorialActionTargets = mutableMapOf<String, Actor>()
-    private val tutorialListItemMaxChars = 32
+    private val tutorialListItemMaxChars = 48
     private val tutorialCollapsedSections = mutableMapOf<String, Boolean>()
     private var tutorialListRenderSignature: String = ""
     private var tutorialSectionToggleStyle: TextButton.TextButtonStyle? = null
