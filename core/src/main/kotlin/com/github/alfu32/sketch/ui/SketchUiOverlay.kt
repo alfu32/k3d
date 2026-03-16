@@ -3546,7 +3546,17 @@ class SketchUiOverlay(
 
     private fun buildTutorialListRenderSignature(state: TutorialUiState): String {
         val entriesSignature = tutorialEntries.joinToString(separator = "|") { entry ->
-            "${entry.relativeFolder}\u0001${entry.path}\u0001${entry.name}\u0001${entry.fileName}\u0001${entry.stepCount}"
+            buildString {
+                append(entry.relativeFolder)
+                append('\u0001')
+                append(entry.path)
+                append('\u0001')
+                append(entry.name)
+                append('\u0001')
+                append(entry.fileName)
+                append('\u0001')
+                append(entry.stepCount)
+            }
         }
         val sectionsSignature = tutorialCollapsedSections.toSortedMap(String.CASE_INSENSITIVE_ORDER)
             .entries
