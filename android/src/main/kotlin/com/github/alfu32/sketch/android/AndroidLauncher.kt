@@ -107,7 +107,7 @@ class AndroidLauncher : AndroidApplication() {
             "0"
         }
 
-        copyAssetTree("bootstrap/tutorials", File(appDir, "tutorials"), overwriteExisting = false)
+        copyAssetTree("bootstrap/tutorials", File(appDir, "tutorials"), overwriteExisting = true)
 
         bundledVersionFile.writeText(currentVersion)
     }

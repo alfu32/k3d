@@ -594,6 +594,7 @@ class Main(
         orthoCameraController = OrthographicCameraController(orthoCamera, cameraTarget)
         setCameraMode(CameraMode.ORBIT)
         installDir = resolveInstallDir()
+        ensureDesktopBundledContent(installDir)
         tutorialManager = TutorialManager { resolveTutorialsDir(installDir) }
         statusModel = StatusModel(
             activeTool = ToolId.SELECT,
@@ -7014,6 +7015,51 @@ class Main(
             fallback.mkdirs()
         }
         return fallback
+    }
+
+    private fun ensureDesktopBundledContent(installDir: java.io.File) {
+        if (BuildFlags.WEB_BUILD || isAndroidRuntime()) {
+            return
+        }
+        val writableRoot = resolveDesktopWritableDataDir().absoluteFile
+        if (!writableRoot.exists()) {
+            writableRoot.mkdirs()
+        }
+        seedBundledDirectory(
+            sourceDir = java.io.File(installDir, "tutorials").absoluteFile,
+            targetDir = java.io.File(writableRoot, "tutorials").absoluteFile,
+            overwriteExisting = true
+        )
+        seedBundledDirectory(
+            sourceDir = java.io.File(installDir, "plugins").absoluteFile,
+            targetDir = java.io.File(writableRoot, "plugins").absoluteFile,
+            overwriteExisting = false
+        )
+    }
+
+    private fun seedBundledDirectory(
+        sourceDir: java.io.File,
+        targetDir: java.io.File,
+        overwriteExisting: Boolean
+    ) {
+        if (!sourceDir.exists() || !sourceDir.isDirectory) {
+            return
+        }
+        if (sourceDir.absoluteFile == targetDir.absoluteFile) {
+            return
+        }
+        sourceDir.walkTopDown().forEach { source ->
+            val relative = source.relativeTo(sourceDir)
+            val target = java.io.File(targetDir, relative.path)
+            if (source.isDirectory) {
+                if (!target.exists()) {
+                    target.mkdirs()
+                }
+            } else if (overwriteExisting || !target.exists()) {
+                target.parentFile?.mkdirs()
+                source.copyTo(target, overwrite = overwriteExisting)
+            }
+        }
     }
 
     private fun resolveTutorialsDir(installDir: java.io.File): java.io.File {

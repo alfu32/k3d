@@ -65,9 +65,12 @@ jobs:
             --icon "lwjgl3\icons\logo.ico"
           $appImage = "dist\jpackage\$appName"
           $pluginsDir = Join-Path $appImage "app\\plugins"
+          $tutorialsDir = Join-Path $appImage "app\\tutorials"
           New-Item $pluginsDir -ItemType Directory -Force | Out-Null
+          New-Item $tutorialsDir -ItemType Directory -Force | Out-Null
           Copy-Item "core\build\libs\octodraw-plugin-api*.jar" $pluginsDir -Force
           Copy-Item "scripts\*.groovy" $pluginsDir -Force
+          Copy-Item "docs\tutorial\*" $tutorialsDir -Recurse -Force
           & $jpackage --type msi --name $appName --app-version $version --vendor "alfu32" `
             --app-image $appImage --dest "dist\installer" `
             --icon "lwjgl3\icons\logo.ico" --win-per-user-install --win-menu --win-shortcut
