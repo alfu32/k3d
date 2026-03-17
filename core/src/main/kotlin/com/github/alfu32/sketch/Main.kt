@@ -4226,13 +4226,47 @@ class Main(
             return null
         }
         val bytes = try {
-            MeshIo.exportTriangles(triangles, format)
+            MeshIo.exportTriangles(triangles, format, meshExportSettings(format))
         } catch (t: Throwable) {
             statusModel.message = "Export failed: ${t.message ?: t.javaClass.simpleName}"
             return null
         }
         val scopeLabel = if (selected.isNotEmpty()) "selection" else "full model"
         return MeshExportPayload(bytes, triangles.size, scopeLabel)
+    }
+
+    private fun meshExportSettings(format: MeshIo.ExportFormat): MeshIo.ExportSettings {
+        return when (format) {
+            MeshIo.ExportFormat.THREE_MF -> {
+                MeshIo.ExportSettings(
+                    threeMf = MeshIo.ThreeMfExportSettings(
+                        unit = MeshIo.ThreeMfUnit.MILLIMETER,
+                        coordinateScale = threeMfCoordinateScale()
+                    )
+                )
+            }
+
+            else -> MeshIo.ExportSettings()
+        }
+    }
+
+    private fun threeMfCoordinateScale(): Float {
+        val unitScale = modelUnit.size.coerceAtLeast(1e-6f)
+        val unitNameScale = resolveUnitToMillimeterScale(modelUnit.name) ?: 1f
+        return unitScale * unitNameScale
+    }
+
+    private fun resolveUnitToMillimeterScale(name: String): Float? {
+        return when (name.trim().lowercase(Locale.US)) {
+            "", "unit", "units" -> null
+            "micron", "microns", "um", "μm", "µm" -> 0.001f
+            "mm", "millimeter", "millimeters", "millimetre", "millimetres" -> 1f
+            "cm", "centimeter", "centimeters", "centimetre", "centimetres" -> 10f
+            "m", "meter", "meters", "metre", "metres" -> 1000f
+            "in", "inch", "inches", "\"" -> 25.4f
+            "ft", "foot", "feet", "'" -> 304.8f
+            else -> null
+        }
     }
 
     private fun createWebExportPayloadForOption(option: MeshExportOption): MeshExportPayload? {

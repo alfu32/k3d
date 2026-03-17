@@ -23,6 +23,24 @@ import kotlin.math.sqrt
 object MeshIo {
     data class Triangle(val a: Vector3, val b: Vector3, val c: Vector3)
 
+    data class ExportSettings(
+        val threeMf: ThreeMfExportSettings = ThreeMfExportSettings()
+    )
+
+    data class ThreeMfExportSettings(
+        val unit: ThreeMfUnit = ThreeMfUnit.MILLIMETER,
+        val coordinateScale: Float = 1f
+    )
+
+    enum class ThreeMfUnit(val xmlValue: String) {
+        MICRON("micron"),
+        MILLIMETER("millimeter"),
+        CENTIMETER("centimeter"),
+        INCH("inch"),
+        FOOT("foot"),
+        METER("meter")
+    }
+
     enum class ImportFormat {
         OBJ,
         STL_AUTO,
@@ -109,7 +127,11 @@ object MeshIo {
         }
     }
 
-    fun exportTriangles(triangles: List<Triangle>, format: ExportFormat): ByteArray {
+    fun exportTriangles(
+        triangles: List<Triangle>,
+        format: ExportFormat,
+        settings: ExportSettings = ExportSettings()
+    ): ByteArray {
         return when (format) {
             ExportFormat.OBJ -> writeObj(triangles).toByteArray(StandardCharsets.UTF_8)
             ExportFormat.STL_ASCII -> writeStlAscii(triangles).toByteArray(StandardCharsets.UTF_8)
@@ -119,7 +141,7 @@ object MeshIo {
             ExportFormat.GLB -> writeGlb(triangles)
             ExportFormat.DAE -> writeCollada(triangles).toByteArray(StandardCharsets.UTF_8)
             ExportFormat.DXF -> writeDxf(triangles).toByteArray(StandardCharsets.UTF_8)
-            ExportFormat.THREE_MF -> write3mf(triangles)
+            ExportFormat.THREE_MF -> write3mf(triangles, settings.threeMf)
             ExportFormat.AMF -> writeAmf(triangles).toByteArray(StandardCharsets.UTF_8)
         }
     }
@@ -1327,23 +1349,43 @@ object MeshIo {
         return sb.toString()
     }
 
-    private fun write3mf(triangles: List<Triangle>): ByteArray {
-        val points = triangles.flatMap { tri -> listOf(tri.a, tri.b, tri.c) }
+    private data class IndexedTriangle(val v1: Int, val v2: Int, val v3: Int)
+
+    private data class IndexedMesh(
+        val vertices: List<Vector3>,
+        val triangles: List<IndexedTriangle>
+    )
+
+    private data class QuantizedVertexKey(val x: Long, val y: Long, val z: Long)
+
+    private data class EdgeKey private constructor(val a: Int, val b: Int) {
+        companion object {
+            fun of(v1: Int, v2: Int): EdgeKey {
+                return if (v1 <= v2) EdgeKey(v1, v2) else EdgeKey(v2, v1)
+            }
+        }
+    }
+
+    private data class EdgeUse(val triangleIndex: Int, val from: Int, val to: Int)
+
+    private fun write3mf(triangles: List<Triangle>, settings: ThreeMfExportSettings): ByteArray {
+        val scale = settings.coordinateScale.coerceAtLeast(1e-9f)
+        val mesh = buildIndexedMesh(triangles, scale)
+        validateThreeMfMesh(mesh)
         val modelXml = buildString {
             append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-            append("<model unit=\"meter\" xml:lang=\"en-US\" xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\">\n")
+            append("<model unit=\"").append(settings.unit.xmlValue).append("\" xml:lang=\"en-US\" xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\">\n")
             append("  <resources>\n")
             append("    <object id=\"1\" type=\"model\">\n")
             append("      <mesh>\n")
             append("        <vertices>\n")
-            points.forEach { v ->
+            mesh.vertices.forEach { v ->
                 append("          <vertex x=\"").append(fmt(v.x)).append("\" y=\"").append(fmt(v.y)).append("\" z=\"").append(fmt(v.z)).append("\"/>\n")
             }
             append("        </vertices>\n")
             append("        <triangles>\n")
-            for (i in triangles.indices) {
-                val base = i * 3
-                append("          <triangle v1=\"").append(base).append("\" v2=\"").append(base + 1).append("\" v3=\"").append(base + 2).append("\"/>\n")
+            mesh.triangles.forEach { tri ->
+                append("          <triangle v1=\"").append(tri.v1).append("\" v2=\"").append(tri.v2).append("\" v3=\"").append(tri.v3).append("\"/>\n")
             }
             append("        </triangles>\n")
             append("      </mesh>\n")
@@ -1373,6 +1415,157 @@ object MeshIo {
             writeZipEntry(zip, "3D/3dmodel.model", modelXml.toByteArray(StandardCharsets.UTF_8))
         }
         return out.toByteArray()
+    }
+
+    private fun buildIndexedMesh(triangles: List<Triangle>, coordinateScale: Float): IndexedMesh {
+        val vertices = ArrayList<Vector3>(triangles.size * 2)
+        val indexedTriangles = ArrayList<IndexedTriangle>(triangles.size)
+        val vertexLookup = HashMap<QuantizedVertexKey, Int>(triangles.size * 3)
+        triangles.forEach { triangle ->
+            val v1 = indexScaledVertex(triangle.a, coordinateScale, vertices, vertexLookup)
+            val v2 = indexScaledVertex(triangle.b, coordinateScale, vertices, vertexLookup)
+            val v3 = indexScaledVertex(triangle.c, coordinateScale, vertices, vertexLookup)
+            indexedTriangles.add(IndexedTriangle(v1, v2, v3))
+        }
+        return IndexedMesh(vertices, indexedTriangles)
+    }
+
+    private fun indexScaledVertex(
+        source: Vector3,
+        coordinateScale: Float,
+        vertices: MutableList<Vector3>,
+        vertexLookup: MutableMap<QuantizedVertexKey, Int>
+    ): Int {
+        val scaledX = source.x * coordinateScale
+        val scaledY = source.y * coordinateScale
+        val scaledZ = source.z * coordinateScale
+        val key = QuantizedVertexKey(
+            quantizeCoordinate(scaledX),
+            quantizeCoordinate(scaledY),
+            quantizeCoordinate(scaledZ)
+        )
+        return vertexLookup.getOrPut(key) {
+            val index = vertices.size
+            vertices.add(Vector3(scaledX, scaledY, scaledZ))
+            index
+        }
+    }
+
+    private fun quantizeCoordinate(value: Float): Long {
+        val step = 1e-5
+        return kotlin.math.round(value.toDouble() / step).toLong()
+    }
+
+    private fun validateThreeMfMesh(mesh: IndexedMesh) {
+        if (mesh.triangles.isEmpty()) {
+            throw IllegalArgumentException("3MF export failed: no triangles to export.")
+        }
+        val areaToleranceSquared = 1e-10f
+        val edgeUses = HashMap<EdgeKey, MutableList<EdgeUse>>(mesh.triangles.size * 2)
+        val adjacency = Array(mesh.triangles.size) { mutableSetOf<Int>() }
+        var degenerateCount = 0
+        mesh.triangles.forEachIndexed { index, triangle ->
+            if (triangle.v1 == triangle.v2 || triangle.v2 == triangle.v3 || triangle.v3 == triangle.v1) {
+                degenerateCount++
+            } else {
+                val a = mesh.vertices[triangle.v1]
+                val b = mesh.vertices[triangle.v2]
+                val c = mesh.vertices[triangle.v3]
+                val ab = Vector3(b).sub(a)
+                val ac = Vector3(c).sub(a)
+                if (ab.crs(ac).len2() <= areaToleranceSquared) {
+                    degenerateCount++
+                }
+            }
+            registerEdge(edgeUses, index, triangle.v1, triangle.v2)
+            registerEdge(edgeUses, index, triangle.v2, triangle.v3)
+            registerEdge(edgeUses, index, triangle.v3, triangle.v1)
+        }
+        if (degenerateCount > 0) {
+            throw IllegalArgumentException("3MF export failed: mesh contains $degenerateCount degenerate triangle(s).")
+        }
+
+        var openEdgeCount = 0
+        var nonManifoldEdgeCount = 0
+        var windingMismatchCount = 0
+        edgeUses.forEach { (_, uses) ->
+            when (uses.size) {
+                2 -> {
+                    val first = uses[0]
+                    val second = uses[1]
+                    if (first.from != second.to || first.to != second.from) {
+                        windingMismatchCount++
+                    }
+                    adjacency[first.triangleIndex].add(second.triangleIndex)
+                    adjacency[second.triangleIndex].add(first.triangleIndex)
+                }
+                1 -> openEdgeCount++
+                else -> nonManifoldEdgeCount++
+            }
+        }
+        if (openEdgeCount > 0 || nonManifoldEdgeCount > 0) {
+            val parts = ArrayList<String>(2)
+            if (openEdgeCount > 0) {
+                parts.add("$openEdgeCount open edge(s)")
+            }
+            if (nonManifoldEdgeCount > 0) {
+                parts.add("$nonManifoldEdgeCount non-manifold edge(s)")
+            }
+            throw IllegalArgumentException("3MF export failed: mesh is not manifold (${parts.joinToString(", ")}).")
+        }
+        if (windingMismatchCount > 0) {
+            throw IllegalArgumentException("3MF export failed: mesh winding is inconsistent across $windingMismatchCount shared edge(s).")
+        }
+
+        val volumeTolerance = 1e-6
+        val visited = BooleanArray(mesh.triangles.size)
+        for (start in mesh.triangles.indices) {
+            if (visited[start]) {
+                continue
+            }
+            val stack = ArrayDeque<Int>()
+            stack.addLast(start)
+            visited[start] = true
+            var signedVolume = 0.0
+            while (stack.isNotEmpty()) {
+                val triangleIndex = stack.removeLast()
+                val triangle = mesh.triangles[triangleIndex]
+                val a = mesh.vertices[triangle.v1]
+                val b = mesh.vertices[triangle.v2]
+                val c = mesh.vertices[triangle.v3]
+                signedVolume += signedTetrahedronVolume(a, b, c)
+                adjacency[triangleIndex].forEach { neighbor ->
+                    if (!visited[neighbor]) {
+                        visited[neighbor] = true
+                        stack.addLast(neighbor)
+                    }
+                }
+            }
+            if (kotlin.math.abs(signedVolume) <= volumeTolerance) {
+                throw IllegalArgumentException("3MF export failed: mesh contains a zero-volume shell.")
+            }
+            if (signedVolume < 0.0) {
+                throw IllegalArgumentException("3MF export failed: mesh contains an inward-facing shell.")
+            }
+        }
+    }
+
+    private fun registerEdge(
+        edgeUses: MutableMap<EdgeKey, MutableList<EdgeUse>>,
+        triangleIndex: Int,
+        from: Int,
+        to: Int
+    ) {
+        edgeUses.getOrPut(EdgeKey.of(from, to)) { ArrayList(2) }
+            .add(EdgeUse(triangleIndex, from, to))
+    }
+
+    private fun signedTetrahedronVolume(a: Vector3, b: Vector3, c: Vector3): Double {
+        return (
+            a.x.toDouble() * (b.y.toDouble() * c.z.toDouble() - b.z.toDouble() * c.y.toDouble()) -
+                a.y.toDouble() * (b.x.toDouble() * c.z.toDouble() - b.z.toDouble() * c.x.toDouble()) +
+                a.z.toDouble() * (b.x.toDouble() * c.y.toDouble() - b.y.toDouble() * c.x.toDouble())
+            ) / 6.0
     }
 
     private fun writeAmf(triangles: List<Triangle>): String {
