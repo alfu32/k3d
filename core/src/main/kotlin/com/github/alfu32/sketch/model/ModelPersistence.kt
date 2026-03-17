@@ -6,13 +6,17 @@ import com.badlogic.gdx.utils.Json
 import com.badlogic.gdx.utils.JsonWriter
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.BufferedInputStream
 import java.io.File
+import java.io.InputStream
 import java.util.Base64
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
 object ModelPersistence {
     private const val VERSION = 16
+    private const val GZIP_MAGIC_0 = 0x1f
+    private const val GZIP_MAGIC_1 = 0x8b
 
     private fun createJson(): Json {
         return Json().apply {
@@ -37,13 +41,22 @@ object ModelPersistence {
     }
 
     fun saveSnapshot(file: File, snapshot: ModelSnapshot) {
-        val text = saveSnapshotText(snapshot)
+        val bytes = saveSnapshotBytes(snapshot)
         file.parentFile?.mkdirs()
-        file.writeText(text)
+        file.writeBytes(bytes)
     }
 
     fun saveSnapshotText(snapshot: ModelSnapshot): String {
-        return createJson().prettyPrint(snapshot)
+        return createJson().toJson(snapshot)
+    }
+
+    fun saveSnapshotBytes(snapshot: ModelSnapshot): ByteArray {
+        val text = saveSnapshotText(snapshot)
+        val output = ByteArrayOutputStream()
+        GZIPOutputStream(output).use { stream ->
+            stream.write(text.toByteArray(Charsets.UTF_8))
+        }
+        return output.toByteArray()
     }
 
     fun snapshot(
@@ -104,7 +117,7 @@ object ModelPersistence {
         if (!file.exists() || file.length() == 0L) {
             return LoadResult(false, false)
         }
-        val snapshot = parseSnapshotText(file.readText()) ?: return LoadResult(false, false)
+        val snapshot = parseSnapshotFile(file) ?: return LoadResult(false, false)
 
         applySnapshot(snapshot, scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilonSetter, gridSpacingSetter)
         val needsResave = snapshot.cameraState == null ||
@@ -159,6 +172,33 @@ object ModelPersistence {
         } catch (_: Exception) {
             null
         }
+    }
+
+    fun parseSnapshotFile(file: File): ModelSnapshot? {
+        if (!file.exists() || file.length() == 0L) {
+            return null
+        }
+        return try {
+            file.inputStream().buffered().use { input ->
+                parseSnapshotStream(input)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun parseSnapshotStream(input: InputStream): ModelSnapshot? {
+        val buffered = if (input is BufferedInputStream) input else BufferedInputStream(input)
+        buffered.mark(2)
+        val first = buffered.read()
+        val second = buffered.read()
+        buffered.reset()
+        val reader = if (first == GZIP_MAGIC_0 && second == GZIP_MAGIC_1) {
+            GZIPInputStream(buffered).bufferedReader(Charsets.UTF_8)
+        } else {
+            buffered.reader(Charsets.UTF_8)
+        }
+        return reader.use { parseSnapshotText(it.readText()) }
     }
 
     fun applySnapshot(

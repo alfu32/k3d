@@ -303,6 +303,10 @@ class Main(
     private val minimumShadowBoundsRadius = 17.320509f
     private var shadowModelBoundsRadius = minimumShadowBoundsRadius
     private var shadowModelBoundsValid = false
+    private val minimumGroundPlaneSize = 120f
+    private val groundPlaneExtentMultiplier = 1.6f
+    private val groundPlaneCenter = Vector3()
+    private var groundPlaneSize = minimumGroundPlaneSize
     private var shadowModelTrackedEdgeCount = -1
     private var shadowModelTrackedFaceCount = -1
     private val shadowBoundsCenterTmp = Vector3()
@@ -9495,7 +9499,7 @@ class Main(
             VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal"),
             VertexAttribute(VertexAttributes.Usage.ColorUnpacked, 4, "a_color")
         )
-        groundMesh = buildGroundMesh(120f)
+        groundMesh = buildGroundMesh(groundPlaneSize, groundPlaneCenter)
     }
 
     private fun setupRenderables() {
@@ -9540,6 +9544,7 @@ class Main(
     }
 
     private fun updateFaceMesh() {
+        updateGroundPlaneFromSceneBounds(scene.root.worldBounds())
         val triangles = mutableListOf<TriangleWorld>()
         val shadowBounds = com.badlogic.gdx.math.collision.BoundingBox()
         var hasShadowCaster = false
@@ -9678,15 +9683,47 @@ class Main(
         return i
     }
 
-    private fun buildGroundMesh(size: Float): Mesh {
+    private fun updateGroundPlaneFromSceneBounds(bounds: com.badlogic.gdx.math.collision.BoundingBox?) {
+        val targetCenter = Vector3()
+        val targetSize = if (bounds == null) {
+            minimumGroundPlaneSize
+        } else {
+            targetCenter.set(
+                (bounds.min.x + bounds.max.x) * 0.5f,
+                0f,
+                (bounds.min.z + bounds.max.z) * 0.5f
+            )
+            val spanX = kotlin.math.abs(bounds.max.x - bounds.min.x)
+            val spanZ = kotlin.math.abs(bounds.max.z - bounds.min.z)
+            (kotlin.math.max(spanX, spanZ) * groundPlaneExtentMultiplier)
+                .coerceAtLeast(minimumGroundPlaneSize)
+        }
+        if (::groundMesh.isInitialized &&
+            kotlin.math.abs(targetSize - groundPlaneSize) <= 1e-3f &&
+            targetCenter.epsilonEquals(groundPlaneCenter, 1e-3f)
+        ) {
+            return
+        }
+        groundPlaneSize = targetSize
+        groundPlaneCenter.set(targetCenter)
+        if (::groundMesh.isInitialized) {
+            groundMesh.dispose()
+        }
+        groundMesh = buildGroundMesh(groundPlaneSize, groundPlaneCenter)
+        if (::groundMaterial.isInitialized) {
+            groundRenderable = MeshRenderableProvider(groundMesh, groundMaterial, GL20.GL_TRIANGLES)
+        }
+    }
+
+    private fun buildGroundMesh(size: Float, center: Vector3 = Vector3.Zero): Mesh {
         val half = size * 0.5f
         val vertices = floatArrayOf(
-            -half, 0f, -half, 0f, 1f, 0f,
-            half, 0f, half, 0f, 1f, 0f,
-            half, 0f, -half, 0f, 1f, 0f,
-            -half, 0f, -half, 0f, 1f, 0f,
-            -half, 0f, half, 0f, 1f, 0f,
-            half, 0f, half, 0f, 1f, 0f
+            center.x - half, 0f, center.z - half, 0f, 1f, 0f,
+            center.x + half, 0f, center.z + half, 0f, 1f, 0f,
+            center.x + half, 0f, center.z - half, 0f, 1f, 0f,
+            center.x - half, 0f, center.z - half, 0f, 1f, 0f,
+            center.x - half, 0f, center.z + half, 0f, 1f, 0f,
+            center.x + half, 0f, center.z + half, 0f, 1f, 0f
         )
         return Mesh(true, 6, 0,
             VertexAttribute(VertexAttributes.Usage.Position, 3, "a_position"),

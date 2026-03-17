@@ -62,7 +62,8 @@ jobs:
           if (!(Test-Path $jarPath)) { throw "Jar not found: $jarPath" }
           & $jpackage --type app-image --name $appName --app-version $version --vendor "alfu32" --win-console `
             --input $jarDir --main-jar "octodraw-$version.jar" --dest "dist\jpackage" `
-            --icon "lwjgl3\icons\logo.ico"
+            --icon "lwjgl3\icons\logo.ico" `
+            --java-options "-Xms512m" --java-options "-Xmx6g"
           $appImage = "dist\jpackage\$appName"
           $pluginsDir = Join-Path $appImage "app\\plugins"
           $tutorialsDir = Join-Path $appImage "app\\tutorials"
@@ -73,7 +74,8 @@ jobs:
           Copy-Item "docs\tutorial\*" $tutorialsDir -Recurse -Force
           & $jpackage --type msi --name $appName --app-version $version --vendor "alfu32" `
             --app-image $appImage --dest "dist\installer" `
-            --icon "lwjgl3\icons\logo.ico" --win-per-user-install --win-menu --win-shortcut
+            --icon "lwjgl3\icons\logo.ico" --win-per-user-install --win-menu --win-shortcut `
+            --java-options "-Xms512m" --java-options "-Xmx6g"
       - name: Prepare MSIX layout
         shell: powershell
         run: |
