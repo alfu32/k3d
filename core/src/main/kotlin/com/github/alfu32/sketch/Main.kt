@@ -714,7 +714,7 @@ class Main(
                     { vectorTextSettings },
                     { vectorGlyphCatalog }
                 ),
-                PushPullTool(scene) { activeCamera },
+                PushPullTool(scene),
                 MoveTool(scene),
                 RotateTool(scene),
                 ScaleTool(scene),

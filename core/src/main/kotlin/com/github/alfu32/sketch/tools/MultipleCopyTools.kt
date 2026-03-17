@@ -119,8 +119,8 @@ private fun signedAngleDeg(from: Vector3, to: Vector3, axis: Vector3): Float {
         return 0f
     }
     n.nor()
-    val a = Vector3(from).mulAdd(n, -from.dot(n))
-    val b = Vector3(to).mulAdd(n, -to.dot(n))
+    val a = projectOntoPlane(from, n)
+    val b = projectOntoPlane(to, n)
     if (a.len2() <= MULTIPLE_COPY_EPS || b.len2() <= MULTIPLE_COPY_EPS) {
         return 0f
     }
@@ -130,6 +130,15 @@ private fun signedAngleDeg(from: Vector3, to: Vector3, axis: Vector3): Float {
     val sin = n.dot(cross).coerceIn(-1f, 1f)
     val cos = a.dot(b).coerceIn(-1f, 1f)
     return MathUtils.atan2(sin, cos) * MathUtils.radiansToDegrees
+}
+
+private fun projectOntoPlane(vector: Vector3, planeNormal: Vector3): Vector3 {
+    val n = Vector3(planeNormal)
+    if (n.len2() <= MULTIPLE_COPY_EPS) {
+        return Vector3()
+    }
+    n.nor()
+    return Vector3(vector).mulAdd(n, -vector.dot(n))
 }
 
 private fun normalizeSignedSweep(angle: Float, direction: Float): Float {
@@ -540,13 +549,25 @@ abstract class BaseRotateMultipleTool(
         }
         normalAxis.nor()
 
-        val stepAngle = signedAngleDeg(ref, inc, normalAxis)
+        val refProjected = projectOntoPlane(ref, normalAxis)
+        val incProjected = projectOntoPlane(inc, normalAxis)
+        val endProjected = projectOntoPlane(end, normalAxis)
+        if (refProjected.len2() <= MULTIPLE_COPY_EPS ||
+            incProjected.len2() <= MULTIPLE_COPY_EPS ||
+            endProjected.len2() <= MULTIPLE_COPY_EPS
+        ) {
+            clearTransient()
+            status.message = "Rotate multiple canceled: projected vectors are too short."
+            return true
+        }
+
+        val stepAngle = signedAngleDeg(refProjected, incProjected, normalAxis)
         if (abs(stepAngle) <= 1e-4f) {
             clearTransient()
             status.message = "Rotate multiple canceled: angular increment is zero."
             return true
         }
-        val rawSweep = signedAngleDeg(ref, end, normalAxis)
+        val rawSweep = signedAngleDeg(refProjected, endProjected, normalAxis)
         val direction = if (stepAngle >= 0f) 1f else -1f
         var sweep = normalizeSignedSweep(rawSweep, direction)
         if (abs(sweep) <= 1e-4f) {
@@ -663,52 +684,60 @@ abstract class BaseRotateMultipleTool(
                     val normalAxis = Vector3(ref).crs(inc)
                     if (normalAxis.len2() > MULTIPLE_COPY_EPS) {
                         normalAxis.nor()
-                        val stepAngle = signedAngleDeg(ref, inc, normalAxis)
-                        if (abs(stepAngle) > 1e-4f) {
-                            val direction = if (stepAngle >= 0f) 1f else -1f
-                            val rawSweep = signedAngleDeg(ref, end, normalAxis)
-                            var sweep = normalizeSignedSweep(rawSweep, direction)
-                            if (abs(sweep) <= 1e-4f) {
-                                sweep = 360f * direction
-                            }
-                            if (sweep * direction > 0f) {
-                                val totalCopies = floor(abs(sweep) / abs(stepAngle)).toInt()
-                                if (totalCopies > 0) {
-                                    val previewCopies = totalCopies.coerceAtMost(MAX_MULTIPLE_COPY_PREVIEW_STEPS)
-                                    val totalLiftWorld = if (helicoidal) {
-                                        end.dot(normalAxis) - ref.dot(normalAxis)
-                                    } else {
-                                        0f
-                                    }
-                                    val perStepLiftWorld =
-                                        if (helicoidal) totalLiftWorld / max(totalCopies, 1).toFloat() else 0f
-                                    val group = scene.activeGroup()
-                                    val centerLocal = group.toLocal(c)
-                                    val axisLocal = group.vectorToLocal(normalAxis).nor()
-                                    val localLiftStep = group.vectorToLocal(Vector3(normalAxis).scl(perStepLiftWorld))
-
-                                    renderMultiplePreview(
-                                        scene = scene,
-                                        group = group,
-                                        renderer = renderer,
-                                        previewCopies = previewCopies,
-                                        localPointTransformAtStep = { step, point ->
-                                            val q = Quaternion().setFromAxis(axisLocal, stepAngle * step.toFloat())
-                                            Vector3(point)
-                                                .sub(centerLocal)
-                                                .mul(q)
-                                                .add(centerLocal)
-                                                .mulAdd(localLiftStep, step.toFloat())
-                                        },
-                                        worldPointTransformAtStep = { step, point ->
-                                            val q = Quaternion().setFromAxis(normalAxis, stepAngle * step.toFloat())
-                                            Vector3(point)
-                                                .sub(c)
-                                                .mul(q)
-                                                .add(c)
-                                                .mulAdd(normalAxis, perStepLiftWorld * step.toFloat())
+                        val refProjected = projectOntoPlane(ref, normalAxis)
+                        val incProjected = projectOntoPlane(inc, normalAxis)
+                        val endProjected = projectOntoPlane(end, normalAxis)
+                        if (refProjected.len2() > MULTIPLE_COPY_EPS &&
+                            incProjected.len2() > MULTIPLE_COPY_EPS &&
+                            endProjected.len2() > MULTIPLE_COPY_EPS
+                        ) {
+                            val stepAngle = signedAngleDeg(refProjected, incProjected, normalAxis)
+                            if (abs(stepAngle) > 1e-4f) {
+                                val direction = if (stepAngle >= 0f) 1f else -1f
+                                val rawSweep = signedAngleDeg(refProjected, endProjected, normalAxis)
+                                var sweep = normalizeSignedSweep(rawSweep, direction)
+                                if (abs(sweep) <= 1e-4f) {
+                                    sweep = 360f * direction
+                                }
+                                if (sweep * direction > 0f) {
+                                    val totalCopies = floor(abs(sweep) / abs(stepAngle)).toInt()
+                                    if (totalCopies > 0) {
+                                        val previewCopies = totalCopies.coerceAtMost(MAX_MULTIPLE_COPY_PREVIEW_STEPS)
+                                        val totalLiftWorld = if (helicoidal) {
+                                            end.dot(normalAxis) - ref.dot(normalAxis)
+                                        } else {
+                                            0f
                                         }
-                                    )
+                                        val perStepLiftWorld =
+                                            if (helicoidal) totalLiftWorld / max(totalCopies, 1).toFloat() else 0f
+                                        val group = scene.activeGroup()
+                                        val centerLocal = group.toLocal(c)
+                                        val axisLocal = group.vectorToLocal(normalAxis).nor()
+                                        val localLiftStep = group.vectorToLocal(Vector3(normalAxis).scl(perStepLiftWorld))
+
+                                        renderMultiplePreview(
+                                            scene = scene,
+                                            group = group,
+                                            renderer = renderer,
+                                            previewCopies = previewCopies,
+                                            localPointTransformAtStep = { step, point ->
+                                                val q = Quaternion().setFromAxis(axisLocal, stepAngle * step.toFloat())
+                                                Vector3(point)
+                                                    .sub(centerLocal)
+                                                    .mul(q)
+                                                    .add(centerLocal)
+                                                    .mulAdd(localLiftStep, step.toFloat())
+                                            },
+                                            worldPointTransformAtStep = { step, point ->
+                                                val q = Quaternion().setFromAxis(normalAxis, stepAngle * step.toFloat())
+                                                Vector3(point)
+                                                    .sub(c)
+                                                    .mul(q)
+                                                    .add(c)
+                                                    .mulAdd(normalAxis, perStepLiftWorld * step.toFloat())
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }

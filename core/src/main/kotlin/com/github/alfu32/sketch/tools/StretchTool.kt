@@ -224,12 +224,12 @@ class StretchTool(
     }
 
     private fun renderPreview(renderer: ShapeRenderer, deltaWorld: Vector3) {
-        renderer.color = ToolFeedbackColors.TERTIARY
         val group = scene.activeGroup()
         val localDelta = group.vectorToLocal(deltaWorld)
         val selectedKeys = collectSelectedKeys(group)
 
         group.faceStore.getTriangles().forEach { tri ->
+            renderer.color = group.faceStore.colorFor(tri)
             val selected = group.faceStore.isSelected(tri)
             val a = adjustPoint(tri.a, selected, selectedKeys, localDelta)
             val b = adjustPoint(tri.b, selected, selectedKeys, localDelta)
@@ -241,6 +241,7 @@ class StretchTool(
             renderer.line(bw.x, bw.y, bw.z, cw.x, cw.y, cw.z)
             renderer.line(cw.x, cw.y, cw.z, aw.x, aw.y, aw.z)
         }
+        renderer.color = ToolFeedbackColors.TERTIARY
         group.lineStore.getSegments().forEach { segment ->
             val selected = group.lineStore.isSelected(segment)
             val a = adjustPoint(segment.start, selected, selectedKeys, localDelta)
