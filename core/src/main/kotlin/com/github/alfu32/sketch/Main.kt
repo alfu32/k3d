@@ -4374,20 +4374,21 @@ class Main(
     private fun importMeshPayload(nameHint: String?, bytes: ByteArray, sourcePath: String? = null) {
         val extension = nameHint?.substringAfterLast('.', "")?.lowercase().orEmpty()
         val resolvedFormat = MeshIo.importFormatForExtension(extension)
+        val importSettings = meshImportSettings()
         val triangles = when {
-            resolvedFormat != null -> MeshIo.importTriangles(bytes, resolvedFormat)
+            resolvedFormat != null -> MeshIo.importTriangles(bytes, resolvedFormat, importSettings)
             else -> {
                 // Fallback when SAF providers omit extension metadata.
-                val obj = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.OBJ)
-                val stl = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.STL_AUTO)
-                val glb = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.GLB)
-                val gltf = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.GLTF)
-                val dae = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.DAE)
-                val dxf = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.DXF)
-                val threemf = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.THREE_MF)
-                val amf = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.AMF)
-                val fbx = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.FBX)
-                val ifc = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.IFC)
+                val obj = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.OBJ, importSettings)
+                val stl = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.STL_AUTO, importSettings)
+                val glb = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.GLB, importSettings)
+                val gltf = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.GLTF, importSettings)
+                val dae = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.DAE, importSettings)
+                val dxf = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.DXF, importSettings)
+                val threemf = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.THREE_MF, importSettings)
+                val amf = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.AMF, importSettings)
+                val fbx = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.FBX, importSettings)
+                val ifc = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.IFC, importSettings)
                 listOf(obj, stl, glb, gltf, dae, dxf, threemf, amf, fbx, ifc).maxByOrNull { it.size }.orEmpty()
             }
         }
@@ -4411,6 +4412,15 @@ class Main(
         }
         startObjectPlacement(prototype.id)
         statusModel.message = "Imported ${triangles.size} triangle(s) as '$prototypeName'. Click to place object."
+    }
+
+    private fun meshImportSettings(): MeshIo.ImportSettings {
+        val millimetersPerModelUnit = threeMfCoordinateScale().coerceAtLeast(1e-9f)
+        return MeshIo.ImportSettings(
+            threeMf = MeshIo.ThreeMfImportSettings(
+                modelUnitsPerMillimeter = 1f / millimetersPerModelUnit
+            )
+        )
     }
 
     private fun importedPrototypeName(nameHint: String?): String {

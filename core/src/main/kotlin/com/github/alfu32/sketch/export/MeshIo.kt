@@ -27,9 +27,17 @@ object MeshIo {
         val threeMf: ThreeMfExportSettings = ThreeMfExportSettings()
     )
 
+    data class ImportSettings(
+        val threeMf: ThreeMfImportSettings = ThreeMfImportSettings()
+    )
+
     data class ThreeMfExportSettings(
         val unit: ThreeMfUnit = ThreeMfUnit.MILLIMETER,
         val coordinateScale: Float = 1f
+    )
+
+    data class ThreeMfImportSettings(
+        val modelUnitsPerMillimeter: Float = 1f
     )
 
     enum class ThreeMfUnit(val xmlValue: String) {
@@ -103,7 +111,11 @@ object MeshIo {
         }
     }
 
-    fun importTriangles(bytes: ByteArray, format: ImportFormat): List<Triangle> {
+    fun importTriangles(
+        bytes: ByteArray,
+        format: ImportFormat,
+        settings: ImportSettings = ImportSettings()
+    ): List<Triangle> {
         return when (format) {
             ImportFormat.OBJ -> parseObj(String(bytes, StandardCharsets.UTF_8))
             ImportFormat.STL_ASCII -> parseStlAscii(String(bytes, StandardCharsets.UTF_8))
@@ -121,7 +133,7 @@ object MeshIo {
             ImportFormat.GLB -> parseGlb(bytes)
             ImportFormat.DAE -> parseCollada(bytes)
             ImportFormat.DXF -> parseDxf(String(bytes, StandardCharsets.UTF_8))
-            ImportFormat.THREE_MF -> parse3mf(bytes)
+            ImportFormat.THREE_MF -> parse3mf(bytes, settings.threeMf)
             ImportFormat.AMF -> parseAmf(bytes)
             ImportFormat.IFC -> parseIfc(String(bytes, StandardCharsets.UTF_8))
         }
@@ -968,11 +980,14 @@ object MeshIo {
         return out
     }
 
-    private fun parse3mf(bytes: ByteArray): List<Triangle> {
+    private fun parse3mf(bytes: ByteArray, settings: ThreeMfImportSettings): List<Triangle> {
         val modelBytes = extractZipEntry(bytes) { name ->
             name.equals("3D/3dmodel.model", ignoreCase = true) || name.lowercase(Locale.US).endsWith(".model")
         } ?: return emptyList()
         val doc = parseXml(modelBytes) ?: return emptyList()
+        val modelElement = doc.documentElement
+        val fileUnitScale = threeMfUnitScaleToMillimeter(modelElement?.getAttribute("unit"))
+        val coordinateScale = fileUnitScale * settings.modelUnitsPerMillimeter.coerceAtLeast(1e-9f)
         val vertexNodes = doc.getElementsByTagName("vertex")
         if (vertexNodes.length == 0) {
             return emptyList()
@@ -983,7 +998,7 @@ object MeshIo {
             val x = node.getAttribute("x").toFloatOrNull() ?: continue
             val y = node.getAttribute("y").toFloatOrNull() ?: continue
             val z = node.getAttribute("z").toFloatOrNull() ?: continue
-            vertices.add(Vector3(x, y, z))
+            vertices.add(Vector3(x, y, z).scl(coordinateScale))
         }
         val out = ArrayList<Triangle>(2048)
         val triangleNodes = doc.getElementsByTagName("triangle")
@@ -1004,6 +1019,18 @@ object MeshIo {
             )
         }
         return out
+    }
+
+    private fun threeMfUnitScaleToMillimeter(unit: String?): Float {
+        return when (unit?.trim()?.lowercase(Locale.US)) {
+            null, "", "millimeter" -> 1f
+            "micron" -> 0.001f
+            "centimeter" -> 10f
+            "inch" -> 25.4f
+            "foot" -> 304.8f
+            "meter" -> 1000f
+            else -> 1f
+        }
     }
 
     private fun parseAmf(bytes: ByteArray): List<Triangle> {
