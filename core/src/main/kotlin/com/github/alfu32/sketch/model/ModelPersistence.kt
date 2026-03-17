@@ -17,6 +17,7 @@ object ModelPersistence {
     private const val VERSION = 16
     private const val GZIP_MAGIC_0 = 0x1f
     private const val GZIP_MAGIC_1 = 0x8b
+    private const val COMPRESS_THRESHOLD_BYTES = 10 * 1024 * 1024
 
     private fun createJson(): Json {
         return Json().apply {
@@ -52,9 +53,13 @@ object ModelPersistence {
 
     fun saveSnapshotBytes(snapshot: ModelSnapshot): ByteArray {
         val text = saveSnapshotText(snapshot)
+        val rawBytes = text.toByteArray(Charsets.UTF_8)
+        if (rawBytes.size <= COMPRESS_THRESHOLD_BYTES) {
+            return rawBytes
+        }
         val output = ByteArrayOutputStream()
         GZIPOutputStream(output).use { stream ->
-            stream.write(text.toByteArray(Charsets.UTF_8))
+            stream.write(rawBytes)
         }
         return output.toByteArray()
     }
