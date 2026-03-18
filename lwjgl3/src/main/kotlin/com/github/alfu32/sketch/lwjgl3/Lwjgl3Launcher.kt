@@ -47,6 +47,7 @@ fun main(args: Array<String>) {
 
 private fun handleCommand(args: Array<String>): Array<String>? {
     if (args.isEmpty()) {
+        System.setProperty("k3d.devConsole", "true")
         return emptyArray()
     }
     val command = args[0].lowercase()

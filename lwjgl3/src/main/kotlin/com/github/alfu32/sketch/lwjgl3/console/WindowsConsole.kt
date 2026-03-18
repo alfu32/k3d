@@ -99,7 +99,9 @@ object WindowsConsole {
             savedInputMode = modeRef.value
         }
         var mode = modeRef.value
-        mode = mode or ENABLE_VIRTUAL_TERMINAL_INPUT or ENABLE_WINDOW_INPUT or ENABLE_EXTENDED_FLAGS
+        // Keep VT input off here. This controller uses Win32 console events directly,
+        // and VT input causes Windows Terminal to feed CSI mouse/key sequences as text.
+        mode = mode or ENABLE_WINDOW_INPUT or ENABLE_EXTENDED_FLAGS
         mode = mode and ENABLE_QUICK_EDIT_MODE.inv()
         mode = mode and (ENABLE_ECHO_INPUT or ENABLE_LINE_INPUT or ENABLE_PROCESSED_INPUT).inv()
         val ok = k32.SetConsoleMode(handle, mode)
