@@ -30,8 +30,15 @@ class LwjglTerminalController : TerminalController() {
             super.enterRawMode()
             return
         }
-        WindowsConsole.enableVirtualTerminalProcessing()
-        WindowsConsole.enableVirtualTerminalInput()
+        val outputReady = WindowsConsole.enableVirtualTerminalProcessing()
+        val inputReady = WindowsConsole.enableVirtualTerminalInput()
+        if (!outputReady || !inputReady) {
+            print(
+                "Octodraw Dev Console Windows terminal setup: " +
+                    "vtOutput=$outputReady vtInput=$inputReady\r\n"
+            )
+            flushStdout()
+        }
         enterAlternateScreen()
     }
 

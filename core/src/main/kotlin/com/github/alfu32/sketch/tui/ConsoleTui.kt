@@ -73,12 +73,13 @@ class ConsoleTui(
         } else if (cursorLine >= editorScrollTop + editorHeight) {
             editorScrollTop = (cursorLine - editorHeight + 1).coerceAtLeast(0)
         }
+        val lineCountWidth = multilineLineNumberWidth(lines.size)
         for (i in 0 until editorHeight) {
             val lineIndex = editorScrollTop + i
             val rawLine = lines.getOrNull(lineIndex) ?: ""
-            val prefix = if (lineIndex == 0) "│> " else "│  "
+            val prefix = editorPrefix(lineIndex, lineCountWidth)
             val highlighted = highlight(rawLine)
-            val trimmed = truncateAnsi(highlighted, width - prefix.length)
+            val trimmed = truncateAnsi(highlighted, width - stripAnsi(prefix).length)
             rows += padLine(prefix + trimmed, width)
         }
         rows += renderFooter(width)
@@ -87,7 +88,7 @@ class ConsoleTui(
             builder.append(padLine(row, width))
         }
         val cursorRow = topBarHeight + outputHeaderHeight + outputHeight + promptHeaderHeight + (cursorLine - editorScrollTop) + 1
-        val prefixLength = 3
+        val prefixLength = stripAnsi(editorPrefix(cursorLine, lineCountWidth)).length
         val cursorCol = (prefixLength + cursorColumn + 1).coerceAtLeast(1)
         builder.append(ANSI_MOVE_CURSOR.format(Locale.US, cursorRow, cursorCol))
         builder.append(ANSI_SHOW_CURSOR)
@@ -215,12 +216,22 @@ class ConsoleTui(
             InputKeys.HOME -> activeEditor.moveCursorHome()
             InputKeys.END -> activeEditor.moveCursorEnd()
             InputKeys.PAGE_UP -> {
-                outputPane.scroll(5)
-                state = ConsoleState.OUTPUT_SCROLL
+                if (inputMode == ConsoleInputMode.MULTILINE && (modifiers and InputModifiers.ALT) == 0) {
+                    activeEditor.moveCursorVertical(-editorPageSize())
+                    state = ConsoleState.EDITING
+                } else {
+                    outputPane.scroll(5)
+                    state = ConsoleState.OUTPUT_SCROLL
+                }
             }
             InputKeys.PAGE_DOWN -> {
-                outputPane.scroll(-5)
-                state = ConsoleState.OUTPUT_SCROLL
+                if (inputMode == ConsoleInputMode.MULTILINE && (modifiers and InputModifiers.ALT) == 0) {
+                    activeEditor.moveCursorVertical(editorPageSize())
+                    state = ConsoleState.EDITING
+                } else {
+                    outputPane.scroll(-5)
+                    state = ConsoleState.OUTPUT_SCROLL
+                }
             }
             InputKeys.ESC -> {
                 if (state == ConsoleState.HISTORY_NAVIGATION) {
@@ -922,7 +933,7 @@ class ConsoleTui(
         val lines = activeEditorPane().lines().size
         return when (inputMode) {
             ConsoleInputMode.REPL -> "Enter run  Ctrl+O newline  Ctrl+T multiline  $lines lines"
-            ConsoleInputMode.MULTILINE -> "Enter newline  Ctrl+R run  Ctrl+Enter run  Ctrl+T repl  $lines lines"
+            ConsoleInputMode.MULTILINE -> "Enter newline  PgUp/PgDn editor  Alt+PgUp/PgDn console  Ctrl+R run  $lines lines"
         }
     }
 
@@ -954,6 +965,25 @@ class ConsoleTui(
         }
         editorScrollTop = 0
         state = if (activeEditorPane().buffer.isEmpty()) ConsoleState.IDLE else ConsoleState.EDITING
+    }
+
+    private fun editorPageSize(): Int {
+        val height = terminal.size().rows.coerceAtLeast(12)
+        return ((height * 2 / 5) - 1).coerceAtLeast(1)
+    }
+
+    private fun editorPrefix(lineIndex: Int, lineCountWidth: Int): String {
+        return if (inputMode == ConsoleInputMode.MULTILINE) {
+            "│${(lineIndex + 1).toString().padStart(lineCountWidth, ' ')} "
+        } else if (lineIndex == 0) {
+            "│> "
+        } else {
+            "│  "
+        }
+    }
+
+    private fun multilineLineNumberWidth(totalLines: Int): Int {
+        return totalLines.coerceAtLeast(1).toString().length.coerceAtLeast(2)
     }
 
     private fun echoCommand(source: String) {

@@ -10,9 +10,9 @@ class ConsoleThread(
     private var running = true
 
     override fun run() {
-        terminal.awaitActivationIfNeeded()
-        terminal.enterRawMode()
         try {
+            terminal.awaitActivationIfNeeded()
+            terminal.enterRawMode()
             tui.history.loadFromDisk()
             tui.outputPane.append(
                 """
@@ -33,6 +33,8 @@ class ConsoleThread(
                     tui.render()
                 }
             }
+        } catch (ex: Throwable) {
+            ex.printStackTrace()
         } finally {
             tui.history.saveToDisk()
             terminal.restore()
