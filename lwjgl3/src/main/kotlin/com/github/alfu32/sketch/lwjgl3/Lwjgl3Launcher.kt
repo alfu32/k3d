@@ -47,13 +47,13 @@ fun main(args: Array<String>) {
 
 private fun handleCommand(args: Array<String>): Array<String>? {
     if (args.isEmpty()) {
-        System.setProperty("k3d.devConsole", "true")
+        enableDevConsole()
         return emptyArray()
     }
     val command = args[0].lowercase()
     return when (command) {
         "edit" -> {
-            System.setProperty("k3d.devConsole", "true")
+            enableDevConsole()
             args.drop(1).toTypedArray()
         }
         "groovy" -> {
@@ -74,16 +74,22 @@ private fun handleCommand(args: Array<String>): Array<String>? {
         }
         else -> {
             if (command.startsWith("--file") || command.startsWith("--size") || command.startsWith("--plugins")) {
+                enableDevConsole()
                 return args
             }
             val fileArg = args[0]
             if (fileArg.endsWith(".octd", ignoreCase = true) || fileArg.endsWith(".k3d", ignoreCase = true) || File(fileArg).exists()) {
+                enableDevConsole()
                 return arrayOf("--file", fileArg)
             }
             printHelp()
             null
         }
     }
+}
+
+private fun enableDevConsole() {
+    System.setProperty("k3d.devConsole", "true")
 }
 
 private fun printVersion() {
