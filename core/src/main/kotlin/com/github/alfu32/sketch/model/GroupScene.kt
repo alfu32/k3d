@@ -1785,6 +1785,8 @@ class GroupScene(
                 vertexIdByHandle = vertexIdByHandle
             )
         }
+        lineStore.notifyExternalChange()
+        faceStore.notifyExternalChange()
 
         if (selectedSegmentIds.isNotEmpty()) {
             lineStore.getSegments().forEach { segment ->
