@@ -40,25 +40,28 @@ class ConsoleTui(
         dirty = false
         val size = terminal.size()
         val width = size.columns.coerceAtLeast(20)
-        val height = size.rows.coerceAtLeast(10)
-        val editorHeight = (height / 3).coerceIn(3, 8)
-        val outputHeight = (height - editorHeight - 1).coerceAtLeast(1)
+        val height = size.rows.coerceAtLeast(12)
+        val topBarHeight = 1
+        val outputHeaderHeight = 1
+        val promptHeaderHeight = 1
+        val footerHeight = 1
+        val editorHeight = (height / 4).coerceIn(4, 10)
+        val outputHeight = (height - topBarHeight - outputHeaderHeight - promptHeaderHeight - footerHeight - editorHeight)
+            .coerceAtLeast(1)
         val builder = StringBuilder()
         builder.append(ANSI_HIDE_CURSOR)
         builder.append(ANSI_CLEAR)
         builder.append(ANSI_HOME)
 
-        val outputLines = outputPane.visibleLines(outputHeight, width)
+        builder.append(renderTopBar(width)).append('\n')
+        builder.append(renderSectionHeader("Console", outputHeaderMeta(), width)).append('\n')
+
+        val outputLines = outputPane.visibleLines(outputHeight, width - 2)
         for (i in 0 until outputHeight) {
             val line = outputLines.getOrNull(i) ?: ""
-            builder.append(padLine(line, width)).append('\n')
+            builder.append(padLine("│${truncateAnsi(line, width - 2)}", width)).append('\n')
         }
-        builder.append("""
-            ┏━┓┏━╸╺┳╸┏━┓╺┳┓┏━┓┏━┓╻ ╻   ┏━╸┏━┓┏┓╻┏━┓┏━┓╻  ┏━╸
-            ┃ ┃┃   ┃ ┃ ┃ ┃┃┣┳┛┣━┫┃╻┃   ┃  ┃ ┃┃┗┫┗━┓┃ ┃┃  ┣╸
-            ┗━┛┗━╸ ╹ ┗━┛╺┻┛╹┗╸╹ ╹┗┻┛   ┗━╸┗━┛╹ ╹┗━┛┗━┛┗━╸┗━╸
-        """.trimIndent()).append('\n')
-        builder.append("-".repeat(width)).append('\n')
+        builder.append(renderSectionHeader("Prompt", promptHeaderMeta(), width)).append('\n')
 
         val lines = editorPane.lines()
         val (cursorLine, cursorColumn) = editorPane.lineAndColumn(editorPane.cursorPosition)
@@ -70,13 +73,14 @@ class ConsoleTui(
         for (i in 0 until editorHeight) {
             val lineIndex = editorScrollTop + i
             val rawLine = lines.getOrNull(lineIndex) ?: ""
-            val prefix = if (lineIndex == 0) "> " else "  "
+            val prefix = if (lineIndex == 0) "│> " else "│  "
             val highlighted = highlight(rawLine)
             val trimmed = truncateAnsi(highlighted, width - prefix.length)
             builder.append(padLine(prefix + trimmed, width)).append('\n')
         }
-        val cursorRow = outputHeight + 1 + (cursorLine - editorScrollTop)
-        val prefixLength = if (cursorLine == 0) 2 else 2
+        builder.append(renderFooter(width))
+        val cursorRow = topBarHeight + outputHeaderHeight + outputHeight + promptHeaderHeight + (cursorLine - editorScrollTop) + 1
+        val prefixLength = 3
         val cursorCol = (prefixLength + cursorColumn + 1).coerceAtLeast(1)
         builder.append(ANSI_MOVE_CURSOR.format(Locale.US, cursorRow, cursorCol))
         builder.append(ANSI_SHOW_CURSOR)
@@ -89,6 +93,9 @@ class ConsoleTui(
             is InputEvent.Key -> handleKey(event)
             is InputEvent.Mouse -> {
                 // No-op for now; mouse selection is optional.
+            }
+            is InputEvent.Resize -> {
+                // Layout is recomputed on next render.
             }
         }
         markDirty()
@@ -135,6 +142,20 @@ class ConsoleTui(
         val isHistoryModifier = (modifiers and (InputModifiers.CTRL or InputModifiers.ALT)) != 0
         if (state == ConsoleState.OUTPUT_SCROLL && key != InputKeys.PAGE_UP && key != InputKeys.PAGE_DOWN) {
             state = if (editorPane.buffer.isEmpty()) ConsoleState.IDLE else ConsoleState.EDITING
+        }
+        if ((modifiers and InputModifiers.CTRL) != 0) {
+            when (key) {
+                'L'.code -> {
+                    outputPane.clear()
+                    state = if (editorPane.buffer.isEmpty()) ConsoleState.IDLE else ConsoleState.EDITING
+                    return
+                }
+                'O'.code -> {
+                    editorPane.insert("\n")
+                    state = ConsoleState.EDITING
+                    return
+                }
+            }
         }
         when (key) {
             InputKeys.ENTER -> onEnter()
@@ -488,6 +509,13 @@ class ConsoleTui(
                   :poly / :polyline / :pl x,z[,y] ..  Draw closed poly + fill
                   :circle / :c cx,cz[,y],r  Draw circle
                   mcp: help|start|stop|status|port|port <n>  Manage MCP HTTP server
+
+            Keyboard:
+                  Enter                 Execute current snippet
+                  Ctrl+O                Insert newline in the prompt
+                  Ctrl+L                Clear console output
+                  Ctrl/Alt + Up/Down    Recall history
+                  PageUp/PageDown       Scroll console output
 
             Basic access to the application object model:
                 (use app.run { ... } for mutating the model):
@@ -844,12 +872,56 @@ class ConsoleTui(
         dirty = true
     }
 
-    private fun padLine(line: String, width: Int): String {
-        val visibleLen = stripAnsi(line).length
-        return if (visibleLen >= width) {
-            line
+    private fun renderTopBar(width: Int): String {
+        val title = "${ANSI_ACCENT} Console ${ANSI_RESET}"
+        val right = "Groovy REPL  :help  :term  Ctrl+O newline"
+        return fitLine("$title  Octodraw DevTools", right, width)
+    }
+
+    private fun renderSectionHeader(label: String, meta: String, width: Int): String {
+        val left = "${ANSI_ACCENT}$label${ANSI_RESET}"
+        return fitLine("├─ $left", meta, width, filler = '─')
+    }
+
+    private fun renderFooter(width: Int): String {
+        val stateText = "state ${state.name.lowercase().replace('_', '-')}"
+        val cursor = editorPane.lineAndColumn(editorPane.cursorPosition)
+        val cursorText = "Ln ${cursor.first + 1}, Col ${cursor.second + 1}"
+        val right = "$cursorText  ${history.entries().size} history"
+        return fitLine("└─ $stateText", right, width, filler = '─')
+    }
+
+    private fun outputHeaderMeta(): String {
+        return if (outputPane.isScrolledUp()) {
+            "scrolled"
         } else {
-            line + " ".repeat(width - visibleLen)
+            "live  ${outputPane.lineCount()} lines"
+        }
+    }
+
+    private fun promptHeaderMeta(): String {
+        val lines = editorPane.lines().size
+        return "Enter run  PgUp/PgDn scroll  $lines lines"
+    }
+
+    private fun fitLine(left: String, right: String, width: Int, filler: Char = ' '): String {
+        val normalizedRight = if (right.isBlank()) "" else right
+        val leftLen = stripAnsi(left).length
+        val rightLen = stripAnsi(normalizedRight).length
+        if (leftLen + rightLen + 1 >= width) {
+            return padLine(truncateAnsi("$left $normalizedRight", width), width)
+        }
+        val fillCount = (width - leftLen - rightLen).coerceAtLeast(1)
+        return left + filler.toString().repeat(fillCount) + normalizedRight
+    }
+
+    private fun padLine(line: String, width: Int): String {
+        val trimmed = truncateAnsi(line, width)
+        val visibleLen = stripAnsi(trimmed).length
+        return if (visibleLen >= width) {
+            trimmed
+        } else {
+            trimmed + " ".repeat(width - visibleLen)
         }
     }
 
@@ -899,6 +971,7 @@ class ConsoleTui(
         private const val ANSI_HIDE_CURSOR = "\u001B[?25l"
         private const val ANSI_SHOW_CURSOR = "\u001B[?25h"
         private const val ANSI_KEYWORD = "\u001B[96m"
+        private const val ANSI_ACCENT = "\u001B[38;5;45m"
         private const val ANSI_RESET = "\u001B[0m"
         private const val ANSI_MOVE_CURSOR = "\u001B[%d;%dH"
         private val ANSI_REGEX = Regex("\\u001B\\[[0-9;]*m")

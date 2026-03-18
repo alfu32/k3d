@@ -62,4 +62,11 @@ class OutputPane(
         }
         return lines.subList(startIndex, lines.size).toList()
     }
+
+    @Synchronized
+    fun clear() {
+        lines.clear()
+        scrollOffset = 0
+        onAppend?.invoke()
+    }
 }

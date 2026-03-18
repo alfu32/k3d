@@ -68,6 +68,7 @@ import com.github.alfu32.sketch.console.LightingFacade
 import com.github.alfu32.sketch.console.McpFacade
 import com.github.alfu32.sketch.console.SelectionFacade
 import com.github.alfu32.sketch.console.TerminalController
+import com.github.alfu32.sketch.console.TerminalControllerFactory
 import com.github.alfu32.sketch.console.UnitFacade
 import com.github.alfu32.sketch.console.SaveFacade
 import com.github.alfu32.sketch.mcp.McpHttpServer
@@ -4921,13 +4922,13 @@ class Main(
         val outputPane = OutputPane()
         val history = HistoryManager(ConsolePaths.historyFile())
         val runtime = buildConsoleRuntime(outputPane)
-        val terminal = TerminalController()
+        val terminal = TerminalControllerFactory.createInteractive()
         val tui = ConsoleTui(runtime, terminal, outputPane, history, ::openTerminal) {
             consoleThread?.shutdown()
         }
         consoleRuntime = runtime
         consoleTerminal = terminal
-        consoleThread = ConsoleThread(runtime, tui, terminal).apply { start() }
+        consoleThread = ConsoleThread(tui, terminal).apply { start() }
     }
 
     private fun shouldStartConsole(): Boolean {
@@ -4992,7 +4993,11 @@ class Main(
         val terminal = consoleTerminal ?: return
         terminal.restore()
         println("Entering shell. Type 'exit' to return to the Octodraw console.")
-        val shell = System.getenv("SHELL") ?: "/bin/bash"
+        val shell = if (System.getProperty("os.name")?.startsWith("Windows", ignoreCase = true) == true) {
+            System.getenv("COMSPEC") ?: "cmd.exe"
+        } else {
+            System.getenv("SHELL") ?: "/bin/bash"
+        }
         try {
             ProcessBuilder(shell)
                 .inheritIO()

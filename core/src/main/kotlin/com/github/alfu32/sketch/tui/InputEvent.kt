@@ -3,6 +3,7 @@ package com.github.alfu32.sketch.tui
 sealed class InputEvent {
     data class Key(val keyCode: Int, val modifiers: Int) : InputEvent()
     data class Mouse(val x: Int, val y: Int, val button: Int) : InputEvent()
+    data class Resize(val columns: Int, val rows: Int) : InputEvent()
 }
 
 object InputKeys {
