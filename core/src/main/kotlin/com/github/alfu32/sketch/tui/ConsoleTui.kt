@@ -26,8 +26,10 @@ class ConsoleTui(
     val outputPane: OutputPane = outputPane
     val editorPane: EditorPane = EditorPane()
     val history: HistoryManager = history
+    private val multilinePane: EditorPane = EditorPane()
 
     private var state: ConsoleState = ConsoleState.IDLE
+    private var inputMode: ConsoleInputMode = ConsoleInputMode.REPL
     private var editorScrollTop = 0
     @Volatile
     private var dirty = true
@@ -45,9 +47,10 @@ class ConsoleTui(
         val outputHeaderHeight = 1
         val promptHeaderHeight = 1
         val footerHeight = 1
-        val editorHeight = (height / 4).coerceIn(4, 10)
+        val editorHeight = (height * 2 / 5).coerceIn(6, 16)
         val outputHeight = (height - topBarHeight - outputHeaderHeight - promptHeaderHeight - footerHeight - editorHeight)
             .coerceAtLeast(1)
+        val activeEditor = activeEditorPane()
         val builder = StringBuilder()
         builder.append(ANSI_HIDE_CURSOR)
         builder.append(ANSI_CLEAR)
@@ -61,10 +64,10 @@ class ConsoleTui(
             val line = outputLines.getOrNull(i) ?: ""
             rows += padLine("│${truncateAnsi(line, width - 2)}", width)
         }
-        rows += renderSectionHeader("Prompt", promptHeaderMeta(), width)
+        rows += renderPromptHeader(width)
 
-        val lines = editorPane.lines()
-        val (cursorLine, cursorColumn) = editorPane.lineAndColumn(editorPane.cursorPosition)
+        val lines = activeEditor.lines()
+        val (cursorLine, cursorColumn) = activeEditor.lineAndColumn(activeEditor.cursorPosition)
         if (cursorLine < editorScrollTop) {
             editorScrollTop = cursorLine
         } else if (cursorLine >= editorScrollTop + editorHeight) {
@@ -143,54 +146,74 @@ class ConsoleTui(
     private fun handleKey(event: InputEvent.Key) {
         val key = event.keyCode
         val modifiers = event.modifiers
+        val activeEditor = activeEditorPane()
         val isHistoryModifier = (modifiers and (InputModifiers.CTRL or InputModifiers.ALT)) != 0
         if (state == ConsoleState.OUTPUT_SCROLL && key != InputKeys.PAGE_UP && key != InputKeys.PAGE_DOWN) {
-            state = if (editorPane.buffer.isEmpty()) ConsoleState.IDLE else ConsoleState.EDITING
+            state = if (activeEditor.buffer.isEmpty()) ConsoleState.IDLE else ConsoleState.EDITING
         }
         if ((modifiers and InputModifiers.CTRL) != 0) {
             when (key) {
                 'L'.code -> {
                     outputPane.clear()
-                    state = if (editorPane.buffer.isEmpty()) ConsoleState.IDLE else ConsoleState.EDITING
+                    state = if (activeEditor.buffer.isEmpty()) ConsoleState.IDLE else ConsoleState.EDITING
                     return
                 }
                 'O'.code -> {
-                    editorPane.insert("\n")
+                    activeEditor.insert("\n")
                     state = ConsoleState.EDITING
+                    return
+                }
+                'R'.code -> {
+                    executeActiveBuffer()
+                    return
+                }
+                'T'.code -> {
+                    toggleInputMode()
+                    return
+                }
+                InputKeys.ENTER -> {
+                    executeActiveBuffer()
                     return
                 }
             }
         }
         when (key) {
-            InputKeys.ENTER -> onEnter()
+            InputKeys.ENTER -> {
+                if (inputMode == ConsoleInputMode.MULTILINE) {
+                    activeEditor.insert("\n")
+                    state = ConsoleState.EDITING
+                } else {
+                    executeActiveBuffer()
+                }
+            }
             InputKeys.TAB -> handleAutocomplete()
             InputKeys.BACKSPACE -> {
-                editorPane.delete()
-                if (editorPane.buffer.isNotEmpty()) {
+                activeEditor.delete()
+                if (activeEditor.buffer.isNotEmpty()) {
                     state = ConsoleState.EDITING
                 } else {
                     state = ConsoleState.IDLE
                 }
             }
-            InputKeys.DELETE -> editorPane.deleteForward()
-            InputKeys.LEFT -> editorPane.moveCursor(-1)
-            InputKeys.RIGHT -> editorPane.moveCursor(1)
+            InputKeys.DELETE -> activeEditor.deleteForward()
+            InputKeys.LEFT -> activeEditor.moveCursor(-1)
+            InputKeys.RIGHT -> activeEditor.moveCursor(1)
             InputKeys.UP -> {
-                if (isHistoryModifier || editorPane.buffer.isEmpty()) {
+                if (isHistoryModifier || activeEditor.buffer.isEmpty()) {
                     recallHistory(previous = true)
                 } else {
-                    editorPane.moveCursorVertical(-1)
+                    activeEditor.moveCursorVertical(-1)
                 }
             }
             InputKeys.DOWN -> {
-                if (isHistoryModifier || editorPane.buffer.isEmpty()) {
+                if (isHistoryModifier || activeEditor.buffer.isEmpty()) {
                     recallHistory(previous = false)
                 } else {
-                    editorPane.moveCursorVertical(1)
+                    activeEditor.moveCursorVertical(1)
                 }
             }
-            InputKeys.HOME -> editorPane.moveCursorHome()
-            InputKeys.END -> editorPane.moveCursorEnd()
+            InputKeys.HOME -> activeEditor.moveCursorHome()
+            InputKeys.END -> activeEditor.moveCursorEnd()
             InputKeys.PAGE_UP -> {
                 outputPane.scroll(5)
                 state = ConsoleState.OUTPUT_SCROLL
@@ -201,27 +224,29 @@ class ConsoleTui(
             }
             InputKeys.ESC -> {
                 if (state == ConsoleState.HISTORY_NAVIGATION) {
-                    editorPane.clear()
+                    activeEditor.clear()
                     state = ConsoleState.IDLE
                 }
             }
             else -> {
                 if (key >= 32) {
-                    editorPane.insert(key.toChar().toString())
+                    activeEditor.insert(key.toChar().toString())
                     state = ConsoleState.EDITING
                 }
             }
         }
     }
 
-    private fun onEnter() {
-        val source = editorPane.buffer.toString()
+    private fun executeActiveBuffer() {
+        val activeEditor = activeEditorPane()
+        val source = activeEditor.buffer.toString()
         if (source.isBlank()) {
             return
         }
+        echoCommand(source)
         if (handleMetaCommand(source)) {
             history.add(source)
-            editorPane.clear()
+            activeEditor.clear()
             state = ConsoleState.IDLE
             return
         }
@@ -230,7 +255,7 @@ class ConsoleTui(
             val result = runtime.shell.evaluate(source)
             outputPane.append(result?.toString() ?: "null")
             history.add(source)
-            editorPane.clear()
+            activeEditor.clear()
             state = ConsoleState.IDLE
         } catch (ex: Exception) {
             if (isIncompleteInput(ex)) {
@@ -389,9 +414,6 @@ class ConsoleTui(
     }
 
     private fun handleList(commandText: String, args: String) {
-        outputPane.append("")
-        outputPane.append(commandText)
-        outputPane.append("")
         if (args.isBlank()) {
             val vars = runtime.binding.variables.keys.map { it.toString() }.sorted()
             outputPane.append(
@@ -517,6 +539,8 @@ class ConsoleTui(
             Keyboard:
                   Enter                 Execute current snippet
                   Ctrl+O                Insert newline in the prompt
+                  Ctrl+T                Toggle prompt / multiline editor
+                  Ctrl+R                Run active buffer
                   Ctrl+L                Clear console output
                   Ctrl/Alt + Up/Down    Recall history
                   PageUp/PageDown       Scroll console output
@@ -534,10 +558,7 @@ class ConsoleTui(
         )
     }
 
-    private fun handleTerminal(commandText: String) {
-        outputPane.append("")
-        outputPane.append(commandText)
-        outputPane.append("")
+    private fun handleTerminal(@Suppress("UNUSED_PARAMETER") commandText: String) {
         terminalRunner()
         markDirty()
     }
@@ -625,10 +646,7 @@ class ConsoleTui(
         outputPane.append("{\n$lines\n}")
     }
 
-    private fun handleLine(commandText: String, args: String) {
-        outputPane.append("")
-        outputPane.append(commandText)
-        outputPane.append("")
+    private fun handleLine(@Suppress("UNUSED_PARAMETER") commandText: String, args: String) {
         val points = parsePointList(args)
         if (points.size < 2) {
             outputPane.append("Usage: :line x,z[,y] x,z[,y] ...")
@@ -648,10 +666,7 @@ class ConsoleTui(
         }
     }
 
-    private fun handleCircle(commandText: String, args: String) {
-        outputPane.append("")
-        outputPane.append(commandText)
-        outputPane.append("")
+    private fun handleCircle(@Suppress("UNUSED_PARAMETER") commandText: String, args: String) {
         val circle = parseCircle(args) ?: run {
             outputPane.append("Usage: :circle cx,cz[,y],r")
             return
@@ -678,10 +693,7 @@ class ConsoleTui(
         }
     }
 
-    private fun handlePoly(commandText: String, args: String) {
-        outputPane.append("")
-        outputPane.append(commandText)
-        outputPane.append("")
+    private fun handlePoly(@Suppress("UNUSED_PARAMETER") commandText: String, args: String) {
         val points = parsePointList(args)
         if (points.size < 3) {
             outputPane.append("Usage: :poly x,z[,y] x,z[,y] ...")
@@ -767,8 +779,9 @@ class ConsoleTui(
     }
 
     private fun handleAutocomplete() {
-        val buffer = editorPane.buffer
-        val cursor = editorPane.cursorPosition
+        val activeEditor = activeEditorPane()
+        val buffer = activeEditor.buffer
+        val cursor = activeEditor.cursorPosition
         if (cursor == 0) {
             return
         }
@@ -788,7 +801,7 @@ class ConsoleTui(
         }
         if (candidates.size == 1) {
             val remainder = candidates.first().substring(prefix.length)
-            editorPane.insert(remainder)
+            activeEditor.insert(remainder)
             return
         }
         outputPane.append(candidates.joinToString("  "))
@@ -843,16 +856,17 @@ class ConsoleTui(
 
     private fun recallHistory(previous: Boolean) {
         val entry = if (previous) history.previous() else history.next()
+        val activeEditor = activeEditorPane()
         if (entry == null) {
             return
         }
         if (entry.isEmpty()) {
-            editorPane.clear()
+            activeEditor.clear()
             state = ConsoleState.IDLE
             return
         }
-        editorPane.clear()
-        editorPane.insert(entry)
+        activeEditor.clear()
+        activeEditor.insert(entry)
         state = ConsoleState.HISTORY_NAVIGATION
     }
 
@@ -878,7 +892,7 @@ class ConsoleTui(
 
     private fun renderTopBar(width: Int): String {
         val title = "${ANSI_ACCENT} Console ${ANSI_RESET}"
-        val right = "Groovy REPL  :help  :term  Ctrl+O newline"
+        val right = "Ctrl+T mode  Ctrl+R run  :help  :term"
         return fitLine("$title  Octodraw DevTools", right, width)
     }
 
@@ -889,7 +903,8 @@ class ConsoleTui(
 
     private fun renderFooter(width: Int): String {
         val stateText = "state ${state.name.lowercase().replace('_', '-')}"
-        val cursor = editorPane.lineAndColumn(editorPane.cursorPosition)
+        val activeEditor = activeEditorPane()
+        val cursor = activeEditor.lineAndColumn(activeEditor.cursorPosition)
         val cursorText = "Ln ${cursor.first + 1}, Col ${cursor.second + 1}"
         val right = "$cursorText  ${history.entries().size} history"
         return fitLine("└─ $stateText", right, width, filler = '─')
@@ -904,8 +919,51 @@ class ConsoleTui(
     }
 
     private fun promptHeaderMeta(): String {
-        val lines = editorPane.lines().size
-        return "Enter run  PgUp/PgDn scroll  $lines lines"
+        val lines = activeEditorPane().lines().size
+        return when (inputMode) {
+            ConsoleInputMode.REPL -> "Enter run  Ctrl+O newline  Ctrl+T multiline  $lines lines"
+            ConsoleInputMode.MULTILINE -> "Enter newline  Ctrl+R run  Ctrl+Enter run  Ctrl+T repl  $lines lines"
+        }
+    }
+
+    private fun renderPromptHeader(width: Int): String {
+        val repl = if (inputMode == ConsoleInputMode.REPL) {
+            "${ANSI_ACCENT}[Prompt]${ANSI_RESET}"
+        } else {
+            "[Prompt]"
+        }
+        val multiline = if (inputMode == ConsoleInputMode.MULTILINE) {
+            "${ANSI_ACCENT}[Multiline]${ANSI_RESET}"
+        } else {
+            "[Multiline]"
+        }
+        val run = if (inputMode == ConsoleInputMode.MULTILINE) "[Run Ctrl+R]" else ""
+        val left = "├─ $repl $multiline${if (run.isNotBlank()) " $run" else ""}"
+        return fitLine(left, promptHeaderMeta(), width, filler = '─')
+    }
+
+    private fun activeEditorPane(): EditorPane {
+        return if (inputMode == ConsoleInputMode.REPL) editorPane else multilinePane
+    }
+
+    private fun toggleInputMode() {
+        inputMode = if (inputMode == ConsoleInputMode.REPL) {
+            ConsoleInputMode.MULTILINE
+        } else {
+            ConsoleInputMode.REPL
+        }
+        editorScrollTop = 0
+        state = if (activeEditorPane().buffer.isEmpty()) ConsoleState.IDLE else ConsoleState.EDITING
+    }
+
+    private fun echoCommand(source: String) {
+        if (outputPane.lineCount() > 0) {
+            outputPane.append("")
+        }
+        source.replace("\r\n", "\n").replace('\r', '\n').split('\n').forEachIndexed { index, line ->
+            val prefix = if (index == 0) "> " else "| "
+            outputPane.append(prefix + line)
+        }
     }
 
     private fun fitLine(left: String, right: String, width: Int, filler: Char = ' '): String {
@@ -985,6 +1043,11 @@ class ConsoleTui(
             "case", "break", "continue", "as", "in"
         )
     }
+}
+
+enum class ConsoleInputMode {
+    REPL,
+    MULTILINE
 }
 
 enum class ConsoleState {

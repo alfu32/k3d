@@ -14,6 +14,13 @@ class ConsoleThread(
         terminal.enterRawMode()
         try {
             tui.history.loadFromDisk()
+            tui.outputPane.append(
+                """
+                ┏━┓┏━╸╺┳╸┏━┓╺┳┓┏━┓┏━┓╻ ╻   ┏━╸┏━┓┏┓╻┏━┓┏━┓╻  ┏━╸
+                ┃ ┃┃   ┃ ┃ ┃ ┃┃┣┳┛┣━┫┃╻┃   ┃  ┃ ┃┃┗┫┗━┓┃ ┃┃  ┣╸
+                ┗━┛┗━╸ ╹ ┗━┛╺┻┛╹┗╸╹ ╹┗┻┛   ┗━╸┗━┛╹ ╹┗━┛┗━┛┗━╸┗━╸
+                """.trimIndent()
+            )
             tui.outputPane.append("Octodraw Dev Console ready.")
             tui.printHelp()
             tui.render()
