@@ -9,6 +9,21 @@ import java.util.concurrent.TimeUnit
 
 class LwjglTerminalController : TerminalController() {
     private val isWindows = WindowsConsole.isWindows()
+    private val activationInput by lazy { WindowsConsole.openInputStream() }
+
+    override fun awaitActivationIfNeeded() {
+        if (!isWindows) {
+            return
+        }
+        print("Octodraw Dev Console - press Enter to activate the terminal UI...\r\n")
+        flushStdout()
+        while (true) {
+            val next = activationInput.read()
+            if (next == -1 || next == '\n'.code || next == '\r'.code) {
+                break
+            }
+        }
+    }
 
     override fun enterRawMode() {
         if (!isWindows) {

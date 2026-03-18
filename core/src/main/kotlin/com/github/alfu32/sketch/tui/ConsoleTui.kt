@@ -39,7 +39,7 @@ class ConsoleTui(
     fun render() {
         dirty = false
         val size = terminal.size()
-        val width = size.columns.coerceAtLeast(20)
+        val width = (size.columns - 1).coerceAtLeast(20)
         val height = size.rows.coerceAtLeast(12)
         val topBarHeight = 1
         val outputHeaderHeight = 1
@@ -52,16 +52,16 @@ class ConsoleTui(
         builder.append(ANSI_HIDE_CURSOR)
         builder.append(ANSI_CLEAR)
         builder.append(ANSI_HOME)
-
-        builder.append(renderTopBar(width)).append('\n')
-        builder.append(renderSectionHeader("Console", outputHeaderMeta(), width)).append('\n')
+        val rows = mutableListOf<String>()
+        rows += renderTopBar(width)
+        rows += renderSectionHeader("Console", outputHeaderMeta(), width)
 
         val outputLines = outputPane.visibleLines(outputHeight, width - 2)
         for (i in 0 until outputHeight) {
             val line = outputLines.getOrNull(i) ?: ""
-            builder.append(padLine("│${truncateAnsi(line, width - 2)}", width)).append('\n')
+            rows += padLine("│${truncateAnsi(line, width - 2)}", width)
         }
-        builder.append(renderSectionHeader("Prompt", promptHeaderMeta(), width)).append('\n')
+        rows += renderSectionHeader("Prompt", promptHeaderMeta(), width)
 
         val lines = editorPane.lines()
         val (cursorLine, cursorColumn) = editorPane.lineAndColumn(editorPane.cursorPosition)
@@ -76,9 +76,13 @@ class ConsoleTui(
             val prefix = if (lineIndex == 0) "│> " else "│  "
             val highlighted = highlight(rawLine)
             val trimmed = truncateAnsi(highlighted, width - prefix.length)
-            builder.append(padLine(prefix + trimmed, width)).append('\n')
+            rows += padLine(prefix + trimmed, width)
         }
-        builder.append(renderFooter(width))
+        rows += renderFooter(width)
+        rows.forEachIndexed { index, row ->
+            builder.append(ANSI_MOVE_CURSOR.format(Locale.US, index + 1, 1))
+            builder.append(padLine(row, width))
+        }
         val cursorRow = topBarHeight + outputHeaderHeight + outputHeight + promptHeaderHeight + (cursorLine - editorScrollTop) + 1
         val prefixLength = 3
         val cursorCol = (prefixLength + cursorColumn + 1).coerceAtLeast(1)

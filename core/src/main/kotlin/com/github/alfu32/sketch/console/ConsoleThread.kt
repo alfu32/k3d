@@ -10,6 +10,7 @@ class ConsoleThread(
     private var running = true
 
     override fun run() {
+        terminal.awaitActivationIfNeeded()
         terminal.enterRawMode()
         try {
             tui.history.loadFromDisk()

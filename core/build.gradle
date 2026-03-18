@@ -74,15 +74,19 @@ data class K3DVersion(
 
 tasks.register('generateBuildFlags') {
   def outFile = file("src/main/kotlin/com/github/alfu32/sketch/BuildFlags.kt")
-  outputs.file(outFile)
-  doLast {
+  def webBuildProvider = providers.provider {
     def explicit = project.findProperty("webBuild")
     def taskNames = gradle.startParameter.taskNames
     def inferredWeb = taskNames.any { name ->
       def lower = name.toLowerCase()
       lower.contains(":web:") || lower.startsWith("web:")
     }
-    def webBuild = explicit != null ? explicit.toString().toBoolean() : inferredWeb
+    explicit != null ? explicit.toString().toBoolean() : inferredWeb
+  }
+  inputs.property("webBuild", webBuildProvider)
+  outputs.file(outFile)
+  doLast {
+    def webBuild = webBuildProvider.get()
     outFile.parentFile.mkdirs()
     outFile.text = """package com.github.alfu32.sketch
 

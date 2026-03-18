@@ -13,6 +13,10 @@ open class TerminalController {
     private var lastKnownSize: TerminalSize = querySize()
     private var lastSizeCheckNanos: Long = 0L
 
+    open fun awaitActivationIfNeeded() {
+        // No-op by default.
+    }
+
     open fun enterRawMode() {
         originalConfig = captureTerminalState()
         runShellCommand("stty raw -echo < /dev/tty")

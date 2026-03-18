@@ -6,6 +6,8 @@ import com.sun.jna.Native
 import com.sun.jna.NativeLibrary
 import com.sun.jna.Pointer
 import com.sun.jna.ptr.IntByReference
+import java.io.FileInputStream
+import java.io.InputStream
 
 object WindowsConsole {
     private const val ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
@@ -59,6 +61,17 @@ object WindowsConsole {
     private val queueLock = Any()
 
     fun isWindows(): Boolean = isWindows
+
+    fun openInputStream(): InputStream {
+        if (!isWindows) return System.`in`
+        val k32 = kernel32 ?: return System.`in`
+        val handle = k32.GetStdHandle(STD_INPUT_HANDLE)
+        val fileType = if (handle == null) 0 else k32.GetFileType(handle)
+        if (fileType == FILE_TYPE_CHAR) {
+            return System.`in`
+        }
+        return runCatching { FileInputStream("CONIN$") }.getOrDefault(System.`in`)
+    }
 
     fun enableVirtualTerminalProcessing(): Boolean {
         if (!isWindows) return true
