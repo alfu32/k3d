@@ -2197,6 +2197,7 @@ class DraftFaceStore(
     }
 
     fun notifyExternalChange() {
+        rehashSelectionAndColors()
         notifyChange()
     }
 
@@ -2208,6 +2209,21 @@ class DraftFaceStore(
 
     private fun markVisualChanged() {
         visualVersion++
+    }
+
+    private fun rehashSelectionAndColors() {
+        if (selected.isNotEmpty()) {
+            val currentSelection = selected.toList()
+            selected.clear()
+            selected.addAll(currentSelection)
+        }
+        if (colors.isNotEmpty()) {
+            val currentColors = colors.entries.map { it.key to com.badlogic.gdx.graphics.Color(it.value) }
+            colors.clear()
+            currentColors.forEach { (triangle, color) ->
+                colors[triangle] = color
+            }
+        }
     }
 
     private fun ensureSpatialIndex() {

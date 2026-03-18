@@ -433,6 +433,7 @@ class DraftLineStore {
     }
 
     fun notifyExternalChange() {
+        rehashSelection()
         notifyChange()
     }
 
@@ -808,6 +809,15 @@ class DraftLineStore {
 
     private fun vertexKey(point: Vector3): VertexKey {
         return VertexKey(quant(point.x), quant(point.y), quant(point.z))
+    }
+
+    private fun rehashSelection() {
+        if (selected.isEmpty()) {
+            return
+        }
+        val currentSelection = selected.toList()
+        selected.clear()
+        selected.addAll(currentSelection)
     }
 
 }
