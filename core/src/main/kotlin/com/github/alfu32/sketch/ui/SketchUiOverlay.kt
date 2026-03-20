@@ -8,6 +8,7 @@ import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.scenes.scene2d.Actor
+import com.badlogic.gdx.scenes.scene2d.Group
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.InputListener
 import com.badlogic.gdx.scenes.scene2d.Stage
@@ -22,6 +23,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.Image
 import com.badlogic.gdx.scenes.scene2d.ui.WidgetGroup
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
+import com.badlogic.gdx.scenes.scene2d.utils.Layout
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
 import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.Scaling
@@ -4542,16 +4544,59 @@ class SketchUiOverlay(
         buildStandardToolbars().forEach { stage.addActor(it) }
         lastPluginTools = emptyList()
         refreshPluginToolbar()
-        toolbarsPositioned = false
-        pluginPanelsPositioned = false
-        needsPanelLayout = true
+        refreshUiForTextScaleChange()
+    }
+
+    private fun invalidateUiActorTree(actor: Actor) {
+        (actor as? Layout)?.invalidateHierarchy()
+        if (actor is Group) {
+            actor.children.forEach { child ->
+                invalidateUiActorTree(child)
+            }
+        }
+    }
+
+    private fun validateUiActorTree(actor: Actor) {
+        (actor as? Layout)?.validate()
+        if (actor is Group) {
+            actor.children.forEach { child ->
+                validateUiActorTree(child)
+            }
+        }
+    }
+
+    private fun rebuildRightSidePanelForUiScaleChange() {
+        if (!::rightSidePanel.isInitialized) {
+            return
+        }
+        val wasVisible = rightSidePanel.isVisible
+        val previousX = rightSidePanel.x
+        val previousY = rightSidePanel.y
+        val previousWidth = rightSidePanel.width
+        val previousHeight = rightSidePanel.height
+        val previousScrollY = if (::rightSidePanelScroll.isInitialized) rightSidePanelScroll.scrollY else 0f
+        rightSidePanel.remove()
+        rightSidePanel = buildRightSidePanel()
+        rightSidePanel.isVisible = wasVisible
+        if (previousWidth > 0f && previousHeight > 0f) {
+            rightSidePanel.setSize(previousWidth, previousHeight)
+        }
+        rightSidePanel.setPosition(previousX, previousY)
+        stage.addActor(rightSidePanel)
+        if (::rightSidePanelScroll.isInitialized && previousScrollY > 0f) {
+            rightSidePanelScroll.scrollY = previousScrollY
+            rightSidePanelScroll.updateVisualScroll()
+        }
     }
 
     private fun refreshUiForTextScaleChange() {
         tutorialSectionToggleStyle = null
-        stage.root.children.forEach { child ->
-            (child as? com.badlogic.gdx.scenes.scene2d.utils.Layout)?.invalidateHierarchy()
-            (child as? com.badlogic.gdx.scenes.scene2d.utils.Layout)?.validate()
+        rightDockStableMinContentWidth = 0f
+        rebuildRightSidePanelForUiScaleChange()
+        invalidateUiActorTree(stage.root)
+        rightDockPanels().forEach {
+            it.invalidateHierarchy()
+            it.pack()
         }
         builtInToolbars.values.forEach {
             it.invalidateHierarchy()
@@ -4570,6 +4615,7 @@ class SketchUiOverlay(
         }
         if (::rightSidePanelScroll.isInitialized) {
             rightSidePanelScroll.invalidateHierarchy()
+            rightSidePanelScroll.layout()
         }
         if (::rightSidePanel.isInitialized) {
             rightSidePanel.invalidateHierarchy()
@@ -4586,6 +4632,8 @@ class SketchUiOverlay(
         toolbarsPositioned = false
         pluginPanelsPositioned = false
         needsPanelLayout = true
+        positionPanels()
+        validateUiActorTree(stage.root)
     }
 
     fun toggleObjectsPanel() {
