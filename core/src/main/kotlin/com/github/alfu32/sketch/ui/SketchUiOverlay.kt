@@ -1126,6 +1126,7 @@ class SketchUiOverlay(
             positionPanels()
             needsPanelLayout = false
         }
+        persistToolbarStates()
         updateHoverPopover(delta)
         stage.act(delta)
     }
@@ -5422,6 +5423,15 @@ class SketchUiOverlay(
         uiPrefs.putFloat(hKey, window.height)
         uiPrefs.putBoolean(visibleKey, desiredVisible)
         uiPrefs.flush()
+    }
+
+    private fun persistToolbarStates() {
+        builtInToolbars.forEach { (toolbarId, window) ->
+            saveToolbarState(toolbarId, window)
+        }
+        pluginToolbars.forEach { (pluginId, window) ->
+            saveToolbarState(pluginToolbarStateId(pluginId), window)
+        }
     }
 
     private fun rebuildPluginPanels() {
