@@ -171,7 +171,9 @@ class SketchUiOverlay(
         private val fixedHeight: Float? = null,
         showCloseButton: Boolean = true
     ) : com.kotcrab.vis.ui.widget.VisWindow(title, true) {
+        private val baseTitle = title
         private var collapsed = false
+        private var toolbarCompactTitle = false
 
         init {
             isMovable = true
@@ -192,6 +194,15 @@ class SketchUiOverlay(
 
         override fun close() {
             isVisible = false
+        }
+
+        fun setToolbarCompactTitle(compact: Boolean) {
+            if (toolbarCompactTitle == compact) {
+                return
+            }
+            toolbarCompactTitle = compact
+            getTitleLabel().setText(if (compact) "" else baseTitle)
+            invalidateHierarchy()
         }
 
         fun setCollapsedState(value: Boolean) {
@@ -1762,6 +1773,7 @@ class SketchUiOverlay(
         val window = binding.window
         val oldX = window.x
         val oldTop = window.y + window.height
+        window.setToolbarCompactTitle(!expanded)
         binding.expanded = expanded
         binding.visibleButtonIndex = visibleButtonIndex
         binding.slots.forEachIndexed { index, slot ->
