@@ -218,7 +218,9 @@ class Main(
         FACE,
         VOXEL,
         HOTSPOT,
-        OBJECT
+        OBJECT,
+        DIMENSION,
+        TEXT
     }
 
     private lateinit var camera: PerspectiveCamera
@@ -270,6 +272,7 @@ class Main(
     private val selectedEntityBoxColor = Color(0.2f, 0.7f, 0.95f, 1f)
     private val editModeBoxColor = Color(1f, 0.6f, 0.2f, 1f)
     private val selectedLineWidth = 8f
+    private val feedbackLineWidthPrefKey = "ui.feedback_line_width"
     private lateinit var toolController: ToolController
     private lateinit var toolInput: ToolInputProcessor
     private lateinit var uiOverlay: SketchUiOverlay
@@ -308,6 +311,7 @@ class Main(
     private val groundPlaneExtentMultiplier = 1.6f
     private val groundPlaneCenter = Vector3()
     private var groundPlaneSize = minimumGroundPlaneSize
+    private var feedbackOverlayLineWidth = 3f
     private var shadowModelTrackedEdgeCount = -1
     private var shadowModelTrackedFaceCount = -1
     private val shadowBoundsCenterTmp = Vector3()
@@ -363,6 +367,8 @@ class Main(
         put(BasicSelectionFilterKind.VOXEL, EntityDisplayState(wireframe = false))
         put(BasicSelectionFilterKind.HOTSPOT, EntityDisplayState(wireframe = false))
         put(BasicSelectionFilterKind.OBJECT, EntityDisplayState(wireframe = false))
+        put(BasicSelectionFilterKind.DIMENSION, EntityDisplayState(wireframe = false))
+        put(BasicSelectionFilterKind.TEXT, EntityDisplayState(wireframe = false))
     }
     private lateinit var installDir: java.io.File
     private lateinit var objectPlaceTool: ObjectPlaceTool
@@ -615,6 +621,7 @@ class Main(
             message = "Select entities.",
             inputBuffer = ""
         )
+        feedbackOverlayLineWidth = runtimePrefs.getFloat(feedbackLineWidthPrefKey, feedbackOverlayLineWidth).coerceIn(1f, 16f)
         scene = GroupScene(Color(0.8f, 0.8f, 0.8f, 1f))
         vectorGlyphCatalog = loadVectorGlyphCatalog(vectorTextSettings.glyphSourcePath)
         modelCleanup = ModelCleanup(scene)
@@ -681,6 +688,10 @@ class Main(
                             }
                         )
                     },
+                    { isBasicKindVisible(BasicSelectionFilterKind.DIMENSION) },
+                    { isBasicKindUnlocked(BasicSelectionFilterKind.DIMENSION) },
+                    { isBasicKindVisible(BasicSelectionFilterKind.TEXT) },
+                    { isBasicKindUnlocked(BasicSelectionFilterKind.TEXT) },
                     ::observeTutorialUiAction
                 ),
                 LineTool(scene) { toolController.setTool(ToolId.SELECT) },
@@ -824,6 +835,7 @@ class Main(
             ::updateSelectedText,
             ::updateSelectedTextSize,
             ::updateSelectedTextScreen,
+            ::updateSelectionColor,
             ::groupInfo,
             ::updateGroupName,
             ::updateGroupGlue,
@@ -875,6 +887,7 @@ class Main(
             ::clearHotspotReference,
             { activeCameraMode },
             ::setCameraMode,
+            ::updateFeedbackOverlayLineWidth,
             ::tutorialUiState,
             ::startTutorialRecording,
             ::stopTutorialRecording,
@@ -5255,6 +5268,9 @@ class Main(
     }
 
     private fun drawDimensions() {
+        if (!isBasicKindVisible(BasicSelectionFilterKind.DIMENSION)) {
+            return
+        }
         val defaultColor = Color(0.2f, 0.2f, 0.2f, 1f)
         scene.collectWorldDimensions { start, end, offset, selected ->
             val (lineStart, lineEnd) = DimensionMath.computeOffsetLine(start, end, offset)
@@ -5297,9 +5313,11 @@ class Main(
         textTransform.idt()
         spriteBatch.transformMatrix = textTransform
         spriteBatch.begin()
-        scene.collectWorldDimensions { start, end, offset, selected ->
-            val (lineStart, lineEnd) = DimensionMath.computeOffsetLine(start, end, offset)
-            drawDimensionText(lineStart, lineEnd, start, end, offset, selected)
+        if (isBasicKindVisible(BasicSelectionFilterKind.DIMENSION) && !isBasicKindWireframe(BasicSelectionFilterKind.DIMENSION)) {
+            scene.collectWorldDimensions { start, end, offset, selected ->
+                val (lineStart, lineEnd) = DimensionMath.computeOffsetLine(start, end, offset)
+                drawDimensionText(lineStart, lineEnd, start, end, offset, selected)
+            }
         }
         drawActiveToolMeasurementLabels()
         spriteBatch.end()
@@ -5308,9 +5326,11 @@ class Main(
         textTransform.idt()
         spriteBatch.transformMatrix = textTransform
         spriteBatch.begin()
-        scene.collectWorldTexts { position, text, size, normal, axisU, selected, screenText, kind, _, _, _ ->
-            if (kind == DraftTextStore.Kind.BITMAP && screenText) {
-                drawWorldTextScreen(text, position, size, selected)
+        if (isBasicKindVisible(BasicSelectionFilterKind.TEXT) && !isBasicKindWireframe(BasicSelectionFilterKind.TEXT)) {
+            scene.collectWorldTexts { position, text, size, normal, axisU, selected, screenText, kind, _, _, _ ->
+                if (kind == DraftTextStore.Kind.BITMAP && screenText) {
+                    drawWorldTextScreen(text, position, size, selected)
+                }
             }
         }
         spriteBatch.end()
@@ -5319,9 +5339,11 @@ class Main(
         textTransform.idt()
         spriteBatch.transformMatrix = textTransform
         spriteBatch.begin()
-        scene.collectWorldTexts { position, text, size, normal, axisU, selected, screenText, kind, _, _, _ ->
-            if (kind == DraftTextStore.Kind.BITMAP && !screenText) {
-                drawWorldTextModel(text, position, size, normal, axisU, selected)
+        if (isBasicKindVisible(BasicSelectionFilterKind.TEXT) && !isBasicKindWireframe(BasicSelectionFilterKind.TEXT)) {
+            scene.collectWorldTexts { position, text, size, normal, axisU, selected, screenText, kind, _, _, _ ->
+                if (kind == DraftTextStore.Kind.BITMAP && !screenText) {
+                    drawWorldTextModel(text, position, size, normal, axisU, selected)
+                }
             }
         }
         spriteBatch.end()
@@ -5719,7 +5741,7 @@ class Main(
             if (a.z < 0f || a.z > 1f || b.z < 0f || b.z > 1f) {
                 return@forEach
             }
-            shapeRenderer.rectLine(a.x, a.y, b.x, b.y, 3f)
+            shapeRenderer.rectLine(a.x, a.y, b.x, b.y, feedbackOverlayLineWidth)
         }
         shapeRenderer.end()
         Gdx.gl.glDisable(GL20.GL_BLEND)
@@ -5794,6 +5816,9 @@ class Main(
     }
 
     private fun drawVectorTextEdges3D() {
+        if (!isBasicKindVisible(BasicSelectionFilterKind.TEXT)) {
+            return
+        }
         scene.collectWorldTexts { position, text, size, normal, axisU, selected, _, kind, tracking, lineSpacing, glyphSourcePath ->
             if (kind != DraftTextStore.Kind.VECTOR) {
                 return@collectWorldTexts
@@ -7517,6 +7542,7 @@ class Main(
         val selectedSlabCount = architectureSelected.count { it.kind == ArchitectureStore.ElementKind.SLAB }
         val selectedStairCount = architectureSelected.count { it.kind == ArchitectureStore.ElementKind.STAIR }
         val selectedFrameCount = architectureSelected.count { it.kind == ArchitectureStore.ElementKind.FRAME }
+        val selectionColorState = currentSelectionEditableColor()
         return SketchUiOverlay.SelectionInfo(
             edgeCount = activeLineStore().getSelected().size,
             edgeTotalCount = totals.edges,
@@ -7545,8 +7571,14 @@ class Main(
             objectWireframe = isBasicKindWireframe(BasicSelectionFilterKind.OBJECT),
             dimensionCount = group.dimensionStore.getSelected().size,
             dimensionTotalCount = totals.dimensions,
+            dimensionDrawEnabled = isBasicKindVisible(BasicSelectionFilterKind.DIMENSION),
+            dimensionModifyEnabled = isBasicKindUnlocked(BasicSelectionFilterKind.DIMENSION),
+            dimensionWireframe = isBasicKindWireframe(BasicSelectionFilterKind.DIMENSION),
             textCount = selectedTexts.size,
             textTotalCount = totals.texts,
+            textDrawEnabled = isBasicKindVisible(BasicSelectionFilterKind.TEXT),
+            textModifyEnabled = isBasicKindUnlocked(BasicSelectionFilterKind.TEXT),
+            textWireframe = isBasicKindWireframe(BasicSelectionFilterKind.TEXT),
             wallTotalCount = totals.walls,
             wallSelectedCount = selectedWallCount,
             wallDrawEnabled = isArchitectureKindVisible(ArchitectureStore.ElementKind.WALL),
@@ -7571,11 +7603,74 @@ class Main(
             selectedTextValue = selectedText?.text,
             selectedTextSize = selectedText?.size,
             selectedTextScreen = selectedText?.screenText,
+            selectedColor = selectionColorState.color,
+            selectedColorEditable = selectionColorState.editable,
             selectedVectorText = selectedText?.kind == DraftTextStore.Kind.VECTOR,
             selectedVectorTextTracking = selectedText?.takeIf { it.kind == DraftTextStore.Kind.VECTOR }?.tracking,
             selectedVectorTextLineSpacing = selectedText?.takeIf { it.kind == DraftTextStore.Kind.VECTOR }?.lineSpacing,
             selectedVectorTextGlyphSourcePath = selectedText?.takeIf { it.kind == DraftTextStore.Kind.VECTOR }?.glyphSourcePath
         )
+    }
+
+    private data class SelectionEditableColorState(
+        val editable: Boolean,
+        val color: Color?
+    )
+
+    private fun currentSelectionEditableColor(): SelectionEditableColorState {
+        val group = scene.activeGroup()
+        val colors = mutableListOf<Color>()
+        activeFaceStore().getSelected().forEach { triangle ->
+            colors += Color(activeFaceStore().colorFor(triangle))
+        }
+        group.voxelStore?.let { voxelStore ->
+            scene.selectedVoxels(group).forEach { key ->
+                voxelStore.colorAt(key)?.let { colors += Color(it) }
+            }
+        }
+        hotspotInteractionGroups().forEach { target ->
+            scene.selectedHotspots(target).forEach { selection ->
+                scene.hotspotById(target, selection.id)?.let { hotspot ->
+                    colors += Color(hotspot.color)
+                }
+            }
+        }
+        scene.root.architectureStore?.let { store ->
+            scene.selectedArchitectureElements(scene.root).forEach { selection ->
+                when (selection.kind) {
+                    ArchitectureStore.ElementKind.WALL -> store.wallById(selection.id)?.let { wall ->
+                        colors += Color(wall.exteriorColor)
+                        colors += Color(wall.interiorColor)
+                    }
+                    ArchitectureStore.ElementKind.SLAB -> store.allSlabs().firstOrNull { it.id == selection.id }?.let { slab ->
+                        colors += Color(slab.topColor)
+                        colors += Color(slab.bottomColor)
+                        colors += Color(slab.sideColor)
+                    }
+                    ArchitectureStore.ElementKind.STAIR -> store.allStairs().firstOrNull { it.id == selection.id }?.let { stair ->
+                        colors += Color(stair.treadColor)
+                        colors += Color(stair.supportColor)
+                    }
+                    ArchitectureStore.ElementKind.FRAME -> store.allFrames().firstOrNull { it.id == selection.id }?.let { frame ->
+                        colors += Color(frame.color)
+                        if (frame.glazingEnabled) {
+                            colors += Color(frame.glazingColor)
+                        }
+                    }
+                }
+            }
+        }
+        if (colors.isEmpty()) {
+            return SelectionEditableColorState(editable = false, color = null)
+        }
+        val first = colors.first()
+        val uniform = colors.all { candidate ->
+            candidate.r == first.r &&
+                candidate.g == first.g &&
+                candidate.b == first.b &&
+                candidate.a == first.a
+        }
+        return SelectionEditableColorState(editable = true, color = if (uniform) first else null)
     }
 
     private fun selectionTotals(): SelectionTotalsCache {
@@ -7667,6 +7762,10 @@ class Main(
                 updateBasicDisplayState(BasicSelectionFilterKind.HOTSPOT, draw, modifyEnabled, wireframe)
             SketchUiOverlay.SelectionFilterKind.OBJECT ->
                 updateBasicDisplayState(BasicSelectionFilterKind.OBJECT, draw, modifyEnabled, wireframe)
+            SketchUiOverlay.SelectionFilterKind.DIMENSION ->
+                updateBasicDisplayState(BasicSelectionFilterKind.DIMENSION, draw, modifyEnabled, wireframe)
+            SketchUiOverlay.SelectionFilterKind.TEXT ->
+                updateBasicDisplayState(BasicSelectionFilterKind.TEXT, draw, modifyEnabled, wireframe)
             SketchUiOverlay.SelectionFilterKind.WALL ->
                 updateArchitectureDisplayState(ArchitectureStore.ElementKind.WALL, draw, modifyEnabled, wireframe)
             SketchUiOverlay.SelectionFilterKind.SLAB ->
@@ -7824,6 +7923,12 @@ class Main(
             }
             BasicSelectionFilterKind.OBJECT -> {
                 scene.clearGroupSelection()
+            }
+            BasicSelectionFilterKind.DIMENSION -> {
+                scene.activeGroup().dimensionStore.clearSelection()
+            }
+            BasicSelectionFilterKind.TEXT -> {
+                scene.activeGroup().textStore.clearSelection()
             }
         }
     }
@@ -8336,6 +8441,109 @@ class Main(
         if (group.textStore.updateScreenText(textId, screenText)) {
             statusModel.message = if (screenText) "Text set to screen mode." else "Text set to model mode."
         }
+    }
+
+    private fun updateSelectionColor(color: Color) {
+        val group = scene.activeGroup()
+        var updated = 0
+        updated += group.faceStore.paintSelected(color)
+        updated += scene.paintSelectedVoxels(group, color)
+        hotspotInteractionGroups().forEach { target ->
+            scene.selectedHotspots(target).forEach { selection ->
+                if (scene.updateHotspotColor(target, selection.id, color)) {
+                    updated++
+                }
+            }
+        }
+        scene.root.architectureStore?.let { store ->
+            scene.selectedArchitectureElements(scene.root).forEach { selection ->
+                when (selection.kind) {
+                    ArchitectureStore.ElementKind.WALL -> {
+                        store.wallById(selection.id)?.let { wall ->
+                            if (
+                                scene.updateArchitectureWall(
+                                    scene.root,
+                                    wall.id,
+                                    wall.thickness,
+                                    wall.height,
+                                    wall.inclinationDeg,
+                                    color,
+                                    color
+                                )
+                            ) {
+                                updated++
+                            }
+                        }
+                    }
+                    ArchitectureStore.ElementKind.SLAB -> {
+                        store.allSlabs().firstOrNull { it.id == selection.id }?.let { slab ->
+                            if (
+                                scene.updateArchitectureSlab(
+                                    scene.root,
+                                    slab.id,
+                                    slab.thickness,
+                                    color,
+                                    color,
+                                    color
+                                )
+                            ) {
+                                updated++
+                            }
+                        }
+                    }
+                    ArchitectureStore.ElementKind.STAIR -> {
+                        store.allStairs().firstOrNull { it.id == selection.id }?.let { stair ->
+                            if (
+                                scene.updateArchitectureStair(
+                                    scene.root,
+                                    stair.id,
+                                    stair.height,
+                                    stair.stepCount,
+                                    stair.supportThickness,
+                                    stair.railLeftEnabled,
+                                    stair.railRightEnabled,
+                                    color,
+                                    color
+                                )
+                            ) {
+                                updated++
+                            }
+                        }
+                    }
+                    ArchitectureStore.ElementKind.FRAME -> {
+                        store.allFrames().firstOrNull { it.id == selection.id }?.let { frame ->
+                            if (
+                                scene.updateArchitectureFrame(
+                                    scene.root,
+                                    frame.id,
+                                    frame.depth,
+                                    frame.frameWidth,
+                                    color,
+                                    frame.glazingEnabled,
+                                    color
+                                )
+                            ) {
+                                updated++
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (updated > 0) {
+            statusModel.paintColor.set(color)
+            statusModel.message = if (updated == 1) {
+                "Selection color updated."
+            } else {
+                "Selection color updated for $updated items."
+            }
+        }
+    }
+
+    private fun updateFeedbackOverlayLineWidth(width: Float) {
+        feedbackOverlayLineWidth = width.coerceIn(1f, 16f)
+        runtimePrefs.putFloat(feedbackLineWidthPrefKey, feedbackOverlayLineWidth)
+        runtimePrefs.flush()
     }
 
     private fun updateSelectedVectorTextTracking(textId: String, tracking: Float) {

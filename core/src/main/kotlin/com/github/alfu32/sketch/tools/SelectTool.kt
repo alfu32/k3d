@@ -31,6 +31,10 @@ class SelectTool(
     private val basicKindVisible: (BasicSelectionKind) -> Boolean = { true },
     private val basicKindUnlocked: (BasicSelectionKind) -> Boolean = { true },
     private val basicKindWireframe: (BasicSelectionKind) -> Boolean = { false },
+    private val dimensionsVisible: () -> Boolean = { true },
+    private val dimensionsUnlocked: () -> Boolean = { true },
+    private val textsVisible: () -> Boolean = { true },
+    private val textsUnlocked: () -> Boolean = { true },
     private val tutorialSelectionActionObserved: (String, String) -> Unit = { _, _ -> }
 ) : Tool {
     data class WindowRect(val x: Float, val y: Float, val width: Float, val height: Float, val dashed: Boolean)
@@ -1325,6 +1329,9 @@ class SelectTool(
     }
 
     private fun pickDimensionWorld(ray: Ray, screenX: Int, screenY: Int, maxPixels: Float = 12f): DimensionHitWorld? {
+        if (!dimensionsVisible() || !dimensionsUnlocked()) {
+            return null
+        }
         val group = scene.activeGroup()
         var best: DimensionHitWorld? = null
         group.dimensionStore.getDimensions().forEach { dimension ->
@@ -1344,6 +1351,9 @@ class SelectTool(
     }
 
     private fun pickTextWorld(ray: Ray, screenX: Int, screenY: Int, maxPixels: Float = 12f): TextHitWorld? {
+        if (!textsVisible() || !textsUnlocked()) {
+            return null
+        }
         val group = scene.activeGroup()
         var best: TextHitWorld? = null
         group.textStore.getTexts().forEach { text ->
@@ -2364,6 +2374,9 @@ class SelectTool(
     }
 
     private fun selectDimensionsInWindow(rect: WindowRectTopLeft, includeIntersect: Boolean, mode: SelectionMode): Int {
+        if (!dimensionsVisible() || !dimensionsUnlocked()) {
+            return 0
+        }
         var count = 0
         val group = scene.activeGroup()
         group.dimensionStore.getDimensions().forEach { dimension ->
@@ -2398,6 +2411,9 @@ class SelectTool(
     }
 
     private fun selectTextsInWindow(rect: WindowRectTopLeft, includeIntersect: Boolean, mode: SelectionMode): Int {
+        if (!textsVisible() || !textsUnlocked()) {
+            return 0
+        }
         var count = 0
         val group = scene.activeGroup()
         group.textStore.getTexts().forEach { text ->

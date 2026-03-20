@@ -75,6 +75,7 @@ class SketchUiOverlay(
     private val selectionTextChanged: (String, String) -> Unit,
     private val selectionTextSizeChanged: (String, Float) -> Unit,
     private val selectionTextScreenChanged: (String, Boolean) -> Unit,
+    private val selectionColorChanged: (Color) -> Unit,
     private val groupInfoProvider: () -> GroupInfo?,
     private val groupNameChanged: (String) -> Unit,
     private val groupGlueChanged: (Boolean) -> Unit,
@@ -126,6 +127,7 @@ class SketchUiOverlay(
     private val hotspotClearReference: (String) -> Unit,
     private val cameraModeProvider: () -> CameraMode,
     private val cameraModeChanged: (CameraMode) -> Unit,
+    private val feedbackLineWidthChanged: (Float) -> Unit,
     private val tutorialStateProvider: () -> TutorialUiState,
     private val tutorialStartRecording: () -> Unit,
     private val tutorialStopRecording: () -> Unit,
@@ -136,6 +138,23 @@ class SketchUiOverlay(
     private val tutorialNext: () -> Unit,
     private val tutorialUiActionObserved: (String, String) -> Unit
 ) {
+    private data class ToolbarButtonSlot(
+        val actor: Actor,
+        val cell: Cell<*>,
+        val width: Float,
+        val height: Float
+    )
+
+    private data class ToolbarBinding(
+        val toolbarId: String,
+        val window: CollapsibleWindow,
+        val content: Table,
+        val slots: List<ToolbarButtonSlot>,
+        var hovered: Boolean = false,
+        var expanded: Boolean = true,
+        var visibleButtonIndex: Int = -1
+    )
+
     private data class ToolbarLayoutState(
         val x: Float? = null,
         val y: Float? = null,
@@ -346,6 +365,8 @@ class SketchUiOverlay(
     private val buttonMarkers = mutableMapOf<AppImageTextButton, Image>()
     private val hoveredButtons = mutableSetOf<AppImageTextButton>()
     private val builtInToolbars = linkedMapOf<String, CollapsibleWindow>()
+    private val toolbarBindingsById = linkedMapOf<String, ToolbarBinding>()
+    private val toolbarBindingsByWindow = mutableMapOf<CollapsibleWindow, ToolbarBinding>()
     private val pluginToolButtons = mutableMapOf<String, AppImageTextButton>()
     private val pluginToolByWidget = mutableMapOf<AppImageTextButton, String>()
     private val pluginToolbars = mutableMapOf<String, CollapsibleWindow>()
@@ -366,10 +387,14 @@ class SketchUiOverlay(
     private val toolbarLayoutVersion = 9
     private val toolbarsVisibleKey = "toolbars.visible"
     private val uiToolbarButtonSizeKey = "ui_toolbar_button_size_px"
+    private val uiToolbarAutoCollapseKey = "ui_toolbar_auto_collapse"
     private val uiTextScaleKey = "ui_text_scale"
+    private val uiThickLineWidthKey = "ui_thick_line_width"
     private var toolbarButtonSize = 32f
     private var toolbarIconSizePx = 32
+    private var toolbarAutoCollapse = false
     private var uiTextScale = 1f
+    private var thickLineWidth = 3f
     private val uiBaseFontScales = IdentityHashMap<BitmapFont, Pair<Float, Float>>()
     private val toolbarDesiredVisibility = mutableMapOf<String, Boolean>()
     private val archDefaultWallThicknessKey = "arch_default_wall_thickness"
@@ -442,8 +467,12 @@ class SketchUiOverlay(
     private val selectionTextSizeLabel = VisLabel("Text size")
     private val selectionTextSizeField = VisTextField()
     private val selectionTextScreenCheck = VisCheckBox("Screen text")
+    private val selectionColorLabel = VisLabel("Color")
+    private val selectionColorField = VisTextField()
+    private lateinit var selectionColorButton: AppImageTextButton
     private var updatingSelectionFields = false
     private var updatingSelectionFilters = false
+    private var selectionColorEditable = false
     private var selectionTextId: String? = null
     private var lastPluginTools: List<String> = emptyList()
     private lateinit var groupPanel: DockSection
@@ -626,6 +655,9 @@ class SketchUiOverlay(
     private val walkthroughMoveSpeedField = VisTextField()
     private lateinit var uiToolbarSizeSelect: VisSelectBox<String>
     private lateinit var uiTextScaleSelect: VisSelectBox<String>
+    private lateinit var uiToolbarAutoCollapseCheck: VisCheckBox
+    private lateinit var uiThickLineWidthSlider: VisSlider
+    private lateinit var uiThickLineWidthValueLabel: VisLabel
     private var updatingUiSettingsFields = false
     private var updatingModelSettingsFields = false
     private var lastUnitName = ""
@@ -655,6 +687,7 @@ class SketchUiOverlay(
     init {
         loadUiVisualSettings()
         applyUiTextScaleToSkin()
+        feedbackLineWidthChanged(thickLineWidth)
         iconDrawables.putAll(loadIconDrawables())
         migrateBuiltinToolbarPrefs()
         toolbarsVisible = uiPrefs.getBoolean(toolbarsVisibleKey, true)
@@ -909,6 +942,20 @@ class SketchUiOverlay(
             row.wireframeCheck.isChecked = selection.objectWireframe
             row.wireframeCheck.isDisabled = true
         }
+        selectionGenericRows[SelectionFilterKind.DIMENSION]?.let { row ->
+            row.drawCheck.isChecked = selection.dimensionDrawEnabled
+            row.modifyCheck.isChecked = selection.dimensionModifyEnabled
+            row.modifyCheck.isDisabled = !selection.dimensionDrawEnabled
+            row.wireframeCheck.isChecked = selection.dimensionWireframe
+            row.wireframeCheck.isDisabled = !selection.dimensionDrawEnabled
+        }
+        selectionGenericRows[SelectionFilterKind.TEXT]?.let { row ->
+            row.drawCheck.isChecked = selection.textDrawEnabled
+            row.modifyCheck.isChecked = selection.textModifyEnabled
+            row.modifyCheck.isDisabled = !selection.textDrawEnabled
+            row.wireframeCheck.isChecked = selection.textWireframe
+            row.wireframeCheck.isDisabled = !selection.textDrawEnabled
+        }
         selectionArchitectureRows[ArchitectureElementKind.WALL]?.let { row ->
             row.totalLabel.setText(selection.wallTotalCount.toString())
             row.selectedLabel.setText(selection.wallSelectedCount.toString())
@@ -958,6 +1005,14 @@ class SketchUiOverlay(
         selectionTextField.text = selection.selectedTextValue ?: ""
         selectionTextSizeField.text = selection.selectedTextSize?.let { String.format(Locale.US, "%.2f", it) } ?: ""
         selectionTextScreenCheck.isChecked = selection.selectedTextScreen ?: true
+        selectionColorEditable = selection.selectedColorEditable
+        selectionColorLabel.isVisible = selectionColorEditable
+        selectionColorField.isVisible = selectionColorEditable
+        selectionColorButton.isVisible = selectionColorEditable
+        selectionColorField.isDisabled = !selectionColorEditable
+        selectionColorButton.isDisabled = !selectionColorEditable
+        selectionColorField.text = selection.selectedColor?.let { formatColorField(it) } ?: ""
+        updateArchitectureColorButtonSwatch(selectionColorButton, selection.selectedColor ?: status.paintColor)
         updatingSelectionFields = false
         updateGroupPanel()
         updateObjectsPanel()
@@ -972,6 +1027,7 @@ class SketchUiOverlay(
         updatePluginToolSelection()
         updatePaintColorButton()
         updateButtonLabels()
+        refreshToolbarAutoCollapseStates()
         syncCameraModeButtons()
     }
 
@@ -1410,20 +1466,25 @@ class SketchUiOverlay(
         window.isResizable = false
         val content = VisTable()
         content.defaults().pad(2f).left()
+        val slots = mutableListOf<ToolbarButtonSlot>()
         leadingButtons.forEach { button ->
-            content.add(button).size(toolbarButtonSize, toolbarButtonSize)
+            val cell = content.add(button).size(toolbarButtonSize, toolbarButtonSize)
+            slots += ToolbarButtonSlot(button, cell, toolbarButtonSize, toolbarButtonSize)
         }
         toolIds.forEach { toolId ->
             val button = createToolButton(toolId, group)
-            content.add(button).size(toolbarButtonSize, toolbarButtonSize)
+            val cell = content.add(button).size(toolbarButtonSize, toolbarButtonSize)
+            slots += ToolbarButtonSlot(button, cell, toolbarButtonSize, toolbarButtonSize)
         }
         extraButtons.forEach { button ->
-            content.add(button).size(toolbarButtonSize, toolbarButtonSize)
+            val cell = content.add(button).size(toolbarButtonSize, toolbarButtonSize)
+            slots += ToolbarButtonSlot(button, cell, toolbarButtonSize, toolbarButtonSize)
         }
         window.add(content).pad(4f).left()
         window.pack()
         window.setSize(window.prefWidth, window.prefHeight)
         attachToolbarPersistence(window, toolbarId)
+        registerToolbarBinding(toolbarId, window, content, slots)
         return window
     }
 
@@ -1454,6 +1515,7 @@ class SketchUiOverlay(
         window.isResizable = false
         val content = VisTable()
         content.defaults().pad(2f).left()
+        val slots = mutableListOf<ToolbarButtonSlot>()
 
         val openButton = createActionButton(
             label = "Open",
@@ -1521,7 +1583,7 @@ class SketchUiOverlay(
         }
 
         val lightingButton = createActionButton(
-            label = "Lighting",
+            label = "Shader Settings",
             icon = iconFor("lighting", createActionIconDrawable(Color(0.95f, 0.85f, 0.2f, 1f))),
             tutorialActionId = "ui.action.toggle_lighting_panel"
         ) {
@@ -1552,13 +1614,15 @@ class SketchUiOverlay(
             pluginButton
         )
         buttons.forEach { button ->
-            content.add(button).size(toolbarButtonSize, toolbarButtonSize)
+            val cell = content.add(button).size(toolbarButtonSize, toolbarButtonSize)
+            slots += ToolbarButtonSlot(button, cell, toolbarButtonSize, toolbarButtonSize)
         }
 
         window.add(content).pad(4f).left()
         window.pack()
         window.setSize(window.prefWidth, window.prefHeight)
         attachToolbarPersistence(window, toolbarId)
+        registerToolbarBinding(toolbarId, window, content, slots)
         return window
     }
 
@@ -1567,6 +1631,7 @@ class SketchUiOverlay(
         window.isResizable = false
         val content = VisTable()
         content.defaults().pad(2f).left()
+        val slots = mutableListOf<ToolbarButtonSlot>()
 
         val group = ButtonGroup<VisTextButton>().apply {
             setMaxCheckCount(1)
@@ -1595,7 +1660,9 @@ class SketchUiOverlay(
             cameraModeButtons[mode] = button
             cameraModeLabels[mode] = label
             group.add(button)
-            content.add(button).height(toolbarButtonSize).minWidth(54f)
+            val buttonWidth = button.prefWidth.coerceAtLeast(54f)
+            val cell = content.add(button).height(toolbarButtonSize).minWidth(buttonWidth)
+            slots += ToolbarButtonSlot(button, cell, buttonWidth, toolbarButtonSize)
         }
         syncCameraModeButtons()
 
@@ -1603,7 +1670,110 @@ class SketchUiOverlay(
         window.pack()
         window.setSize(window.prefWidth, window.prefHeight)
         attachToolbarPersistence(window, toolbarId)
+        registerToolbarBinding(toolbarId, window, content, slots)
         return window
+    }
+
+    private fun registerToolbarBinding(
+        toolbarId: String,
+        window: CollapsibleWindow,
+        content: Table,
+        slots: List<ToolbarButtonSlot>
+    ) {
+        toolbarBindingsByWindow.remove(window)
+        toolbarBindingsById.remove(toolbarId)
+        val binding = ToolbarBinding(toolbarId, window, content, slots)
+        toolbarBindingsById[toolbarId] = binding
+        toolbarBindingsByWindow[window] = binding
+        window.addListener(object : InputListener() {
+            override fun enter(event: InputEvent?, x: Float, y: Float, pointer: Int, fromActor: Actor?) {
+                if (pointer != -1) return
+                setToolbarHovered(binding, true)
+            }
+
+            override fun exit(event: InputEvent?, x: Float, y: Float, pointer: Int, toActor: Actor?) {
+                if (pointer != -1) return
+                if (toActor != null && toActor.isDescendantOf(window)) {
+                    return
+                }
+                setToolbarHovered(binding, false)
+            }
+        })
+        applyToolbarAutoCollapse(binding, force = true)
+    }
+
+    private fun setToolbarHovered(binding: ToolbarBinding, hovered: Boolean) {
+        if (binding.hovered == hovered) {
+            return
+        }
+        binding.hovered = hovered
+        applyToolbarAutoCollapse(binding, force = true)
+    }
+
+    private fun preferredCollapsedToolbarButtonIndex(binding: ToolbarBinding): Int {
+        val activePluginToolId = pluginHost?.activePluginToolId()
+        binding.slots.forEachIndexed { index, slot ->
+            val actor = slot.actor
+            if (actor is AppImageTextButton) {
+                val toolId = toolButtonByWidget[actor]
+                if (toolId != null && toolId == status.activeTool) {
+                    return index
+                }
+                val pluginToolId = pluginToolByWidget[actor]
+                if (pluginToolId != null && pluginToolId == activePluginToolId) {
+                    return index
+                }
+            }
+            if (actor is VisTextButton && cameraModeButtons[cameraModeProvider()] === actor) {
+                return index
+            }
+        }
+        return 0
+    }
+
+    private fun applyToolbarAutoCollapse(binding: ToolbarBinding, force: Boolean = false): Boolean {
+        if (binding.slots.isEmpty()) {
+            return false
+        }
+        val expanded = !toolbarAutoCollapse || binding.hovered || binding.slots.size <= 1
+        val visibleButtonIndex = if (expanded) -1 else preferredCollapsedToolbarButtonIndex(binding)
+        if (!force && binding.expanded == expanded && binding.visibleButtonIndex == visibleButtonIndex) {
+            return false
+        }
+        val window = binding.window
+        val oldX = window.x
+        val oldTop = window.y + window.height
+        binding.expanded = expanded
+        binding.visibleButtonIndex = visibleButtonIndex
+        binding.slots.forEachIndexed { index, slot ->
+            val show = expanded || index == visibleButtonIndex
+            slot.actor.isVisible = show
+            if (show) {
+                slot.cell.size(slot.width, slot.height)
+                slot.cell.pad(2f)
+            } else {
+                slot.cell.size(0f, 0f)
+                slot.cell.pad(0f)
+            }
+        }
+        binding.content.invalidateHierarchy()
+        window.invalidateHierarchy()
+        window.pack()
+        if (!expanded) {
+            val collapsedWidth = max(64f, binding.content.prefWidth + 8f)
+            window.setSize(collapsedWidth, window.height)
+        }
+        window.setPosition(oldX, oldTop - window.height)
+        val viewportWidth = if (stage.viewport.screenWidth > 0) stage.viewport.screenWidth.toFloat() else Gdx.graphics.width.toFloat()
+        val viewportHeight = if (stage.viewport.screenHeight > 0) stage.viewport.screenHeight.toFloat() else Gdx.graphics.height.toFloat()
+        clampToolbarWindowToViewport(window, viewportWidth, viewportHeight, 12f)
+        return true
+    }
+
+    private fun refreshToolbarAutoCollapseStates(force: Boolean = false) {
+        toolbarBindingsById.values.forEach { binding ->
+            applyToolbarAutoCollapse(binding, force)
+        }
     }
 
     private fun createActionButton(
@@ -1742,14 +1912,21 @@ class SketchUiOverlay(
         addFilterRow("Voxels", "voxels", SelectionFilterKind.VOXEL)
         addFilterRow("Hotspots", "hotspots", SelectionFilterKind.HOTSPOT)
         addFilterRow("Objects", "objects", SelectionFilterKind.OBJECT)
-        addCountRow("Dimensions", "dimensions")
-        addCountRow("Texts", "texts")
+        addFilterRow("Dimensions", "dimensions", SelectionFilterKind.DIMENSION)
+        addFilterRow("Texts", "texts", SelectionFilterKind.TEXT)
         addArchitectureRow("Walls", ArchitectureElementKind.WALL)
         addArchitectureRow("Slabs", ArchitectureElementKind.SLAB)
         addArchitectureRow("Stairs", ArchitectureElementKind.STAIR)
         addArchitectureRow("Frames", ArchitectureElementKind.FRAME)
 
         content.add(countsTable).growX().row()
+        selectionColorButton = createSelectionColorButton()
+        val selectionColorRow = VisTable()
+        selectionColorRow.defaults().pad(2f)
+        selectionColorRow.add(selectionColorField).growX()
+        selectionColorRow.add(selectionColorButton).size(toolbarButtonSize, toolbarButtonSize)
+        content.add(selectionColorLabel).left().padTop(4f).row()
+        content.add(selectionColorRow).growX().row()
         content.add(selectionTextLabel).left().padTop(4f).row()
         content.add(selectionTextField).growX().row()
         content.add(selectionTextSizeLabel).left().padTop(4f).row()
@@ -1785,6 +1962,15 @@ class SketchUiOverlay(
                 }
                 val targetId = selectionTextId ?: return
                 selectionTextScreenChanged(targetId, selectionTextScreenCheck.isChecked)
+            }
+        })
+        selectionColorField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingSelectionFields || !selectionColorEditable) {
+                    return
+                }
+                val parsed = parseColorField(selectionColorField.text) ?: return
+                selectionColorChanged(parsed)
             }
         })
         return panel
@@ -1955,11 +2141,21 @@ class SketchUiOverlay(
             setItems("1x", "1.5x", "2x")
         }
         content.add(uiTextScaleSelect).growX().row()
+        uiToolbarAutoCollapseCheck = VisCheckBox("Auto-collapse toolbars")
+        content.add(uiToolbarAutoCollapseCheck).left().row()
         content.add(VisLabel("Toolbar icon/button size")).left().row()
         uiToolbarSizeSelect = VisSelectBox<String>().apply {
             setItems("32 x 32 px", "48 x 48 px", "64 x 64 px")
         }
         content.add(uiToolbarSizeSelect).growX().row()
+        content.add(VisLabel("Thick line width")).left().padTop(4f).row()
+        uiThickLineWidthSlider = VisSlider(1f, 16f, 0.5f, false)
+        uiThickLineWidthValueLabel = VisLabel()
+        val thickLineRow = VisTable()
+        thickLineRow.defaults().pad(2f)
+        thickLineRow.add(uiThickLineWidthSlider).growX()
+        thickLineRow.add(uiThickLineWidthValueLabel).right().width(56f)
+        content.add(thickLineRow).growX().row()
         val uiInfoLabel = VisLabel("Affects built-in and mapped toolbar icons.").apply {
             setWrap(true)
         }
@@ -1988,6 +2184,18 @@ class SketchUiOverlay(
                     else -> 32
                 }
                 setToolbarIconAndButtonSize(size)
+            }
+        })
+        uiToolbarAutoCollapseCheck.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingUiSettingsFields) return
+                setToolbarAutoCollapse(uiToolbarAutoCollapseCheck.isChecked)
+            }
+        })
+        uiThickLineWidthSlider.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingUiSettingsFields) return
+                setThickLineWidth(uiThickLineWidthSlider.value)
             }
         })
 
@@ -2967,6 +3175,29 @@ class SketchUiOverlay(
                     val current = parseColorField(field.text) ?: Color.WHITE
                     showArchitectureColorPicker(title, current) { picked ->
                         applyHvacColorPickerValue(field, this@apply, picked)
+                    }
+                }
+            })
+        }
+    }
+
+    private fun createSelectionColorButton(): AppImageTextButton {
+        val icon = iconFor("color", createActionIconDrawable(Color(0.8f, 0.8f, 0.8f, 1f)))
+        return AppImageTextButton("", icon).apply {
+            applyWhiteButtonStyle(this)
+            applyIconStyle(this, icon)
+            addListener(object : ClickListener() {
+                override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                    if (!selectionColorEditable) {
+                        return
+                    }
+                    val current = parseColorField(selectionColorField.text) ?: status.paintColor
+                    showArchitectureColorPicker("Selection Color", current) { picked ->
+                        updatingSelectionFields = true
+                        selectionColorField.text = formatColorField(picked)
+                        updateArchitectureColorButtonSwatch(this@apply, picked)
+                        updatingSelectionFields = false
+                        selectionColorChanged(picked)
                     }
                 }
             })
@@ -4442,17 +4673,25 @@ class SketchUiOverlay(
             48, 64 -> saved
             else -> 32
         }
+        toolbarAutoCollapse = uiPrefs.getBoolean(uiToolbarAutoCollapseKey, false)
         uiTextScale = when (uiPrefs.getString(uiTextScaleKey, "1x")) {
             "1.5x" -> 1.5f
             "2x" -> 2f
             else -> 1f
         }
+        thickLineWidth = uiPrefs.getFloat(uiThickLineWidthKey, 3f).coerceIn(1f, 16f)
         toolbarIconSizePx = normalized
         toolbarButtonSize = normalized.toFloat()
     }
 
     private fun syncUiSettingsPanel() {
-        if (!::uiToolbarSizeSelect.isInitialized || !::uiTextScaleSelect.isInitialized) return
+        if (
+            !::uiToolbarSizeSelect.isInitialized ||
+            !::uiTextScaleSelect.isInitialized ||
+            !::uiToolbarAutoCollapseCheck.isInitialized ||
+            !::uiThickLineWidthSlider.isInitialized ||
+            !::uiThickLineWidthValueLabel.isInitialized
+        ) return
         updatingUiSettingsFields = true
         uiTextScaleSelect.selected = when (uiTextScale) {
             1.5f -> "1.5x"
@@ -4464,6 +4703,9 @@ class SketchUiOverlay(
             64 -> "64 x 64 px"
             else -> "32 x 32 px"
         }
+        uiToolbarAutoCollapseCheck.isChecked = toolbarAutoCollapse
+        uiThickLineWidthSlider.value = thickLineWidth
+        uiThickLineWidthValueLabel.setText(String.format(Locale.US, "%.1f px", thickLineWidth))
         updatingUiSettingsFields = false
     }
 
@@ -4520,6 +4762,31 @@ class SketchUiOverlay(
         rebuildToolbarsForUiScaleChange()
     }
 
+    private fun setToolbarAutoCollapse(enabled: Boolean) {
+        if (toolbarAutoCollapse == enabled) {
+            syncUiSettingsPanel()
+            return
+        }
+        toolbarAutoCollapse = enabled
+        uiPrefs.putBoolean(uiToolbarAutoCollapseKey, enabled)
+        uiPrefs.flush()
+        syncUiSettingsPanel()
+        refreshToolbarAutoCollapseStates(force = true)
+    }
+
+    private fun setThickLineWidth(width: Float) {
+        val normalized = width.coerceIn(1f, 16f)
+        if (abs(thickLineWidth - normalized) <= 0.01f) {
+            syncUiSettingsPanel()
+            return
+        }
+        thickLineWidth = normalized
+        uiPrefs.putFloat(uiThickLineWidthKey, normalized)
+        uiPrefs.flush()
+        feedbackLineWidthChanged(normalized)
+        syncUiSettingsPanel()
+    }
+
     private fun rebuildToolbarsForUiScaleChange() {
         hideHoverPopover()
         hoverPopoverTarget = null
@@ -4532,6 +4799,8 @@ class SketchUiOverlay(
         toolButtonByWidget.clear()
         pluginToolButtons.clear()
         pluginToolByWidget.clear()
+        toolbarBindingsById.clear()
+        toolbarBindingsByWindow.clear()
 
         builtInToolbars.values.forEach { it.remove() }
         builtInToolbars.clear()
@@ -4629,6 +4898,7 @@ class SketchUiOverlay(
         distancePopup?.pack()
         hoverPopoverWindow?.invalidateHierarchy()
         hoverPopoverWindow?.pack()
+        refreshToolbarAutoCollapseStates(force = true)
         toolbarsPositioned = false
         pluginPanelsPositioned = false
         needsPanelLayout = true
@@ -4719,7 +4989,7 @@ class SketchUiOverlay(
         content.add(
             buildShadowToggles()
         ).growX().row()
-        val panel = buildDockSection("Lighting", content, visible = false, collapsed = true)
+        val panel = buildDockSection("Shader Settings", content, visible = false, collapsed = true)
         lightingPanel = panel
         return panel
     }
@@ -5098,6 +5368,7 @@ class SketchUiOverlay(
             val toolbarId = pluginToolbarStateId(pluginId)
             window.isVisible = toolbarsVisible && (toolbarDesiredVisibility[toolbarId] ?: true)
         }
+        refreshToolbarAutoCollapseStates(force = true)
     }
 
     private fun clampToolbarWindowToViewport(
@@ -5369,14 +5640,16 @@ class SketchUiOverlay(
         pluginToolByWidget.clear()
         pluginToolbars.values.forEach { it.remove() }
         pluginToolbars.clear()
+        toolbarBindingsById.entries.removeIf { it.key.startsWith("plugin_toolbar_") }
+        toolbarBindingsByWindow.entries.removeIf { (_, binding) -> binding.toolbarId.startsWith("plugin_toolbar_") }
         val grouped = entries.groupBy { it.pluginId }
         grouped.forEach { (pluginId, tools) ->
             val title = tools.firstOrNull()?.pluginName ?: pluginId
             val window = CollapsibleWindow(title, showCloseButton = false)
-            val group = HorizontalGroup().apply {
-                space(6f)
-                pad(6f)
+            val content = VisTable().apply {
+                defaults().pad(2f).left()
             }
+            val slots = mutableListOf<ToolbarButtonSlot>()
             tools.forEach { entry ->
                 val fallback = createActionIconDrawable(Color(0.65f, 0.75f, 0.95f, 1f))
                 val icon = entry.iconDrawable ?: iconFor(entry.icon, fallback)
@@ -5397,20 +5670,23 @@ class SketchUiOverlay(
                     }
                 })
                 registerTutorialActionTarget("ui.action.plugin_tool.${normalizeTutorialActionKey(entry.id)}", button)
-                group.addActor(button)
+                val cell = content.add(button).size(toolbarButtonSize, toolbarButtonSize)
+                slots += ToolbarButtonSlot(button, cell, toolbarButtonSize, toolbarButtonSize)
                 pluginToolButtons[entry.id] = button
                 pluginToolByWidget[button] = entry.id
             }
-            window.add(group).grow()
+            window.add(content).pad(4f).left()
             val toolbarId = pluginToolbarStateId(pluginId)
             attachToolbarPersistence(window, toolbarId)
             applyToolbarState(toolbarId, window)
+            registerToolbarBinding(toolbarId, window, content, slots)
             stage.addActor(window)
             pluginToolbars[pluginId] = window
         }
         applyToolbarsVisibility()
         updatePluginToolSelection()
         updateButtonLabels()
+        refreshToolbarAutoCollapseStates(force = true)
         toolbarsPositioned = false
         needsPanelLayout = true
         pluginPanelsPositioned = false
@@ -5869,8 +6145,14 @@ class SketchUiOverlay(
         val objectWireframe: Boolean = false,
         val dimensionCount: Int,
         val dimensionTotalCount: Int = 0,
+        val dimensionDrawEnabled: Boolean = true,
+        val dimensionModifyEnabled: Boolean = true,
+        val dimensionWireframe: Boolean = false,
         val textCount: Int,
         val textTotalCount: Int = 0,
+        val textDrawEnabled: Boolean = true,
+        val textModifyEnabled: Boolean = true,
+        val textWireframe: Boolean = false,
         val wallTotalCount: Int = 0,
         val wallSelectedCount: Int = 0,
         val wallDrawEnabled: Boolean = true,
@@ -5895,6 +6177,8 @@ class SketchUiOverlay(
         val selectedTextValue: String? = null,
         val selectedTextSize: Float? = null,
         val selectedTextScreen: Boolean? = null,
+        val selectedColor: Color? = null,
+        val selectedColorEditable: Boolean = false,
         val selectedVectorText: Boolean = false,
         val selectedVectorTextTracking: Float? = null,
         val selectedVectorTextLineSpacing: Float? = null,
@@ -5930,6 +6214,8 @@ class SketchUiOverlay(
         VOXEL,
         HOTSPOT,
         OBJECT,
+        DIMENSION,
+        TEXT,
         WALL,
         SLAB,
         STAIR,
