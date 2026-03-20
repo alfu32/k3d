@@ -127,6 +127,7 @@ class SketchUiOverlay(
     private val hotspotClearReference: (String) -> Unit,
     private val cameraModeProvider: () -> CameraMode,
     private val cameraModeChanged: (CameraMode) -> Unit,
+    private val normalLineWidthChanged: (Float) -> Unit,
     private val feedbackLineWidthChanged: (Float) -> Unit,
     private val tutorialStateProvider: () -> TutorialUiState,
     private val tutorialStartRecording: () -> Unit,
@@ -389,11 +390,25 @@ class SketchUiOverlay(
     private val uiToolbarButtonSizeKey = "ui_toolbar_button_size_px"
     private val uiToolbarAutoCollapseKey = "ui_toolbar_auto_collapse"
     private val uiTextScaleKey = "ui_text_scale"
+    private val uiNormalLineWidthKey = "ui_normal_line_width"
     private val uiThickLineWidthKey = "ui_thick_line_width"
+    private val toolbarLayoutMargin = 4f
+    private val toolbarLayoutGap = 4f
+    private val orderedBuiltInToolbarIds = listOf(
+        "builtin_toolbar_construction_points",
+        "builtin_toolbar_construction_entities",
+        "builtin_toolbar_modification",
+        "builtin_toolbar_architecture",
+        "builtin_toolbar_hvac",
+        "builtin_toolbar_voxel",
+        "builtin_toolbar_actions",
+        "builtin_toolbar_camera"
+    )
     private var toolbarButtonSize = 32f
     private var toolbarIconSizePx = 32
     private var toolbarAutoCollapse = false
     private var uiTextScale = 1f
+    private var normalLineWidth = 1f
     private var thickLineWidth = 3f
     private val uiBaseFontScales = IdentityHashMap<BitmapFont, Pair<Float, Float>>()
     private val toolbarDesiredVisibility = mutableMapOf<String, Boolean>()
@@ -656,6 +671,8 @@ class SketchUiOverlay(
     private lateinit var uiToolbarSizeSelect: VisSelectBox<String>
     private lateinit var uiTextScaleSelect: VisSelectBox<String>
     private lateinit var uiToolbarAutoCollapseCheck: VisCheckBox
+    private lateinit var uiNormalLineWidthSlider: VisSlider
+    private lateinit var uiNormalLineWidthValueLabel: VisLabel
     private lateinit var uiThickLineWidthSlider: VisSlider
     private lateinit var uiThickLineWidthValueLabel: VisLabel
     private var updatingUiSettingsFields = false
@@ -687,6 +704,7 @@ class SketchUiOverlay(
     init {
         loadUiVisualSettings()
         applyUiTextScaleToSkin()
+        normalLineWidthChanged(normalLineWidth)
         feedbackLineWidthChanged(thickLineWidth)
         iconDrawables.putAll(loadIconDrawables())
         migrateBuiltinToolbarPrefs()
@@ -1466,7 +1484,7 @@ class SketchUiOverlay(
         val window = CollapsibleWindow(title, showCloseButton = false)
         window.isResizable = false
         val content = VisTable()
-        content.defaults().pad(2f).left()
+        content.defaults().pad(0f).left()
         val slots = mutableListOf<ToolbarButtonSlot>()
         leadingButtons.forEach { button ->
             val cell = content.add(button).size(toolbarButtonSize, toolbarButtonSize)
@@ -1481,7 +1499,7 @@ class SketchUiOverlay(
             val cell = content.add(button).size(toolbarButtonSize, toolbarButtonSize)
             slots += ToolbarButtonSlot(button, cell, toolbarButtonSize, toolbarButtonSize)
         }
-        window.add(content).pad(4f).left()
+        window.add(content).pad(0f).left()
         window.pack()
         window.setSize(window.prefWidth, window.prefHeight)
         attachToolbarPersistence(window, toolbarId)
@@ -1515,7 +1533,7 @@ class SketchUiOverlay(
         val window = CollapsibleWindow(title, showCloseButton = false)
         window.isResizable = false
         val content = VisTable()
-        content.defaults().pad(2f).left()
+        content.defaults().pad(0f).left()
         val slots = mutableListOf<ToolbarButtonSlot>()
 
         val openButton = createActionButton(
@@ -1619,7 +1637,7 @@ class SketchUiOverlay(
             slots += ToolbarButtonSlot(button, cell, toolbarButtonSize, toolbarButtonSize)
         }
 
-        window.add(content).pad(4f).left()
+        window.add(content).pad(0f).left()
         window.pack()
         window.setSize(window.prefWidth, window.prefHeight)
         attachToolbarPersistence(window, toolbarId)
@@ -1631,7 +1649,7 @@ class SketchUiOverlay(
         val window = CollapsibleWindow(title, showCloseButton = false)
         window.isResizable = false
         val content = VisTable()
-        content.defaults().pad(2f).left()
+        content.defaults().pad(0f).left()
         val slots = mutableListOf<ToolbarButtonSlot>()
 
         val group = ButtonGroup<VisTextButton>().apply {
@@ -1667,7 +1685,7 @@ class SketchUiOverlay(
         }
         syncCameraModeButtons()
 
-        window.add(content).pad(4f).left()
+        window.add(content).pad(0f).left()
         window.pack()
         window.setSize(window.prefWidth, window.prefHeight)
         attachToolbarPersistence(window, toolbarId)
@@ -1751,7 +1769,7 @@ class SketchUiOverlay(
             slot.actor.isVisible = show
             if (show) {
                 slot.cell.size(slot.width, slot.height)
-                slot.cell.pad(2f)
+                slot.cell.pad(0f)
             } else {
                 slot.cell.size(0f, 0f)
                 slot.cell.pad(0f)
@@ -1761,13 +1779,13 @@ class SketchUiOverlay(
         window.invalidateHierarchy()
         window.pack()
         if (!expanded) {
-            val collapsedWidth = max(64f, binding.content.prefWidth + 8f)
+            val collapsedWidth = max(48f, binding.content.prefWidth)
             window.setSize(collapsedWidth, window.height)
         }
         window.setPosition(oldX, oldTop - window.height)
         val viewportWidth = if (stage.viewport.screenWidth > 0) stage.viewport.screenWidth.toFloat() else Gdx.graphics.width.toFloat()
         val viewportHeight = if (stage.viewport.screenHeight > 0) stage.viewport.screenHeight.toFloat() else Gdx.graphics.height.toFloat()
-        clampToolbarWindowToViewport(window, viewportWidth, viewportHeight, 12f)
+        clampToolbarWindowToViewport(window, viewportWidth, viewportHeight, toolbarLayoutMargin)
         return true
     }
 
@@ -2149,6 +2167,14 @@ class SketchUiOverlay(
             setItems("32 x 32 px", "48 x 48 px", "64 x 64 px")
         }
         content.add(uiToolbarSizeSelect).growX().row()
+        content.add(VisLabel("Normal line width")).left().padTop(4f).row()
+        uiNormalLineWidthSlider = VisSlider(1f, 8f, 0.5f, false)
+        uiNormalLineWidthValueLabel = VisLabel()
+        val normalLineRow = VisTable()
+        normalLineRow.defaults().pad(2f)
+        normalLineRow.add(uiNormalLineWidthSlider).growX()
+        normalLineRow.add(uiNormalLineWidthValueLabel).right().width(56f)
+        content.add(normalLineRow).growX().row()
         content.add(VisLabel("Thick line width")).left().padTop(4f).row()
         uiThickLineWidthSlider = VisSlider(1f, 16f, 0.5f, false)
         uiThickLineWidthValueLabel = VisLabel()
@@ -2157,6 +2183,14 @@ class SketchUiOverlay(
         thickLineRow.add(uiThickLineWidthSlider).growX()
         thickLineRow.add(uiThickLineWidthValueLabel).right().width(56f)
         content.add(thickLineRow).growX().row()
+        content.add(VisLabel("Arrange toolbars")).left().padTop(4f).row()
+        val arrangeRow = VisTable()
+        arrangeRow.defaults().pad(2f)
+        val arrangeHorizontalButton = VisTextButton("Flow L->R")
+        val arrangeVerticalButton = VisTextButton("Flow T->D")
+        arrangeRow.add(arrangeHorizontalButton).growX()
+        arrangeRow.add(arrangeVerticalButton).growX()
+        content.add(arrangeRow).growX().row()
         val uiInfoLabel = VisLabel("Affects built-in and mapped toolbar icons.").apply {
             setWrap(true)
         }
@@ -2193,10 +2227,26 @@ class SketchUiOverlay(
                 setToolbarAutoCollapse(uiToolbarAutoCollapseCheck.isChecked)
             }
         })
+        uiNormalLineWidthSlider.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingUiSettingsFields) return
+                setNormalLineWidth(uiNormalLineWidthSlider.value)
+            }
+        })
         uiThickLineWidthSlider.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: Actor?) {
                 if (updatingUiSettingsFields) return
                 setThickLineWidth(uiThickLineWidthSlider.value)
+            }
+        })
+        arrangeHorizontalButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                arrangeToolbarsHorizontalFlow()
+            }
+        })
+        arrangeVerticalButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                arrangeToolbarsVerticalFlow()
             }
         })
 
@@ -4680,6 +4730,7 @@ class SketchUiOverlay(
             "2x" -> 2f
             else -> 1f
         }
+        normalLineWidth = uiPrefs.getFloat(uiNormalLineWidthKey, 1f).coerceIn(1f, 8f)
         thickLineWidth = uiPrefs.getFloat(uiThickLineWidthKey, 3f).coerceIn(1f, 16f)
         toolbarIconSizePx = normalized
         toolbarButtonSize = normalized.toFloat()
@@ -4690,6 +4741,8 @@ class SketchUiOverlay(
             !::uiToolbarSizeSelect.isInitialized ||
             !::uiTextScaleSelect.isInitialized ||
             !::uiToolbarAutoCollapseCheck.isInitialized ||
+            !::uiNormalLineWidthSlider.isInitialized ||
+            !::uiNormalLineWidthValueLabel.isInitialized ||
             !::uiThickLineWidthSlider.isInitialized ||
             !::uiThickLineWidthValueLabel.isInitialized
         ) return
@@ -4705,6 +4758,8 @@ class SketchUiOverlay(
             else -> "32 x 32 px"
         }
         uiToolbarAutoCollapseCheck.isChecked = toolbarAutoCollapse
+        uiNormalLineWidthSlider.value = normalLineWidth
+        uiNormalLineWidthValueLabel.setText(String.format(Locale.US, "%.1f px", normalLineWidth))
         uiThickLineWidthSlider.value = thickLineWidth
         uiThickLineWidthValueLabel.setText(String.format(Locale.US, "%.1f px", thickLineWidth))
         updatingUiSettingsFields = false
@@ -4773,6 +4828,19 @@ class SketchUiOverlay(
         uiPrefs.flush()
         syncUiSettingsPanel()
         refreshToolbarAutoCollapseStates(force = true)
+    }
+
+    private fun setNormalLineWidth(width: Float) {
+        val normalized = width.coerceIn(1f, 8f)
+        if (abs(normalLineWidth - normalized) <= 0.01f) {
+            syncUiSettingsPanel()
+            return
+        }
+        normalLineWidth = normalized
+        uiPrefs.putFloat(uiNormalLineWidthKey, normalized)
+        uiPrefs.flush()
+        normalLineWidthChanged(normalized)
+        syncUiSettingsPanel()
     }
 
     private fun setThickLineWidth(width: Float) {
@@ -5231,33 +5299,15 @@ class SketchUiOverlay(
     private fun positionTopFlowToolbars() {
         val width = if (stage.viewport.screenWidth > 0) stage.viewport.screenWidth.toFloat() else Gdx.graphics.width.toFloat()
         val height = if (stage.viewport.screenHeight > 0) stage.viewport.screenHeight.toFloat() else Gdx.graphics.height.toFloat()
-        val orderedBuiltInIds = listOf(
-            "builtin_toolbar_construction_points",
-            "builtin_toolbar_construction_entities",
-            "builtin_toolbar_modification",
-            "builtin_toolbar_architecture",
-            "builtin_toolbar_hvac",
-            "builtin_toolbar_voxel",
-            "builtin_toolbar_actions",
-            "builtin_toolbar_camera"
-        )
-        val margin = 12f
-        val gapX = 8f
-        val gapY = 8f
+        val margin = toolbarLayoutMargin
+        val gapX = toolbarLayoutGap
+        val gapY = toolbarLayoutGap
         var x = margin
         var yTop = height - margin
         var rowHeight = 0f
-        val toolbarEntries = mutableListOf<Pair<String?, CollapsibleWindow>>()
-        orderedBuiltInIds.forEach { id ->
-            builtInToolbars[id]?.let { toolbarEntries.add(id to it) }
-        }
-        pluginToolbars.entries
-            .sortedBy { it.key }
-            .forEach { (pluginId, window) ->
-                toolbarEntries.add(pluginToolbarStateId(pluginId) to window)
-            }
+        val rightLimit = availableToolbarRightEdge(width, margin)
 
-        toolbarEntries.forEach { (toolbarId, window) ->
+        orderedToolbarEntries().forEach { (toolbarId, window) ->
             if (!window.isVisible) {
                 return@forEach
             }
@@ -5278,7 +5328,7 @@ class SketchUiOverlay(
                 window.setPosition(restoredX, restoredBottomY)
                 clampToolbarWindowToViewport(window, width, height, margin)
             } else {
-                if (x > margin && x + window.width > width - margin) {
+                if (x > margin && x + window.width > rightLimit) {
                     x = margin
                     yTop -= rowHeight + gapY
                     rowHeight = 0f
@@ -5290,6 +5340,86 @@ class SketchUiOverlay(
             window.toFront()
             toolbarId?.let { saveToolbarState(it, window) }
         }
+    }
+
+    private fun orderedToolbarEntries(): List<Pair<String, CollapsibleWindow>> {
+        val toolbarEntries = mutableListOf<Pair<String, CollapsibleWindow>>()
+        orderedBuiltInToolbarIds.forEach { id ->
+            builtInToolbars[id]?.let { toolbarEntries.add(id to it) }
+        }
+        pluginToolbars.entries
+            .sortedBy { it.key }
+            .forEach { (pluginId, window) ->
+                toolbarEntries.add(pluginToolbarStateId(pluginId) to window)
+            }
+        return toolbarEntries
+    }
+
+    private fun availableToolbarRightEdge(viewportWidth: Float, margin: Float): Float {
+        return if (::rightSidePanel.isInitialized && rightSidePanel.isVisible) {
+            (rightSidePanel.x - margin).coerceAtLeast(margin)
+        } else {
+            viewportWidth - margin
+        }
+    }
+
+    private fun arrangeToolbarsHorizontalFlow() {
+        val width = if (stage.viewport.screenWidth > 0) stage.viewport.screenWidth.toFloat() else Gdx.graphics.width.toFloat()
+        val height = if (stage.viewport.screenHeight > 0) stage.viewport.screenHeight.toFloat() else Gdx.graphics.height.toFloat()
+        val margin = toolbarLayoutMargin
+        val gap = toolbarLayoutGap
+        val rightLimit = availableToolbarRightEdge(width, margin)
+        var x = margin
+        var yTop = height - margin
+        var rowHeight = 0f
+        orderedToolbarEntries().forEach { (toolbarId, window) ->
+            if (!window.isVisible) {
+                return@forEach
+            }
+            window.invalidateHierarchy()
+            window.pack()
+            if (x > margin && x + window.width > rightLimit) {
+                x = margin
+                yTop -= rowHeight + gap
+                rowHeight = 0f
+            }
+            window.setPosition(x, yTop - window.height)
+            clampToolbarWindowToViewport(window, width, height, margin)
+            window.toFront()
+            saveToolbarState(toolbarId, window)
+            x += window.width + gap
+            rowHeight = max(rowHeight, window.height)
+        }
+        toolbarsPositioned = true
+    }
+
+    private fun arrangeToolbarsVerticalFlow() {
+        val width = if (stage.viewport.screenWidth > 0) stage.viewport.screenWidth.toFloat() else Gdx.graphics.width.toFloat()
+        val height = if (stage.viewport.screenHeight > 0) stage.viewport.screenHeight.toFloat() else Gdx.graphics.height.toFloat()
+        val margin = toolbarLayoutMargin
+        val gap = toolbarLayoutGap
+        var x = margin
+        var yTop = height - margin
+        var columnWidth = 0f
+        orderedToolbarEntries().forEach { (toolbarId, window) ->
+            if (!window.isVisible) {
+                return@forEach
+            }
+            window.invalidateHierarchy()
+            window.pack()
+            if (yTop < height - margin && yTop - window.height < margin) {
+                x += columnWidth + gap
+                yTop = height - margin
+                columnWidth = 0f
+            }
+            window.setPosition(x, yTop - window.height)
+            clampToolbarWindowToViewport(window, width, height, margin)
+            window.toFront()
+            saveToolbarState(toolbarId, window)
+            yTop -= window.height + gap
+            columnWidth = max(columnWidth, window.width)
+        }
+        toolbarsPositioned = true
     }
 
     private fun migrateBuiltinToolbarPrefs() {
@@ -5657,7 +5787,7 @@ class SketchUiOverlay(
             val title = tools.firstOrNull()?.pluginName ?: pluginId
             val window = CollapsibleWindow(title, showCloseButton = false)
             val content = VisTable().apply {
-                defaults().pad(2f).left()
+                defaults().pad(0f).left()
             }
             val slots = mutableListOf<ToolbarButtonSlot>()
             tools.forEach { entry ->
@@ -5685,7 +5815,7 @@ class SketchUiOverlay(
                 pluginToolButtons[entry.id] = button
                 pluginToolByWidget[button] = entry.id
             }
-            window.add(content).pad(4f).left()
+            window.add(content).pad(0f).left()
             val toolbarId = pluginToolbarStateId(pluginId)
             attachToolbarPersistence(window, toolbarId)
             applyToolbarState(toolbarId, window)

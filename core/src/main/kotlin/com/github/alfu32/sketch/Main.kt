@@ -272,6 +272,7 @@ class Main(
     private val selectedEntityBoxColor = Color(0.2f, 0.7f, 0.95f, 1f)
     private val editModeBoxColor = Color(1f, 0.6f, 0.2f, 1f)
     private val selectedLineWidth = 8f
+    private val normalLineWidthPrefKey = "ui.normal_line_width"
     private val feedbackLineWidthPrefKey = "ui.feedback_line_width"
     private lateinit var toolController: ToolController
     private lateinit var toolInput: ToolInputProcessor
@@ -311,6 +312,7 @@ class Main(
     private val groundPlaneExtentMultiplier = 1.6f
     private val groundPlaneCenter = Vector3()
     private var groundPlaneSize = minimumGroundPlaneSize
+    private var normalOverlayLineWidth = 1f
     private var feedbackOverlayLineWidth = 3f
     private var shadowModelTrackedEdgeCount = -1
     private var shadowModelTrackedFaceCount = -1
@@ -621,6 +623,7 @@ class Main(
             message = "Select entities.",
             inputBuffer = ""
         )
+        normalOverlayLineWidth = runtimePrefs.getFloat(normalLineWidthPrefKey, normalOverlayLineWidth).coerceIn(1f, 8f)
         feedbackOverlayLineWidth = runtimePrefs.getFloat(feedbackLineWidthPrefKey, feedbackOverlayLineWidth).coerceIn(1f, 16f)
         scene = GroupScene(Color(0.8f, 0.8f, 0.8f, 1f))
         vectorGlyphCatalog = loadVectorGlyphCatalog(vectorTextSettings.glyphSourcePath)
@@ -887,6 +890,7 @@ class Main(
             ::clearHotspotReference,
             { activeCameraMode },
             ::setCameraMode,
+            ::updateNormalOverlayLineWidth,
             ::updateFeedbackOverlayLineWidth,
             ::tutorialUiState,
             ::startTutorialRecording,
@@ -2693,6 +2697,7 @@ class Main(
             shapeRenderer.color = Color(0.25f, 0.55f, 0.95f, 0.18f)
             shapeRenderer.rect(windowRect.x, windowRect.y, windowRect.width, windowRect.height)
             shapeRenderer.end()
+            applyNormalOverlayLineWidth()
             shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
             shapeRenderer.color = Color(0.25f, 0.55f, 0.95f, 0.9f)
             if (windowRect.dashed) {
@@ -2709,6 +2714,7 @@ class Main(
                 shapeRenderer.rect(windowRect.x, windowRect.y, windowRect.width, windowRect.height)
             }
             shapeRenderer.end()
+            resetNormalOverlayLineWidth()
             Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
         }
 
@@ -2742,10 +2748,12 @@ class Main(
 
         shapeRenderer.projectionMatrix = uiOverlay.stage.camera.combined
         shapeRenderer.transformMatrix = Matrix4().idt()
+        applyNormalOverlayLineWidth()
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         shapeRenderer.color = Color(0.9f, 0.1f, 0.1f, 1f)
         shapeRenderer.line(start.x, start.y, base.x, base.y)
         shapeRenderer.end()
+        resetNormalOverlayLineWidth()
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
         shapeRenderer.color = Color(0.9f, 0.1f, 0.1f, 1f)
@@ -5062,6 +5070,14 @@ class Main(
         val ignored = width
     }
 
+    private fun applyNormalOverlayLineWidth() {
+        Gdx.gl.glLineWidth(normalOverlayLineWidth)
+    }
+
+    private fun resetNormalOverlayLineWidth() {
+        Gdx.gl.glLineWidth(1f)
+    }
+
     private fun drawDraftLines() {
         val defaultColor = Color(0.2f, 0.2f, 0.2f, 1f)
         val crossSize = 0.1f
@@ -5392,6 +5408,7 @@ class Main(
             shapeRenderer.circle(screen.x, screen.y, marker.radiusPx, 20)
         }
         shapeRenderer.end()
+        applyNormalOverlayLineWidth()
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         markers.forEach { marker ->
             val screen = activeCamera.project(Vector3(marker.world))
@@ -5423,6 +5440,7 @@ class Main(
             shapeRenderer.circle(screen.x, screen.y, marker.radiusPx + 1f, 20)
         }
         shapeRenderer.end()
+        resetNormalOverlayLineWidth()
     }
 
     private fun drawSelectedSegments2DOverlay() {
@@ -8538,6 +8556,12 @@ class Main(
                 "Selection color updated for $updated items."
             }
         }
+    }
+
+    private fun updateNormalOverlayLineWidth(width: Float) {
+        normalOverlayLineWidth = width.coerceIn(1f, 8f)
+        runtimePrefs.putFloat(normalLineWidthPrefKey, normalOverlayLineWidth)
+        runtimePrefs.flush()
     }
 
     private fun updateFeedbackOverlayLineWidth(width: Float) {
