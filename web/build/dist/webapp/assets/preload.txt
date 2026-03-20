@@ -1,7 +1,7 @@
 i:b:/ketchup3d_visui_icons_32_map.json:1572:1
 i:b:/appsplash.png:99966:1
 i:b:/icons.mapping.ods:41330:1
-i:b:/appicon.svg:67306:1
+i:b:/appicon.svg:108841:1
 i:b:/appicon_150x150.png:6685:1
 i:b:/appicon_300x300.png:12983:1
 i:b:/appicon_512x512.png:23452:1

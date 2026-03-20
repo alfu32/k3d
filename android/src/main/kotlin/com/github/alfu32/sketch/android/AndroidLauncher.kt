@@ -28,8 +28,22 @@ class AndroidLauncher : AndroidApplication() {
     private var createDocumentCallback: ((String?, String?) -> Unit)? = null
 
     private fun updateAndroidCtrlMetaState(event: KeyEvent) {
+        if (event.keyCode == KeyEvent.KEYCODE_CTRL_LEFT || event.keyCode == KeyEvent.KEYCODE_CTRL_RIGHT) {
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    if (event.repeatCount == 0) {
+                        InputModifiers.androidCtrlKeyDownCount += 1
+                    }
+                }
+                KeyEvent.ACTION_UP -> {
+                    InputModifiers.androidCtrlKeyDownCount =
+                        (InputModifiers.androidCtrlKeyDownCount - 1).coerceAtLeast(0)
+                }
+            }
+        }
         val ctrlMeta = (event.metaState and KeyEvent.META_CTRL_ON) != 0
-        InputModifiers.androidCtrlMetaActive = event.isCtrlPressed || ctrlMeta
+        InputModifiers.androidCtrlMetaActive =
+            event.isCtrlPressed || ctrlMeta || InputModifiers.androidCtrlKeyDownCount > 0
     }
 
     private fun dispatchDocumentResult(callback: ((String?, String?) -> Unit)?, uri: Uri?) {
@@ -220,6 +234,7 @@ class AndroidLauncher : AndroidApplication() {
         if (event.keyCode == KeyEvent.KEYCODE_CTRL_LEFT || event.keyCode == KeyEvent.KEYCODE_CTRL_RIGHT) {
             if (event.action == KeyEvent.ACTION_UP) {
                 InputModifiers.androidCtrlMetaActive = false
+                InputModifiers.androidCtrlKeyDownCount = 0
             }
             // Consume bare CTRL key events to prevent OEM keyboard overlays from stealing focus.
             return true
@@ -236,6 +251,16 @@ class AndroidLauncher : AndroidApplication() {
         if (AndroidSaf.bridge != null) {
             AndroidSaf.bridge = null
         }
+        InputModifiers.androidCtrlMetaActive = false
+        InputModifiers.androidCtrlKeyDownCount = 0
         super.onDestroy()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) {
+            InputModifiers.androidCtrlMetaActive = false
+            InputModifiers.androidCtrlKeyDownCount = 0
+        }
     }
 }

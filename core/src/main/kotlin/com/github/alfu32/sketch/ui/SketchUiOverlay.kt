@@ -5,6 +5,7 @@ import com.badlogic.gdx.Application
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.Texture
+import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.InputEvent
@@ -35,6 +36,7 @@ import com.kotcrab.vis.ui.widget.VisSlider
 import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextButton
 import com.kotcrab.vis.ui.widget.VisTextField
+import com.kotcrab.vis.ui.VisUI
 import com.kotcrab.vis.ui.widget.color.ColorPicker
 import com.kotcrab.vis.ui.widget.color.ColorPickerListener
 import com.github.alfu32.sketch.plugin.PluginHost
@@ -49,6 +51,7 @@ import com.github.alfu32.sketch.tools.HvacSettings
 import com.github.alfu32.sketch.tools.PolylineSettings
 import com.github.alfu32.sketch.tools.VectorTextSettings
 import java.util.Base64
+import java.util.IdentityHashMap
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
@@ -361,8 +364,11 @@ class SketchUiOverlay(
     private val toolbarLayoutVersion = 9
     private val toolbarsVisibleKey = "toolbars.visible"
     private val uiToolbarButtonSizeKey = "ui_toolbar_button_size_px"
+    private val uiTextScaleKey = "ui_text_scale"
     private var toolbarButtonSize = 32f
     private var toolbarIconSizePx = 32
+    private var uiTextScale = 1f
+    private val uiBaseFontScales = IdentityHashMap<BitmapFont, Pair<Float, Float>>()
     private val toolbarDesiredVisibility = mutableMapOf<String, Boolean>()
     private val archDefaultWallThicknessKey = "arch_default_wall_thickness"
     private val archDefaultWallHeightKey = "arch_default_wall_height"
@@ -617,6 +623,7 @@ class SketchUiOverlay(
     private val walkthroughHeightAdjustField = VisTextField()
     private val walkthroughMoveSpeedField = VisTextField()
     private lateinit var uiToolbarSizeSelect: VisSelectBox<String>
+    private lateinit var uiTextScaleSelect: VisSelectBox<String>
     private var updatingUiSettingsFields = false
     private var updatingModelSettingsFields = false
     private var lastUnitName = ""
@@ -645,6 +652,7 @@ class SketchUiOverlay(
 
     init {
         loadUiVisualSettings()
+        applyUiTextScaleToSkin()
         iconDrawables.putAll(loadIconDrawables())
         migrateBuiltinToolbarPrefs()
         toolbarsVisible = uiPrefs.getBoolean(toolbarsVisibleKey, true)
@@ -1940,6 +1948,11 @@ class SketchUiOverlay(
         val content = VisTable()
         content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         content.defaults().pad(4f).left().growX()
+        content.add(VisLabel("UI text size")).left().row()
+        uiTextScaleSelect = VisSelectBox<String>().apply {
+            setItems("1x", "1.5x", "2x")
+        }
+        content.add(uiTextScaleSelect).growX().row()
         content.add(VisLabel("Toolbar icon/button size")).left().row()
         uiToolbarSizeSelect = VisSelectBox<String>().apply {
             setItems("32 x 32 px", "48 x 48 px", "64 x 64 px")
@@ -1951,6 +1964,18 @@ class SketchUiOverlay(
         content.add(uiInfoLabel).left().width(250f).padTop(2f).row()
 
         syncUiSettingsPanel()
+
+        uiTextScaleSelect.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingUiSettingsFields) return
+                val scale = when (uiTextScaleSelect.selected) {
+                    "1.5x" -> 1.5f
+                    "2x" -> 2f
+                    else -> 1f
+                }
+                setUiTextScale(scale)
+            }
+        })
 
         uiToolbarSizeSelect.addListener(object : ChangeListener() {
             override fun changed(event: ChangeEvent?, actor: Actor?) {
@@ -4415,19 +4440,65 @@ class SketchUiOverlay(
             48, 64 -> saved
             else -> 32
         }
+        uiTextScale = when (uiPrefs.getString(uiTextScaleKey, "1x")) {
+            "1.5x" -> 1.5f
+            "2x" -> 2f
+            else -> 1f
+        }
         toolbarIconSizePx = normalized
         toolbarButtonSize = normalized.toFloat()
     }
 
     private fun syncUiSettingsPanel() {
-        if (!::uiToolbarSizeSelect.isInitialized) return
+        if (!::uiToolbarSizeSelect.isInitialized || !::uiTextScaleSelect.isInitialized) return
         updatingUiSettingsFields = true
+        uiTextScaleSelect.selected = when (uiTextScale) {
+            1.5f -> "1.5x"
+            2f -> "2x"
+            else -> "1x"
+        }
         uiToolbarSizeSelect.selected = when (toolbarIconSizePx) {
             48 -> "48 x 48 px"
             64 -> "64 x 64 px"
             else -> "32 x 32 px"
         }
         updatingUiSettingsFields = false
+    }
+
+    private fun setUiTextScale(scale: Float) {
+        val normalized = when {
+            scale >= 1.75f -> 2f
+            scale >= 1.25f -> 1.5f
+            else -> 1f
+        }
+        if (normalized == uiTextScale) {
+            syncUiSettingsPanel()
+            return
+        }
+        uiTextScale = normalized
+        uiPrefs.putString(
+            uiTextScaleKey,
+            when (normalized) {
+                1.5f -> "1.5x"
+                2f -> "2x"
+                else -> "1x"
+            }
+        )
+        uiPrefs.flush()
+        applyUiTextScaleToSkin()
+        syncUiSettingsPanel()
+        refreshUiForTextScaleChange()
+    }
+
+    private fun applyUiTextScaleToSkin() {
+        val skin = runCatching { VisUI.getSkin() }.getOrNull() ?: return
+        val fonts = skin.getAll(BitmapFont::class.java)
+        fonts.values().forEach { font ->
+            val base = uiBaseFontScales.getOrPut(font) {
+                font.data.scaleX to font.data.scaleY
+            }
+            font.data.setScale(base.first * uiTextScale, base.second * uiTextScale)
+        }
     }
 
     private fun setToolbarIconAndButtonSize(sizePx: Int) {
@@ -4471,6 +4542,47 @@ class SketchUiOverlay(
         buildStandardToolbars().forEach { stage.addActor(it) }
         lastPluginTools = emptyList()
         refreshPluginToolbar()
+        toolbarsPositioned = false
+        pluginPanelsPositioned = false
+        needsPanelLayout = true
+    }
+
+    private fun refreshUiForTextScaleChange() {
+        tutorialSectionToggleStyle = null
+        stage.root.children.forEach { child ->
+            (child as? com.badlogic.gdx.scenes.scene2d.utils.Layout)?.invalidateHierarchy()
+            (child as? com.badlogic.gdx.scenes.scene2d.utils.Layout)?.validate()
+        }
+        builtInToolbars.values.forEach {
+            it.invalidateHierarchy()
+            it.pack()
+        }
+        pluginToolbars.values.forEach {
+            it.invalidateHierarchy()
+            it.pack()
+        }
+        pluginPanels.values.forEach {
+            it.invalidateHierarchy()
+            it.pack()
+        }
+        if (::rightSidePanelContent.isInitialized) {
+            rightSidePanelContent.invalidateHierarchy()
+        }
+        if (::rightSidePanelScroll.isInitialized) {
+            rightSidePanelScroll.invalidateHierarchy()
+        }
+        if (::rightSidePanel.isInitialized) {
+            rightSidePanel.invalidateHierarchy()
+            rightSidePanel.pack()
+        }
+        if (::tutorialMessageWindow.isInitialized) {
+            tutorialMessageWindow.invalidateHierarchy()
+            tutorialMessageWindow.pack()
+        }
+        distancePopup?.invalidateHierarchy()
+        distancePopup?.pack()
+        hoverPopoverWindow?.invalidateHierarchy()
+        hoverPopoverWindow?.pack()
         toolbarsPositioned = false
         pluginPanelsPositioned = false
         needsPanelLayout = true
@@ -4921,8 +5033,8 @@ class SketchUiOverlay(
         window.invalidateHierarchy()
         window.pack()
         val titleHeight = window.getTitleTable().prefHeight
-        val targetWidth = state.width ?: window.prefWidth
-        val targetHeight = state.height ?: window.prefHeight
+        val targetWidth = if (window.isResizable) (state.width ?: window.prefWidth) else window.prefWidth
+        val targetHeight = if (window.isResizable) (state.height ?: window.prefHeight) else window.prefHeight
         window.setSize(
             max(64f, targetWidth),
             max(titleHeight, targetHeight)
