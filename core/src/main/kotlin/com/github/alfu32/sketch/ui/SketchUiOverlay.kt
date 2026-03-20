@@ -4994,8 +4994,8 @@ class SketchUiOverlay(
             window.pack()
             val state = toolbarId?.let { readToolbarState(it) }
             val titleHeight = window.getTitleTable().prefHeight
-            val targetWidth = state?.width ?: window.prefWidth
-            val targetHeight = state?.height ?: window.prefHeight
+            val targetWidth = if (window.isResizable) (state?.width ?: window.prefWidth) else window.prefWidth
+            val targetHeight = if (window.isResizable) (state?.height ?: window.prefHeight) else window.prefHeight
             window.setSize(
                 max(64f, targetWidth),
                 max(titleHeight, targetHeight)
