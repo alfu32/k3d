@@ -257,6 +257,7 @@ class Main(
     private lateinit var faceFrontRenderable: MeshRenderableProvider
     private lateinit var faceBackRenderable: MeshRenderableProvider
     private lateinit var groundRenderable: MeshRenderableProvider
+    private val groupFaceBundles = linkedMapOf<String, FaceMeshBundle>()
     private val selectedFaceColor = Color(1f, 0f, 0f, 0.3f)
     private val selectedLineColor = Color(1f, 0f, 0f, 1f)
     private val selectedLineOverlayPointColor = Color(0.12f, 0.32f, 0.95f, 0.95f)
@@ -319,6 +320,7 @@ class Main(
     private var groundPlaneSize = minimumGroundPlaneSize
     private var normalOverlayLineWidth = 1f
     private var feedbackOverlayLineWidth = 3f
+    private var visibleRenderableGroupIds = emptySet<String>()
     private var shadowModelTrackedEdgeCount = -1
     private var shadowModelTrackedFaceCount = -1
     private val shadowBoundsCenterTmp = Vector3()
@@ -2640,6 +2642,8 @@ class Main(
             faceMeshDirty = false
             shadowPassDirty = true
         }
+        val visibleRenderableGroups = scene.queryGroupsByFrustum(activeCamera, includeRoot = false)
+        visibleRenderableGroupIds = visibleRenderableGroups.map { it.id }.toSet()
         updateShadowCameraFromModelBounds()
         if (shadowPassDirty) {
             renderShadowPass()
@@ -2661,6 +2665,11 @@ class Main(
         modelBatch.begin(activeCamera)
         modelBatch.render(faceBackRenderable, environment)
         modelBatch.render(faceFrontRenderable, environment)
+        visibleRenderableGroups.forEach { group ->
+            val bundle = ensureGroupFaceBundle(group)
+            modelBatch.render(bundle.backRenderable, environment)
+            modelBatch.render(bundle.frontRenderable, environment)
+        }
         modelBatch.render(groundRenderable, environment)
         modelBatch.end()
 
@@ -2813,6 +2822,8 @@ class Main(
         }
         shapeRenderer.dispose()
         faceMesh.dispose()
+        groupFaceBundles.values.forEach { it.mesh.dispose() }
+        groupFaceBundles.clear()
         groundMesh.dispose()
         modelBatch.dispose()
         shadowBatch.dispose()
@@ -5220,6 +5231,9 @@ class Main(
             return isBasicKindVisible(BasicSelectionFilterKind.EDGE)
         }
         scene.walkGroups(scene.root) { group ->
+            if (group.id !in visibleRenderableGroupIds) {
+                return@walkGroups
+            }
             val selected = group.lineStore.getSelected()
             group.lineStore.getSegments().forEach { segment ->
                 if (!shouldDrawSegment(group, segment)) {
@@ -9932,9 +9946,6 @@ class Main(
             h = (h xor v) * 0x100000001b3L
         }
         mix(scene.root.faceStore.visualVersion())
-        scene.walkGroups(scene.root) { group ->
-            mix(group.faceStore.visualVersion())
-        }
         val activeGroup = scene.activeGroup()
         mix(if (scene.isEditing()) 1L else 0L)
         mix(activeGroup.id.hashCode().toLong())
@@ -9949,74 +9960,36 @@ class Main(
     private fun updateFaceMesh() {
         updateGroundPlaneFromSceneBounds(scene.root.worldBounds())
         val triangles = mutableListOf<TriangleWorld>()
-        val shadowBounds = com.badlogic.gdx.math.collision.BoundingBox()
-        var hasShadowCaster = false
-        fun includeTriangle(
-            group: GroupScene.GroupNode,
-            tri: com.github.alfu32.sketch.model.DraftFaceStore.Triangle
-        ): Boolean {
-            if (scene.isVoxelGroup(group)) {
-                return isBasicKindVisible(BasicSelectionFilterKind.VOXEL) &&
-                    !isBasicKindWireframe(BasicSelectionFilterKind.VOXEL)
-            }
-            if (group !== scene.root) {
-                return isBasicKindVisible(BasicSelectionFilterKind.FACE) &&
-                    !isBasicKindWireframe(BasicSelectionFilterKind.FACE)
-            }
-            if (group !== scene.root || !scene.isGeneratedArchitectureTriangle(tri)) {
-                return isBasicKindVisible(BasicSelectionFilterKind.FACE) &&
-                    !isBasicKindWireframe(BasicSelectionFilterKind.FACE)
-            }
-            val owner = scene.generatedArchitectureOwner(tri) ?: return true
-            return isArchitectureKindVisible(owner.kind) && !isArchitectureKindWireframe(owner.kind)
-        }
-        fun appendTriangle(a: Vector3, b: Vector3, c: Vector3, color: Color, selected: Boolean) {
-            triangles.add(TriangleWorld(a, b, c, color, selected))
-            if (!hasShadowCaster) {
-                shadowBounds.set(a, a)
-                hasShadowCaster = true
-            }
-            shadowBounds.ext(a)
-            shadowBounds.ext(b)
-            shadowBounds.ext(c)
-        }
-        scene.walkGroups(scene.root) { group ->
-            group.faceStore.getTriangles().forEach { tri ->
-                if (!includeTriangle(group, tri)) {
-                    return@forEach
-                }
-                appendTriangle(
-                    group.toWorld(tri.a),
-                    group.toWorld(tri.b),
-                    group.toWorld(tri.c),
-                    group.faceStore.colorFor(tri),
-                    group.faceStore.isSelected(tri)
-                )
-            }
-        }
+        syncGroupFaceBundles()
         scene.root.faceStore.getTriangles().forEach { tri ->
-            if (!includeTriangle(scene.root, tri)) {
+            if (!shouldIncludeRootTriangle(tri)) {
                 return@forEach
             }
-            appendTriangle(
+            triangles.add(
+                TriangleWorld(
                 Vector3(tri.a),
                 Vector3(tri.b),
                 Vector3(tri.c),
                 scene.root.faceStore.colorFor(tri),
                 scene.root.faceStore.isSelected(tri)
+                )
             )
         }
         scene.collectActivePrototypeWorldTriangles { a, b, c, _ ->
             triangles.add(TriangleWorld(a, b, c, prototypeGuideFaceColor, selected = false))
-            if (!hasShadowCaster) {
-                shadowBounds.set(a, a)
-                hasShadowCaster = true
-            }
-            shadowBounds.ext(a)
-            shadowBounds.ext(b)
-            shadowBounds.ext(c)
         }
-        if (hasShadowCaster) {
+        updateMeshVertices(
+            targetMesh = faceMesh,
+            onMeshRecreated = { newMesh ->
+                faceMesh = newMesh
+                faceFrontRenderable = MeshRenderableProvider(faceMesh, faceFrontMaterial, GL20.GL_TRIANGLES)
+                faceBackRenderable = MeshRenderableProvider(faceMesh, faceBackMaterial, GL20.GL_TRIANGLES)
+            },
+            triangles = triangles
+        )
+
+        val shadowBounds = scene.root.worldBounds()
+        if (shadowBounds != null) {
             shadowBounds.getCenter(shadowBoundsCenterTmp)
             shadowBounds.getDimensions(shadowBoundsDimensionsTmp)
             shadowModelBoundsCenter.set(shadowBoundsCenterTmp)
@@ -10027,9 +10000,103 @@ class Main(
             shadowModelBoundsRadius = minimumShadowBoundsRadius
             shadowModelBoundsValid = false
         }
+    }
+
+    private fun shouldIncludeGroupTriangle(group: GroupScene.GroupNode): Boolean {
+        return if (scene.isVoxelGroup(group)) {
+            isBasicKindVisible(BasicSelectionFilterKind.VOXEL) &&
+                !isBasicKindWireframe(BasicSelectionFilterKind.VOXEL)
+        } else {
+            isBasicKindVisible(BasicSelectionFilterKind.FACE) &&
+                !isBasicKindWireframe(BasicSelectionFilterKind.FACE)
+        }
+    }
+
+    private fun shouldIncludeRootTriangle(tri: com.github.alfu32.sketch.model.DraftFaceStore.Triangle): Boolean {
+        if (scene.isGeneratedArchitectureTriangle(tri)) {
+            val owner = scene.generatedArchitectureOwner(tri) ?: return true
+            return isArchitectureKindVisible(owner.kind) && !isArchitectureKindWireframe(owner.kind)
+        }
+        return isBasicKindVisible(BasicSelectionFilterKind.FACE) &&
+            !isBasicKindWireframe(BasicSelectionFilterKind.FACE)
+    }
+
+    private fun computeGroupFaceMeshVisualStamp(group: GroupScene.GroupNode): Long {
+        var h = 1469598103934665603L
+        fun mix(v: Long) {
+            h = (h xor v) * 0x100000001b3L
+        }
+        mix(group.faceStore.visualVersion())
+        mix(group.id.hashCode().toLong())
+        mix(if (shouldIncludeGroupTriangle(group)) 1L else 0L)
+        return h
+    }
+
+    private fun syncGroupFaceBundles() {
+        val liveIds = linkedSetOf<String>()
+        scene.walkGroups(scene.root) { group ->
+            liveIds.add(group.id)
+        }
+        groupFaceBundles.keys.filter { it !in liveIds }.toList().forEach { id ->
+            groupFaceBundles.remove(id)?.mesh?.dispose()
+        }
+    }
+
+    private fun ensureGroupFaceBundle(group: GroupScene.GroupNode): FaceMeshBundle {
+        val stamp = computeGroupFaceMeshVisualStamp(group)
+        val existing = groupFaceBundles[group.id]
+        if (existing != null && existing.visualStamp == stamp) {
+            return existing
+        }
+        val bundle = existing ?: createFaceMeshBundle()
+        val triangles = if (shouldIncludeGroupTriangle(group)) {
+            group.faceStore.getTriangles().map { tri ->
+                TriangleWorld(
+                    group.toWorld(tri.a),
+                    group.toWorld(tri.b),
+                    group.toWorld(tri.c),
+                    group.faceStore.colorFor(tri),
+                    group.faceStore.isSelected(tri)
+                )
+            }
+        } else {
+            emptyList()
+        }
+        updateMeshVertices(
+            targetMesh = bundle.mesh,
+            onMeshRecreated = { newMesh ->
+                bundle.mesh = newMesh
+                bundle.frontRenderable = MeshRenderableProvider(newMesh, faceFrontMaterial, GL20.GL_TRIANGLES)
+                bundle.backRenderable = MeshRenderableProvider(newMesh, faceBackMaterial, GL20.GL_TRIANGLES)
+            },
+            triangles = triangles
+        )
+        bundle.visualStamp = stamp
+        groupFaceBundles[group.id] = bundle
+        return bundle
+    }
+
+    private fun createFaceMeshBundle(): FaceMeshBundle {
+        val mesh = Mesh(false, 1, 0,
+            VertexAttribute(VertexAttributes.Usage.Position, 3, "a_position"),
+            VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal"),
+            VertexAttribute(VertexAttributes.Usage.ColorUnpacked, 4, "a_color")
+        )
+        return FaceMeshBundle(
+            mesh = mesh,
+            frontRenderable = MeshRenderableProvider(mesh, faceFrontMaterial, GL20.GL_TRIANGLES),
+            backRenderable = MeshRenderableProvider(mesh, faceBackMaterial, GL20.GL_TRIANGLES)
+        )
+    }
+
+    private fun updateMeshVertices(
+        targetMesh: Mesh,
+        onMeshRecreated: (Mesh) -> Unit,
+        triangles: List<TriangleWorld>
+    ) {
         val vertexCount = triangles.size * 3
         if (vertexCount == 0) {
-            faceMesh.setVertices(FloatArray(0))
+            targetMesh.setVertices(FloatArray(0))
             return
         }
         val vertices = FloatArray(vertexCount * 10)
@@ -10044,18 +10111,26 @@ class Main(
             idx = writeVertex(vertices, idx, b, normal, color)
             idx = writeVertex(vertices, idx, c, normal, color)
         }
-        if (faceMesh.maxVertices < vertexCount) {
-            faceMesh.dispose()
-            faceMesh = Mesh(false, vertexCount, 0,
+        if (targetMesh.maxVertices < vertexCount) {
+            targetMesh.dispose()
+            val newMesh = Mesh(false, vertexCount, 0,
                 VertexAttribute(VertexAttributes.Usage.Position, 3, "a_position"),
                 VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal"),
                 VertexAttribute(VertexAttributes.Usage.ColorUnpacked, 4, "a_color")
             )
-            faceFrontRenderable = MeshRenderableProvider(faceMesh, faceFrontMaterial, GL20.GL_TRIANGLES)
-            faceBackRenderable = MeshRenderableProvider(faceMesh, faceBackMaterial, GL20.GL_TRIANGLES)
+            newMesh.setVertices(vertices)
+            onMeshRecreated(newMesh)
+            return
         }
-        faceMesh.setVertices(vertices)
+        targetMesh.setVertices(vertices)
     }
+
+    private data class FaceMeshBundle(
+        var mesh: Mesh,
+        var frontRenderable: MeshRenderableProvider,
+        var backRenderable: MeshRenderableProvider,
+        var visualStamp: Long = Long.MIN_VALUE
+    )
 
     private data class TriangleWorld(
         val a: Vector3,
@@ -10140,6 +10215,11 @@ class Main(
         shadowBatch.begin(shadowLight.camera)
         shadowBatch.render(faceFrontRenderable)
         shadowBatch.render(faceBackRenderable)
+        scene.walkGroups(scene.root) { group ->
+            val bundle = ensureGroupFaceBundle(group)
+            shadowBatch.render(bundle.frontRenderable)
+            shadowBatch.render(bundle.backRenderable)
+        }
         shadowBatch.end()
         shadowLight.end()
     }

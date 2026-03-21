@@ -1,5 +1,6 @@
 package com.github.alfu32.sketch.model
 
+import com.badlogic.gdx.graphics.Camera
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Quaternion
@@ -468,6 +469,7 @@ class GroupScene(
     private var changeListener: (() -> Unit)? = null
     private val groupSpatialIndex = SpatialHash3D<GroupNode>(GROUP_SPATIAL_HASH_CELL_SIZE) { group -> group.id }
     private var groupSpatialIndexDirty = true
+    private val groupSpatialBoundsById = linkedMapOf<String, BoundingBox>()
     private val groupSpatialBoundsMin = Vector3()
     private val groupSpatialBoundsMax = Vector3()
     private var hasGroupSpatialBounds = false
@@ -4802,6 +4804,31 @@ class GroupScene(
         return queryGroupsByAabb(minPoint, maxPoint, includeRoot)
     }
 
+    fun queryGroupsByFrustum(camera: Camera, includeRoot: Boolean = true): List<GroupNode> {
+        ensureGroupSpatialIndex()
+        if (!hasGroupSpatialBounds) {
+            return emptyList()
+        }
+        val planePoints = camera.frustum.planePoints
+        if (planePoints.isEmpty()) {
+            return emptyList()
+        }
+        val minPoint = Vector3(planePoints[0])
+        val maxPoint = Vector3(planePoints[0])
+        for (i in 1 until planePoints.size) {
+            val point = planePoints[i]
+            minPoint.x = min(minPoint.x, point.x)
+            minPoint.y = min(minPoint.y, point.y)
+            minPoint.z = min(minPoint.z, point.z)
+            maxPoint.x = max(maxPoint.x, point.x)
+            maxPoint.y = max(maxPoint.y, point.y)
+            maxPoint.z = max(maxPoint.z, point.z)
+        }
+        return queryGroupsByAabb(minPoint, maxPoint, includeRoot).filter { group ->
+            groupSpatialBoundsById[group.id]?.let { camera.frustum.boundsInFrustum(it) } == true
+        }
+    }
+
     fun collectWorldTriangles(consumer: (Vector3, Vector3, Vector3, Color, Boolean) -> Unit) {
         walkGroups(root) { group ->
             group.faceStore.getTriangles().forEach { tri ->
@@ -8573,6 +8600,7 @@ class GroupScene(
             return
         }
         groupSpatialIndex.clear()
+        groupSpatialBoundsById.clear()
         hasGroupSpatialBounds = false
         indexGroupBounds(root)
         walkGroups(root) { group ->
@@ -8583,6 +8611,7 @@ class GroupScene(
 
     private fun indexGroupBounds(group: GroupNode) {
         val bounds = group.geometryWorldBounds() ?: return
+        groupSpatialBoundsById[group.id] = BoundingBox(bounds.min.cpy(), bounds.max.cpy())
         val min = bounds.min
         val max = bounds.max
         if (!hasGroupSpatialBounds) {

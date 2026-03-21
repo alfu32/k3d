@@ -398,7 +398,9 @@ class DraftLineStore {
     }
 
     private fun snapToExistingEndpoint(point: Vector3, include: (Segment) -> Boolean = { true }): Vector3? {
-        segments.forEach { segment ->
+        val min = Vector3(point.x - epsilon, point.y - epsilon, point.z - epsilon)
+        val max = Vector3(point.x + epsilon, point.y + epsilon, point.z + epsilon)
+        segmentsIntersectingQuery(min, max).forEach { segment ->
             if (!include(segment)) {
                 return@forEach
             }
@@ -646,30 +648,36 @@ class DraftLineStore {
         val newStart = snapToExistingEndpoint(start, ::include) ?: Vector3(start)
         val newEnd = snapToExistingEndpoint(end, ::include) ?: Vector3(end)
         val splitPoints = mutableListOf(PointOnSegment(0f, newStart), PointOnSegment(1f, newEnd))
+        val segmentMin = Vector3(
+            kotlin.math.min(newStart.x, newEnd.x) - epsilon,
+            kotlin.math.min(newStart.y, newEnd.y) - epsilon,
+            kotlin.math.min(newStart.z, newEnd.z) - epsilon
+        )
+        val segmentMax = Vector3(
+            kotlin.math.max(newStart.x, newEnd.x) + epsilon,
+            kotlin.math.max(newStart.y, newEnd.y) + epsilon,
+            kotlin.math.max(newStart.z, newEnd.z) + epsilon
+        )
+        val candidates = segmentsIntersectingQuery(segmentMin, segmentMax)
 
-        var i = 0
-        while (i < segments.size) {
-            val existing = segments[i]
+        candidates.forEach { existing ->
             if (!include(existing)) {
-                i++
-                continue
+                return@forEach
             }
-            val intersection = intersectSegments(newStart, newEnd, existing.start, existing.end) ?: run {
-                i++
-                continue
+            val currentIndex = segments.indexOf(existing)
+            if (currentIndex < 0) {
+                return@forEach
             }
+            val intersection = intersectSegments(newStart, newEnd, existing.start, existing.end) ?: return@forEach
             val snapped = snapToExistingEndpoint(intersection.point, ::include)
             val point = snapped ?: intersection.point
             val t = paramAlong(newStart, newEnd, point)
             val u = paramAlong(existing.start, existing.end, point)
 
             if (u > epsilon && u < 1f - epsilon) {
-                segments.removeAt(i)
-                segments.add(i, Segment(Vector3(existing.start), Vector3(point)))
-                segments.add(i + 1, Segment(Vector3(point), Vector3(existing.end)))
-                i += 2
-            } else {
-                i++
+                segments.removeAt(currentIndex)
+                segments.add(currentIndex, Segment(Vector3(existing.start), Vector3(point)))
+                segments.add(currentIndex + 1, Segment(Vector3(point), Vector3(existing.end)))
             }
 
             if (t > epsilon && t < 1f - epsilon) {

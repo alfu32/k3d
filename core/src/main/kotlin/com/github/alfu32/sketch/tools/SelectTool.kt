@@ -354,6 +354,11 @@ class SelectTool(
         val hvacSelectionEnabled = scene.hasHvacElements() && activeGroup == architectureGroup
         val parametricSelectionEnabled =
             (scene.hasArchitectureElements() || scene.hasHvacElements()) && activeGroup == architectureGroup
+        val childGroupHit = if (isBasicSelectable(BasicSelectionKind.OBJECT)) {
+            pickGroupWorld(ray, Gdx.input.x, Gdx.input.y)
+        } else {
+            null
+        }
         if (architectureSelectionEnabled) {
             val endpointHit = if (isArchitectureSelectable(ArchitectureStore.ElementKind.WALL)) {
                 pickSelectedWallEndpoint(architectureGroup, ray)
@@ -498,9 +503,17 @@ class SelectTool(
                 architectureEdgeHit != null -> architectureEdgeHit.point
                 else -> null
             }
+            val nearestArchitectureSurfaceT = listOfNotNull(
+                architectureFaceHit?.t,
+                architectureEdgeHit?.t
+            ).minOrNull()
+            val childObjectOccludesArchitecture = nearestArchitectureSurfaceT != null &&
+                childGroupHit != null &&
+                childGroupHit.t < nearestArchitectureSurfaceT
             if (
                 architectureEdgeHit != null &&
-                selectedArch?.kind == ArchitectureStore.ElementKind.WALL
+                selectedArch?.kind == ArchitectureStore.ElementKind.WALL &&
+                !childObjectOccludesArchitecture
             ) {
                 val matchedHole = scene.architectureHoleForContourSegment(
                     architectureGroup,
@@ -525,7 +538,8 @@ class SelectTool(
             }
             if (
                 architectureEdgeHit != null &&
-                selectedArch?.kind == ArchitectureStore.ElementKind.SLAB
+                selectedArch?.kind == ArchitectureStore.ElementKind.SLAB &&
+                !childObjectOccludesArchitecture
             ) {
                 val matchedHole = scene.architectureSlabHoleForContourSegment(
                     architectureGroup,
@@ -564,7 +578,7 @@ class SelectTool(
                 else -> null
             }
             if (architectureOwner != null) {
-                if (isArchitectureSelectable(architectureOwner.kind)) {
+                if (isArchitectureSelectable(architectureOwner.kind) && !childObjectOccludesArchitecture) {
                     val selected = scene.selectArchitectureElement(
                         architectureGroup,
                         architectureOwner.kind,
@@ -576,7 +590,7 @@ class SelectTool(
                     return true
                 }
             }
-            if (architecturePointHit != null) {
+            if (architecturePointHit != null && !childObjectOccludesArchitecture) {
                 scene.selectArchitectureElementNearWorldPoint(
                     architectureGroup,
                     architecturePointHit,
@@ -593,7 +607,7 @@ class SelectTool(
                 Gdx.input.y,
                 kindFilter = ::isArchitectureSelectable
             )
-            if (hotspotHit != null) {
+            if (hotspotHit != null && (childGroupHit == null || hotspotHit.t <= childGroupHit.t)) {
                 val selected = scene.selectArchitectureElement(
                     architectureGroup,
                     hotspotHit.kind,
@@ -641,6 +655,10 @@ class SelectTool(
                     hvacEdgeHit != null -> hvacEdgeHit.point
                     else -> null
                 }
+                val nearestHvacSurfaceT = listOfNotNull(hvacFaceHit?.t, hvacEdgeHit?.t).minOrNull()
+                val childObjectOccludesHvac = nearestHvacSurfaceT != null &&
+                    childGroupHit != null &&
+                    childGroupHit.t < nearestHvacSurfaceT
                 val hvacOwner = when {
                     hvacFaceHit != null && hvacEdgeHit != null -> {
                         val faceFirst = hvacFaceHit.t <= hvacEdgeHit.t
@@ -656,7 +674,7 @@ class SelectTool(
                     hvacEdgeHit != null -> scene.generatedHvacOwner(hvacEdgeHit.segment)
                     else -> null
                 }
-                if (hvacOwner != null) {
+                if (hvacOwner != null && !childObjectOccludesHvac) {
                     val selected = scene.selectHvacElement(
                         architectureGroup,
                         hvacOwner.kind,
@@ -667,7 +685,7 @@ class SelectTool(
                     recordPickSelection(selectionMode())
                     return true
                 }
-                if (hvacPointHit != null) {
+                if (hvacPointHit != null && !childObjectOccludesHvac) {
                     scene.selectHvacElementNearWorldPoint(
                         architectureGroup,
                         hvacPointHit,
@@ -678,7 +696,7 @@ class SelectTool(
                     return true
                 }
                 val hotspotHit = pickHvacConstructionHotspot(architectureGroup, ray, Gdx.input.x, Gdx.input.y)
-                if (hotspotHit != null) {
+                if (hotspotHit != null && (childGroupHit == null || hotspotHit.t <= childGroupHit.t)) {
                     val selected = scene.selectHvacElement(
                         architectureGroup,
                         hotspotHit.kind,
@@ -724,11 +742,7 @@ class SelectTool(
         }
         val dimensionHit = pickDimensionWorld(ray, Gdx.input.x, Gdx.input.y)
         val textHit = pickTextWorld(ray, Gdx.input.x, Gdx.input.y)
-        val groupHit = if (isBasicSelectable(BasicSelectionKind.OBJECT)) {
-            pickGroupWorld(ray, Gdx.input.x, Gdx.input.y)
-        } else {
-            null
-        }
+        val groupHit = childGroupHit
         val pickedVoxel = voxelHit != null
         val pickedFace = faceHit != null
         val pickedEdge = edgeHit != null
@@ -754,13 +768,10 @@ class SelectTool(
             return true
         }
         val clickType = updateClickCount()
-        if (
-            pickedVoxel &&
-            isBasicSelectable(BasicSelectionKind.VOXEL) &&
-            isClosest(voxelHit!!.t, faceHit?.t, edgeHit?.t, dimensionHit?.t, textHit?.t, groupHit?.t)
-        ) {
-            applyVoxelSelection(voxelHit.key, selectionMode())
-            status.message = if (scene.selectedVoxels(activeGroup).contains(voxelHit.key)) {
+        val nearestHit = nearestBasicPickHit(voxelHit, faceHit, edgeHit, dimensionHit, textHit, groupHit)
+        if (nearestHit is VoxelPickCandidate && isBasicSelectable(BasicSelectionKind.VOXEL)) {
+            applyVoxelSelection(nearestHit.hit.key, selectionMode())
+            status.message = if (scene.selectedVoxels(activeGroup).contains(nearestHit.hit.key)) {
                 "Voxel selected."
             } else {
                 "Voxel deselected."
@@ -768,22 +779,18 @@ class SelectTool(
             recordPickSelection(selectionMode())
             return true
         }
-        if (clickType == 2 && pickedGroup) {
-            val targetGroup = groupHit!!.group
+        if (clickType == 2 && nearestHit is GroupPickCandidate) {
+            val targetGroup = nearestHit.hit.group
             if (scene.enterGroup(targetGroup)) {
                 scene.clearAllSelections()
                 status.message = "Editing object: ${targetGroup.name}"
                 return true
             }
         }
-        if (allowFaceSelection && clickType >= 3) {
+        if (allowFaceSelection && clickType >= 3 && (nearestHit is FacePickCandidate || nearestHit is EdgePickCandidate)) {
             clickCount = 0
-            if (!pickedFace && !pickedEdge) {
-                return true
-            }
-            val pickFace = pickedFace && (!pickedEdge || faceHit!!.t <= edgeHit!!.t)
-            if (pickFace) {
-                val group = scene.activeGroup().faceStore.collectConnected(faceHit!!.triangle)
+            if (nearestHit is FacePickCandidate) {
+                val group = scene.activeGroup().faceStore.collectConnected(nearestHit.hit.triangle)
                 val allSelected = group.all { scene.activeGroup().faceStore.isSelected(it) }
                 if (allSelected) {
                     group.forEach { scene.activeGroup().faceStore.removeSelection(it) }
@@ -792,8 +799,8 @@ class SelectTool(
                     group.forEach { scene.activeGroup().faceStore.addSelection(it) }
                     status.message = "Connected faces selected."
                 }
-            } else {
-                val group = scene.activeGroup().lineStore.collectConnected(edgeHit!!.segment)
+            } else if (nearestHit is EdgePickCandidate) {
+                val group = scene.activeGroup().lineStore.collectConnected(nearestHit.hit.segment)
                 val allSelected = group.all { scene.activeGroup().lineStore.isSelected(it) }
                 if (allSelected) {
                     group.forEach { scene.activeGroup().lineStore.removeSelection(it) }
@@ -806,8 +813,8 @@ class SelectTool(
             recordPickSelection(selectionMode())
             return true
         }
-        if (allowFaceSelection && clickType == 2 && pickedFace) {
-            val group = scene.activeGroup().faceStore.collectCoplanarConnected(faceHit!!.triangle)
+        if (allowFaceSelection && clickType == 2 && nearestHit is FacePickCandidate) {
+            val group = scene.activeGroup().faceStore.collectCoplanarConnected(nearestHit.hit.triangle)
             val allSelected = group.all { scene.activeGroup().faceStore.isSelected(it) }
             if (allSelected) {
                 group.forEach { scene.activeGroup().faceStore.removeSelection(it) }
@@ -819,49 +826,32 @@ class SelectTool(
             recordPickSelection(selectionMode())
             return true
         }
-        if (pickedText && isClosest(textHit!!.t, faceHit?.t, edgeHit?.t, dimensionHit?.t, groupHit?.t)) {
-            scene.activeGroup().textStore.toggleSelection(textHit.text)
+        if (nearestHit is TextPickCandidate) {
+            scene.activeGroup().textStore.toggleSelection(nearestHit.hit.text)
             status.message = "Text toggled."
             recordPickSelection(selectionMode())
             return true
         }
-        if (pickedDimension && isClosest(dimensionHit!!.t, faceHit?.t, edgeHit?.t, groupHit?.t)) {
-            scene.activeGroup().dimensionStore.toggleSelection(dimensionHit.dimension)
+        if (nearestHit is DimensionPickCandidate) {
+            scene.activeGroup().dimensionStore.toggleSelection(nearestHit.hit.dimension)
             status.message = "Dimension toggled."
             recordPickSelection(selectionMode())
             return true
         }
-        if (
-            pickedGroup &&
-            (!pickedFace || groupHit!!.t <= faceHit!!.t) &&
-            (!pickedEdge || groupHit!!.t <= edgeHit!!.t) &&
-            (!pickedDimension || groupHit!!.t <= dimensionHit!!.t) &&
-            (!pickedText || groupHit!!.t <= textHit!!.t)
-        ) {
-            scene.toggleGroupSelection(groupHit!!.group)
+        if (nearestHit is GroupPickCandidate) {
+            scene.toggleGroupSelection(nearestHit.hit.group)
             status.message = "Group toggled."
             recordPickSelection(selectionMode())
             return true
         }
-        if (allowFaceSelection && pickedFace && pickedEdge) {
-            if (faceHit!!.t <= edgeHit!!.t) {
-                scene.activeGroup().faceStore.toggleSelection(faceHit.triangle)
-                status.message = "Face toggled."
-            } else {
-                scene.activeGroup().lineStore.toggleSelection(edgeHit.segment)
-                status.message = "Edge toggled."
-            }
-            recordPickSelection(selectionMode())
-            return true
-        }
-        if (allowFaceSelection && pickedFace) {
-            scene.activeGroup().faceStore.toggleSelection(faceHit!!.triangle)
+        if (allowFaceSelection && nearestHit is FacePickCandidate) {
+            scene.activeGroup().faceStore.toggleSelection(nearestHit.hit.triangle)
             status.message = "Face toggled."
             recordPickSelection(selectionMode())
             return true
         }
-        if (!isVoxelGroup && pickedEdge) {
-            scene.activeGroup().lineStore.toggleSelection(edgeHit!!.segment)
+        if (!isVoxelGroup && nearestHit is EdgePickCandidate) {
+            scene.activeGroup().lineStore.toggleSelection(nearestHit.hit.segment)
             status.message = "Edge toggled."
             recordPickSelection(selectionMode())
             return true
@@ -1170,6 +1160,34 @@ class SelectTool(
         val point: Vector3,
         val t: Float
     )
+
+    private sealed interface BasicPickHit {
+        val t: Float
+    }
+
+    private data class VoxelPickCandidate(val hit: VoxelHitWorld) : BasicPickHit {
+        override val t: Float get() = hit.t
+    }
+
+    private data class FacePickCandidate(val hit: FaceHitWorld) : BasicPickHit {
+        override val t: Float get() = hit.t
+    }
+
+    private data class EdgePickCandidate(val hit: EdgeHitWorld) : BasicPickHit {
+        override val t: Float get() = hit.t
+    }
+
+    private data class DimensionPickCandidate(val hit: DimensionHitWorld) : BasicPickHit {
+        override val t: Float get() = hit.t
+    }
+
+    private data class TextPickCandidate(val hit: TextHitWorld) : BasicPickHit {
+        override val t: Float get() = hit.t
+    }
+
+    private data class GroupPickCandidate(val hit: GroupHitWorld) : BasicPickHit {
+        override val t: Float get() = hit.t
+    }
 
     private fun finalizeVolumeSelection(status: StatusModel, mode: SelectionMode) {
         val bounds = volumeBounds() ?: return
@@ -1751,6 +1769,24 @@ class SelectTool(
             }
         }
         return true
+    }
+
+    private fun nearestBasicPickHit(
+        voxelHit: VoxelHitWorld?,
+        faceHit: FaceHitWorld?,
+        edgeHit: EdgeHitWorld?,
+        dimensionHit: DimensionHitWorld?,
+        textHit: TextHitWorld?,
+        groupHit: GroupHitWorld?
+    ): BasicPickHit? {
+        return listOfNotNull(
+            voxelHit?.let(::VoxelPickCandidate),
+            faceHit?.let(::FacePickCandidate),
+            edgeHit?.let(::EdgePickCandidate),
+            dimensionHit?.let(::DimensionPickCandidate),
+            textHit?.let(::TextPickCandidate),
+            groupHit?.let(::GroupPickCandidate)
+        ).minByOrNull { it.t }
     }
 
     private fun pickArchitectureHoleHandle(
