@@ -419,7 +419,9 @@ pause
 def createSnapMetadata = { File snapRoot ->
   def metaDir = new File(snapRoot, "meta")
   def guiDir = new File(metaDir, "gui")
+  def binDir = new File(snapRoot, "bin")
   guiDir.mkdirs()
+  binDir.mkdirs()
   new File(metaDir, "snap.yaml").text = """name: octodraw
 title: Octodraw
 version: "${bundleVersion}"
@@ -433,7 +435,7 @@ grade: stable
 confinement: strict
 apps:
   octodraw:
-    command: octodraw-jre
+    command: bin/octodraw-launch
     environment:
       OCTODRAW_PLUGINS_DIR: \$SNAP_USER_COMMON/plugins
     plugs:
@@ -458,7 +460,55 @@ Type=Application
 Categories=Graphics;3DGraphics;Engineering;
 MimeType=application/octet-stream;
 """
+  def launchFile = new File(binDir, "octodraw-launch")
+  launchFile.text = '''#!/bin/sh
+set -eu
+
+HOST_RUNTIME_DIR="/run/user/$(id -u)"
+CURRENT_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}"
+
+if [ -z "$CURRENT_RUNTIME_DIR" ] || [ ! -d "$CURRENT_RUNTIME_DIR" ]; then
+  export XDG_RUNTIME_DIR="$HOST_RUNTIME_DIR"
+fi
+
+if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -S "$XDG_RUNTIME_DIR/wayland-0" ]; then
+  export WAYLAND_DISPLAY=wayland-0
+fi
+
+if [ -z "${DISPLAY:-}" ] && [ -S "/tmp/.X11-unix/X0" ]; then
+  export DISPLAY=:0
+fi
+
+exec "$SNAP/octodraw-jre" "$@"
+'''
+  launchFile.setExecutable(true, false)
   ant.copy(file: rootProject.file("assets/appicon.png"), tofile: new File(guiDir, "icon.png"))
+}
+
+def ensureUnixRuntimeExecutables = { File installDir ->
+  ["octodraw-editor", "octodraw-jre"].each { name ->
+    def launcher = new File(installDir, name)
+    if (launcher.exists()) {
+      launcher.setExecutable(true, false)
+      launcher.setReadable(true, false)
+    }
+  }
+  def javaBinDir = new File(installDir, "jre/bin")
+  if (javaBinDir.exists()) {
+    javaBinDir.eachFileRecurse { file ->
+      if (file.isFile()) {
+        file.setExecutable(true, false)
+        file.setReadable(true, false)
+      }
+    }
+  }
+  ["jre/lib/jspawnhelper", "jre/lib/jexec"].each { relPath ->
+    def helper = new File(installDir, relPath)
+    if (helper.exists()) {
+      helper.setExecutable(true, false)
+      helper.setReadable(true, false)
+    }
+  }
 }
 
 tasks.register("fetchJdkLinux") {
@@ -627,10 +677,7 @@ def configureBundleDirTask = { String name, String osLabel, TaskProvider jdkTask
     }
     doLast {
       if (includeUnixLauncher) {
-        def editor = new File(destinationDir, "octodraw-editor")
-        def jre = new File(destinationDir, "octodraw-jre")
-        if (editor.exists()) editor.setExecutable(true, false)
-        if (jre.exists()) jre.setExecutable(true, false)
+        ensureUnixRuntimeExecutables(destinationDir)
       }
     }
   }
@@ -672,6 +719,7 @@ tasks.register("bundleLinuxSnap") {
       from(sourceDir)
       into(snapRoot)
     }
+    ensureUnixRuntimeExecutables(snapRoot)
     createSnapMetadata(snapRoot)
     def outFile = rootProject.file("dist/octodraw-dist-${bundleVersion}-linux.snap")
     project.delete(outFile)

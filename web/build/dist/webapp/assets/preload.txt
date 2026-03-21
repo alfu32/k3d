@@ -1,7 +1,7 @@
 i:b:/ketchup3d_visui_icons_32_map.json:1572:1
 i:b:/appsplash.png:99966:1
 i:b:/icons.mapping.ods:41330:1
-i:b:/appicon.svg:108841:1
+i:b:/appicon.svg:116700:1
 i:b:/appicon_150x150.png:6685:1
 i:b:/appicon_300x300.png:12983:1
 i:b:/appicon_512x512.png:23452:1
@@ -68,13 +68,14 @@ i:b:/icons.48.png:53708:1
 i:b:/appicon.3.png:52833:1
 i:b:/selected-tex.png:558:1
 i:b:/icons.2.png:19774:1
-i:b:/assets.txt:2976:1
+i:b:/assets.txt:2992:1
 i:b:/icons.mapping.48.csv:1536:1
 i:b:/appicon_300x300.ico:4246:1
 i:b:/glyphs/alphabet.octd:1272176:1
 i:b:/glyphs/alphabet.octd.bak:186229:1
 i:b:/tutorials/01.Lines_Extrude-swipe.json:664:1
 i:b:/.gitkeep:178:1
+i:b:/libgdx-logo.svg:3357:1
 c:b:/com/badlogic/gdx/utils/lsans-15.png:10270:1
 c:b:/com/badlogic/gdx/graphics/g3d/shaders/default.vertex.glsl:9096:1
 c:b:/com/badlogic/gdx/graphics/g3d/particles/particles.fragment.glsl:820:1
