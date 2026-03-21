@@ -172,6 +172,7 @@ class SketchUiOverlay(
         showCloseButton: Boolean = true
     ) : com.kotcrab.vis.ui.widget.VisWindow(title, true) {
         private val baseTitle = title
+        private val compactTitle = baseTitle.take(4)
         private var collapsed = false
         private var toolbarCompactTitle = false
 
@@ -201,7 +202,7 @@ class SketchUiOverlay(
                 return
             }
             toolbarCompactTitle = compact
-            getTitleLabel().setText(if (compact) "" else baseTitle)
+            getTitleLabel().setText(if (compact) compactTitle else baseTitle)
             invalidateHierarchy()
         }
 
