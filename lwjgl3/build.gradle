@@ -416,6 +416,51 @@ pause
 """
 }
 
+def createSnapMetadata = { File snapRoot ->
+  def metaDir = new File(snapRoot, "meta")
+  def guiDir = new File(metaDir, "gui")
+  guiDir.mkdirs()
+  new File(metaDir, "snap.yaml").text = """name: octodraw
+title: Octodraw
+version: "${bundleVersion}"
+summary: 3D drafting and modeling tool
+description: |
+  Octodraw is a 3D drafting and modeling application.
+base: core22
+grade: stable
+confinement: strict
+icon: meta/gui/icon.png
+apps:
+  octodraw:
+    command: octodraw-jre
+    desktop: meta/gui/octodraw.desktop
+    environment:
+      OCTODRAW_PLUGINS_DIR: \$SNAP_USER_COMMON/plugins
+    plugs:
+      - desktop
+      - desktop-legacy
+      - home
+      - network
+      - network-bind
+      - opengl
+      - wayland
+      - x11
+      - audio-playback
+      - removable-media
+"""
+  new File(guiDir, "octodraw.desktop").text = """[Desktop Entry]
+Name=Octodraw
+Comment=3D drafting and modeling tool
+Exec=octodraw %U
+Icon=\${SNAP}/meta/gui/icon.png
+Terminal=false
+Type=Application
+Categories=Graphics;3DGraphics;Engineering;
+MimeType=application/octet-stream;
+"""
+  ant.copy(file: rootProject.file("assets/appicon.png"), tofile: new File(guiDir, "icon.png"))
+}
+
 tasks.register("fetchJdkLinux") {
   outputs.dir file("$jdkCacheDir/linux-x64")
   doLast { downloadAndExtractJdk(jdkUrls.linuxX64, file("$jdkCacheDir/linux-x64")) }
@@ -597,6 +642,40 @@ configureBundleTask("bundleMacArm64", "mac", tasks.named("fetchJdkMacArm64"), fi
 configureBundleTarTask("bundleLinuxTar", "linux", tasks.named("fetchJdkLinux"), file("$jdkCacheDir/linux-x64"), true)
 configureBundleTarTask("bundleMacArm64Tar", "mac", tasks.named("fetchJdkMacArm64"), file("$jdkCacheDir/mac-arm64"), true)
 
+tasks.register("bundleLinuxSnap") {
+  dependsOn "bundleLinuxDir"
+  outputs.file rootProject.file("dist/octodraw-dist-${bundleVersion}-linux.snap")
+  doLast {
+    if (!os.contains("linux")) {
+      throw new GradleException("Snap packaging is only supported on Linux hosts.")
+    }
+    def mksquashfs = ["bash", "-lc", "command -v mksquashfs >/dev/null 2>&1"]
+    def probe = exec {
+      ignoreExitValue = true
+      commandLine mksquashfs
+    }
+    if (probe.exitValue != 0) {
+      throw new GradleException("mksquashfs not found. Install squashfs-tools to build the Snap package.")
+    }
+    def sourceDir = rootProject.file("dist/octodraw-dist-${bundleVersion}-linux")
+    if (!sourceDir.exists()) {
+      throw new GradleException("Linux bundle directory not found: ${sourceDir}")
+    }
+    def snapRoot = file("$buildDir/snap/octodraw")
+    delete snapRoot
+    copy {
+      from(sourceDir)
+      into(snapRoot)
+    }
+    createSnapMetadata(snapRoot)
+    def outFile = rootProject.file("dist/octodraw-dist-${bundleVersion}-linux.snap")
+    delete outFile
+    exec {
+      commandLine "mksquashfs", snapRoot.absolutePath, outFile.absolutePath, "-noappend", "-comp", "xz", "-all-root", "-no-xattrs"
+    }
+  }
+}
+
 tasks.register("bundleAll") {
   dependsOn "bundleLinuxTar", "bundleWin", "bundleMacArm64Tar"
 }
@@ -608,7 +687,7 @@ tasks.register("bundleLocal") {
   } else if (osName.contains("mac")) {
     dependsOn "bundleMacArm64Tar"
   } else {
-    dependsOn "bundleLinuxTar"
+    dependsOn "bundleLinuxTar", "bundleLinuxSnap"
   }
 }
 
@@ -629,4 +708,7 @@ tasks.register("bundleLocalDir") {
 
 tasks.register("dev") {
   dependsOn "bundleLocalDir"
+  if (os.contains("linux")) {
+    dependsOn "bundleLinuxSnap"
+  }
 }

@@ -27,13 +27,18 @@ jobs:
         with:
           distribution: "temurin"
           java-version: "21"
-      - name: Build Linux bundle + JVM jars
-        run: ./gradlew :lwjgl3:bundleLinuxTar :lwjgl3:jarLinux :core:pluginApiJar -PreleaseNumber="${{ inputs.tag }}"
+      - name: Install Snap packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y squashfs-tools
+      - name: Build Linux bundle + Snap + JVM jars
+        run: ./gradlew :lwjgl3:bundleLinuxTar :lwjgl3:bundleLinuxSnap :lwjgl3:jarLinux :core:pluginApiJar -PreleaseNumber="${{ inputs.tag }}"
       - uses: actions/upload-artifact@v4
         with:
           name: octodraw-linux
           path: |
             dist/*.tar.gz
+            dist/*.snap
             lwjgl3/build/libs/*.jar
             core/build/libs/octodraw-plugin*.jar
 
@@ -369,7 +374,7 @@ jobs:
           else
             gh release edit "$TAG" --draft="$DRAFT" --prerelease="$PRERELEASE"
           fi
-          files=$(find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.jar" -o -name "*.msi" -o -name "*.msix" -o -name "*.apk" -o -name "*.aab" \))
+          files=$(find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.snap" -o -name "*.jar" -o -name "*.msi" -o -name "*.msix" -o -name "*.apk" -o -name "*.aab" \))
           if [ -z "$files" ]; then
             echo "No release artifacts found."
             exit 1
