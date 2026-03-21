@@ -426,14 +426,14 @@ version: "${bundleVersion}"
 summary: 3D drafting and modeling tool
 description: |
   Octodraw is a 3D drafting and modeling application.
+architectures:
+  - amd64
 base: core22
 grade: stable
 confinement: strict
-icon: meta/gui/icon.png
 apps:
   octodraw:
     command: octodraw-jre
-    desktop: meta/gui/octodraw.desktop
     environment:
       OCTODRAW_PLUGINS_DIR: \$SNAP_USER_COMMON/plugins
     plugs:
@@ -680,6 +680,7 @@ tasks.register("bundleLinuxSnap") {
       snapRoot.absolutePath,
       outFile.absolutePath,
       "-noappend",
+      "-no-fragments",
       "-comp",
       "xz",
       "-all-root",

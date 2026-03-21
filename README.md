@@ -2,14 +2,28 @@
 
 # ![Octodraw app icon](assets/appicon.png) Octodraw
 
+
+
 ![splash.11.png](docs/splash.11.png)
 
 Octodraw is a Kotlin + libGDX desktop modeler for fast, direct 3D sketching. It focuses on edges, planar faces, and tool-driven workflows with precise snapping, groups (objects), and a live Groovy console for power users.
 
-Android builds are available, but the Android experience is currently optimized for external mouse + keyboard (touch-only use is limited).
+Android builds are available, the Android experience is currently optimized for external mouse + keyboard (touch-only use is limited).
 
 ![img_8.png](docs/img_8.png)
 ![Screenshot placeholder: Console TUI](docs/images/img_1c.png)
+
+
+
+![img_12.png](images/img_12.png)
+
+[![Get it from the Snap Store](https://snapcraft.io/en/dark/install.svg)](https://snapcraft.io/octodraw)
+<a href="https://get.microsoft.com/installer/download/9pgzhnkds3px?referrer=appbadge" target="_self" >
+<img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/>
+</a>
+<a href="https://play.google.com/store/apps/details?id=com.github.alfu32.sketch">
+<img src="google-play-badge.svg" alt="Get it on Google Play">
+</a>
 
 ## Highlights
 
