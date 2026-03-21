@@ -5313,12 +5313,9 @@ class SketchUiOverlay(
         val width = if (stage.viewport.screenWidth > 0) stage.viewport.screenWidth.toFloat() else Gdx.graphics.width.toFloat()
         val height = if (stage.viewport.screenHeight > 0) stage.viewport.screenHeight.toFloat() else Gdx.graphics.height.toFloat()
         val margin = toolbarLayoutMargin
-        val gapX = toolbarLayoutGap
-        val gapY = toolbarLayoutGap
-        var x = margin
-        var yTop = height - margin
-        var rowHeight = 0f
+        val gap = toolbarLayoutGap
         val rightLimit = availableToolbarRightEdge(width, margin)
+        val unsavedEntries = mutableListOf<Pair<String, CollapsibleWindow>>()
 
         orderedToolbarEntries().forEach { (toolbarId, window) ->
             if (!window.isVisible) {
@@ -5341,17 +5338,30 @@ class SketchUiOverlay(
                 window.setPosition(restoredX, restoredBottomY)
                 clampToolbarWindowToViewport(window, width, height, margin)
             } else {
-                if (x > margin && x + window.width > rightLimit) {
-                    x = margin
-                    yTop -= rowHeight + gapY
-                    rowHeight = 0f
-                }
-                window.setPosition(x, yTop - window.height)
-                x += window.width + gapX
-                rowHeight = kotlin.math.max(rowHeight, window.height)
+                unsavedEntries += toolbarId to window
             }
             window.toFront()
             toolbarId?.let { saveToolbarState(it, window) }
+        }
+
+        var yTop = height - margin
+        horizontalToolbarRows(
+            entries = visibleToolbarEntriesSortedByWidthDescending()
+                .filter { (toolbarId, _) -> unsavedEntries.any { it.first == toolbarId } },
+            usableWidth = (rightLimit - margin).coerceAtLeast(1f),
+            gap = gap
+        ).forEach { row ->
+            var x = margin
+            var rowHeight = 0f
+            row.entries.forEach { (toolbarId, window) ->
+                window.setPosition(x, yTop - window.height)
+                clampToolbarWindowToViewport(window, width, height, margin)
+                window.toFront()
+                saveToolbarState(toolbarId, window)
+                x += window.width + gap
+                rowHeight = kotlin.math.max(rowHeight, window.height)
+            }
+            yTop -= rowHeight + gap
         }
     }
 
@@ -5364,9 +5374,14 @@ class SketchUiOverlay(
             .sortedBy { it.key }
             .forEach { (pluginId, window) ->
                 toolbarEntries.add(pluginToolbarStateId(pluginId) to window)
-            }
+        }
         return toolbarEntries
     }
+
+    private data class ToolbarFlowRow(
+        val entries: MutableList<Pair<String, CollapsibleWindow>> = mutableListOf(),
+        var width: Float = 0f
+    )
 
     private fun availableToolbarRightEdge(viewportWidth: Float, margin: Float): Float {
         return if (::rightSidePanel.isInitialized && rightSidePanel.isVisible) {
@@ -5376,32 +5391,68 @@ class SketchUiOverlay(
         }
     }
 
+    private fun visibleToolbarEntries(): List<Pair<String, CollapsibleWindow>> {
+        return orderedToolbarEntries().mapNotNull { (toolbarId, window) ->
+            if (!window.isVisible) {
+                null
+            } else {
+                window.invalidateHierarchy()
+                window.pack()
+                toolbarId to window
+            }
+        }
+    }
+
+    private fun visibleToolbarEntriesSortedByWidthDescending(): List<Pair<String, CollapsibleWindow>> {
+        return visibleToolbarEntries()
+            .sortedWith(
+                compareByDescending<Pair<String, CollapsibleWindow>> { (_, window) -> window.width }
+                    .thenBy { (toolbarId, _) -> toolbarId }
+            )
+    }
+
+    private fun horizontalToolbarRows(
+        entries: List<Pair<String, CollapsibleWindow>>,
+        usableWidth: Float,
+        gap: Float
+    ): List<ToolbarFlowRow> {
+        val rows = mutableListOf<ToolbarFlowRow>()
+        entries.forEach { entry ->
+            val entryWidth = entry.second.width
+            val targetRow = rows.firstOrNull { row ->
+                val nextWidth = if (row.entries.isEmpty()) entryWidth else row.width + gap + entryWidth
+                nextWidth <= usableWidth
+            }
+            if (targetRow != null) {
+                targetRow.entries += entry
+                targetRow.width = if (targetRow.entries.size == 1) entryWidth else targetRow.width + gap + entryWidth
+            } else {
+                rows += ToolbarFlowRow(mutableListOf(entry), entryWidth)
+            }
+        }
+        return rows
+    }
+
     private fun arrangeToolbarsHorizontalFlow() {
         val width = if (stage.viewport.screenWidth > 0) stage.viewport.screenWidth.toFloat() else Gdx.graphics.width.toFloat()
         val height = if (stage.viewport.screenHeight > 0) stage.viewport.screenHeight.toFloat() else Gdx.graphics.height.toFloat()
         val margin = toolbarLayoutMargin
         val gap = toolbarLayoutGap
         val rightLimit = availableToolbarRightEdge(width, margin)
-        var x = margin
+        val usableWidth = (rightLimit - margin).coerceAtLeast(1f)
         var yTop = height - margin
-        var rowHeight = 0f
-        orderedToolbarEntries().forEach { (toolbarId, window) ->
-            if (!window.isVisible) {
-                return@forEach
+        horizontalToolbarRows(visibleToolbarEntriesSortedByWidthDescending(), usableWidth, gap).forEach { row ->
+            var x = margin
+            var rowHeight = 0f
+            row.entries.forEach { (toolbarId, window) ->
+                window.setPosition(x, yTop - window.height)
+                clampToolbarWindowToViewport(window, width, height, margin)
+                window.toFront()
+                saveToolbarState(toolbarId, window)
+                x += window.width + gap
+                rowHeight = max(rowHeight, window.height)
             }
-            window.invalidateHierarchy()
-            window.pack()
-            if (x > margin && x + window.width > rightLimit) {
-                x = margin
-                yTop -= rowHeight + gap
-                rowHeight = 0f
-            }
-            window.setPosition(x, yTop - window.height)
-            clampToolbarWindowToViewport(window, width, height, margin)
-            window.toFront()
-            saveToolbarState(toolbarId, window)
-            x += window.width + gap
-            rowHeight = max(rowHeight, window.height)
+            yTop -= rowHeight + gap
         }
         toolbarsPositioned = true
     }
@@ -5414,12 +5465,7 @@ class SketchUiOverlay(
         var x = margin
         var yTop = height - margin
         var columnWidth = 0f
-        orderedToolbarEntries().forEach { (toolbarId, window) ->
-            if (!window.isVisible) {
-                return@forEach
-            }
-            window.invalidateHierarchy()
-            window.pack()
+        visibleToolbarEntriesSortedByWidthDescending().forEach { (toolbarId, window) ->
             if (yTop < height - margin && yTop - window.height < margin) {
                 x += columnWidth + gap
                 yTop = height - margin

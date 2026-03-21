@@ -183,6 +183,11 @@ class Main(
 
     private data class FeedbackWorldLine(val start: Vector3, val end: Vector3)
     private data class PendingTutorialPreviewCapture(val stepIndex: Int)
+    private sealed interface PendingPngExport {
+        data class FileTarget(val target: File) : PendingPngExport
+        data class WebTarget(val targetName: String, val bridge: WebRuntimeBridge) : PendingPngExport
+        data class AndroidTarget(val targetName: String, val uri: String, val bridge: AndroidSafBridge) : PendingPngExport
+    }
 
     private data class EntityDisplayState(
         var draw: Boolean = true,
@@ -320,6 +325,7 @@ class Main(
     private val shadowBoundsDimensionsTmp = Vector3()
     private var instanceGeometryDirty = true
     private val capturedFeedbackLines = mutableListOf<FeedbackWorldLine>()
+    private val pendingPngExports = ArrayDeque<PendingPngExport>()
     private val pendingTutorialPreviewCaptures = ArrayDeque<PendingTutorialPreviewCapture>()
     private var pendingTutorialPreviewDelayFrames = 0
     private val tutorialThumbnailWidth = 380
@@ -2679,6 +2685,7 @@ class Main(
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
         Gdx.gl.glEnable(GL20.GL_BLEND)
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
+        processPendingPngExports()
         drawAnnotations2D()
         drawSelectedSegments2DOverlay()
         drawCursor2DOverlay()
@@ -3865,6 +3872,7 @@ class Main(
         val defaultExtension: String,
         val format: MeshIo.ExportFormat? = null,
         val ifcExport: Boolean = false,
+        val pngScreenshotExport: Boolean = false,
         val unsupportedReason: String? = null
     )
 
@@ -3937,6 +3945,15 @@ class Main(
         )
     )
 
+    private val pngExportOption = MeshExportOption(
+        label = "PNG Screenshot (*.png)",
+        extensions = listOf("png"),
+        defaultExtension = "png",
+        pngScreenshotExport = true
+    )
+
+    private val exportOptions = meshExportOptions + pngExportOption
+
     private fun showImportMeshDialog() {
         if (BuildFlags.WEB_BUILD) {
             showWebImportMeshDialog()
@@ -3992,19 +4009,28 @@ class Main(
                 return
             }
         }
-        val option = chooseDesktopFileDialogOption(
-            title = "Export Mesh",
-            message = "Choose the mesh export format before opening the system dialog.",
-            options = meshExportOptions.map { option ->
-                DesktopFileDialogOption(option.label, option.extensions.toSet(), option.defaultExtension)
-            }
+        val desktopOptions = exportOptions.map { exportOption ->
+            DesktopFileDialogOption(
+                exportOption.label,
+                exportOption.extensions.toSet(),
+                exportOption.defaultExtension
+            )
+        }
+        val selectedOption = chooseDesktopFileDialogOption(
+            title = "Export",
+            message = "Choose the export format before opening the system dialog.",
+            options = desktopOptions
         ) ?: run {
             statusModel.message = "Export canceled."
             return
         }
+        val option = exportOptions.firstOrNull { it.label == selectedOption.label } ?: run {
+            statusModel.message = "Export failed: unknown export format."
+            return
+        }
         val statusBefore = statusModel.message
         val requested = showDesktopFileDialog(
-            title = "Export Mesh - ${option.label}",
+            title = "Export - ${option.label}",
             mode = FileDialog.SAVE,
             defaultFileName = replaceFileExtension(
                 if (::modelFile.isInitialized) "${modelFile.nameWithoutExtension}.obj" else "mesh.obj",
@@ -4017,7 +4043,11 @@ class Main(
             }
             return
         }
-        exportMeshToFile(requested.absoluteFile)
+        if (option.pngScreenshotExport) {
+            schedulePngExportToFile(requested.absoluteFile)
+        } else {
+            exportMeshToFile(requested.absoluteFile)
+        }
     }
 
     private fun webMeshAcceptFilter(): String {
@@ -4029,6 +4059,7 @@ class Main(
 
     private fun webMimeTypeForMeshOption(option: MeshExportOption): String {
         return when {
+            option.pngScreenshotExport -> "image/png"
             option.ifcExport -> "application/octet-stream"
             option.defaultExtension == "obj" -> "text/plain"
             option.defaultExtension == "gltf" -> "model/gltf+json"
@@ -4067,21 +4098,25 @@ class Main(
             statusModel.message = "Web export is unavailable in this build."
             return
         }
-        val webOptions = meshExportOptions.filterNot { it.ifcExport }
+        val webOptions = exportOptions.filterNot { it.ifcExport }
         showMeshExportOptionDialog(webOptions) { option ->
             val suggestedBase = if (::modelFile.isInitialized) modelFile.nameWithoutExtension else "mesh"
             val suggestedName = "$suggestedBase.${option.defaultExtension}"
-            val payload = createWebExportPayloadForOption(option) ?: return@showMeshExportOptionDialog
-            val base64 = java.util.Base64.getEncoder().encodeToString(payload.bytes)
-            bridge.saveBinaryDocument(
-                suggestedName,
-                base64,
-                webMimeTypeForMeshOption(option)
-            ) { success, message ->
-                if (success) {
-                    statusModel.message = payload.statusMessage(suggestedName)
-                } else {
-                    statusModel.message = message ?: "Export failed."
+            if (option.pngScreenshotExport) {
+                schedulePngExportToWeb(suggestedName, bridge)
+            } else {
+                val payload = createWebExportPayloadForOption(option) ?: return@showMeshExportOptionDialog
+                val base64 = java.util.Base64.getEncoder().encodeToString(payload.bytes)
+                bridge.saveBinaryDocument(
+                    suggestedName,
+                    base64,
+                    webMimeTypeForMeshOption(option)
+                ) { success, message ->
+                    if (success) {
+                        statusModel.message = payload.statusMessage(suggestedName)
+                    } else {
+                        statusModel.message = message ?: "Export failed."
+                    }
                 }
             }
         }
@@ -4107,7 +4142,7 @@ class Main(
 
     private fun showAndroidSafExportMeshDialog(): Boolean {
         val bridge = AndroidSaf.bridge ?: return false
-        showMeshExportOptionDialog { option ->
+        showMeshExportOptionDialog(exportOptions) { option ->
             val suggestedBase = if (::modelFile.isInitialized) modelFile.nameWithoutExtension else "mesh"
             val suggestedName = "$suggestedBase.${option.defaultExtension}"
             bridge.createDocument(suggestedName) { uri, displayName ->
@@ -4116,6 +4151,10 @@ class Main(
                     return@createDocument
                 }
                 val targetName = displayName ?: suggestedName
+                if (option.pngScreenshotExport) {
+                    schedulePngExportToAndroid(targetName, uri, bridge)
+                    return@createDocument
+                }
                 val extension = targetName.substringAfterLast('.', "").lowercase()
                 val optionForExtension = meshExportOptionForExtension(extension) ?: option
                 val payload = createExportPayloadForOption(optionForExtension) ?: return@createDocument
@@ -4137,11 +4176,11 @@ class Main(
     }
 
     private fun showMeshExportOptionDialog(
-        options: List<MeshExportOption> = meshExportOptions,
+        options: List<MeshExportOption> = exportOptions,
         onSelected: (MeshExportOption) -> Unit
     ) {
         val stage = uiOverlay.stage
-        val dialog = com.kotcrab.vis.ui.widget.VisWindow("Export Mesh Format", true).apply {
+        val dialog = com.kotcrab.vis.ui.widget.VisWindow("Export Format", true).apply {
             isModal = true
             isMovable = true
             isResizable = false
@@ -4149,7 +4188,7 @@ class Main(
         }
         val content = com.kotcrab.vis.ui.widget.VisTable()
         content.defaults().pad(4f).growX()
-        content.add(com.kotcrab.vis.ui.widget.VisLabel("Choose format (extension drives writer):")).left().row()
+        content.add(com.kotcrab.vis.ui.widget.VisLabel("Choose format (extension drives export type):")).left().row()
         options.forEach { option ->
             val button = com.kotcrab.vis.ui.widget.VisTextButton(option.label)
             button.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
@@ -4211,6 +4250,10 @@ class Main(
             statusModel.message = "Export failed: unsupported extension '${target.extension}'."
             return
         }
+        if (option.pngScreenshotExport) {
+            schedulePngExportToFile(target)
+            return
+        }
         val export = createExportPayloadForOption(option) ?: return
         try {
             target.parentFile?.mkdirs()
@@ -4223,7 +4266,7 @@ class Main(
 
     private fun meshExportOptionForExtension(extension: String): MeshExportOption? {
         val ext = extension.lowercase()
-        return meshExportOptions.firstOrNull { option ->
+        return exportOptions.firstOrNull { option ->
             option.extensions.any { candidate -> candidate.equals(ext, ignoreCase = true) }
         }
     }
@@ -4499,22 +4542,101 @@ class Main(
         }
     }
 
-    private fun writeScreenshotFile(outFile: File): Throwable? {
+    private fun schedulePngExportToFile(requestedFile: File) {
+        val target = if (requestedFile.extension.equals("png", ignoreCase = true)) {
+            requestedFile.absoluteFile
+        } else {
+            File(requestedFile.parentFile, "${requestedFile.name}.png").absoluteFile
+        }
+        pendingPngExports.addLast(PendingPngExport.FileTarget(target))
+        statusModel.message = "PNG export scheduled."
+    }
+
+    private fun schedulePngExportToWeb(fileName: String, bridge: WebRuntimeBridge) {
+        pendingPngExports.addLast(PendingPngExport.WebTarget(fileName, bridge))
+        statusModel.message = "PNG export scheduled."
+    }
+
+    private fun schedulePngExportToAndroid(fileName: String, uri: String, bridge: AndroidSafBridge) {
+        pendingPngExports.addLast(PendingPngExport.AndroidTarget(fileName, uri, bridge))
+        statusModel.message = "PNG export scheduled."
+    }
+
+    private fun captureScreenshotPngBytes(): ByteArray? {
         var pixmap: Pixmap? = null
         var pngWriter: PixmapIO.PNG? = null
+        val output = ByteArrayOutputStream()
         return try {
             val width = Gdx.graphics.backBufferWidth.coerceAtLeast(1)
             val height = Gdx.graphics.backBufferHeight.coerceAtLeast(1)
             pixmap = ScreenUtils.getFrameBufferPixmap(0, 0, width, height)
             pngWriter = PixmapIO.PNG((width * height * 1.5f).toInt().coerceAtLeast(1024))
-            pngWriter?.setFlipY(true)
-            pngWriter?.write(FileHandle(outFile), pixmap)
+            pngWriter.setFlipY(true)
+            pngWriter.write(output, pixmap)
+            output.toByteArray()
+        } catch (_: Throwable) {
             null
-        } catch (t: Throwable) {
-            t
         } finally {
             pngWriter?.dispose()
             pixmap?.dispose()
+            output.close()
+        }
+    }
+
+    private fun writeScreenshotFile(outFile: File): Throwable? {
+        return try {
+            val bytes = captureScreenshotPngBytes() ?: return IllegalStateException("Unable to capture screenshot buffer.")
+            outFile.parentFile?.mkdirs()
+            outFile.writeBytes(bytes)
+            null
+        } catch (t: Throwable) {
+            t
+        }
+    }
+
+    private fun processPendingPngExports() {
+        if (pendingPngExports.isEmpty()) {
+            return
+        }
+        val bytes = captureScreenshotPngBytes() ?: run {
+            statusModel.message = "PNG export failed: unable to capture screenshot buffer."
+            pendingPngExports.clear()
+            return
+        }
+        while (pendingPngExports.isNotEmpty()) {
+            when (val pending = pendingPngExports.removeFirst()) {
+                is PendingPngExport.FileTarget -> {
+                    try {
+                        pending.target.parentFile?.mkdirs()
+                        pending.target.writeBytes(bytes)
+                        statusModel.message = "Exported PNG screenshot to ${pending.target.absolutePath}."
+                    } catch (t: Throwable) {
+                        statusModel.message = "PNG export failed: ${t.message ?: t.javaClass.simpleName}"
+                    }
+                }
+                is PendingPngExport.WebTarget -> {
+                    val base64 = Base64.getEncoder().encodeToString(bytes)
+                    pending.bridge.saveBinaryDocument(
+                        pending.targetName,
+                        base64,
+                        "image/png"
+                    ) { success, message ->
+                        statusModel.message = if (success) {
+                            "Exported PNG screenshot to ${pending.targetName}."
+                        } else {
+                            message ?: "PNG export failed."
+                        }
+                    }
+                }
+                is PendingPngExport.AndroidTarget -> {
+                    val success = pending.bridge.writeBytes(pending.uri, bytes)
+                    statusModel.message = if (success) {
+                        "Exported PNG screenshot to ${pending.targetName}."
+                    } else {
+                        "PNG export failed: cannot write selected destination."
+                    }
+                }
+            }
         }
     }
 
