@@ -650,7 +650,7 @@ tasks.register("bundleLinuxSnap") {
       throw new GradleException("Snap packaging is only supported on Linux hosts.")
     }
     def mksquashfs = ["bash", "-lc", "command -v mksquashfs >/dev/null 2>&1"]
-    def probe = exec {
+    def probe = project.exec {
       ignoreExitValue = true
       commandLine mksquashfs
     }
@@ -662,15 +662,15 @@ tasks.register("bundleLinuxSnap") {
       throw new GradleException("Linux bundle directory not found: ${sourceDir}")
     }
     def snapRoot = file("$buildDir/snap/octodraw")
-    delete snapRoot
-    copy {
+    project.delete(snapRoot)
+    project.copy {
       from(sourceDir)
       into(snapRoot)
     }
     createSnapMetadata(snapRoot)
     def outFile = rootProject.file("dist/octodraw-dist-${bundleVersion}-linux.snap")
-    delete outFile
-    exec {
+    project.delete(outFile)
+    project.exec {
       commandLine "mksquashfs", snapRoot.absolutePath, outFile.absolutePath, "-noappend", "-comp", "xz", "-all-root", "-no-xattrs"
     }
   }
