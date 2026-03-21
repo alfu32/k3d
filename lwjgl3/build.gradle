@@ -649,12 +649,17 @@ tasks.register("bundleLinuxSnap") {
     if (!os.contains("linux")) {
       throw new GradleException("Snap packaging is only supported on Linux hosts.")
     }
-    def mksquashfs = ["bash", "-lc", "command -v mksquashfs >/dev/null 2>&1"]
-    def probe = project.exec {
-      ignoreExitValue = true
-      commandLine mksquashfs
+    def probe = null
+    try {
+      probe = new ProcessBuilder("mksquashfs", "-version")
+        .directory(project.projectDir)
+        .redirectErrorStream(true)
+        .start()
+      probe.inputStream.text
+    } catch (IOException ignored) {
+      probe = null
     }
-    if (probe.exitValue != 0) {
+    if (probe == null || probe.waitFor() != 0) {
       throw new GradleException("mksquashfs not found. Install squashfs-tools to build the Snap package.")
     }
     def sourceDir = rootProject.file("dist/octodraw-dist-${bundleVersion}-linux")
@@ -670,8 +675,21 @@ tasks.register("bundleLinuxSnap") {
     createSnapMetadata(snapRoot)
     def outFile = rootProject.file("dist/octodraw-dist-${bundleVersion}-linux.snap")
     project.delete(outFile)
-    project.exec {
-      commandLine "mksquashfs", snapRoot.absolutePath, outFile.absolutePath, "-noappend", "-comp", "xz", "-all-root", "-no-xattrs"
+    def pack = new ProcessBuilder(
+      "mksquashfs",
+      snapRoot.absolutePath,
+      outFile.absolutePath,
+      "-noappend",
+      "-comp",
+      "xz",
+      "-all-root",
+      "-no-xattrs"
+    )
+      .directory(project.projectDir)
+      .inheritIO()
+      .start()
+    if (pack.waitFor() != 0) {
+      throw new GradleException("mksquashfs failed while building ${outFile.name}.")
     }
   }
 }
