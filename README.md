@@ -18,11 +18,9 @@ Android builds are available, the Android experience is currently optimized for 
 ![img_12.png](images/img_12.png)
 
 [![Get it from the Snap Store](https://snapcraft.io/en/dark/install.svg)](https://snapcraft.io/octodraw)
+[![Get it from Google Play](docs/google-play-badge.svg)](https://play.google.com/store/apps/details?id=com.github.alfu32.sketch)
 <a href="https://get.microsoft.com/installer/download/9pgzhnkds3px?referrer=appbadge" target="_self" >
 <img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/>
-</a>
-<a href="https://play.google.com/store/apps/details?id=com.github.alfu32.sketch">
-<img src="google-play-badge.svg" alt="Get it on Google Play">
 </a>
 
 ## Highlights
