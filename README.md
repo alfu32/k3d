@@ -1,6 +1,6 @@
 
 
-# ![Octodraw app icon](assets/appicon.png) Octodraw
+<h1><img src="assets/appicon.png" width="32"/> Octodraw</h1>
 
 
 
