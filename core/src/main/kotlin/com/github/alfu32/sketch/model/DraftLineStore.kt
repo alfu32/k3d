@@ -400,7 +400,12 @@ class DraftLineStore {
     private fun snapToExistingEndpoint(point: Vector3, include: (Segment) -> Boolean = { true }): Vector3? {
         val min = Vector3(point.x - epsilon, point.y - epsilon, point.z - epsilon)
         val max = Vector3(point.x + epsilon, point.y + epsilon, point.z + epsilon)
-        segmentsIntersectingQuery(min, max).forEach { segment ->
+        val candidates = if (spatialIndexDirty) {
+            segmentsIntersectingLinear(min, max)
+        } else {
+            segmentsIntersectingQuery(min, max)
+        }
+        candidates.forEach { segment ->
             if (!include(segment)) {
                 return@forEach
             }
@@ -442,6 +447,10 @@ class DraftLineStore {
     fun rayCandidates(ray: com.badlogic.gdx.math.collision.Ray): List<Segment> = segmentCandidatesForRay(ray)
 
     fun aabbCandidates(min: Vector3, max: Vector3): List<Segment> = segmentsIntersectingQuery(min, max)
+
+    private fun segmentsIntersectingLinear(min: Vector3, max: Vector3): List<Segment> {
+        return segments.filter { segment -> segmentAabbIntersects(segment, min, max) }
+    }
 
     private fun ensureSpatialIndex() {
         if (!spatialIndexDirty) {
@@ -495,6 +504,18 @@ class DraftLineStore {
     private fun segmentsIntersectingQuery(min: Vector3, max: Vector3): List<Segment> {
         ensureSpatialIndex()
         return if (hasSpatialBounds) spatialIndex.queryAabb(min, max) else emptyList()
+    }
+
+    private fun segmentAabbIntersects(segment: Segment, min: Vector3, max: Vector3): Boolean {
+        val sx0 = kotlin.math.min(segment.start.x, segment.end.x) - epsilon
+        val sy0 = kotlin.math.min(segment.start.y, segment.end.y) - epsilon
+        val sz0 = kotlin.math.min(segment.start.z, segment.end.z) - epsilon
+        val sx1 = kotlin.math.max(segment.start.x, segment.end.x) + epsilon
+        val sy1 = kotlin.math.max(segment.start.y, segment.end.y) + epsilon
+        val sz1 = kotlin.math.max(segment.start.z, segment.end.z) + epsilon
+        return sx1 >= min.x && sx0 <= max.x &&
+            sy1 >= min.y && sy0 <= max.y &&
+            sz1 >= min.z && sz0 <= max.z
     }
 
     private fun segmentMin(segment: Segment): Vector3 {
@@ -658,7 +679,11 @@ class DraftLineStore {
             kotlin.math.max(newStart.y, newEnd.y) + epsilon,
             kotlin.math.max(newStart.z, newEnd.z) + epsilon
         )
-        val candidates = segmentsIntersectingQuery(segmentMin, segmentMax)
+        val candidates = if (spatialIndexDirty) {
+            segmentsIntersectingLinear(segmentMin, segmentMax)
+        } else {
+            segmentsIntersectingQuery(segmentMin, segmentMax)
+        }
 
         candidates.forEach { existing ->
             if (!include(existing)) {

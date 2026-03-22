@@ -1591,10 +1591,7 @@ class SelectTool(
     private fun selectGroupsInVolume(min: Vector3, max: Vector3): Int {
         scene.clearGroupSelection()
         var count = 0
-        val indexedCandidates = scene.queryGroupsByAabb(min, max, includeRoot = false)
-            .filter { it.parent == scene.activeGroup() }
-        val candidates = if (indexedCandidates.isNotEmpty()) indexedCandidates else scene.groupsInActiveContext()
-        candidates.forEach { group ->
+        scene.groupsInActiveContext().forEach { group ->
             val bounds = group.worldBounds() ?: return@forEach
             if (aabbIntersects(bounds.min, bounds.max, min, max)) {
                 if (scene.addGroupSelection(group)) {

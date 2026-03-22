@@ -2642,8 +2642,8 @@ class Main(
             faceMeshDirty = false
             shadowPassDirty = true
         }
-        val visibleRenderableGroups = scene.queryGroupsByFrustum(activeCamera, includeRoot = false)
-        visibleRenderableGroupIds = visibleRenderableGroups.map { it.id }.toSet()
+        syncGroupFaceBundles()
+        visibleRenderableGroupIds = emptySet()
         updateShadowCameraFromModelBounds()
         if (shadowPassDirty) {
             renderShadowPass()
@@ -2665,7 +2665,7 @@ class Main(
         modelBatch.begin(activeCamera)
         modelBatch.render(faceBackRenderable, environment)
         modelBatch.render(faceFrontRenderable, environment)
-        visibleRenderableGroups.forEach { group ->
+        scene.walkGroups(scene.root) { group ->
             val bundle = ensureGroupFaceBundle(group)
             modelBatch.render(bundle.backRenderable, environment)
             modelBatch.render(bundle.frontRenderable, environment)
@@ -5231,9 +5231,6 @@ class Main(
             return isBasicKindVisible(BasicSelectionFilterKind.EDGE)
         }
         scene.walkGroups(scene.root) { group ->
-            if (group.id !in visibleRenderableGroupIds) {
-                return@walkGroups
-            }
             val selected = group.lineStore.getSelected()
             group.lineStore.getSegments().forEach { segment ->
                 if (!shouldDrawSegment(group, segment)) {
@@ -10026,9 +10023,14 @@ class Main(
         fun mix(v: Long) {
             h = (h xor v) * 0x100000001b3L
         }
+        fun mixFloat(v: Float) {
+            mix(java.lang.Float.floatToIntBits(v).toLong())
+        }
         mix(group.faceStore.visualVersion())
         mix(group.id.hashCode().toLong())
         mix(if (shouldIncludeGroupTriangle(group)) 1L else 0L)
+        val worldMatrix = group.worldMatrix().`val`
+        worldMatrix.forEach(::mixFloat)
         return h
     }
 
