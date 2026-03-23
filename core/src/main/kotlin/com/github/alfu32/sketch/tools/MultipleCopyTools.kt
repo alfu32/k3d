@@ -302,6 +302,143 @@ private fun renderMultiplePreview(
     }
 }
 
+private fun renderTranslatedMultiplePreview(
+    scene: GroupScene,
+    group: GroupScene.GroupNode,
+    renderer: ShapeRenderer,
+    offsetsWorld: List<Vector3>,
+    offsetsLocal: List<Vector3>
+) {
+    if (offsetsWorld.isEmpty() || offsetsLocal.isEmpty()) {
+        return
+    }
+    renderer.color = ToolFeedbackColors.TERTIARY
+
+    val selectedFaces = group.faceStore.getSelected().toList()
+    val selectedEdges = group.lineStore.getSelected().toList()
+    val selectedDims = group.dimensionStore.getSelected().toList()
+    val selectedTexts = group.textStore.getSelected().toList()
+    val selectedGroups = scene.selectedGroups().toList()
+    val architectureBounds = scene.selectedArchitectureBounds(group)
+    val hvacBounds = scene.selectedHvacBounds(group)
+    val selectedVoxels = if (scene.isVoxelGroup(group)) scene.selectedVoxels(group).toList() else emptyList()
+
+    val voxelBoundsCorners = if (selectedVoxels.isNotEmpty()) {
+        var minX = Int.MAX_VALUE
+        var minY = Int.MAX_VALUE
+        var minZ = Int.MAX_VALUE
+        var maxX = Int.MIN_VALUE
+        var maxY = Int.MIN_VALUE
+        var maxZ = Int.MIN_VALUE
+        selectedVoxels.forEach { key ->
+            minX = kotlin.math.min(minX, key.x)
+            minY = kotlin.math.min(minY, key.y)
+            minZ = kotlin.math.min(minZ, key.z)
+            maxX = kotlin.math.max(maxX, key.x + 1)
+            maxY = kotlin.math.max(maxY, key.y + 1)
+            maxZ = kotlin.math.max(maxZ, key.z + 1)
+        }
+        arrayOf(
+            Vector3(minX.toFloat(), minY.toFloat(), minZ.toFloat()),
+            Vector3(minX.toFloat(), minY.toFloat(), maxZ.toFloat()),
+            Vector3(minX.toFloat(), maxY.toFloat(), minZ.toFloat()),
+            Vector3(minX.toFloat(), maxY.toFloat(), maxZ.toFloat()),
+            Vector3(maxX.toFloat(), minY.toFloat(), minZ.toFloat()),
+            Vector3(maxX.toFloat(), minY.toFloat(), maxZ.toFloat()),
+            Vector3(maxX.toFloat(), maxY.toFloat(), minZ.toFloat()),
+            Vector3(maxX.toFloat(), maxY.toFloat(), maxZ.toFloat())
+        )
+    } else {
+        emptyArray()
+    }
+
+    offsetsWorld.zip(offsetsLocal).forEach { (offsetWorld, offsetLocal) ->
+        selectedFaces.forEach { tri ->
+            val a = group.toWorld(Vector3(tri.a).add(offsetLocal))
+            val b = group.toWorld(Vector3(tri.b).add(offsetLocal))
+            val c = group.toWorld(Vector3(tri.c).add(offsetLocal))
+            renderer.line(a.x, a.y, a.z, b.x, b.y, b.z)
+            renderer.line(b.x, b.y, b.z, c.x, c.y, c.z)
+            renderer.line(c.x, c.y, c.z, a.x, a.y, a.z)
+        }
+        selectedEdges.forEach { segment ->
+            val a = group.toWorld(Vector3(segment.start).add(offsetLocal))
+            val b = group.toWorld(Vector3(segment.end).add(offsetLocal))
+            renderer.line(a.x, a.y, a.z, b.x, b.y, b.z)
+        }
+        selectedDims.forEach { dim ->
+            val a = group.toWorld(Vector3(dim.start).add(offsetLocal))
+            val b = group.toWorld(Vector3(dim.end).add(offsetLocal))
+            val o = group.toWorld(Vector3(dim.offset).add(offsetLocal))
+            renderer.line(a.x, a.y, a.z, b.x, b.y, b.z)
+            renderer.line(a.x, a.y, a.z, o.x, o.y, o.z)
+            renderer.line(b.x, b.y, b.z, o.x, o.y, o.z)
+        }
+        selectedTexts.forEach { text ->
+            val p = group.toWorld(Vector3(text.position).add(offsetLocal))
+            drawCross(renderer, p, 0.12f)
+        }
+        selectedGroups.forEach { selectedGroup ->
+            val corners = selectedGroup.orientedBoundsCorners() ?: return@forEach
+            val transformed = Array(corners.size) { idx -> Vector3(corners[idx]).add(offsetWorld) }
+            drawWireBox(renderer, transformed)
+        }
+        if (architectureBounds != null) {
+            val corners = boundingCorners(architectureBounds)
+            val transformed = Array(corners.size) { idx -> Vector3(corners[idx]).add(offsetWorld) }
+            drawWireBox(renderer, transformed)
+        }
+        if (hvacBounds != null) {
+            val corners = boundingCorners(hvacBounds)
+            val transformed = Array(corners.size) { idx -> Vector3(corners[idx]).add(offsetWorld) }
+            drawWireBox(renderer, transformed)
+        }
+        if (voxelBoundsCorners.isNotEmpty()) {
+            val transformed = Array(voxelBoundsCorners.size) { idx ->
+                val local = Vector3(voxelBoundsCorners[idx]).add(offsetLocal)
+                Vector3(local.x.roundToInt().toFloat(), local.y.roundToInt().toFloat(), local.z.roundToInt().toFloat())
+            }.map { group.toWorld(it) }.toTypedArray()
+            drawWireBox(renderer, transformed)
+        }
+    }
+}
+
+private fun buildMultipleCopyStatus(label: String, copies: Int, capped: Boolean, total: MultipleCopyCounts): String {
+    return buildString {
+        append(label).append(": copies ").append(copies)
+        if (capped) append(" (capped)")
+        append(" | architecture ").append(total.architecture)
+        append(" hvac ").append(total.hvac)
+        append(" voxels ").append(total.voxels)
+        append(" edges ").append(total.edges)
+        append(" faces ").append(total.faces)
+        append(" dims ").append(total.dimensions)
+        append(" texts ").append(total.texts)
+        append(" groups ").append(total.groups)
+    }
+}
+
+private fun axisCopyCount(step: Float, span: Float): Int {
+    if (abs(step) <= MULTIPLE_COPY_EPS) {
+        return 0
+    }
+    val ratio = span / step
+    if (ratio <= 0f) {
+        return 0
+    }
+    return floor(abs(ratio)).toInt()
+}
+
+private fun cappedCopyOffsets(
+    offsetsWorld: List<Vector3>,
+    group: GroupScene.GroupNode
+): Triple<List<Vector3>, List<Vector3>, Boolean> {
+    val capped = offsetsWorld.size > MAX_MULTIPLE_COPY_STEPS
+    val limitedWorld = if (capped) offsetsWorld.take(MAX_MULTIPLE_COPY_STEPS) else offsetsWorld
+    val limitedLocal = limitedWorld.map { offset -> group.vectorToLocal(offset) }
+    return Triple(limitedWorld, limitedLocal, capped)
+}
+
 class CopyMultipleTool(
     private val scene: GroupScene
 ) : Tool {
@@ -352,63 +489,47 @@ class CopyMultipleTool(
         }
 
         val ref = u ?: return false
-        val sizePoint = v ?: return false
-        val spanPoint = Vector3(world)
-        val sizeVector = Vector3(sizePoint).sub(ref)
-        val spanVector = Vector3(spanPoint).sub(ref)
-        val spanLength = spanVector.len()
-        if (spanLength <= MULTIPLE_COPY_EPS) {
-            clearTransient()
-            status.message = "Copy multiple canceled: span is too short."
-            return true
-        }
-        val spanDir = Vector3(spanVector).scl(1f / spanLength)
-        val stepSigned = sizeVector.dot(spanDir)
-        val stepLength = abs(stepSigned)
+        val directionPoint = v ?: return false
+        val finalPoint = Vector3(world)
+        val stepWorld = Vector3(directionPoint).sub(ref)
+        val stepLength = stepWorld.len()
         if (stepLength <= MULTIPLE_COPY_EPS) {
             clearTransient()
-            status.message = "Copy multiple canceled: size projection on span is too small."
+            status.message = "Copy multiple canceled: measure is too short."
             return true
         }
-        var copies = floor(spanLength / stepLength).toInt()
-        if (copies <= 0) {
+        val direction = Vector3(stepWorld).scl(1f / stepLength)
+        val spanProjected = Vector3(finalPoint).sub(ref).dot(direction)
+        if (spanProjected <= MULTIPLE_COPY_EPS) {
             clearTransient()
-            status.message = "Copy multiple: projection does not fit into span."
+            status.message = "Copy multiple canceled: final point does not extend in the measure direction."
             return true
         }
-        var capped = false
-        if (copies > MAX_MULTIPLE_COPY_STEPS) {
-            copies = MAX_MULTIPLE_COPY_STEPS
-            capped = true
-        }
-
-        val stepWorld = Vector3(spanDir).scl(stepSigned)
         val group = scene.activeGroup()
-        val stepLocal = group.vectorToLocal(stepWorld)
+        val (offsetsWorld, offsetsLocal, capped) = cappedCopyOffsets(
+            offsetsWorld = (1..floor(spanProjected / stepLength).toInt()).map { step ->
+                Vector3(stepWorld).scl(step.toFloat())
+            },
+            group = group
+        )
+        if (offsetsWorld.isEmpty()) {
+            clearTransient()
+            status.message = "Copy multiple: measure does not fit into span."
+            return true
+        }
         val total = MultipleCopyCounts()
-        repeat(copies) {
+        offsetsWorld.zip(offsetsLocal).forEach { (offsetWorld, offsetLocal) ->
             val stepCounts = applyCopyStep(
                 scene = scene,
                 group = group,
-                pointTransformWorld = { point -> Vector3(point).add(stepWorld) },
+                pointTransformWorld = { point -> Vector3(point).add(offsetWorld) },
                 vectorTransformWorld = { vector -> Vector3(vector) },
-                pointTransformLocal = { point -> Vector3(point).add(stepLocal) },
-                pointTransformVoxelLocal = { point -> Vector3(point).add(stepLocal) }
+                pointTransformLocal = { point -> Vector3(point).add(offsetLocal) },
+                pointTransformVoxelLocal = { point -> Vector3(point).add(offsetLocal) }
             )
             mergeCounts(total, stepCounts)
         }
-        status.message = buildString {
-            append("Copy multiple: copies ").append(copies)
-            if (capped) append(" (capped)")
-            append(" | architecture ").append(total.architecture)
-            append(" hvac ").append(total.hvac)
-            append(" voxels ").append(total.voxels)
-            append(" edges ").append(total.edges)
-            append(" faces ").append(total.faces)
-            append(" dims ").append(total.dimensions)
-            append(" texts ").append(total.texts)
-            append(" groups ").append(total.groups)
-        }
+        status.message = buildMultipleCopyStatus("Copy multiple", offsetsWorld.size, capped, total)
         clearTransient()
         return true
     }
@@ -431,29 +552,19 @@ class CopyMultipleTool(
             renderer.line(ref.x, ref.y, ref.z, hover.x, hover.y, hover.z)
             val sizePoint = v
             if (sizePoint != null) {
-                val sizeVector = Vector3(sizePoint).sub(ref)
-                val spanVector = Vector3(hover).sub(ref)
-                val spanLength = spanVector.len()
-                if (spanLength > MULTIPLE_COPY_EPS) {
-                    val spanDir = Vector3(spanVector).scl(1f / spanLength)
-                    val stepSigned = sizeVector.dot(spanDir)
-                    val stepLength = abs(stepSigned)
-                    if (stepLength > MULTIPLE_COPY_EPS) {
-                        val previewCopies =
-                            floor(spanLength / stepLength).toInt().coerceAtLeast(0).coerceAtMost(MAX_MULTIPLE_COPY_PREVIEW_STEPS)
-                        if (previewCopies > 0) {
-                            val stepWorld = Vector3(spanDir).scl(stepSigned)
-                            val group = scene.activeGroup()
-                            val stepLocal = group.vectorToLocal(stepWorld)
-                            renderMultiplePreview(
-                                scene = scene,
-                                group = group,
-                                renderer = renderer,
-                                previewCopies = previewCopies,
-                                localPointTransformAtStep = { step, point -> Vector3(point).mulAdd(stepLocal, step.toFloat()) },
-                                worldPointTransformAtStep = { step, point -> Vector3(point).mulAdd(stepWorld, step.toFloat()) }
-                            )
-                        }
+                val stepWorld = Vector3(sizePoint).sub(ref)
+                val stepLength = stepWorld.len()
+                if (stepLength > MULTIPLE_COPY_EPS) {
+                    val direction = Vector3(stepWorld).scl(1f / stepLength)
+                    val spanProjected = Vector3(hover).sub(ref).dot(direction)
+                    val previewCopies = floor(spanProjected / stepLength).toInt()
+                        .coerceAtLeast(0)
+                        .coerceAtMost(MAX_MULTIPLE_COPY_PREVIEW_STEPS)
+                    if (previewCopies > 0) {
+                        val group = scene.activeGroup()
+                        val offsetsWorld = (1..previewCopies).map { step -> Vector3(stepWorld).scl(step.toFloat()) }
+                        val offsetsLocal = offsetsWorld.map { offset -> group.vectorToLocal(offset) }
+                        renderTranslatedMultiplePreview(scene, group, renderer, offsetsWorld, offsetsLocal)
                     }
                 }
             }
@@ -471,6 +582,308 @@ class CopyMultipleTool(
     private fun clearTransient() {
         u = null
         v = null
+        hasHover = false
+    }
+}
+
+class PlanarTranslateMultipleTool(
+    private val scene: GroupScene
+) : Tool {
+    override val id: ToolId = ToolId.PLANAR_TRANSLATE_MULTIPLE
+    override val message: String = "Pick origin point (o)."
+
+    private var origin: Vector3? = null
+    private var measure: Vector3? = null
+    private val hover = Vector3()
+    private var hasHover = false
+
+    override fun onEnter(status: StatusModel) {
+        status.message = "Pick origin point (o)."
+    }
+
+    override fun onExit(status: StatusModel) {
+        clearTransient()
+        super.onExit(status)
+    }
+
+    override fun onCancel(status: StatusModel) {
+        clearTransient()
+        status.message = "Canceled."
+    }
+
+    override fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
+        if (valid && world != null) {
+            hover.set(world)
+            hasHover = true
+        } else {
+            hasHover = false
+        }
+    }
+
+    override fun onPointerDown(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean, button: Int): Boolean {
+        if (button != Input.Buttons.LEFT || !valid || world == null) {
+            return false
+        }
+        if (origin == null) {
+            origin = Vector3(world)
+            status.message = "Pick planar measure point (a)."
+            return true
+        }
+        if (measure == null) {
+            measure = Vector3(world)
+            status.message = "Pick planar final point (b)."
+            return true
+        }
+
+        val o = origin ?: return false
+        val a = measure ?: return false
+        val b = Vector3(world)
+        val stepX = a.x - o.x
+        val stepZ = a.z - o.z
+        val spanX = b.x - o.x
+        val spanZ = b.z - o.z
+        val nx = axisCopyCount(stepX, spanX)
+        val nz = axisCopyCount(stepZ, spanZ)
+        val offsetsWorld = mutableListOf<Vector3>()
+        loop@ for (ix in 0..nx) {
+            for (iz in 0..nz) {
+                if (ix == 0 && iz == 0) continue
+                if (offsetsWorld.size >= MAX_MULTIPLE_COPY_STEPS) break@loop
+                offsetsWorld.add(Vector3(stepX * ix.toFloat(), 0f, stepZ * iz.toFloat()))
+            }
+        }
+        if (offsetsWorld.isEmpty()) {
+            clearTransient()
+            status.message = "Planar translate multiple: no copies fit inside the measured span."
+            return true
+        }
+        val group = scene.activeGroup()
+        val offsetsLocal = offsetsWorld.map { offset -> group.vectorToLocal(offset) }
+        val total = MultipleCopyCounts()
+        offsetsWorld.zip(offsetsLocal).forEach { (offsetWorld, offsetLocal) ->
+            val stepCounts = applyCopyStep(
+                scene = scene,
+                group = group,
+                pointTransformWorld = { point -> Vector3(point).add(offsetWorld) },
+                vectorTransformWorld = { vector -> Vector3(vector) },
+                pointTransformLocal = { point -> Vector3(point).add(offsetLocal) },
+                pointTransformVoxelLocal = { point -> Vector3(point).add(offsetLocal) }
+            )
+            mergeCounts(total, stepCounts)
+        }
+        val capped = (nx + 1) * (nz + 1) - 1 > offsetsWorld.size
+        status.message = buildMultipleCopyStatus("Planar translate multiple", offsetsWorld.size, capped, total)
+        clearTransient()
+        return true
+    }
+
+    override fun render(renderer: ShapeRenderer) {
+        val o = origin ?: return
+        renderer.color = ToolFeedbackColors.PRIMARY
+        drawCross(renderer, o, 0.18f)
+        measure?.let { a ->
+            renderer.color = ToolFeedbackColors.SECONDARY
+            drawCross(renderer, a, 0.18f)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            renderer.line(o.x, o.y, o.z, a.x, a.y, a.z)
+        }
+        if (hasHover) {
+            renderer.color = ToolFeedbackColors.SECONDARY
+            drawCross(renderer, hover, 0.18f)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            renderer.line(o.x, o.y, o.z, hover.x, hover.y, hover.z)
+            val a = measure
+            if (a != null) {
+                val stepX = a.x - o.x
+                val stepZ = a.z - o.z
+                val spanX = hover.x - o.x
+                val spanZ = hover.z - o.z
+                val nx = axisCopyCount(stepX, spanX)
+                val nz = axisCopyCount(stepZ, spanZ)
+                val group = scene.activeGroup()
+                val offsetsWorld = mutableListOf<Vector3>()
+                loop@ for (ix in 0..nx) {
+                    for (iz in 0..nz) {
+                        if (ix == 0 && iz == 0) continue
+                        if (offsetsWorld.size >= MAX_MULTIPLE_COPY_PREVIEW_STEPS) break@loop
+                        offsetsWorld.add(Vector3(stepX * ix.toFloat(), 0f, stepZ * iz.toFloat()))
+                    }
+                }
+                if (offsetsWorld.isNotEmpty()) {
+                    val offsetsLocal = offsetsWorld.map { offset -> group.vectorToLocal(offset) }
+                    renderTranslatedMultiplePreview(scene, group, renderer, offsetsWorld, offsetsLocal)
+                }
+            }
+        }
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        val o = origin ?: return null
+        if (!hasHover) {
+            return null
+        }
+        return ToolMeasurement(Vector3(o), Vector3(hover))
+    }
+
+    private fun clearTransient() {
+        origin = null
+        measure = null
+        hasHover = false
+    }
+}
+
+class VolumetricTranslateMultipleTool(
+    private val scene: GroupScene
+) : Tool {
+    override val id: ToolId = ToolId.VOLUMETRIC_TRANSLATE_MULTIPLE
+    override val message: String = "Pick origin point (o)."
+
+    private var origin: Vector3? = null
+    private var measure: Vector3? = null
+    private val hover = Vector3()
+    private var hasHover = false
+
+    override fun onEnter(status: StatusModel) {
+        status.message = "Pick origin point (o)."
+    }
+
+    override fun onExit(status: StatusModel) {
+        clearTransient()
+        super.onExit(status)
+    }
+
+    override fun onCancel(status: StatusModel) {
+        clearTransient()
+        status.message = "Canceled."
+    }
+
+    override fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
+        if (valid && world != null) {
+            hover.set(world)
+            hasHover = true
+        } else {
+            hasHover = false
+        }
+    }
+
+    override fun onPointerDown(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean, button: Int): Boolean {
+        if (button != Input.Buttons.LEFT || !valid || world == null) {
+            return false
+        }
+        if (origin == null) {
+            origin = Vector3(world)
+            status.message = "Pick volumetric measure point (a)."
+            return true
+        }
+        if (measure == null) {
+            measure = Vector3(world)
+            status.message = "Pick volumetric final point (b)."
+            return true
+        }
+
+        val o = origin ?: return false
+        val a = measure ?: return false
+        val b = Vector3(world)
+        val stepX = a.x - o.x
+        val stepY = a.y - o.y
+        val stepZ = a.z - o.z
+        val spanX = b.x - o.x
+        val spanY = b.y - o.y
+        val spanZ = b.z - o.z
+        val nx = axisCopyCount(stepX, spanX)
+        val ny = axisCopyCount(stepY, spanY)
+        val nz = axisCopyCount(stepZ, spanZ)
+        val offsetsWorld = mutableListOf<Vector3>()
+        loop@ for (ix in 0..nx) {
+            for (iy in 0..ny) {
+                for (iz in 0..nz) {
+                    if (ix == 0 && iy == 0 && iz == 0) continue
+                    if (offsetsWorld.size >= MAX_MULTIPLE_COPY_STEPS) break@loop
+                    offsetsWorld.add(Vector3(stepX * ix.toFloat(), stepY * iy.toFloat(), stepZ * iz.toFloat()))
+                }
+            }
+        }
+        if (offsetsWorld.isEmpty()) {
+            clearTransient()
+            status.message = "Volumetric translate multiple: no copies fit inside the measured span."
+            return true
+        }
+        val group = scene.activeGroup()
+        val offsetsLocal = offsetsWorld.map { offset -> group.vectorToLocal(offset) }
+        val total = MultipleCopyCounts()
+        offsetsWorld.zip(offsetsLocal).forEach { (offsetWorld, offsetLocal) ->
+            val stepCounts = applyCopyStep(
+                scene = scene,
+                group = group,
+                pointTransformWorld = { point -> Vector3(point).add(offsetWorld) },
+                vectorTransformWorld = { vector -> Vector3(vector) },
+                pointTransformLocal = { point -> Vector3(point).add(offsetLocal) },
+                pointTransformVoxelLocal = { point -> Vector3(point).add(offsetLocal) }
+            )
+            mergeCounts(total, stepCounts)
+        }
+        val capped = (nx + 1) * (ny + 1) * (nz + 1) - 1 > offsetsWorld.size
+        status.message = buildMultipleCopyStatus("Volumetric translate multiple", offsetsWorld.size, capped, total)
+        clearTransient()
+        return true
+    }
+
+    override fun render(renderer: ShapeRenderer) {
+        val o = origin ?: return
+        renderer.color = ToolFeedbackColors.PRIMARY
+        drawCross(renderer, o, 0.18f)
+        measure?.let { a ->
+            renderer.color = ToolFeedbackColors.SECONDARY
+            drawCross(renderer, a, 0.18f)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            renderer.line(o.x, o.y, o.z, a.x, a.y, a.z)
+        }
+        if (hasHover) {
+            renderer.color = ToolFeedbackColors.SECONDARY
+            drawCross(renderer, hover, 0.18f)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            renderer.line(o.x, o.y, o.z, hover.x, hover.y, hover.z)
+            val a = measure
+            if (a != null) {
+                val stepX = a.x - o.x
+                val stepY = a.y - o.y
+                val stepZ = a.z - o.z
+                val spanX = hover.x - o.x
+                val spanY = hover.y - o.y
+                val spanZ = hover.z - o.z
+                val nx = axisCopyCount(stepX, spanX)
+                val ny = axisCopyCount(stepY, spanY)
+                val nz = axisCopyCount(stepZ, spanZ)
+                val group = scene.activeGroup()
+                val offsetsWorld = mutableListOf<Vector3>()
+                loop@ for (ix in 0..nx) {
+                    for (iy in 0..ny) {
+                        for (iz in 0..nz) {
+                            if (ix == 0 && iy == 0 && iz == 0) continue
+                            if (offsetsWorld.size >= MAX_MULTIPLE_COPY_PREVIEW_STEPS) break@loop
+                            offsetsWorld.add(Vector3(stepX * ix.toFloat(), stepY * iy.toFloat(), stepZ * iz.toFloat()))
+                        }
+                    }
+                }
+                if (offsetsWorld.isNotEmpty()) {
+                    val offsetsLocal = offsetsWorld.map { offset -> group.vectorToLocal(offset) }
+                    renderTranslatedMultiplePreview(scene, group, renderer, offsetsWorld, offsetsLocal)
+                }
+            }
+        }
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        val o = origin ?: return null
+        if (!hasHover) {
+            return null
+        }
+        return ToolMeasurement(Vector3(o), Vector3(hover))
+    }
+
+    private fun clearTransient() {
+        origin = null
+        measure = null
         hasHover = false
     }
 }

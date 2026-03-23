@@ -466,6 +466,11 @@ set -eu
 
 HOST_RUNTIME_DIR="/run/user/$(id -u)"
 CURRENT_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}"
+SNAP_LIB_DIR="$SNAP/lib"
+
+if [ -d "$SNAP_LIB_DIR" ]; then
+  export LD_LIBRARY_PATH="$SNAP_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
 
 if [ -z "$CURRENT_RUNTIME_DIR" ] || [ ! -d "$CURRENT_RUNTIME_DIR" ]; then
   export XDG_RUNTIME_DIR="$HOST_RUNTIME_DIR"
@@ -479,10 +484,54 @@ if [ -z "${DISPLAY:-}" ] && [ -S "/tmp/.X11-unix/X0" ]; then
   export DISPLAY=:0
 fi
 
+if [ -z "${XAUTHORITY:-}" ] && [ -f "$HOME/.Xauthority" ]; then
+  export XAUTHORITY="$HOME/.Xauthority"
+fi
+
 exec "$SNAP/octodraw-jre" "$@"
 '''
   launchFile.setExecutable(true, false)
   ant.copy(file: rootProject.file("assets/appicon.png"), tofile: new File(guiDir, "icon.png"))
+}
+
+def copySnapDesktopRuntimeLibs = { File snapRoot ->
+  def libDir = new File(snapRoot, "lib")
+  libDir.mkdirs()
+  def searchRoots = [
+    file("/usr/lib/x86_64-linux-gnu"),
+    file("/lib/x86_64-linux-gnu"),
+    file("/usr/lib64"),
+    file("/lib64"),
+  ].findAll { it.exists() }
+  def requiredLibs = [
+    "libX11.so.6",
+    "libXext.so.6",
+    "libXcursor.so.1",
+    "libXrandr.so.2",
+    "libXinerama.so.1",
+    "libXi.so.6",
+    "libXxf86vm.so.1",
+    "libxcb.so.1",
+    "libXau.so.6",
+    "libXdmcp.so.6",
+    "libwayland-client.so.0",
+    "libwayland-cursor.so.0",
+    "libwayland-egl.so.1",
+    "libxkbcommon.so.0",
+    "libdecor-0.so.0",
+    "libGL.so.1",
+    "libGLX.so.0",
+    "libEGL.so.1",
+    "libdrm.so.2",
+    "libgbm.so.1",
+    "libasound.so.2",
+  ]
+  requiredLibs.each { libName ->
+    def source = searchRoots.collect { new File(it, libName) }.find { it.exists() }
+    if (source != null) {
+      ant.copy(file: source, tofile: new File(libDir, libName), overwrite: true)
+    }
+  }
 }
 
 def ensureUnixRuntimeExecutables = { File installDir ->
@@ -720,6 +769,7 @@ tasks.register("bundleLinuxSnap") {
       into(snapRoot)
     }
     ensureUnixRuntimeExecutables(snapRoot)
+    copySnapDesktopRuntimeLibs(snapRoot)
     createSnapMetadata(snapRoot)
     def outFile = rootProject.file("dist/octodraw-dist-${bundleVersion}-linux.snap")
     project.delete(outFile)

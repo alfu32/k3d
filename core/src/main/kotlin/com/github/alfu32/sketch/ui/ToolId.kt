@@ -40,6 +40,8 @@ enum class ToolId(val displayName: String) {
     STRETCH("Stretch"),
     ROTATE_STRETCH("Rotate Stretch"),
     COPY_MULTIPLE("Copy Multiple"),
+    PLANAR_TRANSLATE_MULTIPLE("Planar Translate Multiple"),
+    VOLUMETRIC_TRANSLATE_MULTIPLE("Volumetric Translate Multiple"),
     PLANAR_ROTATE_MULTIPLE("Planar Rotate Multiple"),
     HELICOIDAL_ROTATE_MULTIPLE("Helicoidal Rotate Multiple"),
     PAINT("Paint"),

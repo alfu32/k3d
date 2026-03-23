@@ -1379,6 +1379,17 @@ class GroupScene(
         return (maxProj - minProj).coerceAtLeast(0f)
     }
 
+    private fun multiplierAxisCount(step: Float, span: Float): Int {
+        if (abs(step) <= 1e-6f) {
+            return 0
+        }
+        val ratio = span / step
+        if (ratio <= 0f) {
+            return 0
+        }
+        return floor(abs(ratio).toDouble()).toInt()
+    }
+
     private fun duplicateGeometry(
         lineStore: DraftLineStore,
         faceStore: DraftFaceStore,
@@ -1471,14 +1482,16 @@ class GroupScene(
             val refLocal = hotspot.referencePosition
             when (hotspot.operation) {
                 HotspotStore.OperationKind.MULTIPLY_LINEAR -> {
-                    val span = Vector3(targetLocal).sub(baseLocal)
-                    val length = span.len()
-                    if (length <= 1e-6f) return
-                    val dir = Vector3(span).nor()
-                    val stepLength = extentAlongDirection(sourcePoints, dir).coerceAtLeast(1e-3f)
-                    val steps = floor(length / stepLength).toInt().coerceAtMost(maxCopies)
+                    val reference = refLocal ?: return
+                    val step = Vector3(baseLocal).sub(reference)
+                    val stepLength = step.len()
+                    if (stepLength <= 1e-6f) return
+                    val dir = Vector3(step).nor()
+                    val spanProjected = Vector3(targetLocal).sub(reference).dot(dir)
+                    val steps = floor((spanProjected / stepLength).toDouble()).toInt().coerceAtMost(maxCopies)
+                    if (steps <= 0) return
                     for (i in 1..steps) {
-                        val offset = Vector3(dir).scl(stepLength * i.toFloat())
+                        val offset = Vector3(step).scl(i.toFloat())
                         duplicateGeometry(
                             lineStore = lineStore,
                             faceStore = faceStore,
@@ -1491,19 +1504,16 @@ class GroupScene(
                     }
                 }
                 HotspotStore.OperationKind.MULTIPLY_VOLUMETRIC -> {
-                    val span = Vector3(targetLocal).sub(baseLocal)
-                    val bounds = BoundingBox()
-                    bounds.set(sourcePoints.first(), sourcePoints.first())
-                    sourcePoints.forEach { point -> bounds.ext(point) }
-                    val cellX = (bounds.max.x - bounds.min.x).coerceAtLeast(1e-3f)
-                    val cellY = (bounds.max.y - bounds.min.y).coerceAtLeast(1e-3f)
-                    val cellZ = (bounds.max.z - bounds.min.z).coerceAtLeast(1e-3f)
-                    val nx = floor(abs(span.x) / cellX).toInt()
-                    val ny = floor(abs(span.y) / cellY).toInt()
-                    val nz = floor(abs(span.z) / cellZ).toInt()
-                    val sx = if (span.x < 0f) -1f else 1f
-                    val sy = if (span.y < 0f) -1f else 1f
-                    val sz = if (span.z < 0f) -1f else 1f
+                    val reference = refLocal ?: return
+                    val stepX = baseLocal.x - reference.x
+                    val stepY = baseLocal.y - reference.y
+                    val stepZ = baseLocal.z - reference.z
+                    val spanX = targetLocal.x - reference.x
+                    val spanY = targetLocal.y - reference.y
+                    val spanZ = targetLocal.z - reference.z
+                    val nx = multiplierAxisCount(stepX, spanX)
+                    val ny = multiplierAxisCount(stepY, spanY)
+                    val nz = multiplierAxisCount(stepZ, spanZ)
                     loop@ for (ix in 0..nx) {
                         for (iy in 0..ny) {
                             for (iz in 0..nz) {
@@ -1514,9 +1524,9 @@ class GroupScene(
                                     break@loop
                                 }
                                 val offset = Vector3(
-                                    ix.toFloat() * cellX * sx,
-                                    iy.toFloat() * cellY * sy,
-                                    iz.toFloat() * cellZ * sz
+                                    ix.toFloat() * stepX,
+                                    iy.toFloat() * stepY,
+                                    iz.toFloat() * stepZ
                                 )
                                 duplicateGeometry(
                                     lineStore = lineStore,

@@ -102,6 +102,8 @@ import com.github.alfu32.sketch.tools.ExtrudeSwipeTool
 import com.github.alfu32.sketch.tools.MeshIntersectionTool
 import com.github.alfu32.sketch.tools.FaceOutlineTool
 import com.github.alfu32.sketch.tools.CopyMultipleTool
+import com.github.alfu32.sketch.tools.PlanarTranslateMultipleTool
+import com.github.alfu32.sketch.tools.VolumetricTranslateMultipleTool
 import com.github.alfu32.sketch.tools.PlanarRotateMultipleTool
 import com.github.alfu32.sketch.tools.HelicoidalRotateMultipleTool
 import com.github.alfu32.sketch.tools.HotspotSettings
@@ -748,6 +750,8 @@ class Main(
                 StretchTool(scene),
                 RotateStretchTool(scene),
                 CopyMultipleTool(scene),
+                PlanarTranslateMultipleTool(scene),
+                VolumetricTranslateMultipleTool(scene),
                 PlanarRotateMultipleTool(scene),
                 HelicoidalRotateMultipleTool(scene),
                 PaintTool(scene, { activeCamera }) { statusModel.paintColor.cpy() },
@@ -1427,6 +1431,8 @@ class Main(
             ToolId.STRETCH,
             ToolId.ROTATE_STRETCH,
             ToolId.COPY_MULTIPLE,
+            ToolId.PLANAR_TRANSLATE_MULTIPLE,
+            ToolId.VOLUMETRIC_TRANSLATE_MULTIPLE,
             ToolId.PLANAR_ROTATE_MULTIPLE,
             ToolId.HELICOIDAL_ROTATE_MULTIPLE,
             ToolId.PAINT

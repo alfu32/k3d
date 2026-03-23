@@ -1387,6 +1387,8 @@ class SketchUiOverlay(
             ToolId.STRETCH,
             ToolId.ROTATE_STRETCH,
             ToolId.COPY_MULTIPLE,
+            ToolId.PLANAR_TRANSLATE_MULTIPLE,
+            ToolId.VOLUMETRIC_TRANSLATE_MULTIPLE,
             ToolId.PLANAR_ROTATE_MULTIPLE,
             ToolId.HELICOIDAL_ROTATE_MULTIPLE,
             ToolId.PAINT
@@ -5982,8 +5984,10 @@ class SketchUiOverlay(
             ToolId.STRETCH -> "stretch"
             ToolId.ROTATE_STRETCH -> "stretch-rotate"
             ToolId.COPY_MULTIPLE -> "multiple-copy-translate"
+            ToolId.PLANAR_TRANSLATE_MULTIPLE -> "multiple-copy-planar-translate"
+            ToolId.VOLUMETRIC_TRANSLATE_MULTIPLE -> "multiple-copy-volumetric-translate"
             ToolId.PLANAR_ROTATE_MULTIPLE -> "multiple-copy-planar-rotate"
-            ToolId.HELICOIDAL_ROTATE_MULTIPLE -> "multiple-copy-hekicoidal-rotate"
+            ToolId.HELICOIDAL_ROTATE_MULTIPLE -> "multiple-copy-helicoidal-rotate"
             ToolId.PAINT -> "paint"
             ToolId.OBJECT_PLACE -> "select"
             ToolId.PLUGIN -> "plugins"
@@ -6029,6 +6033,8 @@ class SketchUiOverlay(
             ToolId.STRETCH -> Color(0.95f, 0.65f, 0.25f, 1f)
             ToolId.ROTATE_STRETCH -> Color(0.85f, 0.6f, 0.25f, 1f)
             ToolId.COPY_MULTIPLE -> Color(0.95f, 0.75f, 0.25f, 1f)
+            ToolId.PLANAR_TRANSLATE_MULTIPLE -> Color(0.55f, 0.8f, 0.95f, 1f)
+            ToolId.VOLUMETRIC_TRANSLATE_MULTIPLE -> Color(0.65f, 0.9f, 0.65f, 1f)
             ToolId.PLANAR_ROTATE_MULTIPLE -> Color(0.75f, 0.65f, 0.95f, 1f)
             ToolId.HELICOIDAL_ROTATE_MULTIPLE -> Color(0.65f, 0.75f, 0.95f, 1f)
             ToolId.PAINT -> Color(0.95f, 0.95f, 0.45f, 1f)

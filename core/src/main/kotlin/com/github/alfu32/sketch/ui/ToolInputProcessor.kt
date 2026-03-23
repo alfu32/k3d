@@ -45,6 +45,8 @@ class ToolInputProcessor(
         ToolId.STRETCH,
         ToolId.ROTATE_STRETCH,
         ToolId.COPY_MULTIPLE,
+        ToolId.PLANAR_TRANSLATE_MULTIPLE,
+        ToolId.VOLUMETRIC_TRANSLATE_MULTIPLE,
         ToolId.PLANAR_ROTATE_MULTIPLE,
         ToolId.HELICOIDAL_ROTATE_MULTIPLE
     )
