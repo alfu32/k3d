@@ -1,0 +1,53 @@
+name: octodraw
+title: Octodraw
+summary: 3D drafting and modeling tool
+description: |
+  Octodraw is a 3D drafting and modeling application.
+base: core22
+grade: stable
+confinement: strict
+adopt-info: octodraw
+
+architectures:
+  - build-on:
+      - amd64
+    build-for:
+      - amd64
+
+apps:
+  octodraw:
+    command: octodraw-jre
+    extensions:
+      - gnome
+    environment:
+      OCTODRAW_PLUGINS_DIR: $SNAP_USER_COMMON/plugins
+      ALSA_CONFIG_PATH: $SNAP/usr/share/alsa/alsa.conf
+    plugs:
+      - audio-playback
+      - home
+      - network
+      - network-bind
+      - removable-media
+
+parts:
+  octodraw:
+    plugin: dump
+    source: source
+    stage-packages:
+      - libasound2
+      - libasound2-data
+    override-pull: |
+      craftctl default
+      craftctl set version "${OCTODRAW_SNAP_VERSION:-0.0.0}"
+    override-build: |
+      craftctl default
+      chmod 755 "$CRAFT_PART_INSTALL/octodraw-editor" "$CRAFT_PART_INSTALL/octodraw-jre"
+      if [ -d "$CRAFT_PART_INSTALL/jre/bin" ]; then
+        find "$CRAFT_PART_INSTALL/jre/bin" -type f -exec chmod 755 {} \;
+      fi
+      if [ -f "$CRAFT_PART_INSTALL/jre/lib/jspawnhelper" ]; then
+        chmod 755 "$CRAFT_PART_INSTALL/jre/lib/jspawnhelper"
+      fi
+      if [ -f "$CRAFT_PART_INSTALL/jre/lib/jexec" ]; then
+        chmod 755 "$CRAFT_PART_INSTALL/jre/lib/jexec"
+      fi

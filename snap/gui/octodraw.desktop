@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Octodraw
+Comment=3D drafting and modeling tool
+Exec=octodraw %U
+Icon=${SNAP}/meta/gui/icon.png
+Terminal=false
+Type=Application
+Categories=Graphics;3DGraphics;Engineering;
+MimeType=application/octet-stream;
+StartupWMClass=Octodraw

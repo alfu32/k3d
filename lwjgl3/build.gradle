@@ -467,9 +467,17 @@ set -eu
 HOST_RUNTIME_DIR="/run/user/$(id -u)"
 CURRENT_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}"
 SNAP_LIB_DIR="$SNAP/lib"
+SNAP_USR_LIB_DIR="$SNAP/usr/lib/x86_64-linux-gnu"
+SNAP_DRI_DIR="$SNAP_USR_LIB_DIR/dri"
+SNAP_EGL_VENDOR_DIR="$SNAP/usr/share/glvnd/egl_vendor.d"
+SNAP_ALSA_CONF="$SNAP/usr/share/alsa/alsa.conf"
 
 if [ -d "$SNAP_LIB_DIR" ]; then
   export LD_LIBRARY_PATH="$SNAP_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
+if [ -d "$SNAP_USR_LIB_DIR" ]; then
+  export LD_LIBRARY_PATH="$SNAP_USR_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
 
 if [ -z "$CURRENT_RUNTIME_DIR" ] || [ ! -d "$CURRENT_RUNTIME_DIR" ]; then
@@ -488,6 +496,18 @@ if [ -z "${XAUTHORITY:-}" ] && [ -f "$HOME/.Xauthority" ]; then
   export XAUTHORITY="$HOME/.Xauthority"
 fi
 
+if [ -d "$SNAP_DRI_DIR" ]; then
+  export LIBGL_DRIVERS_PATH="$SNAP_DRI_DIR"
+fi
+
+if [ -d "$SNAP_EGL_VENDOR_DIR" ]; then
+  export __EGL_VENDOR_LIBRARY_DIRS="$SNAP_EGL_VENDOR_DIR"
+fi
+
+if [ -f "$SNAP_ALSA_CONF" ]; then
+  export ALSA_CONFIG_PATH="$SNAP_ALSA_CONF"
+fi
+
 exec "$SNAP/octodraw-jre" "$@"
 '''
   launchFile.setExecutable(true, false)
@@ -496,7 +516,11 @@ exec "$SNAP/octodraw-jre" "$@"
 
 def copySnapDesktopRuntimeLibs = { File snapRoot ->
   def libDir = new File(snapRoot, "lib")
+  def usrLibDir = new File(snapRoot, "usr/lib/x86_64-linux-gnu")
+  def usrShareDir = new File(snapRoot, "usr/share")
   libDir.mkdirs()
+  usrLibDir.mkdirs()
+  usrShareDir.mkdirs()
   def searchRoots = [
     file("/usr/lib/x86_64-linux-gnu"),
     file("/lib/x86_64-linux-gnu"),
@@ -522,7 +546,16 @@ def copySnapDesktopRuntimeLibs = { File snapRoot ->
     "libGL.so.1",
     "libGLX.so.0",
     "libEGL.so.1",
+    "libGLX_mesa.so.0",
+    "libEGL_mesa.so.0",
+    "libGLdispatch.so.0",
+    "libOpenGL.so.0",
+    "libGLESv2.so.2",
     "libdrm.so.2",
+    "libdrm_amdgpu.so.1",
+    "libdrm_intel.so.1",
+    "libdrm_nouveau.so.2",
+    "libdrm_radeon.so.1",
     "libgbm.so.1",
     "libasound.so.2",
   ]
@@ -530,6 +563,25 @@ def copySnapDesktopRuntimeLibs = { File snapRoot ->
     def source = searchRoots.collect { new File(it, libName) }.find { it.exists() }
     if (source != null) {
       ant.copy(file: source, tofile: new File(libDir, libName), overwrite: true)
+      ant.copy(file: source, tofile: new File(usrLibDir, libName), overwrite: true)
+    }
+  }
+  def driSourceDir = file("/usr/lib/x86_64-linux-gnu/dri")
+  if (driSourceDir.exists()) {
+    ant.copy(todir: new File(usrLibDir, "dri"), overwrite: true) {
+      fileset(dir: driSourceDir)
+    }
+  }
+  def glvndSourceDir = file("/usr/share/glvnd/egl_vendor.d")
+  if (glvndSourceDir.exists()) {
+    ant.copy(todir: new File(usrShareDir, "glvnd/egl_vendor.d"), overwrite: true) {
+      fileset(dir: glvndSourceDir)
+    }
+  }
+  def alsaSourceDir = file("/usr/share/alsa")
+  if (alsaSourceDir.exists()) {
+    ant.copy(todir: new File(usrShareDir, "alsa"), overwrite: true) {
+      fileset(dir: alsaSourceDir)
     }
   }
 }
@@ -747,7 +799,7 @@ tasks.register("bundleLinuxSnap") {
     }
     def probe = null
     try {
-      probe = new ProcessBuilder("mksquashfs", "-version")
+      probe = new ProcessBuilder("snapcraft", "--version")
         .directory(project.projectDir)
         .redirectErrorStream(true)
         .start()
@@ -756,39 +808,56 @@ tasks.register("bundleLinuxSnap") {
       probe = null
     }
     if (probe == null || probe.waitFor() != 0) {
-      throw new GradleException("mksquashfs not found. Install squashfs-tools to build the Snap package.")
+      throw new GradleException("snapcraft not found. Install Snapcraft to build the Snap package.")
     }
     def sourceDir = rootProject.file("dist/octodraw-dist-${bundleVersion}-linux")
     if (!sourceDir.exists()) {
       throw new GradleException("Linux bundle directory not found: ${sourceDir}")
     }
-    def snapRoot = file("$buildDir/snap/octodraw")
-    project.delete(snapRoot)
+    def snapcraftProjectDir = file("$buildDir/snapcraft/project")
+    def snapcraftSourceDir = new File(snapcraftProjectDir, "source")
+    def snapDir = new File(snapcraftProjectDir, "snap")
+    project.delete(snapcraftProjectDir)
     project.copy {
       from(sourceDir)
-      into(snapRoot)
+      into(snapcraftSourceDir)
     }
-    ensureUnixRuntimeExecutables(snapRoot)
-    copySnapDesktopRuntimeLibs(snapRoot)
-    createSnapMetadata(snapRoot)
+    project.copy {
+      from(rootProject.file("snapcraft.yaml"))
+      into(snapcraftProjectDir)
+    }
+    project.copy {
+      from(rootProject.file("snap"))
+      into(snapDir)
+    }
+    ensureUnixRuntimeExecutables(snapcraftSourceDir)
     def outFile = rootProject.file("dist/octodraw-dist-${bundleVersion}-linux.snap")
+    def defaultSnapName = "octodraw_${bundleVersion}_amd64.snap"
+    def builtSnap = new File(snapcraftProjectDir, defaultSnapName)
     project.delete(outFile)
-    def pack = new ProcessBuilder(
-      "mksquashfs",
-      snapRoot.absolutePath,
-      outFile.absolutePath,
-      "-noappend",
-      "-no-fragments",
-      "-comp",
-      "xz",
-      "-all-root",
-      "-no-xattrs"
-    )
-      .directory(project.projectDir)
+    project.delete(builtSnap)
+    def pack = new ProcessBuilder("snapcraft", "--destructive-mode")
+      .directory(snapcraftProjectDir)
       .inheritIO()
-      .start()
-    if (pack.waitFor() != 0) {
-      throw new GradleException("mksquashfs failed while building ${outFile.name}.")
+    pack.environment().put("OCTODRAW_SNAP_VERSION", bundleVersion)
+    def process = pack.start()
+    if (process.waitFor() != 0) {
+      throw new GradleException("snapcraft failed while building ${outFile.name}.")
+    }
+    if (!builtSnap.exists()) {
+      def candidates = snapcraftProjectDir.listFiles()?.findAll { it.name.endsWith(".snap") } ?: []
+      if (candidates.isEmpty()) {
+        throw new GradleException("snapcraft completed without producing a .snap artifact.")
+      }
+      builtSnap = candidates.max { it.lastModified() }
+    }
+    if (!builtSnap.exists()) {
+      throw new GradleException("Snap artifact not found after snapcraft build.")
+    }
+    project.copy {
+      from(builtSnap)
+      into(outFile.parentFile)
+      rename { outFile.name }
     }
   }
 }
