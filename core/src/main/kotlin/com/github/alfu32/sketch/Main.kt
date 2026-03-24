@@ -344,6 +344,8 @@ class Main(
     private var autosavePending = false
     private var autosaveDueAtMs = 0L
     private val autosaveDebounceMs = 1500L
+    private var nextAsyncMaintenanceAtMs = 0L
+    private val asyncMaintenanceIntervalMs = 150L
     private var webEmbedChangePending = false
     private var webEmbedChangeDueAtMs = 0L
     private val webEmbedChangeDebounceMs = 250L
@@ -2620,7 +2622,11 @@ class Main(
     }
 
     override fun render() {
-        scene.processAsyncMaintenance(System.currentTimeMillis())
+        val nowMs = System.currentTimeMillis()
+        if (nowMs >= nextAsyncMaintenanceAtMs) {
+            scene.processAsyncMaintenance(nowMs)
+            nextAsyncMaintenanceAtMs = nowMs + asyncMaintenanceIntervalMs
+        }
         statusModel.backgroundStatus = IndexingStatusBus.summary()
         updateActiveCamera(Gdx.graphics.deltaTime)
         handleGlobalDistanceShortcut()

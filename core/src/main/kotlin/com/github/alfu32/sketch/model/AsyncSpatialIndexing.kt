@@ -54,16 +54,14 @@ object IndexingStatusBus {
         if (jobs.isEmpty()) {
             return ""
         }
-        return jobs.values
-            .sortedBy { it.label }
-            .joinToString(" | ") { job ->
-                if (job.total <= 0) {
-                    "${job.label}..."
-                } else {
-                    val pct = ((job.done.coerceIn(0, job.total) * 100f) / job.total.toFloat()).toInt()
-                    "${job.label} ${pct}%"
-                }
-            }
+        val snapshot = jobs.values.toList()
+        val tracked = snapshot.filter { it.total > 0 }
+        if (tracked.isEmpty()) {
+            return "Indexing..."
+        }
+        val done = tracked.sumOf { it.done.coerceIn(0, it.total) }
+        val total = tracked.sumOf { it.total }
+        return "Indexing $done/$total"
     }
 }
 
