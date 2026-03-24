@@ -86,6 +86,8 @@ class SketchUiOverlay(
     private val modelUnitChanged: (String, Float) -> Unit,
     private val gridSpacingProvider: () -> Float,
     private val gridSpacingChanged: (Float) -> Unit,
+    private val circleSegmentsProvider: () -> Int,
+    private val circleSegmentsChanged: (Int) -> Unit,
     private val snapEpsilonProvider: () -> Float,
     private val snapEpsilonChanged: (Float) -> Unit,
     private val walkthroughTuningProvider: () -> WalkthroughTuning,
@@ -672,6 +674,7 @@ class SketchUiOverlay(
     private val unitNameField = VisTextField()
     private val unitSizeField = VisTextField()
     private val gridSpacingField = VisTextField()
+    private val circleSegmentsField = VisTextField()
     private val modelHotspotsLabel = VisLabel()
     private val snapEpsilonMin = 2f
     private val snapEpsilonMax = 48f
@@ -692,6 +695,7 @@ class SketchUiOverlay(
     private var lastUnitName = ""
     private var lastUnitSize = -1f
     private var lastGridSpacing = -1f
+    private var lastCircleSegments = -1
     private var lastSnapEpsilon = -1f
     private var lastWalkJump = -1f
     private var lastWalkGravity = -1f
@@ -2092,6 +2096,8 @@ class SketchUiOverlay(
         content.add(unitSizeField).growX().row()
         content.add(VisLabel("Grid size")).left().padTop(4f).row()
         content.add(gridSpacingField).growX().row()
+        content.add(VisLabel("Circle segments")).left().padTop(4f).row()
+        content.add(circleSegmentsField).growX().row()
         content.add(VisLabel("Snap radius")).left().padTop(6f).row()
         content.add(snapEpsilonSlider).growX().row()
         content.add(VisLabel("Walk move speed")).left().padTop(6f).row()
@@ -2137,6 +2143,21 @@ class SketchUiOverlay(
                 if (gridSize > 0f) {
                     gridSpacingChanged(gridSize)
                 }
+            }
+        })
+        circleSegmentsField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                if (updatingModelSettingsFields) {
+                    return
+                }
+                val sanitized = circleSegmentsField.text.filter { it.isDigit() }
+                if (sanitized != circleSegmentsField.text) {
+                    updatingModelSettingsFields = true
+                    circleSegmentsField.text = sanitized
+                    updatingModelSettingsFields = false
+                }
+                val segments = sanitized.toIntOrNull()?.coerceIn(3, 256) ?: return
+                circleSegmentsChanged(segments)
             }
         })
         snapEpsilonSlider.addListener(object : ChangeListener() {
@@ -4657,13 +4678,14 @@ class SketchUiOverlay(
         val unit = modelUnitProvider()
         val snapEpsilon = snapEpsilonProvider()
         val gridSpacing = gridSpacingProvider()
+        val circleSegments = circleSegmentsProvider()
         val walk = walkthroughTuningProvider()
         val selection = selectionInfoProvider()
         modelHotspotsLabel.setText("Selected hotspots: ${selection.hotspotCount}")
         val unitName = unit.name
         val unitSize = unit.size
         if (
-            unitName != lastUnitName || unitSize != lastUnitSize || gridSpacing != lastGridSpacing || snapEpsilon != lastSnapEpsilon ||
+            unitName != lastUnitName || unitSize != lastUnitSize || gridSpacing != lastGridSpacing || circleSegments != lastCircleSegments || snapEpsilon != lastSnapEpsilon ||
             walk.moveSpeed != lastWalkMoveSpeed ||
             walk.jumpVelocity != lastWalkJump || walk.gravity != lastWalkGravity || walk.heightAdjustSpeed != lastWalkHeightAdjust
         ) {
@@ -4678,6 +4700,10 @@ class SketchUiOverlay(
             val gridText = String.format(Locale.US, "%.4f", gridSpacing)
             if (gridText != gridSpacingField.text || !gridSpacingField.hasKeyboardFocus()) {
                 gridSpacingField.text = gridText
+            }
+            val circleSegmentsText = circleSegments.toString()
+            if (circleSegmentsText != circleSegmentsField.text || !circleSegmentsField.hasKeyboardFocus()) {
+                circleSegmentsField.text = circleSegmentsText
             }
             val walkMoveText = String.format(Locale.US, "%.3f", walk.moveSpeed)
             if (walkMoveText != walkthroughMoveSpeedField.text || !walkthroughMoveSpeedField.hasKeyboardFocus()) {
@@ -4700,6 +4726,7 @@ class SketchUiOverlay(
             lastUnitName = unitName
             lastUnitSize = unitSize
             lastGridSpacing = gridSpacing
+            lastCircleSegments = circleSegments
             lastSnapEpsilon = snapEpsilon
             lastWalkMoveSpeed = walk.moveSpeed
             lastWalkJump = walk.jumpVelocity

@@ -14,7 +14,7 @@ import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
 object ModelPersistence {
-    private const val VERSION = 16
+    private const val VERSION = 17
     private const val GZIP_MAGIC_0 = 0x1f
     private const val GZIP_MAGIC_1 = 0x8b
     private const val COMPRESS_THRESHOLD_BYTES = 10 * 1024 * 1024
@@ -35,9 +35,10 @@ object ModelPersistence {
         modelUnit: ModelUnit,
         snapEpsilon: Float,
         gridSpacing: Float,
+        circleSegments: Int,
         undoHistory: UndoHistoryDto? = null
     ) {
-        val snapshot = snapshot(scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilon, gridSpacing, undoHistory)
+        val snapshot = snapshot(scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilon, gridSpacing, circleSegments, undoHistory)
         saveSnapshot(file, snapshot)
     }
 
@@ -73,6 +74,7 @@ object ModelPersistence {
         modelUnit: ModelUnit,
         snapEpsilon: Float,
         gridSpacing: Float,
+        circleSegments: Int,
         undoHistory: UndoHistoryDto? = null
     ): ModelSnapshot {
         val rootPrototypeId = scene.rootPrototypeId()
@@ -102,6 +104,7 @@ object ModelPersistence {
             this.modelUnit = ModelUnitDto(modelUnit)
             this.snapEpsilon = snapEpsilon
             this.gridSpacing = gridSpacing
+            this.circleSegments = circleSegments
             this.undoHistory = undoHistory
         }
     }
@@ -117,14 +120,15 @@ object ModelPersistence {
         shadow: com.github.alfu32.sketch.ui.ShadowSettings,
         modelUnit: ModelUnit,
         snapEpsilonSetter: (Float) -> Unit,
-        gridSpacingSetter: (Float) -> Unit
+        gridSpacingSetter: (Float) -> Unit,
+        circleSegmentsSetter: (Int) -> Unit
     ): LoadResult {
         if (!file.exists() || file.length() == 0L) {
             return LoadResult(false, false)
         }
         val snapshot = parseSnapshotFile(file) ?: return LoadResult(false, false)
 
-        applySnapshot(snapshot, scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilonSetter, gridSpacingSetter)
+        applySnapshot(snapshot, scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilonSetter, gridSpacingSetter, circleSegmentsSetter)
         val needsResave = snapshot.cameraState == null ||
             snapshot.lightingState == null ||
             snapshot.shadowState == null ||
@@ -135,7 +139,8 @@ object ModelPersistence {
             snapshot.shadowState?.hasNulls() == true ||
             snapshot.modelUnit == null ||
             snapshot.snapEpsilon == null ||
-            snapshot.gridSpacing == null
+            snapshot.gridSpacing == null ||
+            snapshot.circleSegments == null
         return LoadResult(true, needsResave, snapshot)
     }
 
@@ -148,14 +153,15 @@ object ModelPersistence {
         shadow: com.github.alfu32.sketch.ui.ShadowSettings,
         modelUnit: ModelUnit,
         snapEpsilonSetter: (Float) -> Unit,
-        gridSpacingSetter: (Float) -> Unit
+        gridSpacingSetter: (Float) -> Unit,
+        circleSegmentsSetter: (Int) -> Unit
     ): LoadResult {
         if (text.isBlank()) {
             return LoadResult(false, false)
         }
         val snapshot = parseSnapshotText(text) ?: return LoadResult(false, false)
 
-        applySnapshot(snapshot, scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilonSetter, gridSpacingSetter)
+        applySnapshot(snapshot, scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilonSetter, gridSpacingSetter, circleSegmentsSetter)
         val needsResave = snapshot.cameraState == null ||
             snapshot.lightingState == null ||
             snapshot.shadowState == null ||
@@ -166,7 +172,8 @@ object ModelPersistence {
             snapshot.shadowState?.hasNulls() == true ||
             snapshot.modelUnit == null ||
             snapshot.snapEpsilon == null ||
-            snapshot.gridSpacing == null
+            snapshot.gridSpacing == null ||
+            snapshot.circleSegments == null
         return LoadResult(true, needsResave, snapshot)
     }
 
@@ -215,7 +222,8 @@ object ModelPersistence {
         shadow: com.github.alfu32.sketch.ui.ShadowSettings,
         modelUnit: ModelUnit? = null,
         snapEpsilonSetter: ((Float) -> Unit)? = null,
-        gridSpacingSetter: ((Float) -> Unit)? = null
+        gridSpacingSetter: ((Float) -> Unit)? = null,
+        circleSegmentsSetter: ((Int) -> Unit)? = null
     ) {
         resetScene(scene)
         if (snapshot.rootInstance != null && snapshot.prototypes.isNotEmpty()) {
@@ -319,6 +327,7 @@ object ModelPersistence {
         snapshot.gridSpacing?.let { value ->
             gridSpacingSetter?.invoke(value)
         }
+        circleSegmentsSetter?.invoke(snapshot.circleSegments ?: 24)
     }
 
     class ModelSnapshot {
@@ -334,6 +343,7 @@ object ModelPersistence {
         var modelUnit: ModelUnitDto? = null
         var snapEpsilon: Float? = null
         var gridSpacing: Float? = null
+        var circleSegments: Int? = null
         var undoHistory: UndoHistoryDto? = null
     }
 

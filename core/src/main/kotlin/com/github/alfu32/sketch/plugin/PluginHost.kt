@@ -25,6 +25,8 @@ class PluginHost(
     private val getModelUnit: () -> com.github.alfu32.sketch.model.ModelUnit,
     private val getSnapEpsilon: () -> Float,
     private val getGridSpacing: () -> Float,
+    private val getCircleSegments: () -> Int,
+    private val setCircleSegments: (Int) -> Unit,
     private val pluginsDir: File,
     private val getCurrentFile: () -> File? = { null }
 ) : PluginRegistry {
@@ -387,7 +389,7 @@ class PluginHost(
         safe.changes.forEach { change ->
             when (change) {
                 is PluginChange.ReplaceModel -> {
-                    ModelPersistence.applySnapshot(change.snapshot, scene, camera, getCameraTarget(), lighting, shadow)
+                    ModelPersistence.applySnapshot(change.snapshot, scene, camera, getCameraTarget(), lighting, shadow, circleSegmentsSetter = setCircleSegments)
                     scene.applyChangeListenerToAll()
                 }
                 is PluginChange.StatusMessage -> {
@@ -453,6 +455,7 @@ class PluginHost(
             getModelUnit(),
             getSnapEpsilon(),
             getGridSpacing(),
+            getCircleSegments(),
             null
         ).also { cachedUpdateModelSnapshot = it }
 
@@ -463,6 +466,7 @@ class PluginHost(
         snapshot.modelUnit = ModelPersistence.ModelUnitDto(getModelUnit())
         snapshot.snapEpsilon = getSnapEpsilon()
         snapshot.gridSpacing = getGridSpacing()
+        snapshot.circleSegments = getCircleSegments()
         snapshot.undoHistory = null
         return snapshot
     }

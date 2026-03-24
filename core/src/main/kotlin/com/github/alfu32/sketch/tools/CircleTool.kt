@@ -12,7 +12,8 @@ import com.github.alfu32.sketch.ui.ToolId
 import kotlin.math.sqrt
 
 class CircleTool(
-    private val scene: GroupScene
+    private val scene: GroupScene,
+    private val segmentsProvider: () -> Int
 ) : Tool {
     override val id: ToolId = ToolId.CIRCLE
     override val message: String = "Click to set center."
@@ -88,7 +89,7 @@ class CircleTool(
         if (radius <= 0f) {
             return emptyList()
         }
-        return pathFeedbackLines(circlePoints(c, currentBasis, radius, 24), close = true)
+        return pathFeedbackLines(circlePoints(c, currentBasis, radius, circleSegments()), close = true)
     }
 
     private fun radiusOnPlane(center: Vector3, point: Vector3, basis: PlaneBasis): Float {
@@ -100,7 +101,7 @@ class CircleTool(
 
     private fun commitCircle(center: Vector3, basis: PlaneBasis, radius: Float) {
         val group = scene.activeGroup()
-        val segments = 24
+        val segments = circleSegments()
         val points = circlePoints(center, basis, radius, segments)
         val centerLocal = group.toLocal(center)
         for (i in 0 until segments) {
@@ -115,7 +116,7 @@ class CircleTool(
         if (radius <= 0f) {
             return
         }
-        val segments = 24
+        val segments = circleSegments()
         renderer.color = color
         val points = circlePoints(center, basis, radius, segments)
         for (i in 0 until segments) {
@@ -143,5 +144,9 @@ class CircleTool(
         centerWorld = null
         basis = null
         hasHover = false
+    }
+
+    private fun circleSegments(): Int {
+        return segmentsProvider().coerceIn(3, 256)
     }
 }

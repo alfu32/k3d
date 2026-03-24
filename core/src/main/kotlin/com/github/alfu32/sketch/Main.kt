@@ -303,6 +303,7 @@ class Main(
     private var distanceOverrideSnap: SnapResult? = null
     private var distanceInputActive = false
     private var gridSpacing = 1f
+    private var circleSegments = 24
     private var snapEpsilon = 12f
     private val baseGridHalfSize = 20
     private val adaptiveGridCloudRadiusUnits = 7
@@ -736,7 +737,7 @@ class Main(
                 RectangleTool(scene),
                 SurfaceRectangleTool(scene),
                 QuadTool(scene),
-                CircleTool(scene),
+                CircleTool(scene) { circleSegments },
                 LinearDimensionTool(scene),
                 TextTool(scene) { activeCamera },
                 VectorTextTool(
@@ -813,6 +814,8 @@ class Main(
                 { modelUnit },
                 { snapEpsilon },
                 { gridSpacing },
+                { circleSegments },
+                { value -> applyCircleSegments(value, false) },
                 pluginsDir,
                 { modelFile }
             )
@@ -863,6 +866,8 @@ class Main(
             ::updateModelUnit,
             { gridSpacing },
             ::setGridSpacing,
+            { circleSegments },
+            ::setCircleSegments,
             { snapEpsilon },
             ::setSnapEpsilon,
             ::walkthroughTuningInfo,
@@ -6292,7 +6297,8 @@ class Main(
             shadowSettings,
             modelUnit,
             snapEpsilon,
-            gridSpacing
+            gridSpacing,
+            circleSegments
         ).apply {
             undoHistory = null
         }
@@ -6310,7 +6316,8 @@ class Main(
                 shadowSettings,
                 modelUnit,
                 { value -> applySnapEpsilon(value, false) },
-                { value -> applyGridSpacing(value, false) }
+                { value -> applyGridSpacing(value, false) },
+                { value -> applyCircleSegments(value, false) }
             )
             scene.applyChangeListenerToAll()
             applyLightingSettings(lightingSettings)
@@ -6487,6 +6494,7 @@ class Main(
             modelUnit,
             snapEpsilon,
             gridSpacing,
+            circleSegments,
             undoHistory
         )
     }
@@ -6552,7 +6560,8 @@ class Main(
             shadowSettings,
             modelUnit,
             { value -> applySnapEpsilon(value, false) },
-            { value -> applyGridSpacing(value, false) }
+            { value -> applyGridSpacing(value, false) },
+            { value -> applyCircleSegments(value, false) }
         )
         if (!result.ok) {
             return false
@@ -7185,7 +7194,8 @@ class Main(
                 shadowSettings,
                 modelUnit,
                 { value -> applySnapEpsilon(value, false) },
-                { value -> applyGridSpacing(value, false) }
+                { value -> applyGridSpacing(value, false) },
+                { value -> applyCircleSegments(value, false) }
             )
             scene.applyChangeListenerToAll()
             val history = result.snapshot?.undoHistory
@@ -7204,6 +7214,7 @@ class Main(
                     modelUnit,
                     snapEpsilon,
                     gridSpacing,
+                    circleSegments,
                     undoManager.exportHistory()
                 )
             }
@@ -9048,6 +9059,22 @@ class Main(
 
     private fun setGridSpacing(value: Float) {
         applyGridSpacing(value, true)
+    }
+
+    private fun applyCircleSegments(value: Int, save: Boolean) {
+        val next = value.coerceIn(3, 256)
+        if (circleSegments == next) {
+            return
+        }
+        circleSegments = next
+        if (save) {
+            undoManager.markChanged()
+            saveModel()
+        }
+    }
+
+    private fun setCircleSegments(value: Int) {
+        applyCircleSegments(value, true)
     }
 
     private fun vectorGlyphSourcePath(): String {
