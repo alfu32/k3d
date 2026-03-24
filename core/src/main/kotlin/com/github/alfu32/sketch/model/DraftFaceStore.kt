@@ -28,6 +28,7 @@ class DraftFaceStore(
     data class Hit(val triangle: Triangle, val point: Vector3, val normal: Vector3, val t: Float)
 
     private val triangles = mutableListOf<Triangle>()
+    private val trianglesById = linkedMapOf<String, Triangle>()
     private val selected = mutableSetOf<Triangle>()
     private val colors = mutableMapOf<Triangle, com.badlogic.gdx.graphics.Color>()
     private var onChange: (() -> Unit)? = null
@@ -39,7 +40,8 @@ class DraftFaceStore(
     private val epsilon2d = (epsilon * jtsScale).toFloat()
     private val cutEps2d = 1e-2f
     private val planeEps = 1e-2f
-    private val spatialIndex = SpatialHash3D<Triangle>(SPATIAL_HASH_CELL_SIZE) { triangle -> triangle.id }
+    private var spatialIndex = SpatialHash3D<String>(SPATIAL_HASH_CELL_SIZE) { it }
+    private val asyncSpatialIndex = AsyncAabbIndexRebuilder<String>("Faces index", SPATIAL_HASH_CELL_SIZE, keyOf = { it })
     private var spatialIndexDirty = true
     private var spatialBoundsDirty = true
     private val spatialBoundsMin = Vector3()
@@ -64,11 +66,9 @@ class DraftFaceStore(
         val triangle = Triangle(Vector3(a), Vector3(b), Vector3(c))
         triangle.id = id
         triangles.add(triangle)
+        trianglesById[triangle.id] = triangle
         colors[triangle] = com.badlogic.gdx.graphics.Color(defaultColor)
-        if (!spatialIndexDirty) {
-            registerTriangle(triangle)
-        }
-        notifyChange(false)
+        notifyChange()
     }
 
     fun addTriangle(
@@ -81,11 +81,9 @@ class DraftFaceStore(
         val triangle = Triangle(Vector3(a), Vector3(b), Vector3(c))
         triangle.id = id
         triangles.add(triangle)
+        trianglesById[triangle.id] = triangle
         colors[triangle] = com.badlogic.gdx.graphics.Color(color)
-        if (!spatialIndexDirty) {
-            registerTriangle(triangle)
-        }
-        notifyChange(false)
+        notifyChange()
     }
 
     fun addPolygon(points: List<Vector3>, preferredNormal: Vector3? = null) {
@@ -107,7 +105,7 @@ class DraftFaceStore(
 
     fun getTriangles(): List<Triangle> = triangles
 
-    fun triangleById(id: String): Triangle? = triangles.firstOrNull { it.id == id }
+    fun triangleById(id: String): Triangle? = trianglesById[id]
 
     fun getSelected(): Set<Triangle> = selected
 
@@ -165,13 +163,10 @@ class DraftFaceStore(
         }
         triangles.clear()
         triangles.addAll(newTriangles)
+        rebuildTriangleLookup()
         selected.clear()
         selected.addAll(newSelected)
-        if (!spatialIndexDirty) {
-            oldSelected.forEach { unregisterTriangle(it) }
-            newSelected.forEach { registerTriangle(it) }
-        }
-        notifyChange(false)
+        notifyChange()
         return newSelected.size
     }
 
@@ -182,11 +177,9 @@ class DraftFaceStore(
         val before = triangles.size
         selected.forEach { colors.remove(it) }
         triangles.removeAll(selected)
-        if (!spatialIndexDirty) {
-            selected.forEach { unregisterTriangle(it) }
-        }
+        selected.forEach { trianglesById.remove(it.id) }
         selected.clear()
-        notifyChange(false)
+        notifyChange()
         return before - triangles.size
     }
 
@@ -200,12 +193,10 @@ class DraftFaceStore(
         target.forEach { tri ->
             colors.remove(tri)
             selected.remove(tri)
+            trianglesById.remove(tri.id)
         }
         if (before != triangles.size) {
-            if (!spatialIndexDirty) {
-                target.forEach { unregisterTriangle(it) }
-            }
-            notifyChange(false)
+            notifyChange()
         }
         return before - triangles.size
     }
@@ -213,6 +204,7 @@ class DraftFaceStore(
     fun clearAll() {
         if (triangles.isNotEmpty()) {
             triangles.clear()
+            trianglesById.clear()
             selected.clear()
             colors.clear()
             clearSpatialIndexState()
@@ -264,15 +256,12 @@ class DraftFaceStore(
 
         triangles.clear()
         triangles.addAll(newTriangles)
+        rebuildTriangleLookup()
         selected.clear()
         selected.addAll(newSelected)
         colors.clear()
         colors.putAll(newColors)
-        if (!spatialIndexDirty) {
-            oldSelected.forEach { unregisterTriangle(it) }
-            newSelected.forEach { registerTriangle(it) }
-        }
-        notifyChange(false)
+        notifyChange()
         return newSelected.size
     }
 
@@ -315,15 +304,12 @@ class DraftFaceStore(
 
         triangles.clear()
         triangles.addAll(newTriangles)
+        rebuildTriangleLookup()
         colors.clear()
         colors.putAll(newColors)
         selected.clear()
         selected.addAll(newSelected)
-        if (!spatialIndexDirty) {
-            targetSet.forEach { unregisterTriangle(it) }
-            mapping.values.forEach { registerTriangle(it) }
-        }
-        notifyChange(false)
+        notifyChange()
         return mapping
     }
 
@@ -340,15 +326,13 @@ class DraftFaceStore(
             val c = transform(Vector3(tri.c))
             val next = Triangle(a, b, c)
             triangles.add(next)
+            trianglesById[next.id] = next
             colors[next] = com.badlogic.gdx.graphics.Color(color)
             newSelected.add(next)
-            if (!spatialIndexDirty) {
-                registerTriangle(next)
-            }
         }
         selected.clear()
         selected.addAll(newSelected)
-        notifyChange(false)
+        notifyChange()
         return newSelected.size
     }
 
@@ -2220,6 +2204,7 @@ class DraftFaceStore(
 
     private fun notifyChange(invalidateSpatialIndex: Boolean = true) {
         if (invalidateSpatialIndex) {
+            rebuildTriangleLookup()
             invalidateSpatialIndex()
         }
         markVisualChanged()
@@ -2238,6 +2223,29 @@ class DraftFaceStore(
     fun rayCandidates(ray: com.badlogic.gdx.math.collision.Ray): List<Triangle> = triangleCandidatesForRay(ray)
 
     fun aabbCandidates(min: Vector3, max: Vector3): List<Triangle> = trianglesIntersectingQuery(min, max)
+
+    fun processAsyncMaintenance(nowMs: Long = System.currentTimeMillis()) {
+        asyncSpatialIndex.process(
+            nowMs = nowMs,
+            snapshotProvider = {
+                triangles.map { triangle ->
+                    IndexedAabbSnapshot<String>(
+                        item = triangle.id,
+                        min = triangleMin(triangle),
+                        max = triangleMax(triangle)
+                    )
+                }
+            },
+            apply = { result ->
+                spatialIndex = result.index
+                hasSpatialBounds = result.hasBounds
+                spatialBoundsMin.set(result.boundsMin)
+                spatialBoundsMax.set(result.boundsMax)
+                spatialBoundsDirty = false
+                spatialIndexDirty = false
+            }
+        )
+    }
 
     private fun markVisualChanged() {
         visualVersion++
@@ -2258,25 +2266,10 @@ class DraftFaceStore(
         }
     }
 
-    private fun ensureSpatialIndex() {
-        if (!spatialIndexDirty) {
-            return
-        }
-        spatialIndex.clear()
-        hasSpatialBounds = false
-        triangles.forEach { triangle ->
-            val min = triangleMin(triangle)
-            val max = triangleMax(triangle)
-            spatialIndex.upsertAabb(min, max, triangle)
-            expandSpatialBounds(min, max)
-        }
-        spatialIndexDirty = false
-        spatialBoundsDirty = false
-    }
-
     private fun triangleCandidatesForRay(ray: com.badlogic.gdx.math.collision.Ray): List<Triangle> {
-        ensureSpatialIndex()
-        ensureSpatialBounds()
+        if (spatialIndexDirty) {
+            return triangles
+        }
         if (!hasSpatialBounds) {
             return emptyList()
         }
@@ -2295,19 +2288,21 @@ class DraftFaceStore(
                 kotlin.math.max(start.y, end.y),
                 kotlin.math.max(start.z, end.z)
             )
-        )
+        ).mapNotNull { id -> trianglesById[id] }
     }
 
     private fun trianglesIntersectingQuery(min: Vector3, max: Vector3): List<Triangle> {
-        ensureSpatialIndex()
-        ensureSpatialBounds()
-        return if (hasSpatialBounds) spatialIndex.queryAabb(min, max) else emptyList()
+        if (spatialIndexDirty) {
+            return triangles.filter { tri -> triangleIntersectsAabb(tri, min, max) }
+        }
+        return if (hasSpatialBounds) spatialIndex.queryAabb(min, max).mapNotNull { id -> trianglesById[id] } else emptyList()
     }
 
     private fun invalidateSpatialIndex() {
         spatialIndexDirty = true
         spatialBoundsDirty = true
         hasSpatialBounds = false
+        asyncSpatialIndex.markDirty()
     }
 
     private fun clearSpatialIndexState() {
@@ -2315,6 +2310,7 @@ class DraftFaceStore(
         spatialIndexDirty = false
         spatialBoundsDirty = false
         hasSpatialBounds = false
+        asyncSpatialIndex.markCurrent()
     }
 
     private fun ensureSpatialBounds() {
@@ -2331,12 +2327,12 @@ class DraftFaceStore(
     private fun registerTriangle(triangle: Triangle) {
         val min = triangleMin(triangle)
         val max = triangleMax(triangle)
-        spatialIndex.upsertAabb(min, max, triangle)
+        spatialIndex.upsertAabb(min, max, triangle.id)
         expandSpatialBounds(min, max)
     }
 
     private fun unregisterTriangle(triangle: Triangle) {
-        spatialIndex.remove(triangle)
+        spatialIndex.removeByKey(triangle.id)
         spatialBoundsDirty = true
         hasSpatialBounds = false
     }
@@ -2370,5 +2366,12 @@ class DraftFaceStore(
             kotlin.math.max(triangle.a.y, kotlin.math.max(triangle.b.y, triangle.c.y)) + epsilon,
             kotlin.math.max(triangle.a.z, kotlin.math.max(triangle.b.z, triangle.c.z)) + epsilon
         )
+    }
+
+    private fun rebuildTriangleLookup() {
+        trianglesById.clear()
+        triangles.forEach { triangle ->
+            trianglesById[triangle.id] = triangle
+        }
     }
 }

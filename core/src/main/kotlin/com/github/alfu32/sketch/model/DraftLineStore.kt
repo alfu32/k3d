@@ -21,12 +21,16 @@ class DraftLineStore {
     private var autoProcessingIgnorePredicate: ((Segment) -> Boolean)? = null
     private val epsilon = 1e-3f
     private val epsilonSq = epsilon * epsilon
-    private val spatialIndex = SpatialHash3D<Segment>(SPATIAL_HASH_CELL_SIZE) { segment -> segment.id }
+    private val segmentsById = linkedMapOf<String, Segment>()
+    private var spatialIndex = SpatialHash3D<String>(SPATIAL_HASH_CELL_SIZE) { it }
+    private val asyncSpatialIndex = AsyncAabbIndexRebuilder<String>("Lines index", SPATIAL_HASH_CELL_SIZE, keyOf = { it })
     private var spatialIndexDirty = true
     private var spatialBoundsDirty = true
     private val spatialBoundsMin = Vector3()
     private val spatialBoundsMax = Vector3()
     private var hasSpatialBounds = false
+    private var cleanupPending = false
+    private var cleanupDueAtMs = 0L
 
     fun setChangeListener(listener: () -> Unit) {
         onChange = listener
@@ -61,18 +65,18 @@ class DraftLineStore {
         }
         val changed = addSegmentInternal(start, end, id)
         if (autoCleanup) {
-            withChangeSuppressed {
-                cleanupJts()
+            if (changed) {
+                scheduleDeferredCleanup()
+                notifyChange()
             }
-            notifyChange()
         } else if (changed) {
-            notifyChange(false)
+            notifyChange()
         }
     }
 
     fun getSegments(): List<Segment> = segments
 
-    fun segmentById(id: String): Segment? = segments.firstOrNull { it.id == id }
+    fun segmentById(id: String): Segment? = segmentsById[id]
 
     fun getSelected(): Set<Segment> = selected
 
@@ -102,10 +106,8 @@ class DraftLineStore {
         val removed = selected.toList()
         segments.removeAll(selected)
         selected.clear()
-        if (!spatialIndexDirty) {
-            removed.forEach { unregisterSegment(it) }
-        }
-        notifyChange(false)
+        removed.forEach { segmentsById.remove(it.id) }
+        notifyChange()
         return before - segments.size
     }
 
@@ -118,10 +120,8 @@ class DraftLineStore {
         segments.removeAll(target)
         selected.removeAll(target)
         if (before != segments.size) {
-            if (!spatialIndexDirty) {
-                target.forEach { unregisterSegment(it) }
-            }
-            notifyChange(false)
+            target.forEach { segmentsById.remove(it.id) }
+            notifyChange()
         }
         return before - segments.size
     }
@@ -147,13 +147,10 @@ class DraftLineStore {
         }
         segments.clear()
         segments.addAll(newSegments)
+        rebuildSegmentLookup()
         selected.clear()
         selected.addAll(newSelected)
-        if (!spatialIndexDirty) {
-            oldSelected.forEach { unregisterSegment(it) }
-            newSelected.forEach { registerSegment(it) }
-        }
-        notifyChange(false)
+        notifyChange()
         return newSelected.size
     }
 
@@ -189,13 +186,10 @@ class DraftLineStore {
         }
         segments.clear()
         segments.addAll(newSegments)
+        rebuildSegmentLookup()
         selected.clear()
         selected.addAll(newSelected)
-        if (!spatialIndexDirty) {
-            targetSet.forEach { unregisterSegment(it) }
-            mapping.values.forEach { registerSegment(it) }
-        }
-        notifyChange(false)
+        notifyChange()
         return mapping
     }
 
@@ -210,14 +204,12 @@ class DraftLineStore {
             val b = transform(Vector3(segment.end))
             val next = Segment(a, b)
             segments.add(next)
+            segmentsById[next.id] = next
             newSelected.add(next)
-            if (!spatialIndexDirty) {
-                registerSegment(next)
-            }
         }
         selected.clear()
         selected.addAll(newSelected)
-        notifyChange(false)
+        notifyChange()
         return newSelected.size
     }
 
@@ -240,6 +232,7 @@ class DraftLineStore {
         if (segments.isEmpty()) {
             return
         }
+        cleanupPending = false
         cleanupJts()
         notifyChange()
     }
@@ -247,7 +240,9 @@ class DraftLineStore {
     fun clearAll() {
         if (segments.isNotEmpty()) {
             segments.clear()
+            segmentsById.clear()
             selected.clear()
+            cleanupPending = false
             clearSpatialIndexState()
             notifyChange(false)
         }
@@ -420,11 +415,7 @@ class DraftLineStore {
     private fun snapToExistingEndpoint(point: Vector3, include: (Segment) -> Boolean = { true }): Vector3? {
         val min = Vector3(point.x - epsilon, point.y - epsilon, point.z - epsilon)
         val max = Vector3(point.x + epsilon, point.y + epsilon, point.z + epsilon)
-        val candidates = if (spatialIndexDirty) {
-            segmentsIntersectingLinear(min, max)
-        } else {
-            segmentsIntersectingQuery(min, max)
-        }
+        val candidates = segmentsIntersectingQuery(min, max)
         candidates.forEach { segment ->
             if (!include(segment)) {
                 return@forEach
@@ -454,6 +445,7 @@ class DraftLineStore {
 
     private fun notifyChange(invalidateSpatialIndex: Boolean = true) {
         if (invalidateSpatialIndex) {
+            rebuildSegmentLookup()
             invalidateSpatialIndex()
         }
         if (!suppressChange) {
@@ -470,29 +462,43 @@ class DraftLineStore {
 
     fun aabbCandidates(min: Vector3, max: Vector3): List<Segment> = segmentsIntersectingQuery(min, max)
 
+    fun processAsyncMaintenance(nowMs: Long = System.currentTimeMillis()) {
+        if (cleanupPending && nowMs >= cleanupDueAtMs && suppressAutoSplitDepth <= 0) {
+            cleanupPending = false
+            cleanupJts()
+            notifyChange()
+            return
+        }
+        asyncSpatialIndex.process(
+            nowMs = nowMs,
+            snapshotProvider = {
+                segments.map { segment ->
+                    IndexedAabbSnapshot<String>(
+                        item = segment.id,
+                        min = segmentMin(segment),
+                        max = segmentMax(segment)
+                    )
+                }
+            },
+            apply = { result ->
+                spatialIndex = result.index
+                hasSpatialBounds = result.hasBounds
+                spatialBoundsMin.set(result.boundsMin)
+                spatialBoundsMax.set(result.boundsMax)
+                spatialBoundsDirty = false
+                spatialIndexDirty = false
+            }
+        )
+    }
+
     private fun segmentsIntersectingLinear(min: Vector3, max: Vector3): List<Segment> {
         return segments.filter { segment -> segmentAabbIntersects(segment, min, max) }
     }
 
-    private fun ensureSpatialIndex() {
-        if (!spatialIndexDirty) {
-            return
-        }
-        spatialIndex.clear()
-        hasSpatialBounds = false
-        segments.forEach { segment ->
-            val min = segmentMin(segment)
-            val max = segmentMax(segment)
-            spatialIndex.upsertAabb(min, max, segment)
-            expandSpatialBounds(min, max)
-        }
-        spatialIndexDirty = false
-        spatialBoundsDirty = false
-    }
-
     private fun segmentCandidatesForRay(ray: com.badlogic.gdx.math.collision.Ray): List<Segment> {
-        ensureSpatialIndex()
-        ensureSpatialBounds()
+        if (spatialIndexDirty) {
+            return segments
+        }
         if (!hasSpatialBounds) {
             return emptyList()
         }
@@ -511,13 +517,14 @@ class DraftLineStore {
                 kotlin.math.max(start.y, end.y),
                 kotlin.math.max(start.z, end.z)
             )
-        )
+        ).mapNotNull { id -> segmentsById[id] }
     }
 
     private fun segmentsIntersectingQuery(min: Vector3, max: Vector3): List<Segment> {
-        ensureSpatialIndex()
-        ensureSpatialBounds()
-        return if (hasSpatialBounds) spatialIndex.queryAabb(min, max) else emptyList()
+        if (spatialIndexDirty) {
+            return segmentsIntersectingLinear(min, max)
+        }
+        return if (hasSpatialBounds) spatialIndex.queryAabb(min, max).mapNotNull { id -> segmentsById[id] } else emptyList()
     }
 
     private fun segmentAabbIntersects(segment: Segment, min: Vector3, max: Vector3): Boolean {
@@ -565,6 +572,7 @@ class DraftLineStore {
                 segments.clear()
                 segments.addAll(cleanedSegments)
                 segments.addAll(excluded)
+                rebuildSegmentLookup()
                 selected.clear()
                 selected.addAll(cleanedSelected)
                 selected.addAll(excludedSelected)
@@ -574,6 +582,7 @@ class DraftLineStore {
         val (newSegments, newSelected) = cleanupSegmentsJts(segments, selected)
         segments.clear()
         segments.addAll(newSegments)
+        rebuildSegmentLookup()
         selected.clear()
         selected.addAll(newSelected)
     }
@@ -675,16 +684,11 @@ class DraftLineStore {
             val raw = Segment(Vector3(start), Vector3(end))
             raw.id = id
             segments.add(raw)
-            if (!spatialIndexDirty) {
-                registerSegment(raw)
-            }
+            segmentsById[raw.id] = raw
             return true
         }
         val before = segments.size
         val ignore = autoProcessingIgnorePredicate
-        val incrementalSpatialUpdate = !spatialIndexDirty
-        val removedSegments = if (incrementalSpatialUpdate) mutableListOf<Segment>() else null
-        val addedSegments = if (incrementalSpatialUpdate) mutableListOf<Segment>() else null
         fun include(segment: Segment): Boolean = ignore?.invoke(segment) != true
         val newStart = snapToExistingEndpoint(start, ::include) ?: Vector3(start)
         val newEnd = snapToExistingEndpoint(end, ::include) ?: Vector3(end)
@@ -721,13 +725,10 @@ class DraftLineStore {
 
             if (u > epsilon && u < 1f - epsilon) {
                 segments.removeAt(currentIndex)
-                removedSegments?.add(existing)
                 val first = Segment(Vector3(existing.start), Vector3(point))
                 val second = Segment(Vector3(point), Vector3(existing.end))
                 segments.add(currentIndex, first)
                 segments.add(currentIndex + 1, second)
-                addedSegments?.add(first)
-                addedSegments?.add(second)
             }
 
             if (t > epsilon && t < 1f - epsilon) {
@@ -749,22 +750,20 @@ class DraftLineStore {
                     segment.id = id
                 }
                 segments.add(segment)
-                addedSegments?.add(segment)
             }
         }
-
-        if (incrementalSpatialUpdate) {
-            removedSegments!!.forEach { unregisterSegment(it) }
-            addedSegments!!.forEach { registerSegment(it) }
+        val changed = segments.size != before
+        if (changed) {
+            rebuildSegmentLookup()
         }
-
-        return segments.size != before
+        return changed
     }
 
     private fun invalidateSpatialIndex() {
         spatialIndexDirty = true
         spatialBoundsDirty = true
         hasSpatialBounds = false
+        asyncSpatialIndex.markDirty()
     }
 
     private fun clearSpatialIndexState() {
@@ -772,6 +771,7 @@ class DraftLineStore {
         spatialIndexDirty = false
         spatialBoundsDirty = false
         hasSpatialBounds = false
+        asyncSpatialIndex.markCurrent()
     }
 
     private fun ensureSpatialBounds() {
@@ -788,12 +788,12 @@ class DraftLineStore {
     private fun registerSegment(segment: Segment) {
         val min = segmentMin(segment)
         val max = segmentMax(segment)
-        spatialIndex.upsertAabb(min, max, segment)
+        spatialIndex.upsertAabb(min, max, segment.id)
         expandSpatialBounds(min, max)
     }
 
     private fun unregisterSegment(segment: Segment) {
-        spatialIndex.remove(segment)
+        spatialIndex.removeByKey(segment.id)
         spatialBoundsDirty = true
         hasSpatialBounds = false
     }
@@ -934,6 +934,18 @@ class DraftLineStore {
         val currentSelection = selected.toList()
         selected.clear()
         selected.addAll(currentSelection)
+    }
+
+    private fun scheduleDeferredCleanup(nowMs: Long = System.currentTimeMillis()) {
+        cleanupPending = true
+        cleanupDueAtMs = nowMs + 250L
+    }
+
+    private fun rebuildSegmentLookup() {
+        segmentsById.clear()
+        segments.forEach { segment ->
+            segmentsById[segment.id] = segment
+        }
     }
 
 }

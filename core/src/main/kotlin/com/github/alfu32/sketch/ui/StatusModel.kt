@@ -3,6 +3,7 @@ package com.github.alfu32.sketch.ui
 class StatusModel(
     var activeTool: ToolId = ToolId.SELECT,
     var message: String = "",
+    var backgroundStatus: String = "",
     var inputBuffer: String = "",
     var cursorScreenX: Int = 0,
     var cursorScreenY: Int = 0,

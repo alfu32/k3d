@@ -903,7 +903,11 @@ class SketchUiOverlay(
     fun updateFromStatus() {
         val selection = selectionInfoProvider()
         toolLabel.setText("Tool: ${status.activeTool.displayName}")
-        messageLabel.setText(status.message)
+        messageLabel.setText(
+            listOf(status.message, status.backgroundStatus)
+                .filter { it.isNotBlank() }
+                .joinToString(" | ")
+        )
         val copyText = if (status.activeTool == ToolId.MOVE || status.activeTool == ToolId.ROTATE) {
             if (status.copyMode) "Copy: On" else "Copy: Off"
         } else {

@@ -53,6 +53,7 @@ import com.github.alfu32.sketch.model.ArchitectureStore
 import com.github.alfu32.sketch.model.DraftTextStore
 import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.model.HvacStore
+import com.github.alfu32.sketch.model.IndexingStatusBus
 import com.github.alfu32.sketch.model.ModelPersistence
 import com.github.alfu32.sketch.model.ModelCleanup
 import com.github.alfu32.sketch.model.ModelUnit
@@ -2614,6 +2615,8 @@ class Main(
     }
 
     override fun render() {
+        scene.processAsyncMaintenance(System.currentTimeMillis())
+        statusModel.backgroundStatus = IndexingStatusBus.summary()
         updateActiveCamera(Gdx.graphics.deltaTime)
         handleGlobalDistanceShortcut()
         updateCursorStatus()
