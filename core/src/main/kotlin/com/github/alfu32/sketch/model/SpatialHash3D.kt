@@ -11,19 +11,51 @@ class SpatialHash3D<T>(
 ) {
     data class CellKey(val x: Int, val y: Int, val z: Int)
 
-    private val cells = linkedMapOf<CellKey, MutableList<T>>()
+    private val cells = linkedMapOf<CellKey, LinkedHashMap<String, T>>()
+    private val itemCells = linkedMapOf<String, MutableSet<CellKey>>()
 
     fun clear() {
         cells.clear()
+        itemCells.clear()
     }
 
     fun insertAabb(min: Vector3, max: Vector3, item: T) {
-        val minKey = cellKeyOf(min)
-        val maxKey = cellKeyOf(max)
-        for (x in minKey.x..maxKey.x) {
-            for (y in minKey.y..maxKey.y) {
-                for (z in minKey.z..maxKey.z) {
-                    cells.getOrPut(CellKey(x, y, z)) { mutableListOf() }.add(item)
+        upsertAabb(min, max, item)
+    }
+
+    fun upsertAabb(min: Vector3, max: Vector3, item: T) {
+        val key = keyOf(item)
+        val newKeys = cellKeysForAabb(min, max)
+        val oldKeys = itemCells[key]
+
+        if (oldKeys != null) {
+            oldKeys.filter { it !in newKeys }.forEach { cellKey ->
+                cells[cellKey]?.let { bucket ->
+                    bucket.remove(key)
+                    if (bucket.isEmpty()) {
+                        cells.remove(cellKey)
+                    }
+                }
+            }
+        }
+
+        newKeys.forEach { cellKey ->
+            cells.getOrPut(cellKey) { linkedMapOf() }[key] = item
+        }
+        itemCells[key] = newKeys
+    }
+
+    fun remove(item: T) {
+        removeByKey(keyOf(item))
+    }
+
+    fun removeByKey(key: String) {
+        val oldKeys = itemCells.remove(key) ?: return
+        oldKeys.forEach { cellKey ->
+            cells[cellKey]?.let { bucket ->
+                bucket.remove(key)
+                if (bucket.isEmpty()) {
+                    cells.remove(cellKey)
                 }
             }
         }
@@ -33,6 +65,18 @@ class SpatialHash3D<T>(
         if (cells.isEmpty()) {
             return emptyList()
         }
+        val deduped = linkedMapOf<String, T>()
+        cellKeysForAabb(min, max).forEach { cellKey ->
+            cells[cellKey].orEmpty().forEach { (key, item) ->
+                deduped.putIfAbsent(key, item)
+            }
+        }
+        return deduped.values.toList()
+    }
+
+    private fun cellKeyOf(point: Vector3): CellKey = cellKey(point.x, point.y, point.z)
+
+    private fun cellKeysForAabb(min: Vector3, max: Vector3): MutableSet<CellKey> {
         val minX = min(min.x, max.x)
         val minY = min(min.y, max.y)
         val minZ = min(min.z, max.z)
@@ -41,20 +85,16 @@ class SpatialHash3D<T>(
         val maxZ = max(min.z, max.z)
         val minKey = cellKey(minX, minY, minZ)
         val maxKey = cellKey(maxX, maxY, maxZ)
-        val deduped = linkedMapOf<String, T>()
+        val result = linkedSetOf<CellKey>()
         for (x in minKey.x..maxKey.x) {
             for (y in minKey.y..maxKey.y) {
                 for (z in minKey.z..maxKey.z) {
-                    cells[CellKey(x, y, z)].orEmpty().forEach { item ->
-                        deduped.putIfAbsent(keyOf(item), item)
-                    }
+                    result.add(CellKey(x, y, z))
                 }
             }
         }
-        return deduped.values.toList()
+        return result
     }
-
-    private fun cellKeyOf(point: Vector3): CellKey = cellKey(point.x, point.y, point.z)
 
     private fun cellKey(x: Float, y: Float, z: Float): CellKey {
         return CellKey(

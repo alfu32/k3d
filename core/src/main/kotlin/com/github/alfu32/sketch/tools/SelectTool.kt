@@ -21,6 +21,8 @@ import com.github.alfu32.sketch.model.VoxelStore
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
+import kotlin.math.max
+import kotlin.math.min
 
 class SelectTool(
     private val scene: GroupScene,
@@ -35,6 +37,7 @@ class SelectTool(
     private val dimensionsUnlocked: () -> Boolean = { true },
     private val textsVisible: () -> Boolean = { true },
     private val textsUnlocked: () -> Boolean = { true },
+    private val vectorGlyphCatalogProvider: (String) -> VectorGlyphCatalog = { VectorGlyphCatalog.empty(it) },
     private val tutorialSelectionActionObserved: (String, String) -> Unit = { _, _ -> }
 ) : Tool {
     data class WindowRect(val x: Float, val y: Float, val width: Float, val height: Float, val dashed: Boolean)
@@ -1155,6 +1158,11 @@ class SelectTool(
         val t: Float
     )
 
+    private data class VectorTextScreenGeometry(
+        val bounds: WindowRectTopLeft,
+        val segments: List<Pair<Vector3, Vector3>>
+    )
+
     private data class GroupHitWorld(
         val group: GroupScene.GroupNode,
         val point: Vector3,
@@ -1375,6 +1383,30 @@ class SelectTool(
         val group = scene.activeGroup()
         var best: TextHitWorld? = null
         group.textStore.getTexts().forEach { text ->
+            if (text.kind == DraftTextStore.Kind.VECTOR) {
+                var bestVectorHit: TextHitWorld? = null
+                forEachVectorTextWorldGeometry(
+                    group = group,
+                    text = text,
+                    onSegment = { a, b ->
+                        val hit = closestRaySegment(ray.origin, ray.direction, a, b)
+                        if (hit != null) {
+                            val screenDist = screenDistance(hit.point, screenX, screenY)
+                            if (screenDist <= maxPixels) {
+                                if (bestVectorHit == null || hit.t < bestVectorHit!!.t) {
+                                    bestVectorHit = TextHitWorld(text, hit.point, hit.t)
+                                }
+                            }
+                        }
+                    }
+                )
+                if (bestVectorHit != null) {
+                    if (best == null || bestVectorHit!!.t < best!!.t) {
+                        best = bestVectorHit
+                    }
+                    return@forEach
+                }
+            }
             val world = group.toWorld(text.position)
             val screenDist = screenDistance(world, screenX, screenY)
             if (screenDist <= maxPixels) {
@@ -2450,8 +2482,23 @@ class SelectTool(
         var count = 0
         val group = scene.activeGroup()
         group.textStore.getTexts().forEach { text ->
-            val pos = projectWorldToScreen(group.toWorld(text.position)) ?: return@forEach
-            val matches = pointInRect(pos, rect)
+            val matches = if (text.kind == DraftTextStore.Kind.VECTOR) {
+                val geometry = buildVectorTextScreenGeometry(group, text)
+                if (geometry != null) {
+                    if (!includeIntersect) {
+                        rectContainsRect(rect, geometry.bounds)
+                    } else {
+                        rectsIntersect(rect, geometry.bounds) ||
+                            geometry.segments.any { (a, b) -> segmentIntersectsRect(a, b, rect) }
+                    }
+                } else {
+                    val pos = projectWorldToScreen(group.toWorld(text.position)) ?: return@forEach
+                    pointInRect(pos, rect)
+                }
+            } else {
+                val pos = projectWorldToScreen(group.toWorld(text.position)) ?: return@forEach
+                pointInRect(pos, rect)
+            }
             if (matches) {
                 when (mode) {
                     SelectionMode.ADD, SelectionMode.REPLACE -> {
@@ -2494,6 +2541,17 @@ class SelectTool(
             point.x <= rect.maxX &&
             point.y >= rect.minY &&
             point.y <= rect.maxY
+    }
+
+    private fun rectContainsRect(outer: WindowRectTopLeft, inner: WindowRectTopLeft): Boolean {
+        return inner.minX >= outer.minX &&
+            inner.maxX <= outer.maxX &&
+            inner.minY >= outer.minY &&
+            inner.maxY <= outer.maxY
+    }
+
+    private fun rectsIntersect(a: WindowRectTopLeft, b: WindowRectTopLeft): Boolean {
+        return !(a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY)
     }
 
     private fun selectionMode(): SelectionMode {
@@ -2625,6 +2683,130 @@ class SelectTool(
             Vector2(maxX, maxY),
             Vector2(minX, maxY)
         )
+    }
+
+    private fun buildVectorTextScreenGeometry(
+        group: GroupScene.GroupNode,
+        text: DraftTextStore.TextEntity
+    ): VectorTextScreenGeometry? {
+        val screenPoints = mutableListOf<Vector3>()
+        val screenSegments = mutableListOf<Pair<Vector3, Vector3>>()
+        forEachVectorTextWorldGeometry(
+            group = group,
+            text = text,
+            onSegment = { a, b ->
+                val screenA = projectWorldToScreen(a)
+                val screenB = projectWorldToScreen(b)
+                if (screenA != null && screenB != null) {
+                    screenPoints += screenA
+                    screenPoints += screenB
+                    screenSegments += screenA to screenB
+                }
+            },
+            onPoint = { point ->
+                projectWorldToScreen(point)?.let { screenPoints += it }
+            }
+        )
+        if (screenPoints.isEmpty()) {
+            return null
+        }
+        var minX = Float.POSITIVE_INFINITY
+        var minY = Float.POSITIVE_INFINITY
+        var maxX = Float.NEGATIVE_INFINITY
+        var maxY = Float.NEGATIVE_INFINITY
+        screenPoints.forEach { point ->
+            minX = min(minX, point.x)
+            minY = min(minY, point.y)
+            maxX = max(maxX, point.x)
+            maxY = max(maxY, point.y)
+        }
+        return VectorTextScreenGeometry(
+            bounds = WindowRectTopLeft(minX, maxX, minY, maxY),
+            segments = screenSegments
+        )
+    }
+
+    private fun forEachVectorTextWorldGeometry(
+        group: GroupScene.GroupNode,
+        text: DraftTextStore.TextEntity,
+        onSegment: ((Vector3, Vector3) -> Unit)? = null,
+        onPoint: ((Vector3) -> Unit)? = null
+    ) {
+        if (text.kind != DraftTextStore.Kind.VECTOR) {
+            return
+        }
+        val catalog = vectorGlyphCatalogProvider(text.glyphSourcePath)
+        if (catalog.isEmpty()) {
+            return
+        }
+        val axisW = Vector3(text.axisU).crs(text.normal).nor()
+        if (axisW.len2() <= 1e-6f) {
+            return
+        }
+        val targetHeight = text.size.coerceAtLeast(1e-3f)
+        val tracking = text.tracking.coerceAtLeast(0f)
+        val lineSpacing = text.lineSpacing.coerceAtLeast(0.1f)
+        val lineStep = lineSpacing * targetHeight
+        val spaceAdvance = targetHeight * 0.6f
+        var pen = 0f
+        var lineOffset = 0f
+        var index = 0
+        while (index < text.text.length) {
+            val codePoint = Character.codePointAt(text.text, index)
+            index += Character.charCount(codePoint)
+            when (codePoint) {
+                '\n'.code -> {
+                    pen = 0f
+                    lineOffset += lineStep
+                    continue
+                }
+
+                '\r'.code -> continue
+                ' '.code, '\t'.code -> {
+                    pen += spaceAdvance
+                    continue
+                }
+            }
+            val glyph = catalog.glyphOrSquare(codePoint)
+            if (glyph.height <= 1e-6f || glyph.width < 0f) {
+                pen += spaceAdvance
+                continue
+            }
+            val scale = targetHeight / glyph.height
+            val lineOrigin = Vector3(text.position).mulAdd(axisW, -lineOffset)
+            val glyphOrigin = Vector3(lineOrigin)
+                .mulAdd(text.axisU, pen - glyph.minX * scale)
+                .mulAdd(axisW, -glyph.minZ * scale)
+            val localU = Vector3(text.axisU).scl(scale)
+            val localV = Vector3(text.normal).scl(scale)
+            val localW = Vector3(axisW).scl(scale)
+            glyph.segments.forEach { segment ->
+                val a = group.toWorld(transformGlyphPoint(segment.start, glyphOrigin, localU, localV, localW))
+                val b = group.toWorld(transformGlyphPoint(segment.end, glyphOrigin, localU, localV, localW))
+                onPoint?.invoke(a)
+                onPoint?.invoke(b)
+                onSegment?.invoke(a, b)
+            }
+            glyph.faces.forEach { face ->
+                onPoint?.invoke(group.toWorld(transformGlyphPoint(face.a, glyphOrigin, localU, localV, localW)))
+                onPoint?.invoke(group.toWorld(transformGlyphPoint(face.b, glyphOrigin, localU, localV, localW)))
+                onPoint?.invoke(group.toWorld(transformGlyphPoint(face.c, glyphOrigin, localU, localV, localW)))
+            }
+            pen += glyph.width * scale + tracking * targetHeight
+        }
+    }
+
+    private fun transformGlyphPoint(
+        point: Vector3,
+        origin: Vector3,
+        axisU: Vector3,
+        axisV: Vector3,
+        axisW: Vector3
+    ): Vector3 {
+        return Vector3(origin)
+            .mulAdd(axisU, point.x)
+            .mulAdd(axisV, point.y)
+            .mulAdd(axisW, point.z)
     }
 
     private fun pointInTriangle(p: Vector2, a: Vector2, b: Vector2, c: Vector2): Boolean {

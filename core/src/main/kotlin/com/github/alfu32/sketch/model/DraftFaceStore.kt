@@ -41,6 +41,7 @@ class DraftFaceStore(
     private val planeEps = 1e-2f
     private val spatialIndex = SpatialHash3D<Triangle>(SPATIAL_HASH_CELL_SIZE) { triangle -> triangle.id }
     private var spatialIndexDirty = true
+    private var spatialBoundsDirty = true
     private val spatialBoundsMin = Vector3()
     private val spatialBoundsMax = Vector3()
     private var hasSpatialBounds = false
@@ -64,7 +65,10 @@ class DraftFaceStore(
         triangle.id = id
         triangles.add(triangle)
         colors[triangle] = com.badlogic.gdx.graphics.Color(defaultColor)
-        notifyChange()
+        if (!spatialIndexDirty) {
+            registerTriangle(triangle)
+        }
+        notifyChange(false)
     }
 
     fun addTriangle(
@@ -78,7 +82,10 @@ class DraftFaceStore(
         triangle.id = id
         triangles.add(triangle)
         colors[triangle] = com.badlogic.gdx.graphics.Color(color)
-        notifyChange()
+        if (!spatialIndexDirty) {
+            registerTriangle(triangle)
+        }
+        notifyChange(false)
     }
 
     fun addPolygon(points: List<Vector3>, preferredNormal: Vector3? = null) {
@@ -160,7 +167,11 @@ class DraftFaceStore(
         triangles.addAll(newTriangles)
         selected.clear()
         selected.addAll(newSelected)
-        notifyChange()
+        if (!spatialIndexDirty) {
+            oldSelected.forEach { unregisterTriangle(it) }
+            newSelected.forEach { registerTriangle(it) }
+        }
+        notifyChange(false)
         return newSelected.size
     }
 
@@ -171,8 +182,11 @@ class DraftFaceStore(
         val before = triangles.size
         selected.forEach { colors.remove(it) }
         triangles.removeAll(selected)
+        if (!spatialIndexDirty) {
+            selected.forEach { unregisterTriangle(it) }
+        }
         selected.clear()
-        notifyChange()
+        notifyChange(false)
         return before - triangles.size
     }
 
@@ -181,13 +195,17 @@ class DraftFaceStore(
             return 0
         }
         val before = triangles.size
-        triangles.removeAll(items.toSet())
-        items.forEach { tri ->
+        val target = items.toSet()
+        triangles.removeAll(target)
+        target.forEach { tri ->
             colors.remove(tri)
             selected.remove(tri)
         }
         if (before != triangles.size) {
-            notifyChange()
+            if (!spatialIndexDirty) {
+                target.forEach { unregisterTriangle(it) }
+            }
+            notifyChange(false)
         }
         return before - triangles.size
     }
@@ -197,7 +215,8 @@ class DraftFaceStore(
             triangles.clear()
             selected.clear()
             colors.clear()
-            notifyChange()
+            clearSpatialIndexState()
+            notifyChange(false)
         }
     }
 
@@ -208,13 +227,13 @@ class DraftFaceStore(
         selected.forEach { triangle ->
             colors[triangle] = com.badlogic.gdx.graphics.Color(color)
         }
-        notifyChange()
+        notifyChange(false)
         return selected.size
     }
 
     fun paintTriangle(triangle: Triangle, color: com.badlogic.gdx.graphics.Color) {
         colors[triangle] = com.badlogic.gdx.graphics.Color(color)
-        notifyChange()
+        notifyChange(false)
     }
 
     fun transformSelected(transform: (Vector3) -> Vector3): Int {
@@ -249,7 +268,11 @@ class DraftFaceStore(
         selected.addAll(newSelected)
         colors.clear()
         colors.putAll(newColors)
-        notifyChange()
+        if (!spatialIndexDirty) {
+            oldSelected.forEach { unregisterTriangle(it) }
+            newSelected.forEach { registerTriangle(it) }
+        }
+        notifyChange(false)
         return newSelected.size
     }
 
@@ -296,7 +319,11 @@ class DraftFaceStore(
         colors.putAll(newColors)
         selected.clear()
         selected.addAll(newSelected)
-        notifyChange()
+        if (!spatialIndexDirty) {
+            targetSet.forEach { unregisterTriangle(it) }
+            mapping.values.forEach { registerTriangle(it) }
+        }
+        notifyChange(false)
         return mapping
     }
 
@@ -315,10 +342,13 @@ class DraftFaceStore(
             triangles.add(next)
             colors[next] = com.badlogic.gdx.graphics.Color(color)
             newSelected.add(next)
+            if (!spatialIndexDirty) {
+                registerTriangle(next)
+            }
         }
         selected.clear()
         selected.addAll(newSelected)
-        notifyChange()
+        notifyChange(false)
         return newSelected.size
     }
 
@@ -2188,8 +2218,10 @@ class DraftFaceStore(
         return a.z.compareTo(b.z)
     }
 
-    private fun notifyChange() {
-        spatialIndexDirty = true
+    private fun notifyChange(invalidateSpatialIndex: Boolean = true) {
+        if (invalidateSpatialIndex) {
+            invalidateSpatialIndex()
+        }
         markVisualChanged()
         if (!suppressChange) {
             onChange?.invoke()
@@ -2235,25 +2267,16 @@ class DraftFaceStore(
         triangles.forEach { triangle ->
             val min = triangleMin(triangle)
             val max = triangleMax(triangle)
-            if (!hasSpatialBounds) {
-                spatialBoundsMin.set(min)
-                spatialBoundsMax.set(max)
-                hasSpatialBounds = true
-            } else {
-                spatialBoundsMin.x = kotlin.math.min(spatialBoundsMin.x, min.x)
-                spatialBoundsMin.y = kotlin.math.min(spatialBoundsMin.y, min.y)
-                spatialBoundsMin.z = kotlin.math.min(spatialBoundsMin.z, min.z)
-                spatialBoundsMax.x = kotlin.math.max(spatialBoundsMax.x, max.x)
-                spatialBoundsMax.y = kotlin.math.max(spatialBoundsMax.y, max.y)
-                spatialBoundsMax.z = kotlin.math.max(spatialBoundsMax.z, max.z)
-            }
-            spatialIndex.insertAabb(min, max, triangle)
+            spatialIndex.upsertAabb(min, max, triangle)
+            expandSpatialBounds(min, max)
         }
         spatialIndexDirty = false
+        spatialBoundsDirty = false
     }
 
     private fun triangleCandidatesForRay(ray: com.badlogic.gdx.math.collision.Ray): List<Triangle> {
         ensureSpatialIndex()
+        ensureSpatialBounds()
         if (!hasSpatialBounds) {
             return emptyList()
         }
@@ -2277,7 +2300,60 @@ class DraftFaceStore(
 
     private fun trianglesIntersectingQuery(min: Vector3, max: Vector3): List<Triangle> {
         ensureSpatialIndex()
+        ensureSpatialBounds()
         return if (hasSpatialBounds) spatialIndex.queryAabb(min, max) else emptyList()
+    }
+
+    private fun invalidateSpatialIndex() {
+        spatialIndexDirty = true
+        spatialBoundsDirty = true
+        hasSpatialBounds = false
+    }
+
+    private fun clearSpatialIndexState() {
+        spatialIndex.clear()
+        spatialIndexDirty = false
+        spatialBoundsDirty = false
+        hasSpatialBounds = false
+    }
+
+    private fun ensureSpatialBounds() {
+        if (!spatialBoundsDirty) {
+            return
+        }
+        hasSpatialBounds = false
+        triangles.forEach { triangle ->
+            expandSpatialBounds(triangleMin(triangle), triangleMax(triangle))
+        }
+        spatialBoundsDirty = false
+    }
+
+    private fun registerTriangle(triangle: Triangle) {
+        val min = triangleMin(triangle)
+        val max = triangleMax(triangle)
+        spatialIndex.upsertAabb(min, max, triangle)
+        expandSpatialBounds(min, max)
+    }
+
+    private fun unregisterTriangle(triangle: Triangle) {
+        spatialIndex.remove(triangle)
+        spatialBoundsDirty = true
+        hasSpatialBounds = false
+    }
+
+    private fun expandSpatialBounds(min: Vector3, max: Vector3) {
+        if (!hasSpatialBounds) {
+            spatialBoundsMin.set(min)
+            spatialBoundsMax.set(max)
+            hasSpatialBounds = true
+            return
+        }
+        spatialBoundsMin.x = kotlin.math.min(spatialBoundsMin.x, min.x)
+        spatialBoundsMin.y = kotlin.math.min(spatialBoundsMin.y, min.y)
+        spatialBoundsMin.z = kotlin.math.min(spatialBoundsMin.z, min.z)
+        spatialBoundsMax.x = kotlin.math.max(spatialBoundsMax.x, max.x)
+        spatialBoundsMax.y = kotlin.math.max(spatialBoundsMax.y, max.y)
+        spatialBoundsMax.z = kotlin.math.max(spatialBoundsMax.z, max.z)
     }
 
     private fun triangleMin(triangle: Triangle): Vector3 {

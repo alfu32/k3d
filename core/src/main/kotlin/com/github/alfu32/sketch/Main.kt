@@ -705,6 +705,7 @@ class Main(
                     { isBasicKindUnlocked(BasicSelectionFilterKind.DIMENSION) },
                     { isBasicKindVisible(BasicSelectionFilterKind.TEXT) },
                     { isBasicKindUnlocked(BasicSelectionFilterKind.TEXT) },
+                    ::glyphCatalogForSource,
                     ::observeTutorialUiAction
                 ),
                 LineTool(scene) { toolController.setTool(ToolId.SELECT) },

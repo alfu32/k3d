@@ -23,6 +23,7 @@ class DraftLineStore {
     private val epsilonSq = epsilon * epsilon
     private val spatialIndex = SpatialHash3D<Segment>(SPATIAL_HASH_CELL_SIZE) { segment -> segment.id }
     private var spatialIndexDirty = true
+    private var spatialBoundsDirty = true
     private val spatialBoundsMin = Vector3()
     private val spatialBoundsMax = Vector3()
     private var hasSpatialBounds = false
@@ -65,7 +66,7 @@ class DraftLineStore {
             }
             notifyChange()
         } else if (changed) {
-            notifyChange()
+            notifyChange(false)
         }
     }
 
@@ -98,9 +99,13 @@ class DraftLineStore {
             return 0
         }
         val before = segments.size
+        val removed = selected.toList()
         segments.removeAll(selected)
         selected.clear()
-        notifyChange()
+        if (!spatialIndexDirty) {
+            removed.forEach { unregisterSegment(it) }
+        }
+        notifyChange(false)
         return before - segments.size
     }
 
@@ -113,7 +118,10 @@ class DraftLineStore {
         segments.removeAll(target)
         selected.removeAll(target)
         if (before != segments.size) {
-            notifyChange()
+            if (!spatialIndexDirty) {
+                target.forEach { unregisterSegment(it) }
+            }
+            notifyChange(false)
         }
         return before - segments.size
     }
@@ -141,7 +149,11 @@ class DraftLineStore {
         segments.addAll(newSegments)
         selected.clear()
         selected.addAll(newSelected)
-        notifyChange()
+        if (!spatialIndexDirty) {
+            oldSelected.forEach { unregisterSegment(it) }
+            newSelected.forEach { registerSegment(it) }
+        }
+        notifyChange(false)
         return newSelected.size
     }
 
@@ -179,7 +191,11 @@ class DraftLineStore {
         segments.addAll(newSegments)
         selected.clear()
         selected.addAll(newSelected)
-        notifyChange()
+        if (!spatialIndexDirty) {
+            targetSet.forEach { unregisterSegment(it) }
+            mapping.values.forEach { registerSegment(it) }
+        }
+        notifyChange(false)
         return mapping
     }
 
@@ -195,10 +211,13 @@ class DraftLineStore {
             val next = Segment(a, b)
             segments.add(next)
             newSelected.add(next)
+            if (!spatialIndexDirty) {
+                registerSegment(next)
+            }
         }
         selected.clear()
         selected.addAll(newSelected)
-        notifyChange()
+        notifyChange(false)
         return newSelected.size
     }
 
@@ -229,7 +248,8 @@ class DraftLineStore {
         if (segments.isNotEmpty()) {
             segments.clear()
             selected.clear()
-            notifyChange()
+            clearSpatialIndexState()
+            notifyChange(false)
         }
     }
 
@@ -432,8 +452,10 @@ class DraftLineStore {
         return result
     }
 
-    private fun notifyChange() {
-        spatialIndexDirty = true
+    private fun notifyChange(invalidateSpatialIndex: Boolean = true) {
+        if (invalidateSpatialIndex) {
+            invalidateSpatialIndex()
+        }
         if (!suppressChange) {
             onChange?.invoke()
         }
@@ -461,25 +483,16 @@ class DraftLineStore {
         segments.forEach { segment ->
             val min = segmentMin(segment)
             val max = segmentMax(segment)
-            if (!hasSpatialBounds) {
-                spatialBoundsMin.set(min)
-                spatialBoundsMax.set(max)
-                hasSpatialBounds = true
-            } else {
-                spatialBoundsMin.x = kotlin.math.min(spatialBoundsMin.x, min.x)
-                spatialBoundsMin.y = kotlin.math.min(spatialBoundsMin.y, min.y)
-                spatialBoundsMin.z = kotlin.math.min(spatialBoundsMin.z, min.z)
-                spatialBoundsMax.x = kotlin.math.max(spatialBoundsMax.x, max.x)
-                spatialBoundsMax.y = kotlin.math.max(spatialBoundsMax.y, max.y)
-                spatialBoundsMax.z = kotlin.math.max(spatialBoundsMax.z, max.z)
-            }
-            spatialIndex.insertAabb(min, max, segment)
+            spatialIndex.upsertAabb(min, max, segment)
+            expandSpatialBounds(min, max)
         }
         spatialIndexDirty = false
+        spatialBoundsDirty = false
     }
 
     private fun segmentCandidatesForRay(ray: com.badlogic.gdx.math.collision.Ray): List<Segment> {
         ensureSpatialIndex()
+        ensureSpatialBounds()
         if (!hasSpatialBounds) {
             return emptyList()
         }
@@ -503,6 +516,7 @@ class DraftLineStore {
 
     private fun segmentsIntersectingQuery(min: Vector3, max: Vector3): List<Segment> {
         ensureSpatialIndex()
+        ensureSpatialBounds()
         return if (hasSpatialBounds) spatialIndex.queryAabb(min, max) else emptyList()
     }
 
@@ -661,10 +675,16 @@ class DraftLineStore {
             val raw = Segment(Vector3(start), Vector3(end))
             raw.id = id
             segments.add(raw)
+            if (!spatialIndexDirty) {
+                registerSegment(raw)
+            }
             return true
         }
         val before = segments.size
         val ignore = autoProcessingIgnorePredicate
+        val incrementalSpatialUpdate = !spatialIndexDirty
+        val removedSegments = if (incrementalSpatialUpdate) mutableListOf<Segment>() else null
+        val addedSegments = if (incrementalSpatialUpdate) mutableListOf<Segment>() else null
         fun include(segment: Segment): Boolean = ignore?.invoke(segment) != true
         val newStart = snapToExistingEndpoint(start, ::include) ?: Vector3(start)
         val newEnd = snapToExistingEndpoint(end, ::include) ?: Vector3(end)
@@ -701,8 +721,13 @@ class DraftLineStore {
 
             if (u > epsilon && u < 1f - epsilon) {
                 segments.removeAt(currentIndex)
-                segments.add(currentIndex, Segment(Vector3(existing.start), Vector3(point)))
-                segments.add(currentIndex + 1, Segment(Vector3(point), Vector3(existing.end)))
+                removedSegments?.add(existing)
+                val first = Segment(Vector3(existing.start), Vector3(point))
+                val second = Segment(Vector3(point), Vector3(existing.end))
+                segments.add(currentIndex, first)
+                segments.add(currentIndex + 1, second)
+                addedSegments?.add(first)
+                addedSegments?.add(second)
             }
 
             if (t > epsilon && t < 1f - epsilon) {
@@ -724,10 +749,68 @@ class DraftLineStore {
                     segment.id = id
                 }
                 segments.add(segment)
+                addedSegments?.add(segment)
             }
         }
 
+        if (incrementalSpatialUpdate) {
+            removedSegments!!.forEach { unregisterSegment(it) }
+            addedSegments!!.forEach { registerSegment(it) }
+        }
+
         return segments.size != before
+    }
+
+    private fun invalidateSpatialIndex() {
+        spatialIndexDirty = true
+        spatialBoundsDirty = true
+        hasSpatialBounds = false
+    }
+
+    private fun clearSpatialIndexState() {
+        spatialIndex.clear()
+        spatialIndexDirty = false
+        spatialBoundsDirty = false
+        hasSpatialBounds = false
+    }
+
+    private fun ensureSpatialBounds() {
+        if (!spatialBoundsDirty) {
+            return
+        }
+        hasSpatialBounds = false
+        segments.forEach { segment ->
+            expandSpatialBounds(segmentMin(segment), segmentMax(segment))
+        }
+        spatialBoundsDirty = false
+    }
+
+    private fun registerSegment(segment: Segment) {
+        val min = segmentMin(segment)
+        val max = segmentMax(segment)
+        spatialIndex.upsertAabb(min, max, segment)
+        expandSpatialBounds(min, max)
+    }
+
+    private fun unregisterSegment(segment: Segment) {
+        spatialIndex.remove(segment)
+        spatialBoundsDirty = true
+        hasSpatialBounds = false
+    }
+
+    private fun expandSpatialBounds(min: Vector3, max: Vector3) {
+        if (!hasSpatialBounds) {
+            spatialBoundsMin.set(min)
+            spatialBoundsMax.set(max)
+            hasSpatialBounds = true
+            return
+        }
+        spatialBoundsMin.x = kotlin.math.min(spatialBoundsMin.x, min.x)
+        spatialBoundsMin.y = kotlin.math.min(spatialBoundsMin.y, min.y)
+        spatialBoundsMin.z = kotlin.math.min(spatialBoundsMin.z, min.z)
+        spatialBoundsMax.x = kotlin.math.max(spatialBoundsMax.x, max.x)
+        spatialBoundsMax.y = kotlin.math.max(spatialBoundsMax.y, max.y)
+        spatialBoundsMax.z = kotlin.math.max(spatialBoundsMax.z, max.z)
     }
 
     private data class LineKey(
