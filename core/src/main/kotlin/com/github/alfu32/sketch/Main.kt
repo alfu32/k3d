@@ -426,9 +426,11 @@ class Main(
     private var modelLoadTitleLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
     private var modelLoadDetailLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
     private var modelLoadFileBar: com.kotcrab.vis.ui.widget.VisProgressBar? = null
+    private var modelLoadDecodeBar: com.kotcrab.vis.ui.widget.VisProgressBar? = null
     private var modelLoadSceneBar: com.kotcrab.vis.ui.widget.VisProgressBar? = null
     private var modelLoadIndexBar: com.kotcrab.vis.ui.widget.VisProgressBar? = null
     private var modelLoadFileLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
+    private var modelLoadDecodeLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
     private var modelLoadSceneLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
     private var modelLoadIndexLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
 
@@ -439,10 +441,13 @@ class Main(
     ) {
         @Volatile var fileProgress: Float = 0f
         @Volatile var fileStageDone = false
+        @Volatile var decodeProgress: Float = 0f
+        @Volatile var decodeStageDone = false
         @Volatile var snapshot: ModelPersistence.ModelSnapshot? = null
         @Volatile var needsResave = false
         @Volatile var errorMessage: String? = null
         @Volatile var workerDone = false
+        @Volatile var canceled = false
         var sceneProgress: Float = 0f
         var indexProgress: Float = 0f
         var sceneApplied = false
@@ -890,6 +895,7 @@ class Main(
             ::groupInfo,
             ::updateGroupName,
             ::updateGroupGlue,
+            ::enterSelectedObjectEditMode,
             ::objectPrototypeInfo,
             ::startObjectPlacement,
             ::deleteObjectPrototype,
@@ -1607,6 +1613,9 @@ class Main(
         shapeRenderer = ShapeRenderer()
         spriteBatch = SpriteBatch()
         textFont = loadTextFont()
+        setupMeshes()
+        setupRenderables()
+        markSceneRuntimeDirty()
         setupLighting()
         setupUndoManager()
         loadModel()
@@ -1619,8 +1628,6 @@ class Main(
             pluginHost.reloadEnabledAndInit()
         }
         uiOverlay.refreshPluginPanels()
-        setupMeshes()
-        setupRenderables()
         if (!BuildFlags.WEB_BUILD && !webSafeRuntime) {
             setupMcpServer()
         }
@@ -6623,21 +6630,32 @@ class Main(
         val titleLabel = com.kotcrab.vis.ui.widget.VisLabel("Loading model")
         val detailLabel = com.kotcrab.vis.ui.widget.VisLabel("")
         val fileBar = com.kotcrab.vis.ui.widget.VisProgressBar(0f, 100f, 1f, false)
+        val decodeBar = com.kotcrab.vis.ui.widget.VisProgressBar(0f, 100f, 1f, false)
         val sceneBar = com.kotcrab.vis.ui.widget.VisProgressBar(0f, 100f, 1f, false)
         val indexBar = com.kotcrab.vis.ui.widget.VisProgressBar(0f, 100f, 1f, false)
         val fileLabel = com.kotcrab.vis.ui.widget.VisLabel("Loading file 0%")
+        val decodeLabel = com.kotcrab.vis.ui.widget.VisLabel("Unzipping 0%")
         val sceneLabel = com.kotcrab.vis.ui.widget.VisLabel("Scene 0%")
         val indexLabel = com.kotcrab.vis.ui.widget.VisLabel("Indexing 0%")
+        val abortButton = com.kotcrab.vis.ui.widget.VisTextButton("Abort")
+        abortButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
+                pendingModelLoad?.canceled = true
+            }
+        })
         val content = com.kotcrab.vis.ui.widget.VisTable(true).apply {
             defaults().growX().pad(4f)
             add(titleLabel).left().row()
             add(detailLabel).left().row()
             add(fileLabel).left().row()
             add(fileBar).growX().row()
+            add(decodeLabel).left().row()
+            add(decodeBar).growX().row()
             add(sceneLabel).left().row()
             add(sceneBar).growX().row()
             add(indexLabel).left().row()
             add(indexBar).growX().row()
+            add(abortButton).right().padTop(8f).row()
         }
         val dialog = com.kotcrab.vis.ui.widget.VisWindow("Model Load", true).apply {
             isModal = true
@@ -6651,9 +6669,11 @@ class Main(
         modelLoadTitleLabel = titleLabel
         modelLoadDetailLabel = detailLabel
         modelLoadFileBar = fileBar
+        modelLoadDecodeBar = decodeBar
         modelLoadSceneBar = sceneBar
         modelLoadIndexBar = indexBar
         modelLoadFileLabel = fileLabel
+        modelLoadDecodeLabel = decodeLabel
         modelLoadSceneLabel = sceneLabel
         modelLoadIndexLabel = indexLabel
     }
@@ -6667,22 +6687,27 @@ class Main(
         dialog.centerWindow()
         dialog.toFront()
         val filePercent = (load.fileProgress.coerceIn(0f, 1f) * 100f).roundToInt()
+        val decodePercent = (load.decodeProgress.coerceIn(0f, 1f) * 100f).roundToInt()
         val scenePercent = (load.sceneProgress.coerceIn(0f, 1f) * 100f).roundToInt()
         val indexPercent = (load.indexProgress.coerceIn(0f, 1f) * 100f).roundToInt()
         modelLoadTitleLabel?.setText("Loading ${load.displayName}")
         modelLoadDetailLabel?.setText(
             when {
+                load.canceled && !load.sceneApplied -> "Canceling load..."
                 load.errorMessage != null -> load.errorMessage
                 !load.fileStageDone -> "Reading and parsing model file..."
+                !load.decodeStageDone -> "Decompressing model data..."
                 !load.sceneApplied -> "Applying scene state..."
                 load.indexingDone < load.indexingTotal -> "Building query indexes..."
                 else -> "Finishing..."
             }
         )
         modelLoadFileBar?.value = filePercent.toFloat()
+        modelLoadDecodeBar?.value = decodePercent.toFloat()
         modelLoadSceneBar?.value = scenePercent.toFloat()
         modelLoadIndexBar?.value = indexPercent.toFloat()
         modelLoadFileLabel?.setText("Loading file ${filePercent}%")
+        modelLoadDecodeLabel?.setText("Unzipping ${decodePercent}%")
         modelLoadSceneLabel?.setText("Scene ${scenePercent}%")
         modelLoadIndexLabel?.setText("Indexing ${indexPercent}%")
     }
@@ -6691,13 +6716,20 @@ class Main(
         modelLoadDialog?.remove()
     }
 
-    private fun readFileBytesWithProgress(file: java.io.File, onProgress: (Float) -> Unit): ByteArray {
+    private fun readFileBytesWithProgress(
+        file: java.io.File,
+        onProgress: (Float) -> Unit,
+        isCanceled: () -> Boolean
+    ): ByteArray {
         val totalBytes = file.length().coerceAtLeast(1L)
         val output = java.io.ByteArrayOutputStream(totalBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
         val buffer = ByteArray(64 * 1024)
         var readBytes = 0L
         file.inputStream().buffered().use { input ->
             while (true) {
+                if (isCanceled()) {
+                    throw java.io.InterruptedIOException("load canceled")
+                }
                 val read = input.read(buffer)
                 if (read <= 0) {
                     break
@@ -6760,6 +6792,12 @@ class Main(
     private fun processPendingModelLoad() {
         val load = pendingModelLoad ?: return
         updateModelLoadDialog(load)
+        if (load.canceled && !load.sceneApplied) {
+            hideModelLoadDialog()
+            pendingModelLoad = null
+            statusModel.message = "Load canceled."
+            return
+        }
         val error = load.errorMessage
         if (error != null) {
             hideModelLoadDialog()
@@ -6771,6 +6809,12 @@ class Main(
             return
         }
         if (!load.sceneApplied) {
+            if (load.canceled) {
+                hideModelLoadDialog()
+                pendingModelLoad = null
+                statusModel.message = "Load canceled."
+                return
+            }
             val snapshot = load.snapshot ?: run {
                 hideModelLoadDialog()
                 pendingModelLoad = null
@@ -6802,6 +6846,14 @@ class Main(
         }
         if (!load.indexingInitialized) {
             initializeModelLoadIndexing(load)
+        }
+        if (load.canceled) {
+            load.indexingTasks.clear()
+            load.indexingDone = load.indexingTotal
+            load.indexProgress = 1f
+            finishPendingModelLoad(load)
+            statusModel.message = "Loaded ${load.displayName} (index warmup skipped)"
+            return
         }
         val deadlineNs = System.nanoTime() + 4_000_000L
         while (load.indexingTasks.isNotEmpty() && System.nanoTime() < deadlineNs) {
@@ -6842,18 +6894,32 @@ class Main(
         updateModelLoadDialog(load)
         Thread({
             try {
-                val bytes = readFileBytesWithProgress(file) { progress ->
+                val bytes = readFileBytesWithProgress(file, { progress ->
                     load.fileProgress = progress
+                }, { load.canceled })
+                if (load.canceled) {
+                    return@Thread
                 }
-                val snapshot = ModelPersistence.parseSnapshotBytes(bytes)
+                val snapshot = ModelPersistence.parseSnapshotBytes(
+                    bytes,
+                    onDecodeProgress = { progress -> load.decodeProgress = progress },
+                    isCanceled = { load.canceled }
+                )
                     ?: throw IllegalStateException("invalid model content")
+                if (load.canceled) {
+                    return@Thread
+                }
                 load.snapshot = snapshot
                 load.needsResave = ModelPersistence.needsResave(snapshot)
                 load.fileProgress = 1f
+                load.decodeProgress = 1f
             } catch (t: Throwable) {
-                load.errorMessage = t.message ?: t.javaClass.simpleName
+                if (!load.canceled) {
+                    load.errorMessage = t.message ?: t.javaClass.simpleName
+                }
             } finally {
                 load.fileStageDone = true
+                load.decodeStageDone = true
                 load.workerDone = true
             }
         }, "model-load-${displayName}").apply {
@@ -9020,6 +9086,23 @@ class Main(
 
     private fun groupSelection() {
         objectPrototypeSelection()
+    }
+
+    private fun enterSelectedObjectEditMode() {
+        if (scene.isEditing()) {
+            statusModel.message = "Already editing selected object."
+            return
+        }
+        val selected = scene.selectedGroups()
+        if (selected.size != 1) {
+            statusModel.message = "Select one object to edit."
+            return
+        }
+        val group = selected.first()
+        if (scene.enterGroup(group)) {
+            scene.clearAllSelections()
+            statusModel.message = "Editing object: ${group.name}"
+        }
     }
 
     private fun createVoxelGroup() {

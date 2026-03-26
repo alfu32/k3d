@@ -79,6 +79,7 @@ class SketchUiOverlay(
     private val groupInfoProvider: () -> GroupInfo?,
     private val groupNameChanged: (String) -> Unit,
     private val groupGlueChanged: (Boolean) -> Unit,
+    private val groupEditModeAction: () -> Unit,
     private val objectPrototypeProvider: () -> List<ObjectPrototypeInfo>,
     private val objectPrototypePlace: (String) -> Unit,
     private val objectPrototypeDelete: (String) -> Unit,
@@ -508,6 +509,7 @@ class SketchUiOverlay(
     private val groupStatusLabel = VisLabel()
     private val groupNameField = VisTextField()
     private val groupGlueCheck = VisCheckBox("Glue to surface")
+    private lateinit var groupEditButton: AppImageTextButton
     private var lastGroupName = ""
     private var lastGroupGlue = false
     private var lastGroupEditing = false
@@ -2019,6 +2021,11 @@ class SketchUiOverlay(
     }
 
     private fun buildGroupPanel(): DockSection {
+        groupEditButton = createActionButton(
+            label = "Edit Selected Object",
+            icon = iconFor("edit_object", createActionIconDrawable(Color(0.75f, 0.82f, 0.95f, 1f))),
+            onClick = groupEditModeAction
+        )
         val content = VisTable()
         content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
         content.defaults().pad(4f).left().growX()
@@ -2026,6 +2033,7 @@ class SketchUiOverlay(
         content.add(VisLabel("Name")).left().row()
         content.add(groupNameField).growX().row()
         content.add(groupGlueCheck).left().row()
+        content.add(groupEditButton).left().padTop(4f).row()
         val panel = buildDockSection("Object", content, visible = true, collapsed = false)
 
         groupNameField.addListener(object : ChangeListener() {
@@ -4610,6 +4618,7 @@ class SketchUiOverlay(
             groupPanel.isVisible = false
             groupNameField.isDisabled = true
             groupGlueCheck.isDisabled = true
+            groupEditButton.isDisabled = true
             return
         }
         val info = groupInfoProvider()
@@ -4626,6 +4635,7 @@ class SketchUiOverlay(
             updatingGroupFields = false
             groupNameField.isDisabled = true
             groupGlueCheck.isDisabled = true
+            groupEditButton.isDisabled = true
             lastGroupName = ""
             lastGroupGlue = false
             lastGroupEditing = false
@@ -4634,6 +4644,7 @@ class SketchUiOverlay(
         }
         groupNameField.isDisabled = false
         groupGlueCheck.isDisabled = false
+        groupEditButton.isDisabled = info.editing
         val statusText = if (info.editing) {
             "Editing object: ${info.name}"
         } else {

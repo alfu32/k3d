@@ -18,6 +18,7 @@ object ModelPersistence {
     private const val GZIP_MAGIC_0 = 0x1f
     private const val GZIP_MAGIC_1 = 0x8b
     private const val COMPRESS_THRESHOLD_BYTES = 10 * 1024 * 1024
+    private class DecodeCanceledException : RuntimeException()
 
     private fun createJson(): Json {
         return Json().apply {
@@ -175,14 +176,18 @@ object ModelPersistence {
         }
     }
 
-    fun parseSnapshotBytes(bytes: ByteArray): ModelSnapshot? {
+    fun parseSnapshotBytes(
+        bytes: ByteArray,
+        onDecodeProgress: (Float) -> Unit = {},
+        isCanceled: () -> Boolean = { false }
+    ): ModelSnapshot? {
         if (bytes.isEmpty()) {
             return null
         }
         return try {
-            ByteArrayInputStream(bytes).buffered().use { input ->
-                parseSnapshotStream(input)
-            }
+            parseSnapshotText(decodeSnapshotBytesToText(bytes, onDecodeProgress, isCanceled) ?: return null)
+        } catch (_: DecodeCanceledException) {
+            null
         } catch (_: Exception) {
             null
         }
@@ -215,6 +220,77 @@ object ModelPersistence {
             buffered.reader(Charsets.UTF_8)
         }
         return reader.use { parseSnapshotText(it.readText()) }
+    }
+
+    private fun decodeSnapshotBytesToText(
+        bytes: ByteArray,
+        onDecodeProgress: (Float) -> Unit,
+        isCanceled: () -> Boolean
+    ): String? {
+        if (bytes.isEmpty()) {
+            return null
+        }
+        fun checkCanceled() {
+            if (isCanceled()) {
+                throw DecodeCanceledException()
+            }
+        }
+        onDecodeProgress(0f)
+        checkCanceled()
+        val gzip = bytes.size >= 2 &&
+            bytes[0].toInt() and 0xff == GZIP_MAGIC_0 &&
+            bytes[1].toInt() and 0xff == GZIP_MAGIC_1
+        if (!gzip) {
+            val text = bytes.toString(Charsets.UTF_8)
+            onDecodeProgress(1f)
+            return text
+        }
+        val totalBytes = bytes.size.toFloat().coerceAtLeast(1f)
+        val source = ByteArrayInputStream(bytes)
+        var consumedBytes = 0
+        val countingInput = object : InputStream() {
+            private fun reportProgress() {
+                onDecodeProgress((consumedBytes / totalBytes).coerceIn(0f, 1f))
+            }
+
+            override fun read(): Int {
+                checkCanceled()
+                val value = source.read()
+                if (value >= 0) {
+                    consumedBytes += 1
+                    reportProgress()
+                }
+                return value
+            }
+
+            override fun read(buffer: ByteArray, off: Int, len: Int): Int {
+                checkCanceled()
+                val read = source.read(buffer, off, len)
+                if (read > 0) {
+                    consumedBytes += read
+                    reportProgress()
+                }
+                return read
+            }
+
+            override fun close() {
+                source.close()
+            }
+        }
+        val output = StringBuilder(bytes.size)
+        GZIPInputStream(BufferedInputStream(countingInput)).bufferedReader(Charsets.UTF_8).use { reader ->
+            val buffer = CharArray(8 * 1024)
+            while (true) {
+                checkCanceled()
+                val read = reader.read(buffer)
+                if (read <= 0) {
+                    break
+                }
+                output.append(buffer, 0, read)
+            }
+        }
+        onDecodeProgress(1f)
+        return output.toString()
     }
 
     fun applySnapshot(
