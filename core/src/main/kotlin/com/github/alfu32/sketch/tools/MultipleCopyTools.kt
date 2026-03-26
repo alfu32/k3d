@@ -6,7 +6,10 @@ import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Quaternion
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.math.collision.BoundingBox
+import com.github.alfu32.sketch.model.ArchitectureStore
 import com.github.alfu32.sketch.model.GroupScene
+import com.github.alfu32.sketch.model.HvacStore
+import com.github.alfu32.sketch.model.VoxelStore
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
@@ -27,9 +30,123 @@ private data class MultipleCopyCounts(
     var groups: Int = 0
 )
 
+private data class MultipleCopySelectionSnapshot(
+    val faces: List<com.github.alfu32.sketch.model.DraftFaceStore.Triangle>,
+    val edges: List<com.github.alfu32.sketch.model.DraftLineStore.Segment>,
+    val dimensions: List<com.github.alfu32.sketch.model.DraftDimensionStore.LinearDimension>,
+    val texts: List<com.github.alfu32.sketch.model.DraftTextStore.TextEntity>,
+    val groups: List<GroupScene.GroupNode>,
+    val architecture: List<ArchitectureStore.ElementSelection>,
+    val hvac: List<HvacStore.ElementSelection>,
+    val voxels: List<VoxelStore.Key>
+)
+
+private data class MultipleCopySelectionAccumulator(
+    val faces: LinkedHashSet<com.github.alfu32.sketch.model.DraftFaceStore.Triangle> = linkedSetOf(),
+    val edges: LinkedHashSet<com.github.alfu32.sketch.model.DraftLineStore.Segment> = linkedSetOf(),
+    val dimensions: LinkedHashSet<com.github.alfu32.sketch.model.DraftDimensionStore.LinearDimension> = linkedSetOf(),
+    val texts: LinkedHashSet<com.github.alfu32.sketch.model.DraftTextStore.TextEntity> = linkedSetOf(),
+    val groups: LinkedHashSet<GroupScene.GroupNode> = linkedSetOf(),
+    val architecture: LinkedHashSet<ArchitectureStore.ElementSelection> = linkedSetOf(),
+    val hvac: LinkedHashSet<HvacStore.ElementSelection> = linkedSetOf(),
+    val voxels: LinkedHashSet<VoxelStore.Key> = linkedSetOf()
+)
+
 private const val MAX_MULTIPLE_COPY_STEPS = 2048
 private const val MAX_MULTIPLE_COPY_PREVIEW_STEPS = 32
 private const val MULTIPLE_COPY_EPS = 1e-5f
+
+private fun snapshotMultipleCopySelection(
+    scene: GroupScene,
+    group: GroupScene.GroupNode
+): MultipleCopySelectionSnapshot {
+    return MultipleCopySelectionSnapshot(
+        faces = group.faceStore.getSelected().toList(),
+        edges = group.lineStore.getSelected().toList(),
+        dimensions = group.dimensionStore.getSelected().toList(),
+        texts = group.textStore.getSelected().toList(),
+        groups = scene.selectedGroups().toList(),
+        architecture = scene.selectedArchitectureElements(group).toList(),
+        hvac = scene.selectedHvacElements(group).toList(),
+        voxels = scene.selectedVoxels(group).toList()
+    )
+}
+
+private fun restoreMultipleCopySelection(
+    scene: GroupScene,
+    group: GroupScene.GroupNode,
+    snapshot: MultipleCopySelectionSnapshot
+) {
+    group.faceStore.withChangeSuppressed {
+        group.faceStore.clearSelection()
+        snapshot.faces.forEach { group.faceStore.addSelection(it) }
+    }
+    group.lineStore.withChangeSuppressed {
+        group.lineStore.clearSelection()
+        snapshot.edges.forEach { group.lineStore.addSelection(it) }
+    }
+    group.dimensionStore.clearSelection()
+    snapshot.dimensions.forEach { group.dimensionStore.addSelection(it) }
+    group.textStore.clearSelection()
+    snapshot.texts.forEach { group.textStore.addSelection(it) }
+    scene.clearGroupSelection()
+    snapshot.groups.forEach { scene.addGroupSelection(it) }
+    scene.clearArchitectureElementSelection(group)
+    snapshot.architecture.forEachIndexed { index, selection ->
+        scene.selectArchitectureElement(
+            group = group,
+            kind = selection.kind,
+            id = selection.id,
+            mode = if (index == 0) GroupScene.ArchitectureSelectionMode.REPLACE else GroupScene.ArchitectureSelectionMode.ADD
+        )
+    }
+    scene.clearHvacElementSelection(group)
+    snapshot.hvac.forEachIndexed { index, selection ->
+        scene.selectHvacElement(
+            group = group,
+            kind = selection.kind,
+            id = selection.id,
+            mode = if (index == 0) GroupScene.HvacSelectionMode.REPLACE else GroupScene.HvacSelectionMode.ADD
+        )
+    }
+    scene.replaceVoxelSelection(group, snapshot.voxels)
+}
+
+private fun collectMultipleCopySelection(
+    scene: GroupScene,
+    group: GroupScene.GroupNode,
+    target: MultipleCopySelectionAccumulator
+) {
+    target.faces.addAll(group.faceStore.getSelected())
+    target.edges.addAll(group.lineStore.getSelected())
+    target.dimensions.addAll(group.dimensionStore.getSelected())
+    target.texts.addAll(group.textStore.getSelected())
+    target.groups.addAll(scene.selectedGroups())
+    target.architecture.addAll(scene.selectedArchitectureElements(group))
+    target.hvac.addAll(scene.selectedHvacElements(group))
+    target.voxels.addAll(scene.selectedVoxels(group))
+}
+
+private fun applyMultipleCopySelection(
+    scene: GroupScene,
+    group: GroupScene.GroupNode,
+    target: MultipleCopySelectionAccumulator
+) {
+    restoreMultipleCopySelection(
+        scene = scene,
+        group = group,
+        snapshot = MultipleCopySelectionSnapshot(
+            faces = target.faces.toList(),
+            edges = target.edges.toList(),
+            dimensions = target.dimensions.toList(),
+            texts = target.texts.toList(),
+            groups = target.groups.toList(),
+            architecture = target.architecture.toList(),
+            hvac = target.hvac.toList(),
+            voxels = target.voxels.toList()
+        )
+    )
+}
 
 private fun applyCopyStep(
     scene: GroupScene,
@@ -517,8 +634,11 @@ class CopyMultipleTool(
             status.message = "Copy multiple: measure does not fit into span."
             return true
         }
+        val originalSelection = snapshotMultipleCopySelection(scene, group)
+        val generatedSelection = MultipleCopySelectionAccumulator()
         val total = MultipleCopyCounts()
         offsetsWorld.zip(offsetsLocal).forEach { (offsetWorld, offsetLocal) ->
+            restoreMultipleCopySelection(scene, group, originalSelection)
             val stepCounts = applyCopyStep(
                 scene = scene,
                 group = group,
@@ -527,8 +647,10 @@ class CopyMultipleTool(
                 pointTransformLocal = { point -> Vector3(point).add(offsetLocal) },
                 pointTransformVoxelLocal = { point -> Vector3(point).add(offsetLocal) }
             )
+            collectMultipleCopySelection(scene, group, generatedSelection)
             mergeCounts(total, stepCounts)
         }
+        applyMultipleCopySelection(scene, group, generatedSelection)
         status.message = buildMultipleCopyStatus("Copy multiple", offsetsWorld.size, capped, total)
         clearTransient()
         return true
@@ -658,9 +780,12 @@ class PlanarTranslateMultipleTool(
             return true
         }
         val group = scene.activeGroup()
+        val originalSelection = snapshotMultipleCopySelection(scene, group)
+        val generatedSelection = MultipleCopySelectionAccumulator()
         val offsetsLocal = offsetsWorld.map { offset -> group.vectorToLocal(offset) }
         val total = MultipleCopyCounts()
         offsetsWorld.zip(offsetsLocal).forEach { (offsetWorld, offsetLocal) ->
+            restoreMultipleCopySelection(scene, group, originalSelection)
             val stepCounts = applyCopyStep(
                 scene = scene,
                 group = group,
@@ -669,8 +794,10 @@ class PlanarTranslateMultipleTool(
                 pointTransformLocal = { point -> Vector3(point).add(offsetLocal) },
                 pointTransformVoxelLocal = { point -> Vector3(point).add(offsetLocal) }
             )
+            collectMultipleCopySelection(scene, group, generatedSelection)
             mergeCounts(total, stepCounts)
         }
+        applyMultipleCopySelection(scene, group, generatedSelection)
         val capped = (nx + 1) * (nz + 1) - 1 > offsetsWorld.size
         status.message = buildMultipleCopyStatus("Planar translate multiple", offsetsWorld.size, capped, total)
         clearTransient()
@@ -809,9 +936,12 @@ class VolumetricTranslateMultipleTool(
             return true
         }
         val group = scene.activeGroup()
+        val originalSelection = snapshotMultipleCopySelection(scene, group)
+        val generatedSelection = MultipleCopySelectionAccumulator()
         val offsetsLocal = offsetsWorld.map { offset -> group.vectorToLocal(offset) }
         val total = MultipleCopyCounts()
         offsetsWorld.zip(offsetsLocal).forEach { (offsetWorld, offsetLocal) ->
+            restoreMultipleCopySelection(scene, group, originalSelection)
             val stepCounts = applyCopyStep(
                 scene = scene,
                 group = group,
@@ -820,8 +950,10 @@ class VolumetricTranslateMultipleTool(
                 pointTransformLocal = { point -> Vector3(point).add(offsetLocal) },
                 pointTransformVoxelLocal = { point -> Vector3(point).add(offsetLocal) }
             )
+            collectMultipleCopySelection(scene, group, generatedSelection)
             mergeCounts(total, stepCounts)
         }
+        applyMultipleCopySelection(scene, group, generatedSelection)
         val capped = (nx + 1) * (ny + 1) * (nz + 1) - 1 > offsetsWorld.size
         status.message = buildMultipleCopyStatus("Volumetric translate multiple", offsetsWorld.size, capped, total)
         clearTransient()

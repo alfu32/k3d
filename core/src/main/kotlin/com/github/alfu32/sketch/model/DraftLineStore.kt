@@ -23,7 +23,6 @@ class DraftLineStore {
     private val epsilonSq = epsilon * epsilon
     private val segmentsById = linkedMapOf<String, Segment>()
     private var spatialIndex = SpatialHash3D<String>(SPATIAL_HASH_CELL_SIZE) { it }
-    private val asyncSpatialIndex = AsyncAabbIndexRebuilder<String>("Lines index", SPATIAL_HASH_CELL_SIZE, keyOf = { it })
     private var spatialIndexDirty = true
     private var spatialBoundsDirty = true
     private val spatialBoundsMin = Vector3()
@@ -467,28 +466,7 @@ class DraftLineStore {
             cleanupPending = false
             cleanupJts()
             notifyChange()
-            return
         }
-        asyncSpatialIndex.process(
-            nowMs = nowMs,
-            snapshotProvider = {
-                segments.map { segment ->
-                    IndexedAabbSnapshot<String>(
-                        item = segment.id,
-                        min = segmentMin(segment),
-                        max = segmentMax(segment)
-                    )
-                }
-            },
-            apply = { result ->
-                spatialIndex = result.index
-                hasSpatialBounds = result.hasBounds
-                spatialBoundsMin.set(result.boundsMin)
-                spatialBoundsMax.set(result.boundsMax)
-                spatialBoundsDirty = false
-                spatialIndexDirty = false
-            }
-        )
     }
 
     private fun segmentsIntersectingLinear(min: Vector3, max: Vector3): List<Segment> {
@@ -496,9 +474,7 @@ class DraftLineStore {
     }
 
     private fun segmentCandidatesForRay(ray: com.badlogic.gdx.math.collision.Ray): List<Segment> {
-        if (spatialIndexDirty) {
-            return segments
-        }
+        ensureSpatialIndex()
         if (!hasSpatialBounds) {
             return emptyList()
         }
@@ -521,9 +497,7 @@ class DraftLineStore {
     }
 
     private fun segmentsIntersectingQuery(min: Vector3, max: Vector3): List<Segment> {
-        if (spatialIndexDirty) {
-            return segmentsIntersectingLinear(min, max)
-        }
+        ensureSpatialIndex()
         return if (hasSpatialBounds) spatialIndex.queryAabb(min, max).mapNotNull { id -> segmentsById[id] } else emptyList()
     }
 
@@ -763,7 +737,6 @@ class DraftLineStore {
         spatialIndexDirty = true
         spatialBoundsDirty = true
         hasSpatialBounds = false
-        asyncSpatialIndex.markDirty()
     }
 
     private fun clearSpatialIndexState() {
@@ -771,7 +744,19 @@ class DraftLineStore {
         spatialIndexDirty = false
         spatialBoundsDirty = false
         hasSpatialBounds = false
-        asyncSpatialIndex.markCurrent()
+    }
+
+    private fun ensureSpatialIndex() {
+        if (!spatialIndexDirty) {
+            return
+        }
+        spatialIndex.clear()
+        spatialBoundsDirty = false
+        hasSpatialBounds = false
+        segments.forEach { segment ->
+            registerSegment(segment)
+        }
+        spatialIndexDirty = false
     }
 
     private fun ensureSpatialBounds() {

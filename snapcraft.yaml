@@ -17,17 +17,20 @@ architectures:
 apps:
   octodraw:
     command: octodraw-jre
-    extensions:
-      - gnome
     environment:
       OCTODRAW_PLUGINS_DIR: $SNAP_USER_COMMON/plugins
       ALSA_CONFIG_PATH: $SNAP/usr/share/alsa/alsa.conf
     plugs:
       - audio-playback
+      - desktop
+      - desktop-legacy
       - home
       - network
       - network-bind
+      - opengl
       - removable-media
+      - wayland
+      - x11
 
 parts:
   octodraw:
@@ -36,6 +39,26 @@ parts:
     stage-packages:
       - libasound2
       - libasound2-data
+      - libdrm2
+      - libegl1
+      - libgbm1
+      - libgl1
+      - libgl1-mesa-dri
+      - libglx-mesa0
+      - libglu1-mesa
+      - libwayland-client0
+      - libwayland-cursor0
+      - libwayland-egl1
+      - libx11-6
+      - libxcursor1
+      - libxext6
+      - libxfixes3
+      - libxi6
+      - libxinerama1
+      - libxkbcommon0
+      - libxrandr2
+      - libxrender1
+      - libxxf86vm1
     override-pull: |
       craftctl default
       craftctl set version "${OCTODRAW_SNAP_VERSION:-0.0.0}"

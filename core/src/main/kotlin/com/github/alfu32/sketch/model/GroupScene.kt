@@ -468,7 +468,6 @@ class GroupScene(
     private var selectedArchitectureSlabHole: ArchitectureSlabHoleSelection? = null
     private var changeListener: (() -> Unit)? = null
     private var groupSpatialIndex = SpatialHash3D<String>(GROUP_SPATIAL_HASH_CELL_SIZE) { it }
-    private val asyncGroupSpatialIndex = AsyncAabbIndexRebuilder<String>("Objects index", GROUP_SPATIAL_HASH_CELL_SIZE, keyOf = { it })
     private var groupSpatialIndexDirty = true
     private val groupSpatialBoundsById = linkedMapOf<String, BoundingBox>()
     private val groupSpatialBoundsMin = Vector3()
@@ -525,33 +524,11 @@ class GroupScene(
             group.faceStoreOverride?.let { faceStores.add(it) }
         }
         collectStores(root)
-        walkGroups(root) { group -> collectStores(group) }
+        if (activeGroup !== root) {
+            collectStores(activeGroup)
+        }
         lineStores.forEach { it.processAsyncMaintenance(nowMs) }
         faceStores.forEach { it.processAsyncMaintenance(nowMs) }
-        asyncGroupSpatialIndex.process(
-            nowMs = nowMs,
-            snapshotProvider = {
-                buildList<IndexedAabbSnapshot<String>> {
-                    root.geometryWorldBounds()?.let { bounds ->
-                        add(IndexedAabbSnapshot<String>(root.id, bounds.min.cpy(), bounds.max.cpy()))
-                    }
-                    walkGroups(root) { group ->
-                        group.geometryWorldBounds()?.let { bounds ->
-                            add(IndexedAabbSnapshot<String>(group.id, bounds.min.cpy(), bounds.max.cpy()))
-                        }
-                    }
-                }
-            },
-            apply = { result ->
-                groupSpatialIndex = result.index
-                groupSpatialBoundsById.clear()
-                groupSpatialBoundsById.putAll(result.boundsByKey)
-                hasGroupSpatialBounds = result.hasBounds
-                groupSpatialBoundsMin.set(result.boundsMin)
-                groupSpatialBoundsMax.set(result.boundsMax)
-                groupSpatialIndexDirty = false
-            }
-        )
     }
 
     fun enterGroup(group: GroupNode): Boolean {
@@ -4825,9 +4802,7 @@ class GroupScene(
     }
 
     fun queryGroupsByAabb(min: Vector3, max: Vector3, includeRoot: Boolean = true): List<GroupNode> {
-        if (groupSpatialIndexDirty) {
-            return queryGroupsByAabbLinear(min, max, includeRoot)
-        }
+        ensureGroupSpatialIndex()
         if (!hasGroupSpatialBounds) {
             return emptyList()
         }
@@ -4837,9 +4812,7 @@ class GroupScene(
     }
 
     fun queryGroupsByRay(ray: Ray, includeRoot: Boolean = true): List<GroupNode> {
-        if (groupSpatialIndexDirty) {
-            return queryGroupsByRayLinear(ray, includeRoot)
-        }
+        ensureGroupSpatialIndex()
         if (!hasGroupSpatialBounds) {
             return emptyList()
         }
@@ -4861,9 +4834,7 @@ class GroupScene(
     }
 
     fun queryGroupsByFrustum(camera: Camera, includeRoot: Boolean = true): List<GroupNode> {
-        if (groupSpatialIndexDirty) {
-            return queryGroupsByFrustumLinear(camera, includeRoot)
-        }
+        ensureGroupSpatialIndex()
         if (!hasGroupSpatialBounds) {
             return emptyList()
         }
@@ -8700,8 +8671,38 @@ class GroupScene(
 
     private fun notifyChange() {
         groupSpatialIndexDirty = true
-        asyncGroupSpatialIndex.markDirty()
         changeListener?.invoke()
+    }
+
+    private fun ensureGroupSpatialIndex() {
+        if (!groupSpatialIndexDirty) {
+            return
+        }
+        groupSpatialIndex = SpatialHash3D(GROUP_SPATIAL_HASH_CELL_SIZE) { it }
+        groupSpatialBoundsById.clear()
+        hasGroupSpatialBounds = false
+        fun register(group: GroupNode) {
+            val bounds = group.geometryWorldBounds() ?: return
+            val boundsMin = bounds.min.cpy()
+            val boundsMax = bounds.max.cpy()
+            groupSpatialIndex.insertAabb(boundsMin, boundsMax, group.id)
+            groupSpatialBoundsById[group.id] = BoundingBox(boundsMin.cpy(), boundsMax.cpy())
+            if (!hasGroupSpatialBounds) {
+                groupSpatialBoundsMin.set(boundsMin)
+                groupSpatialBoundsMax.set(boundsMax)
+                hasGroupSpatialBounds = true
+            } else {
+                groupSpatialBoundsMin.x = min(groupSpatialBoundsMin.x, boundsMin.x)
+                groupSpatialBoundsMin.y = min(groupSpatialBoundsMin.y, boundsMin.y)
+                groupSpatialBoundsMin.z = min(groupSpatialBoundsMin.z, boundsMin.z)
+                groupSpatialBoundsMax.x = max(groupSpatialBoundsMax.x, boundsMax.x)
+                groupSpatialBoundsMax.y = max(groupSpatialBoundsMax.y, boundsMax.y)
+                groupSpatialBoundsMax.z = max(groupSpatialBoundsMax.z, boundsMax.z)
+            }
+        }
+        register(root)
+        walkGroups(root) { group -> register(group) }
+        groupSpatialIndexDirty = false
     }
 
     private fun findGroupById(id: String): GroupNode? {

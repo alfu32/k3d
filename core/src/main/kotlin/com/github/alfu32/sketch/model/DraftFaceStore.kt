@@ -41,7 +41,6 @@ class DraftFaceStore(
     private val cutEps2d = 1e-2f
     private val planeEps = 1e-2f
     private var spatialIndex = SpatialHash3D<String>(SPATIAL_HASH_CELL_SIZE) { it }
-    private val asyncSpatialIndex = AsyncAabbIndexRebuilder<String>("Faces index", SPATIAL_HASH_CELL_SIZE, keyOf = { it })
     private var spatialIndexDirty = true
     private var spatialBoundsDirty = true
     private val spatialBoundsMin = Vector3()
@@ -2225,26 +2224,7 @@ class DraftFaceStore(
     fun aabbCandidates(min: Vector3, max: Vector3): List<Triangle> = trianglesIntersectingQuery(min, max)
 
     fun processAsyncMaintenance(nowMs: Long = System.currentTimeMillis()) {
-        asyncSpatialIndex.process(
-            nowMs = nowMs,
-            snapshotProvider = {
-                triangles.map { triangle ->
-                    IndexedAabbSnapshot<String>(
-                        item = triangle.id,
-                        min = triangleMin(triangle),
-                        max = triangleMax(triangle)
-                    )
-                }
-            },
-            apply = { result ->
-                spatialIndex = result.index
-                hasSpatialBounds = result.hasBounds
-                spatialBoundsMin.set(result.boundsMin)
-                spatialBoundsMax.set(result.boundsMax)
-                spatialBoundsDirty = false
-                spatialIndexDirty = false
-            }
-        )
+        // Face indexing is maintained lazily and synchronously on demand.
     }
 
     private fun markVisualChanged() {
@@ -2267,9 +2247,7 @@ class DraftFaceStore(
     }
 
     private fun triangleCandidatesForRay(ray: com.badlogic.gdx.math.collision.Ray): List<Triangle> {
-        if (spatialIndexDirty) {
-            return triangles
-        }
+        ensureSpatialIndex()
         if (!hasSpatialBounds) {
             return emptyList()
         }
@@ -2292,9 +2270,7 @@ class DraftFaceStore(
     }
 
     private fun trianglesIntersectingQuery(min: Vector3, max: Vector3): List<Triangle> {
-        if (spatialIndexDirty) {
-            return triangles.filter { tri -> triangleIntersectsAabb(tri, min, max) }
-        }
+        ensureSpatialIndex()
         return if (hasSpatialBounds) spatialIndex.queryAabb(min, max).mapNotNull { id -> trianglesById[id] } else emptyList()
     }
 
@@ -2302,7 +2278,6 @@ class DraftFaceStore(
         spatialIndexDirty = true
         spatialBoundsDirty = true
         hasSpatialBounds = false
-        asyncSpatialIndex.markDirty()
     }
 
     private fun clearSpatialIndexState() {
@@ -2310,7 +2285,19 @@ class DraftFaceStore(
         spatialIndexDirty = false
         spatialBoundsDirty = false
         hasSpatialBounds = false
-        asyncSpatialIndex.markCurrent()
+    }
+
+    private fun ensureSpatialIndex() {
+        if (!spatialIndexDirty) {
+            return
+        }
+        spatialIndex.clear()
+        spatialBoundsDirty = false
+        hasSpatialBounds = false
+        triangles.forEach { triangle ->
+            registerTriangle(triangle)
+        }
+        spatialIndexDirty = false
     }
 
     private fun ensureSpatialBounds() {

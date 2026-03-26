@@ -2,13 +2,7 @@ package com.github.alfu32.sketch.model
 
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.math.collision.BoundingBox
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.ThreadFactory
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicReference
+import com.github.alfu32.sketch.BuildFlags
 
 data class IndexedAabbSnapshot<T>(
     val item: T,
@@ -32,29 +26,40 @@ object IndexingStatusBus {
         val total: Int
     )
 
-    private val jobs = ConcurrentHashMap<String, Job>()
+    private val lock = Any()
+    private val jobs = linkedMapOf<String, Job>()
 
     fun started(key: String, label: String, total: Int) {
-        jobs[key] = Job(label, 0, total)
+        synchronized(lock) {
+            jobs[key] = Job(label, 0, total)
+        }
     }
 
     fun progress(key: String, label: String, done: Int, total: Int) {
-        jobs[key] = Job(label, done, total)
+        synchronized(lock) {
+            jobs[key] = Job(label, done, total)
+        }
     }
 
     fun completed(key: String) {
-        jobs.remove(key)
+        synchronized(lock) {
+            jobs.remove(key)
+        }
     }
 
     fun failed(key: String) {
-        jobs.remove(key)
+        synchronized(lock) {
+            jobs.remove(key)
+        }
     }
 
     fun summary(): String {
-        if (jobs.isEmpty()) {
+        val snapshot = synchronized(lock) {
+            jobs.values.toList()
+        }
+        if (snapshot.isEmpty()) {
             return ""
         }
-        val snapshot = jobs.values.toList()
         val tracked = snapshot.filter { it.total > 0 }
         if (tracked.isEmpty()) {
             return "Indexing..."
@@ -65,15 +70,6 @@ object IndexingStatusBus {
     }
 }
 
-internal object AsyncIndexExecutor {
-    val executor: ExecutorService = Executors.newSingleThreadExecutor(ThreadFactory { runnable ->
-        Thread(runnable, "k3d-indexer").apply {
-            isDaemon = true
-            priority = Thread.NORM_PRIORITY - 1
-        }
-    })
-}
-
 class AsyncAabbIndexRebuilder<T>(
     private val label: String,
     private val cellSize: Float,
@@ -81,49 +77,55 @@ class AsyncAabbIndexRebuilder<T>(
     private val debounceMs: Long = 250L
 ) {
     private val statusKey = "${label.lowercase().replace(' ', '-')}-${System.identityHashCode(this)}"
-    private val requestedGeneration = AtomicLong(0L)
-    private val appliedGeneration = AtomicLong(0L)
-    private val inFlightGeneration = AtomicLong(0L)
-    private val pendingResult = AtomicReference<AsyncAabbIndexResult<T>?>(null)
-    private val buildFailed = AtomicBoolean(false)
+    @Volatile private var requestedGeneration = 0L
+    @Volatile private var appliedGeneration = 0L
+    @Volatile private var inFlightGeneration = 0L
+    @Volatile private var pendingResult: AsyncAabbIndexResult<T>? = null
+    @Volatile private var buildFailed = false
 
     @Volatile
     private var lastDirtyAtMs: Long = 0L
 
     fun markDirty(nowMs: Long = System.currentTimeMillis()) {
-        requestedGeneration.incrementAndGet()
+        requestedGeneration += 1L
         lastDirtyAtMs = nowMs
     }
 
     fun markCurrent() {
-        val generation = requestedGeneration.incrementAndGet()
-        appliedGeneration.set(generation)
-        pendingResult.set(null)
-        buildFailed.set(false)
+        val generation = requestedGeneration + 1L
+        requestedGeneration = generation
+        appliedGeneration = generation
+        inFlightGeneration = 0L
+        pendingResult = null
+        buildFailed = false
         IndexingStatusBus.completed(statusKey)
     }
 
-    fun isCurrent(): Boolean = !buildFailed.get() && appliedGeneration.get() == requestedGeneration.get()
+    fun isCurrent(): Boolean = !buildFailed && appliedGeneration == requestedGeneration
 
     fun process(
         nowMs: Long = System.currentTimeMillis(),
         snapshotProvider: () -> List<IndexedAabbSnapshot<T>>,
         apply: (AsyncAabbIndexResult<T>) -> Unit
     ) {
-        pendingResult.getAndSet(null)?.let { result ->
-            inFlightGeneration.compareAndSet(result.generation, 0L)
-            if (result.generation == requestedGeneration.get()) {
-                apply(result)
-                appliedGeneration.set(result.generation)
+        val ready = pendingResult
+        if (ready != null) {
+            pendingResult = null
+            if (inFlightGeneration == ready.generation) {
+                inFlightGeneration = 0L
+            }
+            if (ready.generation == requestedGeneration) {
+                apply(ready)
+                appliedGeneration = ready.generation
             }
             IndexingStatusBus.completed(statusKey)
         }
 
-        val requested = requestedGeneration.get()
-        if (requested == appliedGeneration.get()) {
+        val requested = requestedGeneration
+        if (requested == appliedGeneration) {
             return
         }
-        if (inFlightGeneration.get() != 0L) {
+        if (inFlightGeneration != 0L) {
             return
         }
         if (nowMs - lastDirtyAtMs < debounceMs) {
@@ -131,62 +133,80 @@ class AsyncAabbIndexRebuilder<T>(
         }
 
         val snapshot = snapshotProvider()
-        if (!inFlightGeneration.compareAndSet(0L, requested)) {
+        inFlightGeneration = requested
+        buildFailed = false
+        IndexingStatusBus.started(statusKey, label, snapshot.size)
+
+        if (BuildFlags.WEB_BUILD) {
+            val result = buildIndexResult(requested, snapshot)
+            if (result != null && requestedGeneration == requested) {
+                apply(result)
+                appliedGeneration = result.generation
+            }
+            inFlightGeneration = 0L
+            IndexingStatusBus.completed(statusKey)
             return
         }
 
-        buildFailed.set(false)
-        IndexingStatusBus.started(statusKey, label, snapshot.size)
-
-        AsyncIndexExecutor.executor.submit {
+        Thread({
             try {
-                val index = SpatialHash3D<T>(cellSize, keyOf)
-                val boundsByKey = linkedMapOf<String, BoundingBox>()
-                val boundsMin = Vector3()
-                val boundsMax = Vector3()
-                var hasBounds = false
-                val total = snapshot.size.coerceAtLeast(1)
-
-                snapshot.forEachIndexed { idx, entry ->
-                    if (requestedGeneration.get() != requested) {
-                        IndexingStatusBus.completed(statusKey)
-                        inFlightGeneration.compareAndSet(requested, 0L)
-                        return@submit
-                    }
-                    index.insertAabb(entry.min, entry.max, entry.item)
-                    boundsByKey[keyOf(entry.item)] = BoundingBox(entry.min.cpy(), entry.max.cpy())
-                    if (!hasBounds) {
-                        boundsMin.set(entry.min)
-                        boundsMax.set(entry.max)
-                        hasBounds = true
-                    } else {
-                        boundsMin.x = kotlin.math.min(boundsMin.x, entry.min.x)
-                        boundsMin.y = kotlin.math.min(boundsMin.y, entry.min.y)
-                        boundsMin.z = kotlin.math.min(boundsMin.z, entry.min.z)
-                        boundsMax.x = kotlin.math.max(boundsMax.x, entry.max.x)
-                        boundsMax.y = kotlin.math.max(boundsMax.y, entry.max.y)
-                        boundsMax.z = kotlin.math.max(boundsMax.z, entry.max.z)
-                    }
-                    if ((idx and 255) == 0 || idx == snapshot.lastIndex) {
-                        IndexingStatusBus.progress(statusKey, label, idx + 1, total)
-                    }
-                }
-
-                pendingResult.set(
-                    AsyncAabbIndexResult(
-                        generation = requested,
-                        index = index,
-                        boundsMin = boundsMin,
-                        boundsMax = boundsMax,
-                        hasBounds = hasBounds,
-                        boundsByKey = boundsByKey
-                    )
-                )
+                pendingResult = buildIndexResult(requested, snapshot)
             } catch (_: Throwable) {
-                buildFailed.set(true)
+                buildFailed = true
                 IndexingStatusBus.failed(statusKey)
-                inFlightGeneration.compareAndSet(requested, 0L)
+                if (inFlightGeneration == requested) {
+                    inFlightGeneration = 0L
+                }
+            }
+        }, "k3d-indexer").apply {
+            isDaemon = true
+            priority = Thread.NORM_PRIORITY - 1
+            start()
+        }
+    }
+
+    private fun buildIndexResult(
+        requested: Long,
+        snapshot: List<IndexedAabbSnapshot<T>>
+    ): AsyncAabbIndexResult<T>? {
+        val index = SpatialHash3D<T>(cellSize, keyOf)
+        val boundsByKey = linkedMapOf<String, BoundingBox>()
+        val boundsMin = Vector3()
+        val boundsMax = Vector3()
+        var hasBounds = false
+        val total = snapshot.size.coerceAtLeast(1)
+
+        snapshot.forEachIndexed { idx, entry ->
+            if (requestedGeneration != requested) {
+                IndexingStatusBus.completed(statusKey)
+                return null
+            }
+            index.insertAabb(entry.min, entry.max, entry.item)
+            boundsByKey[keyOf(entry.item)] = BoundingBox(entry.min.cpy(), entry.max.cpy())
+            if (!hasBounds) {
+                boundsMin.set(entry.min)
+                boundsMax.set(entry.max)
+                hasBounds = true
+            } else {
+                boundsMin.x = kotlin.math.min(boundsMin.x, entry.min.x)
+                boundsMin.y = kotlin.math.min(boundsMin.y, entry.min.y)
+                boundsMin.z = kotlin.math.min(boundsMin.z, entry.min.z)
+                boundsMax.x = kotlin.math.max(boundsMax.x, entry.max.x)
+                boundsMax.y = kotlin.math.max(boundsMax.y, entry.max.y)
+                boundsMax.z = kotlin.math.max(boundsMax.z, entry.max.z)
+            }
+            if ((idx and 255) == 0 || idx == snapshot.lastIndex) {
+                IndexingStatusBus.progress(statusKey, label, idx + 1, total)
             }
         }
+
+        return AsyncAabbIndexResult(
+            generation = requested,
+            index = index,
+            boundsMin = boundsMin,
+            boundsMax = boundsMax,
+            hasBounds = hasBounds,
+            boundsByKey = boundsByKey
+        )
     }
 }
