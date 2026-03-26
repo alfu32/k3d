@@ -461,6 +461,10 @@ class DraftLineStore {
 
     fun aabbCandidates(min: Vector3, max: Vector3): List<Segment> = segmentsIntersectingQuery(min, max)
 
+    fun warmSpatialIndex() {
+        ensureSpatialIndex()
+    }
+
     fun processAsyncMaintenance(nowMs: Long = System.currentTimeMillis()) {
         if (cleanupPending && nowMs >= cleanupDueAtMs && suppressAutoSplitDepth <= 0) {
             cleanupPending = false

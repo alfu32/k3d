@@ -2223,6 +2223,10 @@ class DraftFaceStore(
 
     fun aabbCandidates(min: Vector3, max: Vector3): List<Triangle> = trianglesIntersectingQuery(min, max)
 
+    fun warmSpatialIndex() {
+        ensureSpatialIndex()
+    }
+
     fun processAsyncMaintenance(nowMs: Long = System.currentTimeMillis()) {
         // Face indexing is maintained lazily and synchronously on demand.
     }

@@ -4858,6 +4858,10 @@ class GroupScene(
         }
     }
 
+    fun warmSpatialIndex() {
+        ensureGroupSpatialIndex()
+    }
+
     private fun queryGroupsByAabbLinear(min: Vector3, max: Vector3, includeRoot: Boolean): List<GroupNode> {
         val result = mutableListOf<GroupNode>()
         fun test(group: GroupNode) {

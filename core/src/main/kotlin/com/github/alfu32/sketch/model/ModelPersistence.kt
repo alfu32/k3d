@@ -129,19 +129,7 @@ object ModelPersistence {
         val snapshot = parseSnapshotFile(file) ?: return LoadResult(false, false)
 
         applySnapshot(snapshot, scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilonSetter, gridSpacingSetter, circleSegmentsSetter)
-        val needsResave = snapshot.cameraState == null ||
-            snapshot.lightingState == null ||
-            snapshot.shadowState == null ||
-            (snapshot.rootInstance == null && snapshot.rootGroup == null) ||
-            (snapshot.rootInstance != null && snapshot.prototypes.isEmpty()) ||
-            snapshot.cameraState?.hasNulls() == true ||
-            snapshot.lightingState?.hasNulls() == true ||
-            snapshot.shadowState?.hasNulls() == true ||
-            snapshot.modelUnit == null ||
-            snapshot.snapEpsilon == null ||
-            snapshot.gridSpacing == null ||
-            snapshot.circleSegments == null
-        return LoadResult(true, needsResave, snapshot)
+        return LoadResult(true, needsResave(snapshot), snapshot)
     }
 
     fun loadFromText(
@@ -162,19 +150,7 @@ object ModelPersistence {
         val snapshot = parseSnapshotText(text) ?: return LoadResult(false, false)
 
         applySnapshot(snapshot, scene, camera, cameraTarget, lighting, shadow, modelUnit, snapEpsilonSetter, gridSpacingSetter, circleSegmentsSetter)
-        val needsResave = snapshot.cameraState == null ||
-            snapshot.lightingState == null ||
-            snapshot.shadowState == null ||
-            (snapshot.rootInstance == null && snapshot.rootGroup == null) ||
-            (snapshot.rootInstance != null && snapshot.prototypes.isEmpty()) ||
-            snapshot.cameraState?.hasNulls() == true ||
-            snapshot.lightingState?.hasNulls() == true ||
-            snapshot.shadowState?.hasNulls() == true ||
-            snapshot.modelUnit == null ||
-            snapshot.snapEpsilon == null ||
-            snapshot.gridSpacing == null ||
-            snapshot.circleSegments == null
-        return LoadResult(true, needsResave, snapshot)
+        return LoadResult(true, needsResave(snapshot), snapshot)
     }
 
     fun parseSnapshotText(text: String): ModelSnapshot? {
@@ -197,6 +173,34 @@ object ModelPersistence {
         } catch (_: Exception) {
             null
         }
+    }
+
+    fun parseSnapshotBytes(bytes: ByteArray): ModelSnapshot? {
+        if (bytes.isEmpty()) {
+            return null
+        }
+        return try {
+            ByteArrayInputStream(bytes).buffered().use { input ->
+                parseSnapshotStream(input)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun needsResave(snapshot: ModelSnapshot): Boolean {
+        return snapshot.cameraState == null ||
+            snapshot.lightingState == null ||
+            snapshot.shadowState == null ||
+            (snapshot.rootInstance == null && snapshot.rootGroup == null) ||
+            (snapshot.rootInstance != null && snapshot.prototypes.isEmpty()) ||
+            snapshot.cameraState?.hasNulls() == true ||
+            snapshot.lightingState?.hasNulls() == true ||
+            snapshot.shadowState?.hasNulls() == true ||
+            snapshot.modelUnit == null ||
+            snapshot.snapEpsilon == null ||
+            snapshot.gridSpacing == null ||
+            snapshot.circleSegments == null
     }
 
     private fun parseSnapshotStream(input: InputStream): ModelSnapshot? {

@@ -421,6 +421,36 @@ class Main(
     private var consoleTerminal: TerminalController? = null
     private lateinit var undoManager: com.github.alfu32.sketch.model.UndoRedoManager
     private var restoringSnapshot = false
+    private var pendingModelLoad: PendingModelLoad? = null
+    private var modelLoadDialog: com.kotcrab.vis.ui.widget.VisWindow? = null
+    private var modelLoadTitleLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
+    private var modelLoadDetailLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
+    private var modelLoadFileBar: com.kotcrab.vis.ui.widget.VisProgressBar? = null
+    private var modelLoadSceneBar: com.kotcrab.vis.ui.widget.VisProgressBar? = null
+    private var modelLoadIndexBar: com.kotcrab.vis.ui.widget.VisProgressBar? = null
+    private var modelLoadFileLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
+    private var modelLoadSceneLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
+    private var modelLoadIndexLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
+
+    private class PendingModelLoad(
+        val file: java.io.File,
+        val displayName: String,
+        val createIfMissing: Boolean
+    ) {
+        @Volatile var fileProgress: Float = 0f
+        @Volatile var fileStageDone = false
+        @Volatile var snapshot: ModelPersistence.ModelSnapshot? = null
+        @Volatile var needsResave = false
+        @Volatile var errorMessage: String? = null
+        @Volatile var workerDone = false
+        var sceneProgress: Float = 0f
+        var indexProgress: Float = 0f
+        var sceneApplied = false
+        var indexingInitialized = false
+        var indexingTotal = 0
+        var indexingDone = 0
+        val indexingTasks = ArrayDeque<() -> Unit>()
+    }
 
     private fun requireWebInternalFile(path: String): FileHandle {
         val file = Gdx.files.internal(path)
@@ -2622,6 +2652,7 @@ class Main(
 
     override fun render() {
         val nowMs = System.currentTimeMillis()
+        processPendingModelLoad()
         if (nowMs >= nextAsyncMaintenanceAtMs) {
             scene.processAsyncMaintenance(nowMs)
             nextAsyncMaintenanceAtMs = nowMs + asyncMaintenanceIntervalMs
@@ -3368,6 +3399,7 @@ class Main(
         modelFile = target.absoluteFile
         loadModel()
         updateWindowTitle()
+        statusModel.message = "Opening ${modelFile.name}..."
     }
 
     private fun showSaveAsModelDialog() {
@@ -3506,7 +3538,7 @@ class Main(
             modelFile = localTarget
             loadModel()
             updateWindowTitle()
-            statusModel.message = "Opened ${displayName ?: localTarget.name}"
+            statusModel.message = "Opening ${displayName ?: localTarget.name}..."
         }
         return true
     }
@@ -3651,6 +3683,7 @@ class Main(
             modelFile = entry.absoluteFile
             loadModel()
             updateWindowTitle()
+            statusModel.message = "Opening ${entry.name}..."
             dialog.remove()
         }
 
@@ -6583,6 +6616,252 @@ class Main(
         return true
     }
 
+    private fun ensureModelLoadDialog() {
+        if (modelLoadDialog != null) {
+            return
+        }
+        val titleLabel = com.kotcrab.vis.ui.widget.VisLabel("Loading model")
+        val detailLabel = com.kotcrab.vis.ui.widget.VisLabel("")
+        val fileBar = com.kotcrab.vis.ui.widget.VisProgressBar(0f, 100f, 1f, false)
+        val sceneBar = com.kotcrab.vis.ui.widget.VisProgressBar(0f, 100f, 1f, false)
+        val indexBar = com.kotcrab.vis.ui.widget.VisProgressBar(0f, 100f, 1f, false)
+        val fileLabel = com.kotcrab.vis.ui.widget.VisLabel("Loading file 0%")
+        val sceneLabel = com.kotcrab.vis.ui.widget.VisLabel("Scene 0%")
+        val indexLabel = com.kotcrab.vis.ui.widget.VisLabel("Indexing 0%")
+        val content = com.kotcrab.vis.ui.widget.VisTable(true).apply {
+            defaults().growX().pad(4f)
+            add(titleLabel).left().row()
+            add(detailLabel).left().row()
+            add(fileLabel).left().row()
+            add(fileBar).growX().row()
+            add(sceneLabel).left().row()
+            add(sceneBar).growX().row()
+            add(indexLabel).left().row()
+            add(indexBar).growX().row()
+        }
+        val dialog = com.kotcrab.vis.ui.widget.VisWindow("Model Load", true).apply {
+            isModal = true
+            isMovable = false
+            isResizable = false
+            setKeepWithinParent(true)
+            add(content).pad(10f).width(420f)
+            pack()
+        }
+        modelLoadDialog = dialog
+        modelLoadTitleLabel = titleLabel
+        modelLoadDetailLabel = detailLabel
+        modelLoadFileBar = fileBar
+        modelLoadSceneBar = sceneBar
+        modelLoadIndexBar = indexBar
+        modelLoadFileLabel = fileLabel
+        modelLoadSceneLabel = sceneLabel
+        modelLoadIndexLabel = indexLabel
+    }
+
+    private fun updateModelLoadDialog(load: PendingModelLoad) {
+        ensureModelLoadDialog()
+        val dialog = modelLoadDialog ?: return
+        if (dialog.parent == null) {
+            uiOverlay.stage.addActor(dialog)
+        }
+        dialog.centerWindow()
+        dialog.toFront()
+        val filePercent = (load.fileProgress.coerceIn(0f, 1f) * 100f).roundToInt()
+        val scenePercent = (load.sceneProgress.coerceIn(0f, 1f) * 100f).roundToInt()
+        val indexPercent = (load.indexProgress.coerceIn(0f, 1f) * 100f).roundToInt()
+        modelLoadTitleLabel?.setText("Loading ${load.displayName}")
+        modelLoadDetailLabel?.setText(
+            when {
+                load.errorMessage != null -> load.errorMessage
+                !load.fileStageDone -> "Reading and parsing model file..."
+                !load.sceneApplied -> "Applying scene state..."
+                load.indexingDone < load.indexingTotal -> "Building query indexes..."
+                else -> "Finishing..."
+            }
+        )
+        modelLoadFileBar?.value = filePercent.toFloat()
+        modelLoadSceneBar?.value = scenePercent.toFloat()
+        modelLoadIndexBar?.value = indexPercent.toFloat()
+        modelLoadFileLabel?.setText("Loading file ${filePercent}%")
+        modelLoadSceneLabel?.setText("Scene ${scenePercent}%")
+        modelLoadIndexLabel?.setText("Indexing ${indexPercent}%")
+    }
+
+    private fun hideModelLoadDialog() {
+        modelLoadDialog?.remove()
+    }
+
+    private fun readFileBytesWithProgress(file: java.io.File, onProgress: (Float) -> Unit): ByteArray {
+        val totalBytes = file.length().coerceAtLeast(1L)
+        val output = java.io.ByteArrayOutputStream(totalBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+        val buffer = ByteArray(64 * 1024)
+        var readBytes = 0L
+        file.inputStream().buffered().use { input ->
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) {
+                    break
+                }
+                output.write(buffer, 0, read)
+                readBytes += read
+                onProgress((readBytes.toDouble() / totalBytes.toDouble()).toFloat())
+            }
+        }
+        onProgress(1f)
+        return output.toByteArray()
+    }
+
+    private fun initializeModelLoadIndexing(load: PendingModelLoad) {
+        if (load.indexingInitialized) {
+            return
+        }
+        val lineStores = linkedSetOf<com.github.alfu32.sketch.model.DraftLineStore>()
+        val faceStores = linkedSetOf<com.github.alfu32.sketch.model.DraftFaceStore>()
+        fun collectStores(group: GroupScene.GroupNode) {
+            lineStores.add(group.prototype.lineStore)
+            faceStores.add(group.prototype.faceStore)
+            group.lineStoreOverride?.let { lineStores.add(it) }
+            group.faceStoreOverride?.let { faceStores.add(it) }
+        }
+        collectStores(scene.root)
+        scene.walkGroups(scene.root) { group -> collectStores(group) }
+        load.indexingTasks.clear()
+        lineStores.forEach { store -> load.indexingTasks.addLast { store.warmSpatialIndex() } }
+        faceStores.forEach { store -> load.indexingTasks.addLast { store.warmSpatialIndex() } }
+        load.indexingTasks.addLast { scene.warmSpatialIndex() }
+        load.indexingTotal = load.indexingTasks.size
+        load.indexingDone = 0
+        load.indexProgress = if (load.indexingTotal == 0) 1f else 0f
+        load.indexingInitialized = true
+    }
+
+    private fun finishPendingModelLoad(load: PendingModelLoad) {
+        val history = load.snapshot?.undoHistory
+        undoManager.importHistory(history)
+        if (history == null || history.entries.isEmpty()) {
+            undoManager.reset("Loaded")
+        }
+        if (load.needsResave) {
+            enqueueAsyncModelSave(snapshotForPersistence(includeUndoHistory = true), load.file)
+        }
+        orbitCameraController.target.set(cameraTarget)
+        syncCameraModesAfterOrbitStateChange()
+        applyLightingSettings(lightingSettings)
+        applyShadowSettings(shadowSettings)
+        uiOverlay.refreshLightingControls()
+        scene.applyChangeListenerToAll()
+        markSceneRuntimeDirty()
+        updateWindowTitle()
+        statusModel.message = "Loaded ${load.displayName}"
+        hideModelLoadDialog()
+        pendingModelLoad = null
+    }
+
+    private fun processPendingModelLoad() {
+        val load = pendingModelLoad ?: return
+        updateModelLoadDialog(load)
+        val error = load.errorMessage
+        if (error != null) {
+            hideModelLoadDialog()
+            pendingModelLoad = null
+            statusModel.message = "Open failed: $error"
+            return
+        }
+        if (!load.fileStageDone) {
+            return
+        }
+        if (!load.sceneApplied) {
+            val snapshot = load.snapshot ?: run {
+                hideModelLoadDialog()
+                pendingModelLoad = null
+                statusModel.message = "Open failed: invalid model content."
+                return
+            }
+            load.sceneProgress = 0.05f
+            restoringSnapshot = true
+            try {
+                ModelPersistence.applySnapshot(
+                    snapshot,
+                    scene,
+                    camera,
+                    cameraTarget,
+                    lightingSettings,
+                    shadowSettings,
+                    modelUnit,
+                    { value -> applySnapEpsilon(value, false) },
+                    { value -> applyGridSpacing(value, false) },
+                    { value -> applyCircleSegments(value, false) }
+                )
+            } finally {
+                restoringSnapshot = false
+            }
+            load.sceneApplied = true
+            load.sceneProgress = 1f
+            initializeModelLoadIndexing(load)
+            return
+        }
+        if (!load.indexingInitialized) {
+            initializeModelLoadIndexing(load)
+        }
+        val deadlineNs = System.nanoTime() + 4_000_000L
+        while (load.indexingTasks.isNotEmpty() && System.nanoTime() < deadlineNs) {
+            load.indexingTasks.removeFirst().invoke()
+            load.indexingDone += 1
+        }
+        load.indexProgress = if (load.indexingTotal <= 0) {
+            1f
+        } else {
+            load.indexingDone.toFloat() / load.indexingTotal.toFloat()
+        }
+        if (load.indexingDone >= load.indexingTotal) {
+            finishPendingModelLoad(load)
+        }
+    }
+
+    private fun beginAsyncModelLoad(file: java.io.File, displayName: String = file.name, createIfMissing: Boolean = false) {
+        if (pendingModelLoad != null) {
+            statusModel.message = "Load already in progress."
+            return
+        }
+        if (!file.exists()) {
+            if (createIfMissing) {
+                undoManager.reset("Created")
+                saveModel()
+                statusModel.message = "Created ${file.name}"
+                markSceneRuntimeDirty()
+            } else {
+                statusModel.message = "Open failed: file not found."
+            }
+            return
+        }
+        waitForAsyncModelSave()
+        val backup = java.io.File(file.absolutePath + ".bak")
+        file.copyTo(backup, overwrite = true)
+        val load = PendingModelLoad(file.absoluteFile, displayName, createIfMissing)
+        pendingModelLoad = load
+        updateModelLoadDialog(load)
+        Thread({
+            try {
+                val bytes = readFileBytesWithProgress(file) { progress ->
+                    load.fileProgress = progress
+                }
+                val snapshot = ModelPersistence.parseSnapshotBytes(bytes)
+                    ?: throw IllegalStateException("invalid model content")
+                load.snapshot = snapshot
+                load.needsResave = ModelPersistence.needsResave(snapshot)
+                load.fileProgress = 1f
+            } catch (t: Throwable) {
+                load.errorMessage = t.message ?: t.javaClass.simpleName
+            } finally {
+                load.fileStageDone = true
+                load.workerDone = true
+            }
+        }, "model-load-${displayName}").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
     private fun applyWebEmbedUiOptions() {
         if (!isEmbeddedWebRuntime()) {
             return
@@ -7186,52 +7465,7 @@ class Main(
             markSceneRuntimeDirty()
             return
         }
-        waitForAsyncModelSave()
-        if (modelFile.exists()) {
-            val backup = java.io.File(modelFile.absolutePath + ".bak")
-            modelFile.copyTo(backup, overwrite = true)
-            val result = ModelPersistence.load(
-                modelFile,
-                scene,
-                camera,
-                cameraTarget,
-                lightingSettings,
-                shadowSettings,
-                modelUnit,
-                { value -> applySnapEpsilon(value, false) },
-                { value -> applyGridSpacing(value, false) },
-                { value -> applyCircleSegments(value, false) }
-            )
-            scene.applyChangeListenerToAll()
-            val history = result.snapshot?.undoHistory
-            undoManager.importHistory(history)
-            if (history == null || history.entries.isEmpty()) {
-                undoManager.reset("Loaded")
-            }
-            if (result.ok && result.needsResave) {
-                ModelPersistence.save(
-                    modelFile,
-                    scene,
-                    camera,
-                    orbitCameraController.target,
-                    lightingSettings,
-                    shadowSettings,
-                    modelUnit,
-                    snapEpsilon,
-                    gridSpacing,
-                    circleSegments,
-                    undoManager.exportHistory()
-                )
-            }
-            orbitCameraController.target.set(cameraTarget)
-            syncCameraModesAfterOrbitStateChange()
-            statusModel.message = "Loaded ${modelFile.name}"
-        } else {
-            undoManager.reset("Created")
-            saveModel()
-            statusModel.message = "Created ${modelFile.name}"
-        }
-        markSceneRuntimeDirty()
+        beginAsyncModelLoad(modelFile, modelFile.name, createIfMissing = true)
     }
 
     private fun markSceneRuntimeDirty() {
