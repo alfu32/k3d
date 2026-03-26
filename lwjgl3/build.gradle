@@ -873,7 +873,7 @@ tasks.register("bundleLocal") {
   } else if (osName.contains("mac")) {
     dependsOn "bundleMacArm64Tar"
   } else {
-    dependsOn "bundleLinuxTar", "bundleLinuxSnap"
+    dependsOn "bundleLinuxTar"
   }
 }
 
@@ -894,7 +894,4 @@ tasks.register("bundleLocalDir") {
 
 tasks.register("dev") {
   dependsOn "bundleLocalDir"
-  if (os.contains("linux")) {
-    dependsOn "bundleLinuxSnap"
-  }
 }
