@@ -1517,6 +1517,9 @@ class Main(
         toolPointer = ToolPointerProcessor(toolController, snapper) { distanceOverrideSnap }
         val uiBlocker = object : com.badlogic.gdx.InputAdapter() {
             override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
+                if (pendingModelLoad != null) {
+                    return true
+                }
                 if (uiOverlay.isUiHit(screenX, screenY)) {
                     return true
                 }
@@ -1571,6 +1574,9 @@ class Main(
             }
 
             override fun keyDown(keycode: Int): Boolean {
+                if (pendingModelLoad != null) {
+                    return true
+                }
                 if ((keycode == Input.Keys.ESCAPE || keycode == Input.Keys.BACK) && hotspotReferencePickTargetId != null) {
                     hotspotReferencePickTargetId = null
                     hotspotReferencePickTargetGroup = null
@@ -1586,10 +1592,16 @@ class Main(
             }
 
             override fun keyUp(keycode: Int): Boolean {
+                if (pendingModelLoad != null) {
+                    return true
+                }
                 return uiOverlay.isUiCapturingInputByPointer()
             }
 
             override fun keyTyped(character: Char): Boolean {
+                if (pendingModelLoad != null) {
+                    return true
+                }
                 return uiOverlay.isUiCapturingInputByPointer()
             }
         }
@@ -6716,6 +6728,28 @@ class Main(
         modelLoadDialog?.remove()
     }
 
+    private fun prepareEmptySceneForModelLoad() {
+        while (scene.exitGroup()) {
+            // Return to root before clearing scene state.
+        }
+        scene.resetScene()
+        guideManager.clear()
+        toolController.cancelActiveTool()
+        toolController.resetToDefault()
+        setCameraMode(CameraMode.ORBIT)
+        orbitCameraController.target.set(0f, 0f, 0f)
+        cameraTarget.set(0f, 0f, 0f)
+        camera.position.set(18f, 14f, 18f)
+        camera.up.set(0f, 1f, 0f)
+        camera.lookAt(cameraTarget)
+        camera.update()
+        walkCamera.position.set(camera.position)
+        walkCamera.direction.set(camera.direction)
+        walkCamera.up.set(camera.up)
+        walkCamera.update()
+        markSceneRuntimeDirty()
+    }
+
     private fun readFileBytesWithProgress(
         file: java.io.File,
         onProgress: (Float) -> Unit,
@@ -6889,6 +6923,7 @@ class Main(
         waitForAsyncModelSave()
         val backup = java.io.File(file.absolutePath + ".bak")
         file.copyTo(backup, overwrite = true)
+        prepareEmptySceneForModelLoad()
         val load = PendingModelLoad(file.absoluteFile, displayName, createIfMissing)
         pendingModelLoad = load
         updateModelLoadDialog(load)
@@ -9089,10 +9124,6 @@ class Main(
     }
 
     private fun enterSelectedObjectEditMode() {
-        if (scene.isEditing()) {
-            statusModel.message = "Already editing selected object."
-            return
-        }
         val selected = scene.selectedGroups()
         if (selected.size != 1) {
             statusModel.message = "Select one object to edit."

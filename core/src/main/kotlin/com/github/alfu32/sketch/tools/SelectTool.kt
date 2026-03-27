@@ -1421,10 +1421,13 @@ class SelectTool(
 
     private fun pickGroupWorld(ray: Ray, screenX: Int, screenY: Int, maxPixels: Float = 12f): GroupHitWorld? {
         var best: GroupHitWorld? = null
-        val indexedCandidates = scene.queryGroupsByRay(ray, includeRoot = false)
-            .filter { it.parent == scene.activeGroup() }
-        val candidates = if (indexedCandidates.isNotEmpty()) indexedCandidates else scene.groupsInActiveContext()
+        val candidates = scene.groupsInActiveContext()
         candidates.forEach { group ->
+            val coarseBounds = group.worldBounds() ?: group.geometryWorldBounds()
+            val coarseT = coarseBounds?.let { rayAabbIntersectionT(ray.origin, ray.direction, it.min, it.max) }
+            if (coarseBounds != null && coarseT == null) {
+                return@forEach
+            }
             val localRay = Ray(group.toLocal(ray.origin), group.vectorToLocal(ray.direction).nor())
             var bestForGroup: GroupHitWorld? = null
             val faceHit = group.faceStore.pickTriangle(localRay)
@@ -1433,7 +1436,7 @@ class SelectTool(
                 val t = Vector3(worldPoint).sub(ray.origin).dot(ray.direction)
                 bestForGroup = GroupHitWorld(group, worldPoint, t)
             }
-            if (bestForGroup == null && group.faceStore.getTriangles().isEmpty()) {
+            if (bestForGroup == null) {
                 group.lineStore.getSegments().forEach { segment ->
                     val a = group.toWorld(segment.start)
                     val b = group.toWorld(segment.end)
@@ -1445,6 +1448,10 @@ class SelectTool(
                         }
                     }
                 }
+            }
+            if (bestForGroup == null && coarseBounds != null && coarseT != null && coarseT >= 0f) {
+                val point = Vector3(ray.origin).mulAdd(ray.direction, coarseT)
+                bestForGroup = GroupHitWorld(group, point, coarseT)
             }
             if (bestForGroup != null) {
                 if (best == null || bestForGroup!!.t < best!!.t) {
