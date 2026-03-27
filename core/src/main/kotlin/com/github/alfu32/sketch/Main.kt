@@ -6453,7 +6453,7 @@ class Main(
     }
 
     private fun onModelChanged() {
-        if (restoringSnapshot) {
+        if (restoringSnapshot || pendingModelLoad != null) {
             return
         }
         markSceneRuntimeDirty()
@@ -6802,6 +6802,18 @@ class Main(
         markSceneRuntimeDirty()
     }
 
+    private fun detachModelFileAfterInterruptedLoad() {
+        val writableDir = resolveDesktopWritableDataDir().absoluteFile
+        if (!writableDir.exists()) {
+            writableDir.mkdirs()
+        }
+        val timestamp = screenshotTimestampFormatter.format(LocalDateTime.now())
+        modelFile = java.io.File(writableDir, "untitled-load-$timestamp.octd").absoluteFile
+        updateWindowTitle()
+        autosavePending = false
+        webEmbedChangePending = false
+    }
+
     private fun copyFileWithProgress(
         source: java.io.File,
         target: java.io.File,
@@ -6910,6 +6922,7 @@ class Main(
             load.sceneSession?.abort()
             load.sceneSession = null
             restoringSnapshot = false
+            detachModelFileAfterInterruptedLoad()
             hideModelLoadDialog()
             pendingModelLoad = null
             statusModel.message = "Load canceled."
@@ -6920,6 +6933,7 @@ class Main(
             load.sceneSession?.abort()
             load.sceneSession = null
             restoringSnapshot = false
+            detachModelFileAfterInterruptedLoad()
             hideModelLoadDialog()
             pendingModelLoad = null
             statusModel.message = "Open failed: $error"
@@ -6933,12 +6947,14 @@ class Main(
                 load.sceneSession?.abort()
                 load.sceneSession = null
                 restoringSnapshot = false
+                detachModelFileAfterInterruptedLoad()
                 hideModelLoadDialog()
                 pendingModelLoad = null
                 statusModel.message = "Load canceled."
                 return
             }
             val snapshot = load.snapshot ?: run {
+                detachModelFileAfterInterruptedLoad()
                 hideModelLoadDialog()
                 pendingModelLoad = null
                 statusModel.message = "Open failed: invalid model content."
@@ -6967,6 +6983,7 @@ class Main(
                 sceneSession.abort()
                 load.sceneSession = null
                 restoringSnapshot = false
+                detachModelFileAfterInterruptedLoad()
                 load.errorMessage = t.message ?: t.javaClass.simpleName
                 return
             }
@@ -7024,10 +7041,12 @@ class Main(
             return
         }
         waitForAsyncModelSave()
-        prepareEmptySceneForModelLoad()
         val load = PendingModelLoad(file.absoluteFile, displayName, createIfMissing)
         pendingModelLoad = load
+        autosavePending = false
+        webEmbedChangePending = false
         updateModelLoadDialog(load)
+        prepareEmptySceneForModelLoad()
         Thread({
             try {
                 val backup = java.io.File(file.absolutePath + ".bak")
