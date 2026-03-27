@@ -2616,7 +2616,7 @@ class Main(
             }
         }
 
-        scene.queryGroupsByRay(ray, includeRoot = true).forEach { group ->
+        forEachCameraRayCandidateGroup(ray) { group ->
             testGroup(group)
         }
         return bestY ?: 0f
@@ -2663,10 +2663,56 @@ class Main(
             }
         }
 
-        scene.queryGroupsByRay(ray, includeRoot = true).forEach { group ->
+        forEachCameraRayCandidateGroup(ray) { group ->
             testGroup(group)
         }
         return bestPoint
+    }
+
+    private fun forEachCameraRayCandidateGroup(
+        ray: com.badlogic.gdx.math.collision.Ray,
+        visitor: (GroupScene.GroupNode) -> Unit
+    ) {
+        fun maybeVisit(group: GroupScene.GroupNode) {
+            val bounds = group.worldBounds() ?: group.geometryWorldBounds()
+            if (bounds != null) {
+                val t = rayAabbIntersectionT(ray.origin, ray.direction, bounds.min, bounds.max)
+                if (t == null) {
+                    return
+                }
+            }
+            visitor(group)
+        }
+        maybeVisit(scene.root)
+        scene.walkGroups(scene.root) { group ->
+            maybeVisit(group)
+        }
+    }
+
+    private fun rayAabbIntersectionT(origin: Vector3, direction: Vector3, min: Vector3, max: Vector3): Float? {
+        var tMin = Float.NEGATIVE_INFINITY
+        var tMax = Float.POSITIVE_INFINITY
+        fun axis(originValue: Float, directionValue: Float, minValue: Float, maxValue: Float): Boolean {
+            if (kotlin.math.abs(directionValue) < 1e-6f) {
+                return originValue in minValue..maxValue
+            }
+            val inv = 1f / directionValue
+            var t0 = (minValue - originValue) * inv
+            var t1 = (maxValue - originValue) * inv
+            if (t0 > t1) {
+                val swap = t0
+                t0 = t1
+                t1 = swap
+            }
+            tMin = kotlin.math.max(tMin, t0)
+            tMax = kotlin.math.min(tMax, t1)
+            return tMax >= tMin
+        }
+        if (!axis(origin.x, direction.x, min.x, max.x)) return null
+        if (!axis(origin.y, direction.y, min.y, max.y)) return null
+        if (!axis(origin.z, direction.z, min.z, max.z)) return null
+        if (tMax < 0f) return null
+        return if (tMin >= 0f) tMin else tMax
     }
 
     override fun render() {
