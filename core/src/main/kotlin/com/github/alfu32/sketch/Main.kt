@@ -422,23 +422,21 @@ class Main(
     private lateinit var undoManager: com.github.alfu32.sketch.model.UndoRedoManager
     private var restoringSnapshot = false
     private var pendingModelLoad: PendingModelLoad? = null
+    private var deferredStartupLoad = false
+    private var deferredStartupLoadFrames = 0
     private var modelLoadDialog: com.kotcrab.vis.ui.widget.VisWindow? = null
     private var modelLoadTitleLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
     private var modelLoadDetailLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
-    private var modelLoadFileBar: com.kotcrab.vis.ui.widget.VisProgressBar? = null
-    private var modelLoadDecodeBar: com.kotcrab.vis.ui.widget.VisProgressBar? = null
-    private var modelLoadSceneBar: com.kotcrab.vis.ui.widget.VisProgressBar? = null
-    private var modelLoadIndexBar: com.kotcrab.vis.ui.widget.VisProgressBar? = null
-    private var modelLoadFileLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
-    private var modelLoadDecodeLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
-    private var modelLoadSceneLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
-    private var modelLoadIndexLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
+    private var modelLoadProgressBar: com.kotcrab.vis.ui.widget.VisProgressBar? = null
+    private var modelLoadStepLabel: com.kotcrab.vis.ui.widget.VisLabel? = null
 
     private class PendingModelLoad(
         val file: java.io.File,
         val displayName: String,
         val createIfMissing: Boolean
     ) {
+        @Volatile var backupProgress: Float = 0f
+        @Volatile var backupStageDone = false
         @Volatile var fileProgress: Float = 0f
         @Volatile var fileStageDone = false
         @Volatile var decodeProgress: Float = 0f
@@ -451,11 +449,19 @@ class Main(
         var sceneProgress: Float = 0f
         var indexProgress: Float = 0f
         var sceneApplied = false
+        var sceneSession: ModelPersistence.ApplySnapshotSession? = null
         var indexingInitialized = false
         var indexingTotal = 0
         var indexingDone = 0
         val indexingTasks = ArrayDeque<() -> Unit>()
     }
+
+    private data class ModelLoadStepUiState(
+        val index: Int,
+        val total: Int,
+        val description: String,
+        val progress: Float
+    )
 
     private fun requireWebInternalFile(path: String): FileHandle {
         val file = Gdx.files.internal(path)
@@ -1630,7 +1636,6 @@ class Main(
         markSceneRuntimeDirty()
         setupLighting()
         setupUndoManager()
-        loadModel()
         applyLightingSettings(lightingSettings)
         applyShadowSettings(shadowSettings)
         uiOverlay.refreshLightingControls()
@@ -1646,6 +1651,12 @@ class Main(
         maybeShowAndroidFirstRunInputDialog()
         applyWebEmbedUiOptions()
         emitWebEmbedReady()
+        if (BuildFlags.WEB_BUILD) {
+            loadModel()
+        } else {
+            deferredStartupLoad = true
+            deferredStartupLoadFrames = 1
+        }
         if (!BuildFlags.WEB_BUILD && !webSafeRuntime) {
             startConsoleIfRequested()
         }
@@ -2716,6 +2727,14 @@ class Main(
     }
 
     override fun render() {
+        if (deferredStartupLoad) {
+            if (deferredStartupLoadFrames > 0) {
+                deferredStartupLoadFrames -= 1
+            } else {
+                deferredStartupLoad = false
+                loadModel()
+            }
+        }
         val nowMs = System.currentTimeMillis()
         processPendingModelLoad()
         if (nowMs >= nextAsyncMaintenanceAtMs) {
@@ -6687,14 +6706,8 @@ class Main(
         }
         val titleLabel = com.kotcrab.vis.ui.widget.VisLabel("Loading model")
         val detailLabel = com.kotcrab.vis.ui.widget.VisLabel("")
-        val fileBar = com.kotcrab.vis.ui.widget.VisProgressBar(0f, 100f, 1f, false)
-        val decodeBar = com.kotcrab.vis.ui.widget.VisProgressBar(0f, 100f, 1f, false)
-        val sceneBar = com.kotcrab.vis.ui.widget.VisProgressBar(0f, 100f, 1f, false)
-        val indexBar = com.kotcrab.vis.ui.widget.VisProgressBar(0f, 100f, 1f, false)
-        val fileLabel = com.kotcrab.vis.ui.widget.VisLabel("Loading file 0%")
-        val decodeLabel = com.kotcrab.vis.ui.widget.VisLabel("Unzipping 0%")
-        val sceneLabel = com.kotcrab.vis.ui.widget.VisLabel("Scene 0%")
-        val indexLabel = com.kotcrab.vis.ui.widget.VisLabel("Indexing 0%")
+        val stepLabel = com.kotcrab.vis.ui.widget.VisLabel("1/5 Backing up file")
+        val progressBar = com.kotcrab.vis.ui.widget.VisProgressBar(0f, 100f, 1f, false)
         val abortButton = com.kotcrab.vis.ui.widget.VisTextButton("Abort")
         abortButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
             override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
@@ -6705,14 +6718,8 @@ class Main(
             defaults().growX().pad(4f)
             add(titleLabel).left().row()
             add(detailLabel).left().row()
-            add(fileLabel).left().row()
-            add(fileBar).growX().row()
-            add(decodeLabel).left().row()
-            add(decodeBar).growX().row()
-            add(sceneLabel).left().row()
-            add(sceneBar).growX().row()
-            add(indexLabel).left().row()
-            add(indexBar).growX().row()
+            add(stepLabel).left().row()
+            add(progressBar).growX().row()
             add(abortButton).right().padTop(8f).row()
         }
         val dialog = com.kotcrab.vis.ui.widget.VisWindow("Model Load", true).apply {
@@ -6726,14 +6733,19 @@ class Main(
         modelLoadDialog = dialog
         modelLoadTitleLabel = titleLabel
         modelLoadDetailLabel = detailLabel
-        modelLoadFileBar = fileBar
-        modelLoadDecodeBar = decodeBar
-        modelLoadSceneBar = sceneBar
-        modelLoadIndexBar = indexBar
-        modelLoadFileLabel = fileLabel
-        modelLoadDecodeLabel = decodeLabel
-        modelLoadSceneLabel = sceneLabel
-        modelLoadIndexLabel = indexLabel
+        modelLoadProgressBar = progressBar
+        modelLoadStepLabel = stepLabel
+    }
+
+    private fun currentModelLoadStep(load: PendingModelLoad): ModelLoadStepUiState {
+        val totalSteps = 5
+        return when {
+            !load.backupStageDone -> ModelLoadStepUiState(1, totalSteps, "Backing up file", load.backupProgress)
+            !load.fileStageDone -> ModelLoadStepUiState(2, totalSteps, "Loading file", load.fileProgress)
+            !load.decodeStageDone -> ModelLoadStepUiState(3, totalSteps, "Unzipping", load.decodeProgress)
+            !load.sceneApplied -> ModelLoadStepUiState(4, totalSteps, "Scene", load.sceneProgress)
+            else -> ModelLoadStepUiState(5, totalSteps, "Indexing", load.indexProgress)
+        }
     }
 
     private fun updateModelLoadDialog(load: PendingModelLoad) {
@@ -6744,30 +6756,23 @@ class Main(
         }
         dialog.centerWindow()
         dialog.toFront()
-        val filePercent = (load.fileProgress.coerceIn(0f, 1f) * 100f).roundToInt()
-        val decodePercent = (load.decodeProgress.coerceIn(0f, 1f) * 100f).roundToInt()
-        val scenePercent = (load.sceneProgress.coerceIn(0f, 1f) * 100f).roundToInt()
-        val indexPercent = (load.indexProgress.coerceIn(0f, 1f) * 100f).roundToInt()
+        val step = currentModelLoadStep(load)
+        val overallProgress = (((step.index - 1).toFloat() + step.progress.coerceIn(0f, 1f)) / step.total.toFloat()).coerceIn(0f, 1f)
         modelLoadTitleLabel?.setText("Loading ${load.displayName}")
         modelLoadDetailLabel?.setText(
             when {
                 load.canceled && !load.sceneApplied -> "Canceling load..."
                 load.errorMessage != null -> load.errorMessage
-                !load.fileStageDone -> "Reading and parsing model file..."
+                !load.backupStageDone -> "Creating .bak copy..."
+                !load.fileStageDone -> "Reading model bytes..."
                 !load.decodeStageDone -> "Decompressing model data..."
                 !load.sceneApplied -> "Applying scene state..."
-                load.indexingDone < load.indexingTotal -> "Building query indexes..."
+                load.indexingDone < load.indexingTotal -> "Warming indexes..."
                 else -> "Finishing..."
             }
         )
-        modelLoadFileBar?.value = filePercent.toFloat()
-        modelLoadDecodeBar?.value = decodePercent.toFloat()
-        modelLoadSceneBar?.value = scenePercent.toFloat()
-        modelLoadIndexBar?.value = indexPercent.toFloat()
-        modelLoadFileLabel?.setText("Loading file ${filePercent}%")
-        modelLoadDecodeLabel?.setText("Unzipping ${decodePercent}%")
-        modelLoadSceneLabel?.setText("Scene ${scenePercent}%")
-        modelLoadIndexLabel?.setText("Indexing ${indexPercent}%")
+        modelLoadStepLabel?.setText("${step.index}/${step.total} ${step.description}")
+        modelLoadProgressBar?.value = overallProgress * 100f
     }
 
     private fun hideModelLoadDialog() {
@@ -6794,6 +6799,34 @@ class Main(
         walkCamera.up.set(camera.up)
         walkCamera.update()
         markSceneRuntimeDirty()
+    }
+
+    private fun copyFileWithProgress(
+        source: java.io.File,
+        target: java.io.File,
+        onProgress: (Float) -> Unit,
+        isCanceled: () -> Boolean
+    ) {
+        val totalBytes = source.length().coerceAtLeast(1L)
+        val buffer = ByteArray(64 * 1024)
+        var copiedBytes = 0L
+        source.inputStream().buffered().use { input ->
+            target.outputStream().buffered().use { output ->
+                while (true) {
+                    if (isCanceled()) {
+                        throw java.io.InterruptedIOException("backup canceled")
+                    }
+                    val read = input.read(buffer)
+                    if (read <= 0) {
+                        break
+                    }
+                    output.write(buffer, 0, read)
+                    copiedBytes += read
+                    onProgress((copiedBytes.toDouble() / totalBytes.toDouble()).toFloat())
+                }
+            }
+        }
+        onProgress(1f)
     }
 
     private fun readFileBytesWithProgress(
@@ -6873,6 +6906,9 @@ class Main(
         val load = pendingModelLoad ?: return
         updateModelLoadDialog(load)
         if (load.canceled && !load.sceneApplied) {
+            load.sceneSession?.abort()
+            load.sceneSession = null
+            restoringSnapshot = false
             hideModelLoadDialog()
             pendingModelLoad = null
             statusModel.message = "Load canceled."
@@ -6880,6 +6916,9 @@ class Main(
         }
         val error = load.errorMessage
         if (error != null) {
+            load.sceneSession?.abort()
+            load.sceneSession = null
+            restoringSnapshot = false
             hideModelLoadDialog()
             pendingModelLoad = null
             statusModel.message = "Open failed: $error"
@@ -6890,6 +6929,9 @@ class Main(
         }
         if (!load.sceneApplied) {
             if (load.canceled) {
+                load.sceneSession?.abort()
+                load.sceneSession = null
+                restoringSnapshot = false
                 hideModelLoadDialog()
                 pendingModelLoad = null
                 statusModel.message = "Load canceled."
@@ -6901,10 +6943,7 @@ class Main(
                 statusModel.message = "Open failed: invalid model content."
                 return
             }
-            load.sceneProgress = 0.05f
-            restoringSnapshot = true
-            try {
-                ModelPersistence.applySnapshot(
+            val sceneSession = load.sceneSession ?: ModelPersistence.beginApplySnapshot(
                     snapshot,
                     scene,
                     camera,
@@ -6916,9 +6955,26 @@ class Main(
                     { value -> applyGridSpacing(value, false) },
                     { value -> applyCircleSegments(value, false) }
                 )
-            } finally {
+                .also {
+                    load.sceneSession = it
+                    restoringSnapshot = true
+                }
+            val sceneDeadlineNs = System.nanoTime() + 4_000_000L
+            val sceneDone = try {
+                sceneSession.advance(sceneDeadlineNs)
+            } catch (t: Throwable) {
+                sceneSession.abort()
+                load.sceneSession = null
                 restoringSnapshot = false
+                load.errorMessage = t.message ?: t.javaClass.simpleName
+                return
             }
+            load.sceneProgress = sceneSession.progress
+            if (!sceneDone) {
+                return
+            }
+            load.sceneSession = null
+            restoringSnapshot = false
             load.sceneApplied = true
             load.sceneProgress = 1f
             initializeModelLoadIndexing(load)
@@ -6967,14 +7023,21 @@ class Main(
             return
         }
         waitForAsyncModelSave()
-        val backup = java.io.File(file.absolutePath + ".bak")
-        file.copyTo(backup, overwrite = true)
         prepareEmptySceneForModelLoad()
         val load = PendingModelLoad(file.absoluteFile, displayName, createIfMissing)
         pendingModelLoad = load
         updateModelLoadDialog(load)
         Thread({
             try {
+                val backup = java.io.File(file.absolutePath + ".bak")
+                copyFileWithProgress(file, backup, { progress ->
+                    load.backupProgress = progress
+                }, { load.canceled })
+                load.backupProgress = 1f
+                load.backupStageDone = true
+                if (load.canceled) {
+                    return@Thread
+                }
                 val bytes = readFileBytesWithProgress(file, { progress ->
                     load.fileProgress = progress
                 }, { load.canceled })
@@ -6999,6 +7062,7 @@ class Main(
                     load.errorMessage = t.message ?: t.javaClass.simpleName
                 }
             } finally {
+                load.backupStageDone = true
                 load.fileStageDone = true
                 load.decodeStageDone = true
                 load.workerDone = true

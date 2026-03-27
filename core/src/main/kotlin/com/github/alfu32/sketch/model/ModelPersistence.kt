@@ -305,109 +305,498 @@ object ModelPersistence {
         gridSpacingSetter: ((Float) -> Unit)? = null,
         circleSegmentsSetter: ((Int) -> Unit)? = null
     ) {
-        resetScene(scene)
-        if (snapshot.rootInstance != null && snapshot.prototypes.isNotEmpty()) {
-            val prototypeMap = mutableMapOf<String, GroupScene.ObjectPrototype>()
-            val rootPrototype = scene.rootPrototype()
-            snapshot.prototypes.forEach { dto ->
-                if (dto.id == rootPrototype.id) {
-                    dto.applyTo(rootPrototype, scene.defaultFaceColor)
-                    prototypeMap[rootPrototype.id] = rootPrototype
-                } else {
-                    val prototype = dto.toPrototype(scene.defaultFaceColor)
-                    scene.registerPrototypeForLoad(prototype)
-                    prototypeMap[prototype.id] = prototype
+        val session = beginApplySnapshot(
+            snapshot = snapshot,
+            scene = scene,
+            camera = camera,
+            cameraTarget = cameraTarget,
+            lighting = lighting,
+            shadow = shadow,
+            modelUnit = modelUnit,
+            snapEpsilonSetter = snapEpsilonSetter,
+            gridSpacingSetter = gridSpacingSetter,
+            circleSegmentsSetter = circleSegmentsSetter
+        )
+        while (!session.advance(Long.MAX_VALUE)) {
+            // Synchronous wrapper for legacy call sites.
+        }
+    }
+
+    class ApplySnapshotSession internal constructor(
+        private val snapshot: ModelSnapshot,
+        private val scene: GroupScene,
+        private val camera: com.badlogic.gdx.graphics.PerspectiveCamera,
+        private val cameraTarget: Vector3?,
+        private val lighting: com.github.alfu32.sketch.ui.LightingSettings,
+        private val shadow: com.github.alfu32.sketch.ui.ShadowSettings,
+        private val modelUnit: ModelUnit?,
+        private val snapEpsilonSetter: ((Float) -> Unit)?,
+        private val gridSpacingSetter: ((Float) -> Unit)?,
+        private val circleSegmentsSetter: ((Int) -> Unit)?
+    ) {
+        private val defaultColor = scene.defaultFaceColor
+        private val prototypeMap = linkedMapOf<String, GroupScene.ObjectPrototype>()
+        private val prototypeTasks = ArrayDeque<PrototypeTask>()
+        private val instanceTasks = ArrayDeque<InstanceTask>()
+        private val legacyTasks = ArrayDeque<LegacyGroupTask>()
+        private var initialized = false
+        private var finalized = false
+        private var completedWork = 0
+        private val totalWork = estimateTotalWork(snapshot).coerceAtLeast(1)
+        var progress: Float = 0f
+            private set
+
+        private inner class PrototypeTask(
+            private val dto: ObjectPrototypeDto,
+            private val prototype: GroupScene.ObjectPrototype
+        ) {
+            private var prepared = false
+            private var segmentIndex = 0
+            private var faceIndex = 0
+            private var dimensionIndex = 0
+            private var textIndex = 0
+            private var finalizedGeometry = false
+
+            fun step(deadlineNs: Long): Boolean {
+                if (!prepared) {
+                    dto.preparePrototypeForIncrementalLoad(prototype, defaultColor)
+                    prepared = true
+                    completedWork += 1
+                    updateProgress()
+                }
+                if (System.nanoTime() < deadlineNs) {
+                    var changedLineOrFace = false
+                    prototype.faceStore.withChangeSuppressed {
+                        prototype.lineStore.withChangeSuppressed {
+                            while (segmentIndex < dto.segments.size && System.nanoTime() < deadlineNs) {
+                                val segment = dto.segments[segmentIndex++]
+                                prototype.lineStore.addSegment(
+                                    segment.start.toVector3(),
+                                    segment.end.toVector3(),
+                                    autoCleanup = false,
+                                    id = segment.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                                )
+                                completedWork += 1
+                                changedLineOrFace = true
+                            }
+                            while (faceIndex < dto.faces.size && System.nanoTime() < deadlineNs) {
+                                val face = dto.faces[faceIndex++]
+                                prototype.faceStore.addTriangle(
+                                    face.a.toVector3(),
+                                    face.b.toVector3(),
+                                    face.c.toVector3(),
+                                    face.color.toColor(),
+                                    id = face.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                                )
+                                completedWork += 1
+                                changedLineOrFace = true
+                            }
+                        }
+                    }
+                    if (changedLineOrFace) {
+                        prototype.lineStore.notifyExternalChange()
+                        prototype.faceStore.notifyExternalChange()
+                        updateProgress()
+                    }
+                }
+                while (dimensionIndex < dto.dimensions.size && System.nanoTime() < deadlineNs) {
+                    val dimension = dto.dimensions[dimensionIndex++]
+                    prototype.dimensionStore.addDimension(
+                        dimension.start.toVector3(),
+                        dimension.end.toVector3(),
+                        dimension.offset.toVector3()
+                    )
+                    completedWork += 1
+                    updateProgress()
+                }
+                while (textIndex < dto.texts.size && System.nanoTime() < deadlineNs) {
+                    val text = dto.texts[textIndex++]
+                    prototype.textStore.addText(
+                        text.position.toVector3(),
+                        text.text,
+                        text.size,
+                        text.normal.toVector3(),
+                        text.axisU.toVector3(),
+                        text.screenText,
+                        kind = runCatching { DraftTextStore.Kind.valueOf(text.kind) }.getOrDefault(DraftTextStore.Kind.BITMAP),
+                        tracking = text.tracking,
+                        lineSpacing = text.lineSpacing,
+                        glyphSourcePath = text.glyphSourcePath
+                    )
+                    completedWork += 1
+                    updateProgress()
+                }
+                if (!finalizedGeometry &&
+                    segmentIndex >= dto.segments.size &&
+                    faceIndex >= dto.faces.size &&
+                    dimensionIndex >= dto.dimensions.size &&
+                    textIndex >= dto.texts.size &&
+                    System.nanoTime() < deadlineNs
+                ) {
+                    dto.finalizePrototypeAfterIncrementalLoad(prototype)
+                    finalizedGeometry = true
+                    completedWork += 1
+                    updateProgress()
+                }
+                return prepared && finalizedGeometry
+            }
+        }
+
+        private inner class InstanceTask(
+            private val dto: GroupInstanceDto,
+            private val parent: GroupScene.GroupNode?,
+            private val existingTarget: GroupScene.GroupNode? = null
+        ) {
+            private var group: GroupScene.GroupNode? = null
+            private var prepared = false
+            private var segmentIndex = 0
+            private var faceIndex = 0
+            private var dimensionIndex = 0
+            private var textIndex = 0
+            private var childrenQueued = false
+
+            fun step(deadlineNs: Long): Boolean {
+                if (!prepared) {
+                    val target = existingTarget ?: dto.createInstanceShell(prototypeMap, defaultColor)
+                    group = target
+                    target.instanceOrigin.set(dto.instanceOrigin.toVector3())
+                    target.instanceAxisU.set(dto.instanceAxisU.toVector3())
+                    target.instanceAxisV.set(dto.instanceAxisV.toVector3())
+                    target.instanceAxisW.set(dto.instanceAxisW.toVector3())
+                    target.hotspotPositionOverrides.clear()
+                    dto.hotspotPositions.forEach { hotspot ->
+                        if (hotspot.id.isNotBlank()) {
+                            target.hotspotPositionOverrides[hotspot.id] = hotspot.position.toVector3()
+                        }
+                    }
+                    target.hotspotAttachedSegmentOverrides.clear()
+                    dto.hotspotSegmentAttachments.forEach { attachment ->
+                        if (attachment.id.isNotBlank()) {
+                            target.hotspotAttachedSegmentOverrides[attachment.id] = attachment.refs.map { it.toSegmentRef() }.toMutableSet()
+                        }
+                    }
+                    target.hotspotAttachedTriangleOverrides.clear()
+                    dto.hotspotTriangleAttachments.forEach { attachment ->
+                        if (attachment.id.isNotBlank()) {
+                            target.hotspotAttachedTriangleOverrides[attachment.id] = attachment.refs.map { it.toTriangleRef() }.toMutableSet()
+                        }
+                    }
+                    target.children.clear()
+                    if (existingTarget == null) {
+                        target.parent = parent
+                        parent?.children?.add(target)
+                        scene.registerInstanceTree(target)
+                    }
+                    if (
+                        dto.overrideSegments.isNotEmpty() ||
+                        dto.overrideFaces.isNotEmpty() ||
+                        dto.overrideDimensions.isNotEmpty() ||
+                        dto.overrideTexts.isNotEmpty()
+                    ) {
+                        target.lineStoreOverride = DraftLineStore()
+                        target.faceStoreOverride = DraftFaceStore(defaultColor)
+                        target.dimensionStoreOverride = DraftDimensionStore()
+                        target.textStoreOverride = DraftTextStore()
+                    } else {
+                        target.lineStoreOverride = null
+                        target.faceStoreOverride = null
+                        target.dimensionStoreOverride = null
+                        target.textStoreOverride = null
+                    }
+                    prepared = true
+                    completedWork += 1
+                    updateProgress()
+                }
+                val currentGroup = group ?: return true
+                val lineOverride = currentGroup.lineStoreOverride
+                val faceOverride = currentGroup.faceStoreOverride
+                if (lineOverride != null && faceOverride != null && System.nanoTime() < deadlineNs) {
+                    var changedLineOrFace = false
+                    faceOverride.withChangeSuppressed {
+                        lineOverride.withChangeSuppressed {
+                            while (segmentIndex < dto.overrideSegments.size && System.nanoTime() < deadlineNs) {
+                                val segment = dto.overrideSegments[segmentIndex++]
+                                lineOverride.addSegment(
+                                    segment.start.toVector3(),
+                                    segment.end.toVector3(),
+                                    autoCleanup = false,
+                                    id = segment.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                                )
+                                completedWork += 1
+                                changedLineOrFace = true
+                            }
+                            while (faceIndex < dto.overrideFaces.size && System.nanoTime() < deadlineNs) {
+                                val face = dto.overrideFaces[faceIndex++]
+                                faceOverride.addTriangle(
+                                    face.a.toVector3(),
+                                    face.b.toVector3(),
+                                    face.c.toVector3(),
+                                    face.color.toColor(),
+                                    id = face.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                                )
+                                completedWork += 1
+                                changedLineOrFace = true
+                            }
+                        }
+                    }
+                    if (changedLineOrFace) {
+                        lineOverride.notifyExternalChange()
+                        faceOverride.notifyExternalChange()
+                        updateProgress()
+                    }
+                }
+                val dimensionOverride = currentGroup.dimensionStoreOverride
+                while (dimensionOverride != null && dimensionIndex < dto.overrideDimensions.size && System.nanoTime() < deadlineNs) {
+                    val dimension = dto.overrideDimensions[dimensionIndex++]
+                    dimensionOverride.addDimension(
+                        dimension.start.toVector3(),
+                        dimension.end.toVector3(),
+                        dimension.offset.toVector3()
+                    )
+                    completedWork += 1
+                    updateProgress()
+                }
+                val textOverride = currentGroup.textStoreOverride
+                while (textOverride != null && textIndex < dto.overrideTexts.size && System.nanoTime() < deadlineNs) {
+                    val text = dto.overrideTexts[textIndex++]
+                    textOverride.addText(
+                        text.position.toVector3(),
+                        text.text,
+                        text.size,
+                        text.normal.toVector3(),
+                        text.axisU.toVector3(),
+                        text.screenText,
+                        kind = runCatching { DraftTextStore.Kind.valueOf(text.kind) }.getOrDefault(DraftTextStore.Kind.BITMAP),
+                        tracking = text.tracking,
+                        lineSpacing = text.lineSpacing,
+                        glyphSourcePath = text.glyphSourcePath
+                    )
+                    completedWork += 1
+                    updateProgress()
+                }
+                if (!childrenQueued &&
+                    segmentIndex >= dto.overrideSegments.size &&
+                    faceIndex >= dto.overrideFaces.size &&
+                    dimensionIndex >= dto.overrideDimensions.size &&
+                    textIndex >= dto.overrideTexts.size
+                ) {
+                    dto.children.forEach { child ->
+                        instanceTasks.addLast(InstanceTask(child, currentGroup))
+                    }
+                    childrenQueued = true
+                }
+                return prepared && childrenQueued
+            }
+        }
+
+        private inner class LegacyGroupTask(
+            private val dto: GroupDto,
+            private val parent: GroupScene.GroupNode?,
+            private val existingTarget: GroupScene.GroupNode? = null
+        ) {
+            private var group: GroupScene.GroupNode? = null
+            private var prepared = false
+            private var segmentIndex = 0
+            private var faceIndex = 0
+            private var childrenQueued = false
+
+            fun step(deadlineNs: Long): Boolean {
+                if (!prepared) {
+                    val target = existingTarget ?: dto.createGroupShell(defaultColor)
+                    group = target
+                    if (existingTarget != null) {
+                        target.instanceOrigin.set(dto.instanceOrigin?.toVector3() ?: dto.origin.toVector3())
+                        target.instanceAxisU.set(dto.instanceAxisU?.toVector3() ?: dto.axisU.toVector3())
+                        target.instanceAxisV.set(dto.instanceAxisV?.toVector3() ?: dto.axisV.toVector3())
+                        target.instanceAxisW.set(dto.instanceAxisW?.toVector3() ?: dto.axisW.toVector3())
+                        target.prototype.name = dto.name.ifBlank { target.prototype.name }
+                        target.prototype.definitionOrigin.set(dto.definitionOrigin?.toVector3() ?: Vector3())
+                        target.prototype.definitionAxisU.set(dto.definitionAxisU?.toVector3() ?: Vector3(1f, 0f, 0f))
+                        target.prototype.definitionAxisV.set(dto.definitionAxisV?.toVector3() ?: Vector3(0f, 1f, 0f))
+                        target.prototype.definitionAxisW.set(dto.definitionAxisW?.toVector3() ?: Vector3(0f, 0f, 1f))
+                        target.prototype.gluedToSurface = dto.gluedToSurface
+                        target.children.clear()
+                        target.lineStore.clearAll()
+                        target.faceStore.clearAll()
+                    } else {
+                        target.parent = parent
+                        parent?.children?.add(target)
+                        scene.registerPrototypeForLoad(target.prototype)
+                        scene.registerInstanceTree(target)
+                    }
+                    prepared = true
+                    completedWork += 1
+                    updateProgress()
+                }
+                val currentGroup = group ?: return true
+                if (System.nanoTime() < deadlineNs) {
+                    var changed = false
+                    currentGroup.faceStore.withChangeSuppressed {
+                        currentGroup.lineStore.withChangeSuppressed {
+                            while (segmentIndex < dto.segments.size && System.nanoTime() < deadlineNs) {
+                                val segment = dto.segments[segmentIndex++]
+                                currentGroup.lineStore.addSegment(
+                                    segment.start.toVector3(),
+                                    segment.end.toVector3(),
+                                    autoCleanup = false,
+                                    id = segment.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                                )
+                                completedWork += 1
+                                changed = true
+                            }
+                            while (faceIndex < dto.faces.size && System.nanoTime() < deadlineNs) {
+                                val face = dto.faces[faceIndex++]
+                                currentGroup.faceStore.addTriangle(
+                                    face.a.toVector3(),
+                                    face.b.toVector3(),
+                                    face.c.toVector3(),
+                                    face.color.toColor(),
+                                    id = face.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                                )
+                                completedWork += 1
+                                changed = true
+                            }
+                        }
+                    }
+                    if (changed) {
+                        currentGroup.lineStore.notifyExternalChange()
+                        currentGroup.faceStore.notifyExternalChange()
+                        updateProgress()
+                    }
+                }
+                if (!childrenQueued && segmentIndex >= dto.segments.size && faceIndex >= dto.faces.size) {
+                    dto.children.forEach { child ->
+                        legacyTasks.addLast(LegacyGroupTask(child, currentGroup))
+                    }
+                    childrenQueued = true
+                }
+                return prepared && childrenQueued
+            }
+        }
+
+        fun abort() {
+            resetScene(scene)
+            progress = 0f
+        }
+
+        fun advance(deadlineNs: Long): Boolean {
+            if (finalized) {
+                return true
+            }
+            if (!initialized) {
+                initialize()
+            }
+            while (System.nanoTime() < deadlineNs) {
+                val activeTaskDone = when {
+                    prototypeTasks.isNotEmpty() -> prototypeTasks.first().step(deadlineNs).also {
+                        if (it) prototypeTasks.removeFirst()
+                    }
+                    instanceTasks.isNotEmpty() -> instanceTasks.first().step(deadlineNs).also {
+                        if (it) instanceTasks.removeFirst()
+                    }
+                    legacyTasks.isNotEmpty() -> legacyTasks.first().step(deadlineNs).also {
+                        if (it) legacyTasks.removeFirst()
+                    }
+                    else -> {
+                        finalizeApply()
+                        finalized = true
+                        progress = 1f
+                        return true
+                    }
+                }
+                if (!activeTaskDone && System.nanoTime() >= deadlineNs) {
+                    break
                 }
             }
-            val loadedRoot = snapshot.rootInstance!!.toInstance(prototypeMap, scene.defaultFaceColor)
-            scene.root.instanceOrigin.set(loadedRoot.instanceOrigin)
-            scene.root.instanceAxisU.set(loadedRoot.instanceAxisU)
-            scene.root.instanceAxisV.set(loadedRoot.instanceAxisV)
-            scene.root.instanceAxisW.set(loadedRoot.instanceAxisW)
-            scene.root.children.clear()
-            loadedRoot.children.forEach { child ->
-                child.parent = scene.root
-                scene.root.children.add(child)
-                scene.registerInstanceTree(child)
-            }
-        } else if (snapshot.rootGroup != null) {
-            val loaded = snapshot.rootGroup!!.toGroup(scene.defaultFaceColor)
-            loaded.children.forEach { child -> registerLegacyPrototypes(scene, child) }
-            scene.root.instanceOrigin.set(loaded.instanceOrigin)
-            scene.root.instanceAxisU.set(loaded.instanceAxisU)
-            scene.root.instanceAxisV.set(loaded.instanceAxisV)
-            scene.root.instanceAxisW.set(loaded.instanceAxisW)
-            scene.root.prototype.name = loaded.prototype.name
-            scene.root.prototype.definitionOrigin.set(loaded.prototype.definitionOrigin)
-            scene.root.prototype.definitionAxisU.set(loaded.prototype.definitionAxisU)
-            scene.root.prototype.definitionAxisV.set(loaded.prototype.definitionAxisV)
-            scene.root.prototype.definitionAxisW.set(loaded.prototype.definitionAxisW)
-            scene.root.prototype.gluedToSurface = loaded.prototype.gluedToSurface
-            scene.root.lineStore.clearAll()
-            scene.root.faceStore.clearAll()
-            loaded.lineStore.getSegments().forEach { seg ->
-                scene.root.lineStore.addSegment(seg.start, seg.end, autoCleanup = false, id = seg.id)
-            }
-            loaded.faceStore.getTriangles().forEach { tri ->
-                scene.root.faceStore.addTriangle(
-                    tri.a,
-                    tri.b,
-                    tri.c,
-                    loaded.faceStore.colorFor(tri),
-                    id = tri.id
-                )
-            }
-            scene.root.children.clear()
-            loaded.children.forEach { child ->
-                child.parent = scene.root
-                scene.root.children.add(child)
-                scene.registerInstanceTree(child)
-            }
-        } else {
-            snapshot.segments.forEach { segment ->
-                scene.root.lineStore.addSegment(
-                    segment.start.toVector3(),
-                    segment.end.toVector3(),
-                    autoCleanup = false,
-                    id = segment.id.ifBlank { java.util.UUID.randomUUID().toString() }
-                )
-            }
-            snapshot.faces.forEach { face ->
-                scene.root.faceStore.addTriangle(
-                    face.a.toVector3(),
-                    face.b.toVector3(),
-                    face.c.toVector3(),
-                    face.color.toColor(),
-                    id = face.id.ifBlank { java.util.UUID.randomUUID().toString() }
-                )
-            }
+            updateProgress()
+            return finalized
         }
-        scene.syncArchitectureGeometryAfterLoad()
-        scene.syncHvacGeometryAfterLoad()
-        if (snapshot.cameraState != null) {
-            snapshot.cameraState?.applyTo(camera, cameraTarget)
-        } else {
-            camera.position.set(10f, 10f, 10f)
-            camera.up.set(0f, 1f, 0f)
-            camera.direction.set(0f, 0f, 0f).sub(camera.position).nor()
-            cameraTarget?.set(0f, 0f, 0f)
-            camera.update()
-        }
-        snapshot.lightingState?.applyTo(lighting)
-        snapshot.shadowState?.applyTo(shadow)
-        snapshot.modelUnit?.let { dto ->
-            modelUnit?.let { unit ->
-                unit.name = dto.name
-                unit.size = dto.size
+
+        private fun initialize() {
+            resetScene(scene)
+            if (snapshot.rootInstance != null && snapshot.prototypes.isNotEmpty()) {
+                val rootPrototype = scene.rootPrototype()
+                snapshot.prototypes.forEach { dto ->
+                    if (dto.id == rootPrototype.id) {
+                        prototypeMap[rootPrototype.id] = rootPrototype
+                        prototypeTasks.addLast(PrototypeTask(dto, rootPrototype))
+                    } else {
+                        val prototype = dto.createPrototypeShell(defaultColor)
+                        scene.registerPrototypeForLoad(prototype)
+                        prototypeMap[prototype.id] = prototype
+                        prototypeTasks.addLast(PrototypeTask(dto, prototype))
+                    }
+                }
+                instanceTasks.addLast(InstanceTask(snapshot.rootInstance!!, null, scene.root))
+            } else if (snapshot.rootGroup != null) {
+                legacyTasks.addLast(LegacyGroupTask(snapshot.rootGroup!!, null, scene.root))
+            } else {
+                val flatDto = GroupDto().apply {
+                    segments = snapshot.segments
+                    faces = snapshot.faces
+                }
+                legacyTasks.addLast(LegacyGroupTask(flatDto, null, scene.root))
             }
+            initialized = true
+            updateProgress()
         }
-        snapshot.snapEpsilon?.let { value ->
-            snapEpsilonSetter?.invoke(value)
+
+        private fun finalizeApply() {
+            scene.syncArchitectureGeometryAfterLoad()
+            scene.syncHvacGeometryAfterLoad()
+            if (snapshot.cameraState != null) {
+                snapshot.cameraState?.applyTo(camera, cameraTarget)
+            } else {
+                camera.position.set(10f, 10f, 10f)
+                camera.up.set(0f, 1f, 0f)
+                camera.direction.set(0f, 0f, 0f).sub(camera.position).nor()
+                cameraTarget?.set(0f, 0f, 0f)
+                camera.update()
+            }
+            snapshot.lightingState?.applyTo(lighting)
+            snapshot.shadowState?.applyTo(shadow)
+            snapshot.modelUnit?.let { dto ->
+                modelUnit?.let { unit ->
+                    unit.name = dto.name
+                    unit.size = dto.size
+                }
+            }
+            snapshot.snapEpsilon?.let { value -> snapEpsilonSetter?.invoke(value) }
+            snapshot.gridSpacing?.let { value -> gridSpacingSetter?.invoke(value) }
+            circleSegmentsSetter?.invoke(snapshot.circleSegments ?: 24)
+            completedWork = totalWork
+            updateProgress()
         }
-        snapshot.gridSpacing?.let { value ->
-            gridSpacingSetter?.invoke(value)
+
+        private fun updateProgress() {
+            progress = (completedWork.toFloat() / totalWork.toFloat()).coerceIn(0f, 1f)
         }
-        circleSegmentsSetter?.invoke(snapshot.circleSegments ?: 24)
+    }
+
+    fun beginApplySnapshot(
+        snapshot: ModelSnapshot,
+        scene: GroupScene,
+        camera: com.badlogic.gdx.graphics.PerspectiveCamera,
+        cameraTarget: Vector3? = null,
+        lighting: com.github.alfu32.sketch.ui.LightingSettings,
+        shadow: com.github.alfu32.sketch.ui.ShadowSettings,
+        modelUnit: ModelUnit? = null,
+        snapEpsilonSetter: ((Float) -> Unit)? = null,
+        gridSpacingSetter: ((Float) -> Unit)? = null,
+        circleSegmentsSetter: ((Int) -> Unit)? = null
+    ): ApplySnapshotSession {
+        return ApplySnapshotSession(
+            snapshot = snapshot,
+            scene = scene,
+            camera = camera,
+            cameraTarget = cameraTarget,
+            lighting = lighting,
+            shadow = shadow,
+            modelUnit = modelUnit,
+            snapEpsilonSetter = snapEpsilonSetter,
+            gridSpacingSetter = gridSpacingSetter,
+            circleSegmentsSetter = circleSegmentsSetter
+        )
     }
 
     class ModelSnapshot {
@@ -473,17 +862,12 @@ object ModelPersistence {
         var dimensions: MutableList<DimensionDto> = mutableListOf()
         var texts: MutableList<TextDto> = mutableListOf()
 
-        fun toPrototype(defaultColor: Color): GroupScene.ObjectPrototype {
-            val prototypeKind = try {
-                GroupScene.PrototypeKind.valueOf(kind)
-            } catch (_: IllegalArgumentException) {
-                GroupScene.PrototypeKind.MESH
-            }
+        fun createPrototypeShell(defaultColor: Color): GroupScene.ObjectPrototype {
+            val prototypeKind = parsedKind()
             val voxelStore = if (prototypeKind == GroupScene.PrototypeKind.VOXEL) VoxelStore() else null
-            val architectureStore = if (prototypeKind == GroupScene.PrototypeKind.ARCHITECTURE) ArchitectureStore() else null
+            val architectureStore = if (prototypeKind == GroupScene.PrototypeKind.ARCHITECTURE || id == "root") ArchitectureStore() else null
             val hvacStore = if (id == "root") HvacStore() else null
-            val hotspotStore = HotspotStore()
-            val prototype = GroupScene.ObjectPrototype(
+            return GroupScene.ObjectPrototype(
                 id = id.ifBlank { java.util.UUID.randomUUID().toString() },
                 name = name.ifBlank { "Object" },
                 definitionOrigin = definitionOrigin.toVector3(),
@@ -496,35 +880,22 @@ object ModelPersistence {
                 voxelStore = voxelStore,
                 architectureStore = architectureStore,
                 hvacStore = hvacStore,
-                hotspotStore = hotspotStore,
+                hotspotStore = HotspotStore(),
                 lineStore = DraftLineStore(),
                 faceStore = DraftFaceStore(defaultColor),
                 dimensionStore = DraftDimensionStore(),
                 textStore = DraftTextStore()
             )
-            restoreArchitecture(architectureStore)
-            restoreHvac(hvacStore)
-            restoreHotspots(hotspotStore)
-            applyGeometry(prototype)
-            prototype.prototypeVertexIds.clear()
-            prototypeVertices.forEach { vertex ->
-                prototype.prototypeVertexIds[vertex.toVertexKey()] = vertex.id.ifBlank { java.util.UUID.randomUUID().toString() }
-            }
-            return prototype
         }
 
-        fun applyTo(prototype: GroupScene.ObjectPrototype, defaultColor: Color) {
+        fun preparePrototypeForIncrementalLoad(prototype: GroupScene.ObjectPrototype, defaultColor: Color) {
             prototype.name = name.ifBlank { prototype.name }
             prototype.definitionOrigin.set(definitionOrigin.toVector3())
             prototype.definitionAxisU.set(definitionAxisU.toVector3())
             prototype.definitionAxisV.set(definitionAxisV.toVector3())
             prototype.definitionAxisW.set(definitionAxisW.toVector3())
             prototype.gluedToSurface = gluedToSurface
-            val parsedKind = try {
-                GroupScene.PrototypeKind.valueOf(kind)
-            } catch (_: IllegalArgumentException) {
-                GroupScene.PrototypeKind.MESH
-            }
+            val parsedKind = parsedKind()
             prototype.kind = when {
                 parsedKind == GroupScene.PrototypeKind.VOXEL && prototype.voxelStore == null -> GroupScene.PrototypeKind.MESH
                 parsedKind == GroupScene.PrototypeKind.ARCHITECTURE && prototype.architectureStore == null -> GroupScene.PrototypeKind.MESH
@@ -549,7 +920,26 @@ object ModelPersistence {
             prototypeVertices.forEach { vertex ->
                 prototype.prototypeVertexIds[vertex.toVertexKey()] = vertex.id.ifBlank { java.util.UUID.randomUUID().toString() }
             }
+        }
+
+        fun finalizePrototypeAfterIncrementalLoad(prototype: GroupScene.ObjectPrototype) {
+            if (prototype.kind == GroupScene.PrototypeKind.VOXEL) {
+                rebuildVoxelGeometry(prototype)
+            }
+        }
+
+        fun toPrototype(defaultColor: Color): GroupScene.ObjectPrototype {
+            val prototype = createPrototypeShell(defaultColor)
+            preparePrototypeForIncrementalLoad(prototype, defaultColor)
             applyGeometry(prototype, defaultColor)
+            finalizePrototypeAfterIncrementalLoad(prototype)
+            return prototype
+        }
+
+        fun applyTo(prototype: GroupScene.ObjectPrototype, defaultColor: Color) {
+            preparePrototypeForIncrementalLoad(prototype, defaultColor)
+            applyGeometry(prototype, defaultColor)
+            finalizePrototypeAfterIncrementalLoad(prototype)
         }
 
         private fun applyGeometry(prototype: GroupScene.ObjectPrototype, defaultColor: Color? = null) {
@@ -591,12 +981,13 @@ object ModelPersistence {
                     glyphSourcePath = text.glyphSourcePath
                 )
             }
-            if (prototype.kind == GroupScene.PrototypeKind.VOXEL) {
-                prototype.voxelStore?.clear()
-                voxels.forEach { voxel ->
-                    prototype.voxelStore?.set(voxel.x, voxel.y, voxel.z, voxel.color.toColor())
-                }
-                rebuildVoxelGeometry(prototype)
+        }
+
+        private fun parsedKind(): GroupScene.PrototypeKind {
+            return try {
+                GroupScene.PrototypeKind.valueOf(kind)
+            } catch (_: IllegalArgumentException) {
+                GroupScene.PrototypeKind.MESH
             }
         }
 
@@ -1365,7 +1756,7 @@ object ModelPersistence {
         var overrideTexts: MutableList<TextDto> = mutableListOf()
         var children: MutableList<GroupInstanceDto> = mutableListOf()
 
-        fun toInstance(
+        fun createInstanceShell(
             prototypes: Map<String, GroupScene.ObjectPrototype>,
             defaultColor: Color
         ): GroupScene.GroupNode {
@@ -1385,7 +1776,7 @@ object ModelPersistence {
                 dimensionStore = DraftDimensionStore(),
                 textStore = DraftTextStore()
             )
-            val group = GroupScene.GroupNode(
+            return GroupScene.GroupNode(
                 id = id.ifBlank { java.util.UUID.randomUUID().toString() },
                 prototype = prototype,
                 instanceOrigin = instanceOrigin.toVector3(),
@@ -1393,6 +1784,13 @@ object ModelPersistence {
                 instanceAxisV = instanceAxisV.toVector3(),
                 instanceAxisW = instanceAxisW.toVector3()
             )
+        }
+
+        fun toInstance(
+            prototypes: Map<String, GroupScene.ObjectPrototype>,
+            defaultColor: Color
+        ): GroupScene.GroupNode {
+            val group = createInstanceShell(prototypes, defaultColor)
             hotspotPositions.forEach { hotspot ->
                 if (hotspot.id.isNotBlank()) {
                     group.hotspotPositionOverrides[hotspot.id] = hotspot.position.toVector3()
@@ -1636,7 +2034,7 @@ object ModelPersistence {
         var faces: MutableList<FaceDto> = mutableListOf()
         var children: MutableList<GroupDto> = mutableListOf()
 
-        fun toGroup(defaultColor: Color): GroupScene.GroupNode {
+        fun createGroupShell(defaultColor: Color): GroupScene.GroupNode {
             val defOrigin = definitionOrigin?.toVector3() ?: Vector3()
             val defAxisU = definitionAxisU?.toVector3() ?: Vector3(1f, 0f, 0f)
             val defAxisV = definitionAxisV?.toVector3() ?: Vector3(0f, 1f, 0f)
@@ -1661,7 +2059,7 @@ object ModelPersistence {
                 dimensionStore = DraftDimensionStore(),
                 textStore = DraftTextStore()
             )
-            val group = GroupScene.GroupNode(
+            return GroupScene.GroupNode(
                 id = id.ifBlank { java.util.UUID.randomUUID().toString() },
                 prototype = prototype,
                 instanceOrigin = instOrigin,
@@ -1669,6 +2067,10 @@ object ModelPersistence {
                 instanceAxisV = instAxisV,
                 instanceAxisW = instAxisW
             )
+        }
+
+        fun toGroup(defaultColor: Color): GroupScene.GroupNode {
+            val group = createGroupShell(defaultColor)
             segments.forEach { segment ->
                 group.lineStore.addSegment(
                     segment.start.toVector3(),
@@ -1873,6 +2275,37 @@ object ModelPersistence {
 
     private fun resetScene(scene: GroupScene) {
         scene.resetScene()
+    }
+
+    private fun estimateTotalWork(snapshot: ModelSnapshot): Int {
+        fun prototypeWork(dto: ObjectPrototypeDto): Int {
+            var work = 1 + dto.segments.size + dto.faces.size + dto.dimensions.size + dto.texts.size + 1
+            work += dto.voxels.size
+            work += dto.architectureWalls.size + dto.architectureSlabs.size + dto.architectureStairs.size + dto.architectureFrames.size
+            work += dto.hvacPlumbingRuns.size + dto.hvacVentilationDucts.size
+            work += dto.hotspots.size + dto.prototypeVertices.size
+            return work
+        }
+        fun instanceWork(dto: GroupInstanceDto): Int {
+            var work = 1 + dto.overrideSegments.size + dto.overrideFaces.size + dto.overrideDimensions.size + dto.overrideTexts.size
+            dto.children.forEach { child -> work += instanceWork(child) }
+            return work
+        }
+        fun legacyWork(dto: GroupDto): Int {
+            var work = 1 + dto.segments.size + dto.faces.size
+            dto.children.forEach { child -> work += legacyWork(child) }
+            return work
+        }
+        var total = 3
+        if (snapshot.rootInstance != null && snapshot.prototypes.isNotEmpty()) {
+            snapshot.prototypes.forEach { dto -> total += prototypeWork(dto) }
+            total += instanceWork(snapshot.rootInstance!!)
+        } else if (snapshot.rootGroup != null) {
+            total += legacyWork(snapshot.rootGroup!!)
+        } else {
+            total += 1 + snapshot.segments.size + snapshot.faces.size
+        }
+        return total
     }
 
     private fun registerLegacyPrototypes(scene: GroupScene, group: GroupScene.GroupNode) {
