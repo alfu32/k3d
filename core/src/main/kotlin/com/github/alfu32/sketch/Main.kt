@@ -10463,6 +10463,7 @@ class Main(
             mix(java.lang.Float.floatToIntBits(v).toLong())
         }
         mix(group.faceStore.visualVersion())
+        mix(System.identityHashCode(group.faceStore).toLong())
         mix(group.id.hashCode().toLong())
         mix(if (shouldIncludeGroupTriangle(group)) 1L else 0L)
         val worldMatrix = group.worldMatrix().`val`

@@ -1470,6 +1470,19 @@ class GroupScene(
                 .filter { (_, vertexId) -> hotspot.attachedVertexIds.contains(vertexId) }
                 .keys
         }
+        val attachedVertexHandles = if (attachedSegments.isEmpty() && attachedTriangles.isEmpty()) {
+            emptySet()
+        } else {
+            val attachedVertexIds = attachedHotspotVertexKeys(attachedSegments, attachedTriangles)
+                .mapNotNullTo(linkedSetOf()) { key -> group.prototype.prototypeVertexIds[key] }
+            vertexIdByHandle
+                .filter { (_, vertexId) -> attachedVertexIds.contains(vertexId) }
+                .keys
+        }
+        val drivenVertexHandles = linkedSetOf<VertexHandle>().apply {
+            addAll(explicitVertexHandles)
+            addAll(attachedVertexHandles)
+        }
         if (hotspot.operation == HotspotStore.OperationKind.MULTIPLY_LINEAR ||
             hotspot.operation == HotspotStore.OperationKind.MULTIPLY_VOLUMETRIC ||
             hotspot.operation == HotspotStore.OperationKind.MULTIPLY_ROTATE_2D ||
@@ -1647,30 +1660,19 @@ class GroupScene(
             } else {
                 emptySet()
             }
-            val hotspotKeys = if (
-                attachedSegments.isEmpty() &&
-                attachedTriangles.isEmpty() &&
-                explicitVertexHandles.isEmpty()
-            ) {
-                emptySet()
-            } else {
-                attachedHotspotVertexKeys(attachedSegments, attachedTriangles)
-            }
             lineStore.withChangeSuppressed {
                 lineStore.getSegments().forEach { segment ->
                     if (attachedSegmentObjects.contains(segment)) {
                         segment.start.add(delta)
                         segment.end.add(delta)
                     } else {
-                        if (explicitVertexHandles.contains(VertexHandle(0, segment.id, 0)) ||
-                            anchorHandles.contains(VertexHandle(0, segment.id, 0)) ||
-                            hotspotKeys.contains(hotspotVertexKey(segment.start))
+                        if (drivenVertexHandles.contains(VertexHandle(0, segment.id, 0)) ||
+                            anchorHandles.contains(VertexHandle(0, segment.id, 0))
                         ) {
                             segment.start.add(delta)
                         }
-                        if (explicitVertexHandles.contains(VertexHandle(0, segment.id, 1)) ||
-                            anchorHandles.contains(VertexHandle(0, segment.id, 1)) ||
-                            hotspotKeys.contains(hotspotVertexKey(segment.end))
+                        if (drivenVertexHandles.contains(VertexHandle(0, segment.id, 1)) ||
+                            anchorHandles.contains(VertexHandle(0, segment.id, 1))
                         ) {
                             segment.end.add(delta)
                         }
@@ -1684,21 +1686,18 @@ class GroupScene(
                         triangle.b.add(delta)
                         triangle.c.add(delta)
                     } else {
-                        if (explicitVertexHandles.contains(VertexHandle(1, triangle.id, 0)) ||
-                            anchorHandles.contains(VertexHandle(1, triangle.id, 0)) ||
-                            hotspotKeys.contains(hotspotVertexKey(triangle.a))
+                        if (drivenVertexHandles.contains(VertexHandle(1, triangle.id, 0)) ||
+                            anchorHandles.contains(VertexHandle(1, triangle.id, 0))
                         ) {
                             triangle.a.add(delta)
                         }
-                        if (explicitVertexHandles.contains(VertexHandle(1, triangle.id, 1)) ||
-                            anchorHandles.contains(VertexHandle(1, triangle.id, 1)) ||
-                            hotspotKeys.contains(hotspotVertexKey(triangle.b))
+                        if (drivenVertexHandles.contains(VertexHandle(1, triangle.id, 1)) ||
+                            anchorHandles.contains(VertexHandle(1, triangle.id, 1))
                         ) {
                             triangle.b.add(delta)
                         }
-                        if (explicitVertexHandles.contains(VertexHandle(1, triangle.id, 2)) ||
-                            anchorHandles.contains(VertexHandle(1, triangle.id, 2)) ||
-                            hotspotKeys.contains(hotspotVertexKey(triangle.c))
+                        if (drivenVertexHandles.contains(VertexHandle(1, triangle.id, 2)) ||
+                            anchorHandles.contains(VertexHandle(1, triangle.id, 2))
                         ) {
                             triangle.c.add(delta)
                         }
@@ -1710,35 +1709,38 @@ class GroupScene(
 
         val transform = hotspotPointTransform(hotspot, targetLocal) ?: return
 
-        if (attachedSegmentObjects.isNotEmpty() || attachedTriangleObjects.isNotEmpty()) {
-            transformRuntimeGeometry(
-                lineStore = lineStore,
-                faceStore = faceStore,
-                segments = attachedSegmentObjects,
-                triangles = attachedTriangleObjects,
-                transform = transform
-            )
-        } else if (explicitVertexHandles.isNotEmpty()) {
+        if (attachedSegmentObjects.isNotEmpty() || attachedTriangleObjects.isNotEmpty() || drivenVertexHandles.isNotEmpty()) {
             lineStore.withChangeSuppressed {
                 lineStore.getSegments().forEach { segment ->
-                    if (explicitVertexHandles.contains(VertexHandle(0, segment.id, 0))) {
+                    if (attachedSegmentObjects.contains(segment)) {
                         segment.start.set(transform(Vector3(segment.start)))
-                    }
-                    if (explicitVertexHandles.contains(VertexHandle(0, segment.id, 1))) {
                         segment.end.set(transform(Vector3(segment.end)))
+                    } else {
+                        if (drivenVertexHandles.contains(VertexHandle(0, segment.id, 0))) {
+                            segment.start.set(transform(Vector3(segment.start)))
+                        }
+                        if (drivenVertexHandles.contains(VertexHandle(0, segment.id, 1))) {
+                            segment.end.set(transform(Vector3(segment.end)))
+                        }
                     }
                 }
             }
             faceStore.withChangeSuppressed {
                 faceStore.getTriangles().forEach { triangle ->
-                    if (explicitVertexHandles.contains(VertexHandle(1, triangle.id, 0))) {
+                    if (attachedTriangleObjects.contains(triangle)) {
                         triangle.a.set(transform(Vector3(triangle.a)))
-                    }
-                    if (explicitVertexHandles.contains(VertexHandle(1, triangle.id, 1))) {
                         triangle.b.set(transform(Vector3(triangle.b)))
-                    }
-                    if (explicitVertexHandles.contains(VertexHandle(1, triangle.id, 2))) {
                         triangle.c.set(transform(Vector3(triangle.c)))
+                    } else {
+                        if (drivenVertexHandles.contains(VertexHandle(1, triangle.id, 0))) {
+                            triangle.a.set(transform(Vector3(triangle.a)))
+                        }
+                        if (drivenVertexHandles.contains(VertexHandle(1, triangle.id, 1))) {
+                            triangle.b.set(transform(Vector3(triangle.b)))
+                        }
+                        if (drivenVertexHandles.contains(VertexHandle(1, triangle.id, 2))) {
+                            triangle.c.set(transform(Vector3(triangle.c)))
+                        }
                     }
                 }
             }
