@@ -6780,13 +6780,6 @@ class Main(
     }
 
     private fun prepareEmptySceneForModelLoad() {
-        while (scene.exitGroup()) {
-            // Return to root before clearing scene state.
-        }
-        scene.resetScene()
-        guideManager.clear()
-        toolController.cancelActiveTool()
-        toolController.resetToDefault()
         setCameraMode(CameraMode.ORBIT)
         orbitCameraController.target.set(0f, 0f, 0f)
         cameraTarget.set(0f, 0f, 0f)
@@ -6798,6 +6791,14 @@ class Main(
         walkCamera.direction.set(camera.direction)
         walkCamera.up.set(camera.up)
         walkCamera.update()
+        syncCameraModesAfterOrbitStateChange()
+        while (scene.exitGroup()) {
+            // Return to root before clearing scene state.
+        }
+        scene.resetScene()
+        guideManager.clear()
+        toolController.cancelActiveTool()
+        toolController.resetToDefault()
         markSceneRuntimeDirty()
     }
 
