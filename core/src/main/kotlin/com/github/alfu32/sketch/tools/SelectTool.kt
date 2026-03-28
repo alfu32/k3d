@@ -184,6 +184,7 @@ class SelectTool(
     private data class HotspotDragState(
         val group: GroupScene.GroupNode,
         val hotspotId: String,
+        val startWorld: Vector3,
         val movingWorld: Vector3
     )
 
@@ -339,6 +340,7 @@ class SelectTool(
                 HotspotDragState(
                     group = hotspotHit.group,
                     hotspotId = hotspotHit.id,
+                    startWorld = Vector3(hotspotHit.point),
                     movingWorld = Vector3(hotspotHit.point)
                 )
             } else {
@@ -1112,6 +1114,22 @@ class SelectTool(
             renderer.line(drag.marker.center, drag.movingWorld)
             return
         }
+        hotspotDrag?.let { drag ->
+            renderer.color = ToolFeedbackColors.PRIMARY
+            drawCross(renderer, drag.startWorld, 0.15f)
+            renderer.color = ToolFeedbackColors.SECONDARY
+            drawCross(renderer, drag.movingWorld, 0.15f)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            renderer.line(drag.startWorld, drag.movingWorld)
+            scene.buildHotspotDragPreview(
+                group = drag.group,
+                id = drag.hotspotId,
+                targetWorld = drag.movingWorld
+            )?.lines?.forEach { (start, end) ->
+                renderer.line(start, end)
+            }
+            return
+        }
         val bounds = volumeBounds() ?: return
         val start = bounds.first
         val end = bounds.second
@@ -1126,6 +1144,51 @@ class SelectTool(
         val maxZ = kotlin.math.max(start.z, end.z)
         renderer.color = ToolFeedbackColors.TRANSLUCENT
         drawWireBox(renderer, minX, minY, minZ, maxX, maxY, maxZ)
+    }
+
+    override fun measurement(status: StatusModel): com.github.alfu32.sketch.ui.ToolMeasurement? {
+        wallDrag?.let { drag ->
+            return com.github.alfu32.sketch.ui.ToolMeasurement(
+                startWorld = Vector3(drag.fixedWorld),
+                endWorld = Vector3(drag.movingWorld),
+                lineColor = ToolFeedbackColors.SECONDARY
+            )
+        }
+        slabDrag?.let { drag ->
+            return com.github.alfu32.sketch.ui.ToolMeasurement(
+                startWorld = Vector3(drag.fixedWorld),
+                endWorld = Vector3(drag.movingWorld),
+                lineColor = ToolFeedbackColors.SECONDARY
+            )
+        }
+        frameDrag?.let { drag ->
+            return com.github.alfu32.sketch.ui.ToolMeasurement(
+                startWorld = Vector3(drag.fixedWorld),
+                endWorld = Vector3(drag.movingWorld),
+                lineColor = ToolFeedbackColors.SECONDARY
+            )
+        }
+        hvacDrag?.let { drag ->
+            return com.github.alfu32.sketch.ui.ToolMeasurement(
+                startWorld = Vector3(drag.marker.center),
+                endWorld = Vector3(drag.movingWorld),
+                lineColor = ToolFeedbackColors.TERTIARY
+            )
+        }
+        hotspotDrag?.let { drag ->
+            return com.github.alfu32.sketch.ui.ToolMeasurement(
+                startWorld = Vector3(drag.startWorld),
+                endWorld = Vector3(drag.movingWorld),
+                lineColor = ToolFeedbackColors.TERTIARY
+            )
+        }
+        return null
+    }
+
+    private fun drawCross(renderer: ShapeRenderer, point: Vector3, size: Float) {
+        renderer.line(point.x - size, point.y, point.z, point.x + size, point.y, point.z)
+        renderer.line(point.x, point.y - size, point.z, point.x, point.y + size, point.z)
+        renderer.line(point.x, point.y, point.z - size, point.x, point.y, point.z + size)
     }
 
     private data class FaceHitWorld(

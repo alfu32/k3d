@@ -53,7 +53,7 @@ private data class MultipleCopySelectionAccumulator(
 )
 
 private const val MAX_MULTIPLE_COPY_STEPS = 2048
-private const val MAX_MULTIPLE_COPY_PREVIEW_STEPS = 32
+private const val MAX_MULTIPLE_COPY_PREVIEW_STEPS = 10_000
 private const val MULTIPLE_COPY_EPS = 1e-5f
 
 private fun snapshotMultipleCopySelection(

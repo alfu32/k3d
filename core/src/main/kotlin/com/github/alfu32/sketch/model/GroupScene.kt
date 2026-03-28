@@ -93,6 +93,11 @@ class GroupScene(
         val shape: HotspotStore.ShapeKind,
         val color: Color
     )
+    data class HotspotDragPreview(
+        val currentWorld: Vector3,
+        val targetWorld: Vector3,
+        val lines: List<Pair<Vector3, Vector3>>
+    )
     private data class ResolvedVentilationDuct(
         val id: String,
         val start: Vector3,
@@ -2663,6 +2668,97 @@ class GroupScene(
                 shape = hotspot.shape,
                 color = Color(hotspot.color)
             )
+        }
+    }
+
+    fun buildHotspotDragPreview(
+        group: GroupNode,
+        id: String,
+        targetWorld: Vector3,
+        maxLines: Int = 50_000
+    ): HotspotDragPreview? {
+        val store = hotspotStoreFor(group)
+        val hotspot = store.hotspotById(id) ?: return null
+        val currentLocal = if (group.editPrototypeMode) {
+            hotspot.position
+        } else {
+            group.runtimeHotspotPositions[hotspot.id]
+                ?: group.hotspotPositionOverrides[hotspot.id]
+                ?: hotspot.position
+        }
+        val previewLines = mutableListOf<Pair<Vector3, Vector3>>()
+        if (group.editPrototypeMode) {
+            collectHotspotPreviewLines(
+                group = group,
+                lineStore = group.lineStore,
+                faceStore = group.faceStore,
+                target = previewLines,
+                maxLines = maxLines
+            )
+        } else {
+            refreshPrototypeVertexIds(group.prototype)
+            val previewLineStore = cloneLineStore(group.prototype.lineStore)
+            val previewFaceStore = cloneFaceStore(group.prototype.faceStore)
+            val resolvedTargets = resolveHotspotTargets(group, group.prototype.hotspotStore).toMutableMap()
+            resolvedTargets[id] = group.toLocal(targetWorld)
+            val vertexIdByHandle = buildVertexIdByHandle(previewLineStore, previewFaceStore, group.prototype)
+            group.prototype.hotspotStore.allHotspots().forEach { entry ->
+                applyHotspotToRuntimeGeometry(
+                    group = group,
+                    hotspotStore = group.prototype.hotspotStore,
+                    hotspot = entry,
+                    resolvedTargetLocal = resolvedTargets[entry.id] ?: entry.position,
+                    lineStore = previewLineStore,
+                    faceStore = previewFaceStore,
+                    vertexIdByHandle = vertexIdByHandle
+                )
+            }
+            previewLineStore.notifyExternalChange()
+            previewFaceStore.notifyExternalChange()
+            collectHotspotPreviewLines(
+                group = group,
+                lineStore = previewLineStore,
+                faceStore = previewFaceStore,
+                target = previewLines,
+                maxLines = maxLines
+            )
+        }
+        return HotspotDragPreview(
+            currentWorld = group.toWorld(currentLocal),
+            targetWorld = Vector3(targetWorld),
+            lines = previewLines
+        )
+    }
+
+    private fun collectHotspotPreviewLines(
+        group: GroupNode,
+        lineStore: DraftLineStore,
+        faceStore: DraftFaceStore,
+        target: MutableList<Pair<Vector3, Vector3>>,
+        maxLines: Int
+    ) {
+        lineStore.getSegments().forEach { segment ->
+            if (target.size >= maxLines) {
+                return
+            }
+            target += group.toWorld(segment.start) to group.toWorld(segment.end)
+        }
+        faceStore.getTriangles().forEach { triangle ->
+            if (target.size >= maxLines) {
+                return
+            }
+            val a = group.toWorld(triangle.a)
+            val b = group.toWorld(triangle.b)
+            val c = group.toWorld(triangle.c)
+            target += a to b
+            if (target.size >= maxLines) {
+                return
+            }
+            target += b to c
+            if (target.size >= maxLines) {
+                return
+            }
+            target += c to a
         }
     }
 

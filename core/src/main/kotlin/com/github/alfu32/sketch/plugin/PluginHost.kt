@@ -9,6 +9,9 @@ import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.ToolId
 import java.io.File
 import java.net.URL
+import java.net.URLClassLoader
+import java.util.ServiceLoader
+import java.util.jar.JarFile
 import kotlin.math.absoluteValue
 
 class PluginHost(
@@ -53,7 +56,9 @@ class PluginHost(
         var added = false
         pluginsDir.listFiles { file ->
             file.isFile &&
-                file.extension.equals("groovy", ignoreCase = true) &&
+                (file.extension.equals("groovy", ignoreCase = true) ||
+                    file.extension.equals("jar", ignoreCase = true)) &&
+                !isPluginApiJar(file) &&
                 !isHelperScript(file)
         }
             ?.forEach { file ->
@@ -79,7 +84,10 @@ class PluginHost(
             return
         }
         val plugins = pluginsDir.listFiles { file ->
-            file.isFile && file.extension.equals("groovy", ignoreCase = true)
+            file.isFile &&
+                (file.extension.equals("groovy", ignoreCase = true) ||
+                    file.extension.equals("jar", ignoreCase = true)) &&
+                !isPluginApiJar(file)
         } ?: emptyArray()
         if (plugins.isNotEmpty()) {
             return
@@ -104,6 +112,9 @@ class PluginHost(
     // New method to get plugin info for the enhanced system
     fun pluginEntries(): List<PluginInfo> {
         return plugins.map { plugin ->
+            val entry = pluginIdToEntry[plugin.id]?.let { url ->
+                catalog.plugins.firstOrNull { it.url == url }
+            }
             PluginInfo(
                 id = plugin.id,
                 name = plugin.name,
@@ -111,7 +122,7 @@ class PluginHost(
                 author = plugin.author,
                 description = plugin.description,
                 isEnabled = plugin.id in enabledPlugins,
-                isScript = pluginIdToEntry[plugin.id]?.startsWith("file:") == true
+                isScript = entry?.let { entryFile(it).extension.equals("groovy", ignoreCase = true) } ?: false
             )
         }
     }
@@ -529,38 +540,47 @@ class PluginHost(
     }
 
     private fun fileNameFromUrl(url: String): String {
-        val sanitized = url.substringAfterLast('/').ifBlank {
+        val sanitized = url.substringAfterLast('/').substringBefore('?').substringBefore('#').ifBlank {
             "plugin-${url.hashCode().absoluteValue}.groovy"
         }
-        return if (sanitized.endsWith(".groovy")) sanitized else "$sanitized.groovy"
+        val lower = sanitized.lowercase()
+        return when {
+            lower.endsWith(".groovy") || lower.endsWith(".jar") -> sanitized
+            '.' in sanitized -> sanitized
+            else -> "$sanitized.groovy"
+        }
     }
 
     private fun loadEntry(entry: PluginEntry) {
-        val script = entryFile(entry)
-        if (isHelperScript(script)) {
+        val pluginFile = entryFile(entry)
+        if (isHelperScript(pluginFile) || isPluginApiJar(pluginFile)) {
             return
         }
-        if (!script.exists()) {
-            pluginStates[entry.url] = PluginState(null, null, "Missing script ${script.name}")
-            println("Plugin load failed: ${entry.url} (missing script ${script.name})")
+        if (!pluginFile.exists()) {
+            pluginStates[entry.url] = PluginState(null, null, "Missing plugin ${pluginFile.name}")
+            println("Plugin load failed: ${entry.url} (missing plugin ${pluginFile.name})")
             return
         }
         try {
-            val context = createGroovyLoaderContext()
-            if (context == null) {
-                pluginStates[entry.url] = PluginState(null, null, "Groovy runtime unavailable on this platform.")
-                println("Plugin load failed: ${entry.url} (Groovy runtime unavailable)")
-                return
+            val (loader, plugin) = if (pluginFile.extension.equals("jar", ignoreCase = true)) {
+                instantiateJarPlugin(pluginFile)
+            } else {
+                val context = createGroovyLoaderContext()
+                if (context == null) {
+                    pluginStates[entry.url] = PluginState(null, null, "Groovy runtime unavailable on this platform.")
+                    println("Plugin load failed: ${entry.url} (Groovy runtime unavailable)")
+                    return
+                }
+                addPluginApiJar(context.loader)
+                val scriptText = pluginFile.readText()
+                context.loader to instantiatePlugin(scriptText, pluginFile.name, context.loader, context.config)
             }
-            addPluginApiJar(context.loader)
-            val scriptText = script.readText()
-            val plugin = instantiatePlugin(scriptText, script.name, context.loader, context.config)
             if (plugin == null) {
-                pluginStates[entry.url] = PluginState(context.loader, null, "No Plugin instance returned")
+                pluginStates[entry.url] = PluginState(loader, null, "No Plugin instance returned")
                 return
             }
             plugins.add(plugin)
-            pluginStates[entry.url] = PluginState(context.loader, plugin, null)
+            pluginStates[entry.url] = PluginState(loader, plugin, null)
             pluginIdToEntry[plugin.id] = entry.url
             if (entry.enabled) {
                 enabledPlugins.add(plugin.id)
@@ -687,6 +707,41 @@ class PluginHost(
         return null
     }
 
+    private fun instantiateJarPlugin(file: File): Pair<AutoCloseable, Plugin?> {
+        val loader = URLClassLoader(arrayOf(file.toURI().toURL()), javaClass.classLoader)
+        try {
+            val servicePlugins = ServiceLoader.load(Plugin::class.java, loader).iterator().asSequence().toList()
+            if (servicePlugins.size > 1) {
+                throw IllegalStateException("Multiple Plugin services found in ${file.name}; use one plugin per jar.")
+            }
+            if (servicePlugins.size == 1) {
+                return loader to servicePlugins.first()
+            }
+            val manifestPluginClass = JarFile(file).use { jar ->
+                val attrs = jar.manifest?.mainAttributes
+                listOf("K3D-Plugin-Class", "Octodraw-Plugin-Class", "Plugin-Class")
+                    .firstNotNullOfOrNull { key -> attrs?.getValue(key)?.trim()?.takeIf { it.isNotEmpty() } }
+            }
+            if (manifestPluginClass != null) {
+                val pluginClass = Class.forName(manifestPluginClass, true, loader)
+                if (!Plugin::class.java.isAssignableFrom(pluginClass)) {
+                    throw IllegalStateException("Manifest plugin class $manifestPluginClass does not implement Plugin.")
+                }
+                return loader to (pluginClass.getDeclaredConstructor().newInstance() as Plugin)
+            }
+            throw IllegalStateException(
+                "No plugin entry point found in ${file.name}. Provide META-INF/services/${Plugin::class.java.name} or a manifest Plugin-Class."
+            )
+        } catch (ex: Throwable) {
+            try {
+                loader.close()
+            } catch (_: Exception) {
+                // ignore
+            }
+            throw ex
+        }
+    }
+
     private fun addPluginApiJar(loader: AutoCloseable) {
         val apiJar = pluginsDir.listFiles { file ->
             file.isFile &&
@@ -702,5 +757,11 @@ class PluginHost(
 
     private fun isHelperScript(file: File): Boolean {
         return file.name in helperScripts
+    }
+
+    private fun isPluginApiJar(file: File): Boolean {
+        return file.isFile &&
+            file.extension.equals("jar", true) &&
+            (file.name.startsWith("octodraw-plugin-api") || file.name.startsWith("k3d-plugin-api"))
     }
 }

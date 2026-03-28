@@ -10131,6 +10131,14 @@ class Main(
         val group = scene.activeGroup()
         val bounds = com.badlogic.gdx.math.collision.BoundingBox()
         var hasAny = false
+        fun extend(point: Vector3) {
+            if (!hasAny) {
+                bounds.set(point, point)
+                hasAny = true
+            } else {
+                bounds.ext(point)
+            }
+        }
         val selectedVoxels = scene.selectedVoxels(group)
         selectedVoxels.forEach { key ->
             val min = Vector3(key.x.toFloat(), key.y.toFloat(), key.z.toFloat())
@@ -10147,11 +10155,7 @@ class Main(
             )
             corners.forEach { corner ->
                 val world = group.toWorld(corner)
-                if (!hasAny) {
-                    bounds.set(world, world)
-                    hasAny = true
-                }
-                bounds.ext(world)
+                extend(world)
             }
         }
         scene.selectedGroups().forEach { selectedGroup ->
@@ -10182,44 +10186,60 @@ class Main(
         group.lineStore.getSelected().forEach { segment ->
             val a = group.toWorld(segment.start)
             val b = group.toWorld(segment.end)
-            if (!hasAny) {
-                bounds.set(a, a)
-                hasAny = true
-            }
-            bounds.ext(a)
-            bounds.ext(b)
+            extend(a)
+            extend(b)
         }
         group.faceStore.getSelected().forEach { tri ->
             val a = group.toWorld(tri.a)
             val b = group.toWorld(tri.b)
             val c = group.toWorld(tri.c)
-            if (!hasAny) {
-                bounds.set(a, a)
-                hasAny = true
-            }
-            bounds.ext(a)
-            bounds.ext(b)
-            bounds.ext(c)
+            extend(a)
+            extend(b)
+            extend(c)
         }
         group.dimensionStore.getSelected().forEach { dimension ->
             val start = group.toWorld(dimension.start)
             val end = group.toWorld(dimension.end)
-            val offsetPoint = group.toWorld(com.badlogic.gdx.math.Vector3(dimension.start).add(dimension.offset))
-            if (!hasAny) {
-                bounds.set(start, start)
-                hasAny = true
+            val offsetPoint = group.toWorld(dimension.offset)
+            val (lineStart, lineEnd) = DimensionMath.computeOffsetLine(start, end, offsetPoint)
+            val offsetDir = DimensionMath.computeOffsetDirection(start, end, offsetPoint)
+            val baseScale = 1.2f
+            val extension = textWorldSize(lineStart, textFont.lineHeight * baseScale)
+            val extensionEndA = Vector3(lineStart).mulAdd(offsetDir, extension)
+            val extensionEndB = Vector3(lineEnd).mulAdd(offsetDir, extension)
+            val dir = Vector3(lineEnd).sub(lineStart)
+            if (dir.len2() > 1e-6f) {
+                dir.nor()
             }
-            bounds.ext(start)
-            bounds.ext(end)
-            bounds.ext(offsetPoint)
+            val dimensionExtend = extension * 0.7f
+            val dimStart = Vector3(lineStart).mulAdd(dir, -dimensionExtend)
+            val dimEnd = Vector3(lineEnd).mulAdd(dir, dimensionExtend)
+            val slashDir = Vector3(dir).add(offsetDir)
+            if (slashDir.len2() > 1e-6f) {
+                slashDir.nor()
+            }
+            val slashLen = extension * 0.6f
+            val slashStartA = Vector3(lineStart).mulAdd(slashDir, -slashLen * 0.5f)
+            val slashEndA = Vector3(lineStart).mulAdd(slashDir, slashLen * 0.5f)
+            val slashStartB = Vector3(lineEnd).mulAdd(slashDir, -slashLen * 0.5f)
+            val slashEndB = Vector3(lineEnd).mulAdd(slashDir, slashLen * 0.5f)
+            extend(start)
+            extend(end)
+            extend(offsetPoint)
+            extend(lineStart)
+            extend(lineEnd)
+            extend(extensionEndA)
+            extend(extensionEndB)
+            extend(dimStart)
+            extend(dimEnd)
+            extend(slashStartA)
+            extend(slashEndA)
+            extend(slashStartB)
+            extend(slashEndB)
         }
         group.textStore.getSelected().forEach { text ->
             val pos = group.toWorld(text.position)
-            if (!hasAny) {
-                bounds.set(pos, pos)
-                hasAny = true
-            }
-            bounds.ext(pos)
+            extend(pos)
         }
         return if (hasAny) bounds else null
     }
