@@ -3,15 +3,14 @@ package com.github.alfu32.sketch.plugin
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
+import com.github.alfu32.sketch.BuildFlags
 import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.model.ModelPersistence
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.ToolId
 import java.io.File
 import java.net.URL
-import java.net.URLClassLoader
 import java.util.ServiceLoader
-import java.util.jar.JarFile
 import kotlin.math.absoluteValue
 
 class PluginHost(
@@ -50,6 +49,9 @@ class PluginHost(
 
     fun loadCatalog() {
         catalog = PluginCatalog.load(catalogFile)
+        if (BuildFlags.WEB_BUILD) {
+            return
+        }
         pluginsDir.mkdirs()
         seedPluginsDirFromScripts()
         val known = catalog.plugins.map { entryFile(it).absolutePath }.toSet()
@@ -210,6 +212,13 @@ class PluginHost(
 
     fun reloadEnabledAndInit() {
         loadCatalog()
+        if (BuildFlags.WEB_BUILD) {
+            unloadAll()
+            enabledPlugins.clear()
+            pluginTools.clear()
+            activePluginToolId = null
+            return
+        }
         reloadEnabled()
         dispatchLoad()
         dispatchCreate()
@@ -552,6 +561,10 @@ class PluginHost(
     }
 
     private fun loadEntry(entry: PluginEntry) {
+        if (BuildFlags.WEB_BUILD) {
+            pluginStates[entry.url] = PluginState(null, null, "Plugins are not supported in web builds.")
+            return
+        }
         val pluginFile = entryFile(entry)
         if (isHelperScript(pluginFile) || isPluginApiJar(pluginFile)) {
             return
@@ -708,19 +721,28 @@ class PluginHost(
     }
 
     private fun instantiateJarPlugin(file: File): Pair<AutoCloseable, Plugin?> {
-        val loader = URLClassLoader(arrayOf(file.toURI().toURL()), javaClass.classLoader)
+        val loaderClass = Class.forName("java.net.URLClassLoader")
+        val loader = loaderClass
+            .getConstructor(Array<URL>::class.java, ClassLoader::class.java)
+            .newInstance(arrayOf(file.toURI().toURL()), javaClass.classLoader) as AutoCloseable
         try {
-            val servicePlugins = ServiceLoader.load(Plugin::class.java, loader).iterator().asSequence().toList()
+            val servicePlugins = ServiceLoader.load(Plugin::class.java, loader as ClassLoader).iterator().asSequence().toList()
             if (servicePlugins.size > 1) {
                 throw IllegalStateException("Multiple Plugin services found in ${file.name}; use one plugin per jar.")
             }
             if (servicePlugins.size == 1) {
                 return loader to servicePlugins.first()
             }
-            val manifestPluginClass = JarFile(file).use { jar ->
-                val attrs = jar.manifest?.mainAttributes
+            val jarFileClass = Class.forName("java.util.jar.JarFile")
+            val manifestPluginClass = (jarFileClass.getConstructor(File::class.java).newInstance(file) as AutoCloseable).use { jar ->
+                val manifest = jarFileClass.getMethod("getManifest").invoke(jar)
+                val attrs = manifest?.javaClass?.getMethod("getMainAttributes")?.invoke(manifest)
                 listOf("K3D-Plugin-Class", "Octodraw-Plugin-Class", "Plugin-Class")
-                    .firstNotNullOfOrNull { key -> attrs?.getValue(key)?.trim()?.takeIf { it.isNotEmpty() } }
+                    .firstNotNullOfOrNull { key ->
+                        attrs?.javaClass?.getMethod("getValue", String::class.java)?.invoke(attrs, key) as? String
+                    }
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
             }
             if (manifestPluginClass != null) {
                 val pluginClass = Class.forName(manifestPluginClass, true, loader)
