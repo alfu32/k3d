@@ -1,5 +1,6 @@
 package com.github.alfu32.sketch.plugin
 
+import com.badlogic.gdx.Application
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
@@ -49,7 +50,7 @@ class PluginHost(
 
     fun loadCatalog() {
         catalog = PluginCatalog.load(catalogFile)
-        if (BuildFlags.WEB_BUILD) {
+        if (!isPluginRuntimeSupported()) {
             return
         }
         pluginsDir.mkdirs()
@@ -212,7 +213,7 @@ class PluginHost(
 
     fun reloadEnabledAndInit() {
         loadCatalog()
-        if (BuildFlags.WEB_BUILD) {
+        if (!isPluginRuntimeSupported()) {
             unloadAll()
             enabledPlugins.clear()
             pluginTools.clear()
@@ -561,8 +562,8 @@ class PluginHost(
     }
 
     private fun loadEntry(entry: PluginEntry) {
-        if (BuildFlags.WEB_BUILD) {
-            pluginStates[entry.url] = PluginState(null, null, "Plugins are not supported in web builds.")
+        if (!isPluginRuntimeSupported()) {
+            pluginStates[entry.url] = PluginState(null, null, unsupportedPluginRuntimeMessage())
             return
         }
         val pluginFile = entryFile(entry)
@@ -785,5 +786,29 @@ class PluginHost(
         return file.isFile &&
             file.extension.equals("jar", true) &&
             (file.name.startsWith("octodraw-plugin-api") || file.name.startsWith("k3d-plugin-api"))
+    }
+
+    private fun isPluginRuntimeSupported(): Boolean {
+        if (BuildFlags.WEB_BUILD) {
+            return false
+        }
+        return try {
+            Gdx.app?.type != Application.ApplicationType.Android &&
+                Gdx.app?.type != Application.ApplicationType.WebGL
+        } catch (_: Throwable) {
+            true
+        }
+    }
+
+    private fun unsupportedPluginRuntimeMessage(): String {
+        return try {
+            when (Gdx.app?.type) {
+                Application.ApplicationType.Android -> "Plugins are not supported on Android builds."
+                Application.ApplicationType.WebGL -> "Plugins are not supported in web builds."
+                else -> "Plugins are not supported on this runtime."
+            }
+        } catch (_: Throwable) {
+            "Plugins are not supported on this runtime."
+        }
     }
 }
