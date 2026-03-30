@@ -3856,7 +3856,7 @@ class Main(
         pathLabel.setWrap(true)
         val list = com.kotcrab.vis.ui.widget.VisList<String>()
         val statusLabel = com.kotcrab.vis.ui.widget.VisLabel("")
-        val nameField = com.kotcrab.vis.ui.widget.VisTextField(
+        val nameField = com.github.alfu32.sketch.ui.AppTextField(
             if (::modelFile.isInitialized) modelFile.name else "octodraw.octd"
         )
 

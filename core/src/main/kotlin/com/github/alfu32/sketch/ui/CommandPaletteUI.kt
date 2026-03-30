@@ -13,7 +13,6 @@ import com.kotcrab.vis.ui.widget.Separator
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisList
 import com.kotcrab.vis.ui.widget.VisScrollPane
-import com.kotcrab.vis.ui.widget.VisTextField
 import com.kotcrab.vis.ui.widget.VisWindow
 
 /**
@@ -72,7 +71,7 @@ class CommandPaletteUI(
     }
 
     private val window = CollapsibleWindow("Command Palette")
-    private val searchField = VisTextField()
+    private val searchField = AppTextField()
     private val commandList = VisList<String>()
     private val statusLabel = VisLabel("")
     private var isVisible = false

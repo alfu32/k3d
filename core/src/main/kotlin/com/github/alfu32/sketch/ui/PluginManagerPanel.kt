@@ -11,13 +11,12 @@ import com.kotcrab.vis.ui.widget.VisScrollPane
 import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextArea
 import com.kotcrab.vis.ui.widget.VisTextButton
-import com.kotcrab.vis.ui.widget.VisTextField
 import com.kotcrab.vis.ui.widget.VisWindow
 
 class PluginManagerPanel(private val pluginHost: PluginHost) : VisWindow("Plugin Manager") {
     private val pluginListTable = VisTable()
     private val pluginLogArea = VisTextArea()
-    private val pluginUrlField = VisTextField()
+    private val pluginUrlField = AppTextField()
     private val pluginPathLabel = VisLabel("")
     private var lastSnapshot: List<PluginEntryInfo> = emptyList()
     private var errorDialog: VisWindow? = null
