@@ -4,7 +4,6 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.math.collision.Ray
-import java.util.Random
 import kotlin.math.PI
 import kotlin.math.max
 
@@ -67,12 +66,12 @@ class CpuPathTracer(
         val sampleX = tile.x + tile.width * 0.5f
         val sampleY = tile.y + tile.height * 0.5f
         val ray = snapshot.camera.rayForPixel(sampleX, sampleY)
-        val random = Random(seed)
+        val random = RenderRng(seed)
         val rgb = trace(snapshot, ray, random, maxDepth)
         buffer.setBlock(tile.x, tile.y, tile.width, tile.height, Color(rgb.x, rgb.y, rgb.z, 1f))
     }
 
-    private fun trace(snapshot: SceneSnapshot, ray: Ray, random: Random, depth: Int): Vector3 {
+    private fun trace(snapshot: SceneSnapshot, ray: Ray, random: RenderRng, depth: Int): Vector3 {
         val hit = nearestHit(snapshot.triangles, ray) ?: return Vector3(snapshot.skyColor.r, snapshot.skyColor.g, snapshot.skyColor.b)
         val direct = Vector3()
         snapshot.lights.forEach { light ->
@@ -168,7 +167,7 @@ private fun background(skyColor: Color, direction: Vector3): Color {
     )
 }
 
-private fun cosineHemisphere(normal: Vector3, random: Random): Vector3 {
+private fun cosineHemisphere(normal: Vector3, random: RenderRng): Vector3 {
     val up = Vector3(normal).nor()
     val tangent = if (kotlin.math.abs(up.x) < 0.9f) {
         Vector3(1f, 0f, 0f)
@@ -194,4 +193,17 @@ private fun Vector3.limit01(): Vector3 {
     y = y.coerceIn(0f, 1f)
     z = z.coerceIn(0f, 1f)
     return this
+}
+
+private class RenderRng(seed: Long) {
+    private var state = if (seed != 0L) seed else 0x6A09E667F3BCC909L
+
+    fun nextFloat(): Float {
+        var z = state
+        z = z xor (z shl 13)
+        z = z xor (z ushr 7)
+        z = z xor (z shl 17)
+        state = z
+        return ((z ushr 40).toInt() and 0xFFFFFF) / 16777216f
+    }
 }

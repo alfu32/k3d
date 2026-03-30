@@ -3,9 +3,9 @@ package com.github.alfu32.sketch.render
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.graphics.PerspectiveCamera
-import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.math.collision.Ray
+import kotlin.math.tan
 
 data class RenderTriangle(
     val a: Vector3,
@@ -35,8 +35,6 @@ sealed interface RenderCameraSnapshot {
                     position = Vector3(camera.position),
                     direction = Vector3(camera.direction),
                     up = Vector3(camera.up),
-                    near = camera.near,
-                    far = camera.far,
                     fieldOfViewDeg = camera.fieldOfView
                 )
                 is OrthographicCamera -> Ortho(
@@ -45,8 +43,8 @@ sealed interface RenderCameraSnapshot {
                     position = Vector3(camera.position),
                     direction = Vector3(camera.direction),
                     up = Vector3(camera.up),
-                    near = camera.near,
-                    far = camera.far,
+                    worldViewportWidth = camera.viewportWidth,
+                    worldViewportHeight = camera.viewportHeight,
                     zoom = camera.zoom
                 )
                 else -> error("Unsupported camera type: ${camera.javaClass.simpleName}")
@@ -60,20 +58,23 @@ sealed interface RenderCameraSnapshot {
         val position: Vector3,
         val direction: Vector3,
         val up: Vector3,
-        val near: Float,
-        val far: Float,
         val fieldOfViewDeg: Float
     ) : RenderCameraSnapshot {
-        private val camera = PerspectiveCamera(fieldOfViewDeg, width.toFloat(), height.toFloat()).apply {
-            this.position.set(position)
-            this.direction.set(direction).nor()
-            this.up.set(up).nor()
-            this.near = near
-            this.far = far
-            update()
-        }
+        private val forward = Vector3(direction).nor()
+        private val right = Vector3(forward).crs(up).nor()
+        private val correctedUp = Vector3(right).crs(forward).nor()
+        private val tanHalfFov = tan(Math.toRadians((fieldOfViewDeg * 0.5f).toDouble())).toFloat()
 
-        override fun rayForPixel(x: Float, y: Float): Ray = camera.getPickRay(x, y)
+        override fun rayForPixel(x: Float, y: Float): Ray {
+            val sx = ((x / width.toFloat()) * 2f - 1f).coerceIn(-1f, 1f)
+            val sy = (1f - (y / height.toFloat()) * 2f).coerceIn(-1f, 1f)
+            val aspect = width.toFloat() / height.toFloat().coerceAtLeast(1f)
+            val dir = Vector3(forward)
+                .mulAdd(right, sx * aspect * tanHalfFov)
+                .mulAdd(correctedUp, sy * tanHalfFov)
+                .nor()
+            return Ray(Vector3(position), dir)
+        }
     }
 
     data class Ortho(
@@ -82,21 +83,24 @@ sealed interface RenderCameraSnapshot {
         val position: Vector3,
         val direction: Vector3,
         val up: Vector3,
-        val near: Float,
-        val far: Float,
+        val worldViewportWidth: Float,
+        val worldViewportHeight: Float,
         val zoom: Float
     ) : RenderCameraSnapshot {
-        private val camera = OrthographicCamera(width.toFloat(), height.toFloat()).apply {
-            this.position.set(position)
-            this.direction.set(direction).nor()
-            this.up.set(up).nor()
-            this.near = near
-            this.far = far
-            this.zoom = zoom
-            update()
-        }
+        private val forward = Vector3(direction).nor()
+        private val right = Vector3(forward).crs(up).nor()
+        private val correctedUp = Vector3(right).crs(forward).nor()
 
-        override fun rayForPixel(x: Float, y: Float): Ray = camera.getPickRay(x, y)
+        override fun rayForPixel(x: Float, y: Float): Ray {
+            val sx = ((x / width.toFloat()) * 2f - 1f).coerceIn(-1f, 1f)
+            val sy = (1f - (y / height.toFloat()) * 2f).coerceIn(-1f, 1f)
+            val halfWidth = worldViewportWidth * zoom * 0.5f
+            val halfHeight = worldViewportHeight * zoom * 0.5f
+            val origin = Vector3(position)
+                .mulAdd(right, sx * halfWidth)
+                .mulAdd(correctedUp, sy * halfHeight)
+            return Ray(origin, Vector3(forward))
+        }
     }
 }
 
