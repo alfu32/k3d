@@ -5066,13 +5066,18 @@ class Main(
             renderController.step(tilesPerFrame, renderGlassTransmission)
         }
         val rawChanged = renderController.flushPreviewUpdates(rawPixmap)
-        if (rawChanged || renderCompositeDirty) {
+        val status = renderController.status()
+        val resolvedFinal = if (!status.running && status.mode != null) {
+            renderController.resolvePreview(rawPixmap)
+        } else {
+            false
+        }
+        if (rawChanged || resolvedFinal || renderCompositeDirty) {
             compositeRenderPreview(rawPixmap, renderCompositeBasePixmap, pixmap)
             texture.draw(pixmap, 0, 0)
             uiOverlay.setRenderPreview(texture, pixmap.width, pixmap.height)
             renderCompositeDirty = false
         }
-        val status = renderController.status()
         if (status.mode != null) {
             val percent = if (status.totalTiles <= 0) {
                 0

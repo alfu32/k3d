@@ -69,7 +69,7 @@ class CpuRayTracer(
             rgb.z += sample.color.b
         }
         rgb.scl(1f / sampleCount.toFloat())
-        val alpha = hitCount.toFloat() / sampleCount.toFloat()
+        val alpha = if (hitCount > 0) 1f else 0f
         buffer.setBlock(tile.x, tile.y, tile.width, tile.height, Color(rgb.x, rgb.y, rgb.z, alpha), tile.passIndex)
         return hitCount > 0
     }
@@ -145,7 +145,7 @@ class CpuPathTracer(
             rgb.add(sample.color)
         }
         rgb.scl(1f / sampleCount.toFloat())
-        val alpha = hitCount.toFloat() / sampleCount.toFloat()
+        val alpha = if (hitCount > 0) 1f else 0f
         buffer.setBlock(tile.x, tile.y, tile.width, tile.height, Color(rgb.x, rgb.y, rgb.z, alpha), tile.passIndex)
         return hitCount > 0
     }

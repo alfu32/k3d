@@ -36,6 +36,7 @@ class RenderBuffer(
         }
     }
 
+    @Synchronized
     fun toPixmap(pixmap: Pixmap) {
         require(pixmap.width == width && pixmap.height == height)
         for (y in 0 until height) {
@@ -46,6 +47,7 @@ class RenderBuffer(
         }
     }
 
+    @Synchronized
     fun toFlippedPixmap(pixmap: Pixmap) {
         require(pixmap.width == width && pixmap.height == height)
         for (y in 0 until height) {

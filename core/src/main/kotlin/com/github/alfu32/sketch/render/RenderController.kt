@@ -161,6 +161,12 @@ class RenderController {
         return changed
     }
 
+    fun resolvePreview(pixmap: Pixmap): Boolean {
+        val job = currentJob ?: return false
+        job.buffer.toPixmap(pixmap)
+        return true
+    }
+
     fun savePng(file: File) {
         val job = currentJob ?: error("No render image available.")
         val pixmap = Pixmap(job.buffer.width, job.buffer.height, Pixmap.Format.RGBA8888)
