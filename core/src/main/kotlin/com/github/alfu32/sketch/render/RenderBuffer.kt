@@ -39,6 +39,17 @@ class RenderBuffer(
         }
     }
 
+    fun toFlippedPixmap(pixmap: Pixmap) {
+        require(pixmap.width == width && pixmap.height == height)
+        for (y in 0 until height) {
+            val srcRow = y * width
+            val dstY = height - 1 - y
+            for (x in 0 until width) {
+                pixmap.drawPixel(x, dstY, pixels[srcRow + x])
+            }
+        }
+    }
+
     fun writeTileToPixmap(pixmap: Pixmap, tile: RenderTile) {
         val clampedX1 = (tile.x + tile.width).coerceIn(0, width)
         val clampedY1 = (tile.y + tile.height).coerceIn(0, height)

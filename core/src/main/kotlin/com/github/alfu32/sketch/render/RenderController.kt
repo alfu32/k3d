@@ -3,6 +3,7 @@ package com.github.alfu32.sketch.render
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.PixmapIO
+import com.github.alfu32.sketch.BuildFlags
 import java.io.File
 import java.io.FileOutputStream
 import java.util.ArrayDeque
@@ -22,24 +23,29 @@ class RenderController {
         val mode: RenderMode,
         val buffer: RenderBuffer,
         val scheduler: ProgressiveTileScheduler,
-        val renderer: CpuRenderer
+        val renderer: CpuRenderer,
+        val pendingTileUpdates: ArrayDeque<RenderTile> = ArrayDeque(),
+        val workerThreads: MutableList<Thread> = mutableListOf(),
+        @Volatile var cancelled: Boolean = false,
+        @Volatile var activeWorkers: Int = 0
     )
 
-    private val pendingTileUpdates = ArrayDeque<RenderTile>()
+    private val stateLock = Any()
     private var currentJob: Job? = null
-    private var running = false
-    private var mode: RenderMode? = null
-    private var completedTiles = 0
-    private var totalTiles = 0
-    private var currentPassLabel = ""
+    @Volatile private var running = false
+    @Volatile private var mode: RenderMode? = null
+    @Volatile private var completedTiles = 0
+    @Volatile private var totalTiles = 0
+    @Volatile private var currentPassLabel = ""
+    @Volatile private var glassTransmission = 1f
 
-    fun start(snapshot: SceneSnapshot, mode: RenderMode) {
-        pendingTileUpdates.clear()
+    fun start(snapshot: SceneSnapshot, mode: RenderMode, workerCount: Int, glassTransmission: Float) {
+        stop()
         val buffer = RenderBuffer(snapshot.camera.width, snapshot.camera.height).apply {
             clear(Color.CLEAR)
         }
         val scheduler = ProgressiveTileScheduler(snapshot.camera.width, snapshot.camera.height)
-        currentJob = Job(
+        val job = Job(
             snapshot = snapshot,
             mode = mode,
             buffer = buffer,
@@ -49,30 +55,57 @@ class RenderController {
                 RenderMode.PATHTRACE -> CpuPathTracer()
             }
         )
+        currentJob = job
         this.mode = mode
+        this.glassTransmission = glassTransmission
         completedTiles = 0
         totalTiles = scheduler.totalTiles
-        currentPassLabel = if (totalTiles > 0) "pass 64" else ""
+        currentPassLabel = if (totalTiles > 0) "pass ${scheduler.currentTileSize}" else ""
         running = totalTiles > 0
+
+        val parallelWorkers = if (BuildFlags.WEB_BUILD) 1 else workerCount.coerceAtLeast(1)
+        if (running && parallelWorkers > 1) {
+            job.activeWorkers = parallelWorkers
+            repeat(parallelWorkers) { index ->
+                val thread = Thread({ workerLoop(job) }, "k3d-render-$index").apply { isDaemon = true }
+                job.workerThreads += thread
+                thread.start()
+            }
+        }
     }
 
-    fun step(maxTiles: Int): Boolean {
+    fun step(maxTiles: Int, glassTransmission: Float): Boolean {
+        this.glassTransmission = glassTransmission
         val job = currentJob ?: return false
-        if (!running) {
+        if (!running && job.workerThreads.isEmpty()) {
             return false
+        }
+        if (job.workerThreads.isNotEmpty()) {
+            if (running && job.activeWorkers <= 0) {
+                running = false
+            }
+            synchronized(job.pendingTileUpdates) {
+                return job.pendingTileUpdates.isNotEmpty()
+            }
         }
         var changed = false
         var remaining = maxTiles.coerceAtLeast(1)
         while (remaining > 0) {
             val tile = job.scheduler.nextTile() ?: break
             currentPassLabel = "pass ${tile.pixelStep}"
-            job.renderer.renderTile(
+            val hadHit = job.renderer.renderTile(
                 snapshot = job.snapshot,
                 tile = tile,
                 buffer = job.buffer,
-                seed = (tile.passIndex.toLong() shl 32) xor (tile.x.toLong() shl 16) xor tile.y.toLong()
+                seed = (tile.passIndex.toLong() shl 32) xor (tile.x.toLong() shl 16) xor tile.y.toLong(),
+                glassTransmission = this.glassTransmission
             )
-            pendingTileUpdates.addLast(tile)
+            if (!hadHit) {
+                job.scheduler.markEmpty(tile)
+            }
+            synchronized(job.pendingTileUpdates) {
+                job.pendingTileUpdates.addLast(tile)
+            }
             completedTiles += 1
             changed = true
             remaining -= 1
@@ -85,6 +118,7 @@ class RenderController {
 
     fun stop() {
         running = false
+        currentJob?.cancelled = true
     }
 
     fun isRunning(): Boolean = running
@@ -106,10 +140,12 @@ class RenderController {
     fun flushPreviewUpdates(pixmap: Pixmap): Boolean {
         val job = currentJob ?: return false
         var changed = false
-        while (pendingTileUpdates.isNotEmpty()) {
-            val tile = pendingTileUpdates.removeFirst()
-            job.buffer.writeTileToPixmap(pixmap, tile)
-            changed = true
+        synchronized(job.pendingTileUpdates) {
+            while (job.pendingTileUpdates.isNotEmpty()) {
+                val tile = job.pendingTileUpdates.removeFirst()
+                job.buffer.writeTileToPixmap(pixmap, tile)
+                changed = true
+            }
         }
         return changed
     }
@@ -119,13 +155,47 @@ class RenderController {
         val pixmap = Pixmap(job.buffer.width, job.buffer.height, Pixmap.Format.RGBA8888)
         val writer = PixmapIO.PNG((job.buffer.width * job.buffer.height * 4).coerceAtLeast(1024))
         try {
-            job.buffer.toPixmap(pixmap)
+            job.buffer.toFlippedPixmap(pixmap)
             FileOutputStream(file).use { out ->
                 writer.write(out, pixmap)
             }
         } finally {
             writer.dispose()
             pixmap.dispose()
+        }
+    }
+
+    private fun workerLoop(job: Job) {
+        try {
+            while (!job.cancelled) {
+                val tile = job.scheduler.nextTile() ?: break
+                currentPassLabel = "pass ${tile.pixelStep}"
+                val hadHit = job.renderer.renderTile(
+                    snapshot = job.snapshot,
+                    tile = tile,
+                    buffer = job.buffer,
+                    seed = (tile.passIndex.toLong() shl 32) xor (tile.x.toLong() shl 16) xor tile.y.toLong(),
+                    glassTransmission = glassTransmission
+                )
+                if (!hadHit) {
+                    job.scheduler.markEmpty(tile)
+                }
+                synchronized(job.pendingTileUpdates) {
+                    job.pendingTileUpdates.addLast(tile)
+                }
+                synchronized(stateLock) {
+                    if (currentJob === job) {
+                        completedTiles += 1
+                    }
+                }
+            }
+        } finally {
+            synchronized(stateLock) {
+                job.activeWorkers = (job.activeWorkers - 1).coerceAtLeast(0)
+                if (currentJob === job && job.activeWorkers <= 0) {
+                    running = false
+                }
+            }
         }
     }
 }

@@ -15,8 +15,11 @@ data class RenderTile(
 class ProgressiveTileScheduler(
     width: Int,
     height: Int,
-    tileSizes: IntArray = intArrayOf(64, 32, 16, 8, 4, 2, 1)
+    tileSizes: IntArray = intArrayOf(32, 16, 8, 2, 1)
 ) {
+    private val passSteps = tileSizes.copyOf()
+    private val passGridWidths = IntArray(tileSizes.size)
+    private val passEmptyTiles = Array(tileSizes.size) { BooleanArray(0) }
     private val tiles: List<RenderTile>
     private var cursor = 0
 
@@ -35,6 +38,10 @@ class ProgressiveTileScheduler(
         val imageCenterY = height * 0.5f
         val built = mutableListOf<RenderTile>()
         tileSizes.forEachIndexed { passIndex, step ->
+            val gridWidth = (width + step - 1) / step
+            val gridHeight = (height + step - 1) / step
+            passGridWidths[passIndex] = gridWidth
+            passEmptyTiles[passIndex] = BooleanArray((gridWidth * gridHeight).coerceAtLeast(1))
             val passTiles = mutableListOf<RenderTile>()
             var y = 0
             while (y < height) {
@@ -66,10 +73,65 @@ class ProgressiveTileScheduler(
         tiles = built
     }
 
+    @Synchronized
     fun nextTile(): RenderTile? {
-        if (cursor >= tiles.size) {
-            return null
+        while (cursor < tiles.size) {
+            val candidate = tiles[cursor++]
+            if (isPruned(candidate)) {
+                continue
+            }
+            return candidate
         }
-        return tiles[cursor++]
+        return null
+    }
+
+    @Synchronized
+    fun markEmpty(tile: RenderTile) {
+        if (tile.passIndex >= passSteps.lastIndex) {
+            return
+        }
+        val step = passSteps[tile.passIndex]
+        val gridWidth = passGridWidths[tile.passIndex]
+        val gridX = tile.x / step
+        val gridY = tile.y / step
+        val index = gridY * gridWidth + gridX
+        if (index in passEmptyTiles[tile.passIndex].indices) {
+            passEmptyTiles[tile.passIndex][index] = true
+        }
+    }
+
+    private fun isPruned(tile: RenderTile): Boolean {
+        if (tile.passIndex <= 0) {
+            return false
+        }
+        for (ancestorPass in 0 until tile.passIndex) {
+            val ancestorStep = passSteps[ancestorPass]
+            val gridWidth = passGridWidths[ancestorPass]
+            val gridX = tile.x / ancestorStep
+            val gridY = tile.y / ancestorStep
+            val index = gridY * gridWidth + gridX
+            if (
+                index in passEmptyTiles[ancestorPass].indices &&
+                passEmptyTiles[ancestorPass][index] &&
+                isInsidePrunedInterior(tile, ancestorStep, gridX, gridY)
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun isInsidePrunedInterior(tile: RenderTile, ancestorStep: Int, ancestorGridX: Int, ancestorGridY: Int): Boolean {
+        val ancestorX = ancestorGridX * ancestorStep
+        val ancestorY = ancestorGridY * ancestorStep
+        val margin = minOf(tile.pixelStep, ancestorStep / 4).coerceAtLeast(1)
+        val innerMinX = ancestorX + margin
+        val innerMinY = ancestorY + margin
+        val innerMaxX = ancestorX + ancestorStep - margin
+        val innerMaxY = ancestorY + ancestorStep - margin
+        return tile.x >= innerMinX &&
+            tile.y >= innerMinY &&
+            tile.x + tile.width <= innerMaxX &&
+            tile.y + tile.height <= innerMaxY
     }
 }

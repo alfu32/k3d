@@ -61,6 +61,7 @@ import com.github.alfu32.sketch.model.VoxelStore
 import com.github.alfu32.sketch.render.SketchShaderProvider
 import com.github.alfu32.sketch.render.RenderCameraSnapshot
 import com.github.alfu32.sketch.render.RenderController
+import com.github.alfu32.sketch.render.RenderDirectionalLight
 import com.github.alfu32.sketch.render.RenderMode
 import com.github.alfu32.sketch.render.RenderPointLight
 import com.github.alfu32.sketch.render.RenderTriangle
@@ -164,6 +165,7 @@ import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.GraphicsEnvironment
 import java.io.ByteArrayOutputStream
+import java.io.FileOutputStream
 import java.io.File
 import java.io.FilenameFilter
 import java.time.LocalDateTime
@@ -339,9 +341,17 @@ class Main(
     private val capturedFeedbackLines = mutableListOf<FeedbackWorldLine>()
     private val pendingPngExports = ArrayDeque<PendingPngExport>()
     private val renderController = RenderController()
+    private var renderRawPixmap: Pixmap? = null
+    private var renderCompositeBasePixmap: Pixmap? = null
     private var renderPreviewPixmap: Pixmap? = null
     private var renderPreviewTexture: Texture? = null
     private val renderPreviewMaxDimension = 640
+    private var pendingRenderBaseCapture = false
+    private var renderCompositeDirty = false
+    private var renderOverlayBlend = 0.72f
+    private var renderOverlayBlurRadius = 1
+    private var renderGlassTransmission = 1f
+    private var renderWorkerCount = 1
     private val pendingTutorialPreviewCaptures = ArrayDeque<PendingTutorialPreviewCapture>()
     private var pendingTutorialPreviewDelayFrames = 0
     private val tutorialThumbnailWidth = 380
@@ -688,6 +698,7 @@ class Main(
             message = "Select entities.",
             inputBuffer = ""
         )
+        renderWorkerCount = defaultOfflineRenderWorkerCount()
         normalOverlayLineWidth = runtimePrefs.getFloat(normalLineWidthPrefKey, normalOverlayLineWidth).coerceIn(1f, 8f)
         feedbackOverlayLineWidth = runtimePrefs.getFloat(feedbackLineWidthPrefKey, feedbackOverlayLineWidth).coerceIn(1f, 16f)
         scene = GroupScene(Color(0.8f, 0.8f, 0.8f, 1f))
@@ -967,6 +978,15 @@ class Main(
             ::startPathtraceRender,
             ::stopOfflineRender,
             ::saveOfflineRender,
+            { renderWorkerCount },
+            ::currentOfflineRenderMaxWorkerCount,
+            ::updateRenderWorkerCount,
+            { renderOverlayBlend },
+            ::updateRenderOverlayBlend,
+            { renderOverlayBlurRadius },
+            ::updateRenderOverlayBlurRadius,
+            { renderGlassTransmission },
+            ::updateRenderGlassTransmission,
             ::updateNormalOverlayLineWidth,
             ::updateFeedbackOverlayLineWidth,
             ::tutorialUiState,
@@ -2844,6 +2864,7 @@ class Main(
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
         Gdx.gl.glEnable(GL20.GL_BLEND)
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
+        capturePendingRenderBasePixmap()
         processPendingPngExports()
         processRenderPreview()
         drawAnnotations2D()
@@ -2983,6 +3004,10 @@ class Main(
         uiOverlay.dispose()
         renderPreviewTexture?.dispose()
         renderPreviewTexture = null
+        renderRawPixmap?.dispose()
+        renderRawPixmap = null
+        renderCompositeBasePixmap?.dispose()
+        renderCompositeBasePixmap = null
         renderPreviewPixmap?.dispose()
         renderPreviewPixmap = null
         spriteBatch.dispose()
@@ -4821,10 +4846,16 @@ class Main(
         val (width, height) = currentOfflineRenderResolution()
         ensureOfflineRenderSurface(width, height)
         val snapshot = buildRenderSceneSnapshot(width, height)
+        renderRawPixmap?.setColor(Color.CLEAR)
+        renderRawPixmap?.fill()
         renderPreviewPixmap?.setColor(Color.CLEAR)
         renderPreviewPixmap?.fill()
         renderPreviewTexture?.draw(renderPreviewPixmap, 0, 0)
-        renderController.start(snapshot, mode)
+        renderCompositeBasePixmap?.setColor(Color.CLEAR)
+        renderCompositeBasePixmap?.fill()
+        renderController.start(snapshot, mode, renderWorkerCount, renderGlassTransmission)
+        pendingRenderBaseCapture = true
+        renderCompositeDirty = true
         renderPreviewTexture?.let { uiOverlay.setRenderPreview(it, width, height) }
         uiOverlay.setRenderStatus("${mode.displayName()} starting...")
         uiOverlay.showRenderWindow()
@@ -4860,7 +4891,7 @@ class Main(
                 File(requested.parentFile, "${requested.name}.png")
             }
             try {
-                renderController.savePng(target.absoluteFile)
+                writeOfflineRenderFile(target.absoluteFile)
                 statusModel.message = "Render saved: ${target.absolutePath}"
             } catch (t: Throwable) {
                 statusModel.message = "Render save failed: ${t.message ?: t.javaClass.simpleName}"
@@ -4869,36 +4900,126 @@ class Main(
         }
         val target = Gdx.files.local(defaultName).file()
         try {
-            renderController.savePng(target)
+            writeOfflineRenderFile(target)
             statusModel.message = "Render saved: ${target.absolutePath}"
         } catch (t: Throwable) {
             statusModel.message = "Render save failed: ${t.message ?: t.javaClass.simpleName}"
         }
     }
 
-    private fun currentOfflineRenderResolution(): Pair<Int, Int> {
-        val viewportWidth = activeCamera.viewportWidth.coerceAtLeast(1f)
-        val viewportHeight = activeCamera.viewportHeight.coerceAtLeast(1f)
-        val aspect = viewportWidth / viewportHeight
-        return if (aspect >= 1f) {
-            val width = renderPreviewMaxDimension
-            val height = (width / aspect).toInt().coerceAtLeast(1)
-            width to height
-        } else {
-            val height = renderPreviewMaxDimension
-            val width = (height * aspect).toInt().coerceAtLeast(1)
-            width to height
+    private fun writeOfflineRenderFile(target: File) {
+        val composed = renderPreviewPixmap
+        if (composed == null) {
+            renderController.savePng(target)
+            return
         }
+        writeFlippedPixmapPng(target, composed)
+    }
+
+    private fun writeFlippedPixmapPng(target: File, source: Pixmap) {
+        val flipped = Pixmap(source.width, source.height, Pixmap.Format.RGBA8888)
+        val writer = PixmapIO.PNG((source.width * source.height * 4).coerceAtLeast(1024))
+        try {
+            for (y in 0 until source.height) {
+                val dstY = source.height - 1 - y
+                for (x in 0 until source.width) {
+                    flipped.drawPixel(x, dstY, source.getPixel(x, y))
+                }
+            }
+            target.parentFile?.mkdirs()
+            FileOutputStream(target).use { out ->
+                writer.write(out, flipped)
+            }
+        } finally {
+            writer.dispose()
+            flipped.dispose()
+        }
+    }
+
+    private fun currentOfflineRenderResolution(): Pair<Int, Int> {
+        val screenWidth = Gdx.graphics.backBufferWidth.coerceAtLeast(1)
+        val screenHeight = Gdx.graphics.backBufferHeight.coerceAtLeast(1)
+        val divisors = intArrayOf(1, 2, 4, 8, 16)
+        val divisor = divisors.firstOrNull { d ->
+            maxOf(screenWidth / d, screenHeight / d) <= renderPreviewMaxDimension
+        } ?: divisors.last()
+        return (screenWidth / divisor).coerceAtLeast(1) to (screenHeight / divisor).coerceAtLeast(1)
+    }
+
+    private fun defaultOfflineRenderWorkerCount(): Int {
+        return currentOfflineRenderMaxWorkerCount()
+    }
+
+    private fun currentOfflineRenderMaxWorkerCount(): Int {
+        if (BuildFlags.WEB_BUILD) {
+            return 1
+        }
+        val available = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val cap = if (isAndroidRuntime()) 8 else 16
+        return (available - 1).coerceAtLeast(1).coerceAtMost(cap)
+    }
+
+    private fun currentAmbientRenderColor(): Color {
+        return Color(
+            ambientLightValue * ambientLightAlpha,
+            ambientLightValue * ambientLightAlpha,
+            ambientLightValue * ambientLightAlpha,
+            1f
+        )
+    }
+
+    private fun currentDirectionalRenderLights(): List<RenderDirectionalLight> {
+        val lights = mutableListOf<RenderDirectionalLight>()
+        if (::mainLight.isInitialized) {
+            val direction = Vector3(mainLight.direction)
+            if (direction.len2() > 1e-6f) {
+                lights += RenderDirectionalLight(
+                    direction = direction.nor(),
+                    color = Color(mainLight.color),
+                    intensity = 1f
+                )
+            }
+        }
+        if (::shadowLight.isInitialized) {
+            val direction = Vector3(shadowLight.direction)
+            if (direction.len2() > 1e-6f) {
+                lights += RenderDirectionalLight(
+                    direction = direction.nor(),
+                    color = Color(
+                        shadowLightValue * shadowLightAlpha,
+                        shadowLightValue * shadowLightAlpha,
+                        shadowLightValue * shadowLightAlpha,
+                        1f
+                    ),
+                    intensity = 1f
+                )
+            }
+        }
+        return lights
     }
 
     private fun ensureOfflineRenderSurface(width: Int, height: Int) {
         val pixmap = renderPreviewPixmap
         val texture = renderPreviewTexture
-        if (pixmap != null && texture != null && pixmap.width == width && pixmap.height == height) {
+        val raw = renderRawPixmap
+        val base = renderCompositeBasePixmap
+        if (pixmap != null && texture != null && raw != null && base != null &&
+            pixmap.width == width && pixmap.height == height
+        ) {
             return
         }
         renderPreviewTexture?.dispose()
+        renderRawPixmap?.dispose()
+        renderCompositeBasePixmap?.dispose()
         renderPreviewPixmap?.dispose()
+        renderRawPixmap = Pixmap(width, height, Pixmap.Format.RGBA8888).apply {
+            setColor(Color.CLEAR)
+            fill()
+        }
+        renderCompositeBasePixmap = Pixmap(width, height, Pixmap.Format.RGBA8888).apply {
+            setColor(Color.CLEAR)
+            fill()
+        }
         renderPreviewPixmap = Pixmap(width, height, Pixmap.Format.RGBA8888).apply {
             setColor(Color.CLEAR)
             fill()
@@ -4910,6 +5031,7 @@ class Main(
     }
 
     private fun processRenderPreview() {
+        val rawPixmap = renderRawPixmap ?: return
         val pixmap = renderPreviewPixmap ?: return
         val texture = renderPreviewTexture ?: return
         val tilesPerFrame = when (renderController.status().mode) {
@@ -4918,12 +5040,14 @@ class Main(
             null -> 0
         }
         if (tilesPerFrame > 0) {
-            renderController.step(tilesPerFrame)
+            renderController.step(tilesPerFrame, renderGlassTransmission)
         }
-        val changed = renderController.flushPreviewUpdates(pixmap)
-        if (changed) {
+        val rawChanged = renderController.flushPreviewUpdates(rawPixmap)
+        if (rawChanged || renderCompositeDirty) {
+            compositeRenderPreview(rawPixmap, renderCompositeBasePixmap, pixmap)
             texture.draw(pixmap, 0, 0)
             uiOverlay.setRenderPreview(texture, pixmap.width, pixmap.height)
+            renderCompositeDirty = false
         }
         val status = renderController.status()
         if (status.mode != null) {
@@ -4940,6 +5064,118 @@ class Main(
         } else {
             uiOverlay.setRenderStatus("Idle")
         }
+    }
+
+    private fun capturePendingRenderBasePixmap() {
+        if (!pendingRenderBaseCapture) {
+            return
+        }
+        val target = renderCompositeBasePixmap ?: return
+        var source: Pixmap? = null
+        try {
+            val width = Gdx.graphics.backBufferWidth.coerceAtLeast(1)
+            val height = Gdx.graphics.backBufferHeight.coerceAtLeast(1)
+            source = ScreenUtils.getFrameBufferPixmap(0, 0, width, height)
+            copyFramebufferPixmapToRenderBase(source, target)
+            renderCompositeDirty = true
+        } catch (_: Throwable) {
+            target.setColor(Color.CLEAR)
+            target.fill()
+        } finally {
+            source?.dispose()
+            pendingRenderBaseCapture = false
+        }
+    }
+
+    private fun copyFramebufferPixmapToRenderBase(source: Pixmap, target: Pixmap) {
+        val scaleX = source.width.toFloat() / target.width.toFloat().coerceAtLeast(1f)
+        val scaleY = source.height.toFloat() / target.height.toFloat().coerceAtLeast(1f)
+        for (y in 0 until target.height) {
+            val srcY = (((target.height - 1 - y) + 0.5f) * scaleY).toInt().coerceIn(0, source.height - 1)
+            for (x in 0 until target.width) {
+                val srcX = (((x + 0.5f) * scaleX).toInt()).coerceIn(0, source.width - 1)
+                target.drawPixel(x, y, source.getPixel(srcX, srcY))
+            }
+        }
+    }
+
+    private fun compositeRenderPreview(raw: Pixmap, base: Pixmap?, target: Pixmap) {
+        val blend = renderOverlayBlend.coerceIn(0f, 1f)
+        val blurRadius = renderOverlayBlurRadius.coerceIn(0, 3)
+        for (y in 0 until target.height) {
+            for (x in 0 until target.width) {
+                val sourcePixel = if (blurRadius > 0) {
+                    blurredRenderPixel(raw, x, y, blurRadius)
+                } else {
+                    raw.getPixel(x, y)
+                }
+                val composed = if (base == null) {
+                    sourcePixel
+                } else {
+                    blendPixels(base.getPixel(x, y), sourcePixel, blend)
+                }
+                target.drawPixel(x, y, composed)
+            }
+        }
+    }
+
+    private fun blurredRenderPixel(pixmap: Pixmap, cx: Int, cy: Int, radius: Int): Int {
+        var sumR = 0f
+        var sumG = 0f
+        var sumB = 0f
+        var sumA = 0
+        var count = 0
+        val x0 = (cx - radius).coerceAtLeast(0)
+        val y0 = (cy - radius).coerceAtLeast(0)
+        val x1 = (cx + radius).coerceAtMost(pixmap.width - 1)
+        val y1 = (cy + radius).coerceAtMost(pixmap.height - 1)
+        for (y in y0..y1) {
+            for (x in x0..x1) {
+                val pixel = pixmap.getPixel(x, y)
+                val alpha = rgbaA(pixel)
+                val alphaWeight = alpha / 255f
+                sumR += rgbaR(pixel) * alphaWeight
+                sumG += rgbaG(pixel) * alphaWeight
+                sumB += rgbaB(pixel) * alphaWeight
+                sumA += alpha
+                count += 1
+            }
+        }
+        val invCount = count.coerceAtLeast(1)
+        val avgAlpha = sumA / invCount
+        if (avgAlpha <= 0) {
+            return 0
+        }
+        val alphaNorm = (sumA / 255f).coerceAtLeast(1e-6f)
+        return packRgba(
+            (sumR / alphaNorm).toInt().coerceIn(0, 255),
+            (sumG / alphaNorm).toInt().coerceIn(0, 255),
+            (sumB / alphaNorm).toInt().coerceIn(0, 255),
+            avgAlpha
+        )
+    }
+
+    private fun blendPixels(base: Int, overlay: Int, blend: Float): Int {
+        val overlayAlpha = (rgbaA(overlay) / 255f) * blend
+        if (overlayAlpha <= 0f) {
+            return base
+        }
+        val keep = 1f - overlayAlpha
+        return packRgba(
+            (rgbaR(base) * keep + rgbaR(overlay) * overlayAlpha).toInt().coerceIn(0, 255),
+            (rgbaG(base) * keep + rgbaG(overlay) * overlayAlpha).toInt().coerceIn(0, 255),
+            (rgbaB(base) * keep + rgbaB(overlay) * overlayAlpha).toInt().coerceIn(0, 255),
+            255
+        )
+    }
+
+    private fun rgbaR(pixel: Int): Int = (pixel ushr 24) and 0xFF
+    private fun rgbaG(pixel: Int): Int = (pixel ushr 16) and 0xFF
+    private fun rgbaB(pixel: Int): Int = (pixel ushr 8) and 0xFF
+    private fun rgbaA(pixel: Int): Int = pixel and 0xFF
+
+    private fun packRgba(r: Int, g: Int, b: Int, a: Int): Int {
+        return ((r and 0xFF) shl 24) or ((g and 0xFF) shl 16) or ((b and 0xFF) shl 8) or (a and 0xFF)
     }
 
     private fun buildRenderSceneSnapshot(width: Int, height: Int): SceneSnapshot {
@@ -4969,6 +5205,8 @@ class Main(
             camera = RenderCameraSnapshot.from(activeCamera, width, height),
             triangles = triangles,
             lights = listOf(light),
+            directionalLights = currentDirectionalRenderLights(),
+            ambientLight = currentAmbientRenderColor(),
             skyColor = Color(0.6f, 0.75f, 0.9f, 1f)
         )
     }
@@ -9377,6 +9615,24 @@ class Main(
         feedbackOverlayLineWidth = width.coerceIn(1f, 16f)
         runtimePrefs.putFloat(feedbackLineWidthPrefKey, feedbackOverlayLineWidth)
         runtimePrefs.flush()
+    }
+
+    private fun updateRenderOverlayBlend(value: Float) {
+        renderOverlayBlend = value.coerceIn(0f, 1f)
+        renderCompositeDirty = true
+    }
+
+    private fun updateRenderWorkerCount(value: Int) {
+        renderWorkerCount = value.coerceIn(1, currentOfflineRenderMaxWorkerCount())
+    }
+
+    private fun updateRenderOverlayBlurRadius(value: Int) {
+        renderOverlayBlurRadius = value.coerceIn(0, 3)
+        renderCompositeDirty = true
+    }
+
+    private fun updateRenderGlassTransmission(value: Float) {
+        renderGlassTransmission = value.coerceIn(0f, 1f)
     }
 
     private fun updateSelectedVectorTextTracking(textId: String, tracking: Float) {

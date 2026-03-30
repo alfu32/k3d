@@ -134,6 +134,15 @@ class SketchUiOverlay(
     private val renderPathtraceRequested: () -> Unit,
     private val renderStopRequested: () -> Unit,
     private val renderSaveRequested: () -> Unit,
+    private val renderWorkerCountProvider: () -> Int,
+    private val renderWorkerCountMaxProvider: () -> Int,
+    private val renderWorkerCountChanged: (Int) -> Unit,
+    private val renderBlendProvider: () -> Float,
+    private val renderBlendChanged: (Float) -> Unit,
+    private val renderBlurProvider: () -> Int,
+    private val renderBlurChanged: (Int) -> Unit,
+    private val renderGlassTransmissionProvider: () -> Float,
+    private val renderGlassTransmissionChanged: (Float) -> Unit,
     private val normalLineWidthChanged: (Float) -> Unit,
     private val feedbackLineWidthChanged: (Float) -> Unit,
     private val tutorialStateProvider: () -> TutorialUiState,
@@ -3744,6 +3753,52 @@ class SketchUiOverlay(
             touchable = Touchable.disabled
         }
         renderStatusLabel = VisLabel("Idle")
+        val maxWorkers = renderWorkerCountMaxProvider().coerceAtLeast(1)
+        val workerValueLabel = VisLabel("")
+        val workerSlider = VisSlider(1f, maxWorkers.toFloat(), 1f, false).apply {
+            value = renderWorkerCountProvider().toFloat().coerceIn(1f, maxWorkers.toFloat())
+            isDisabled = maxWorkers <= 1
+            addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) {
+                    renderWorkerCountChanged(value.toInt())
+                    workerValueLabel.setText(value.toInt().toString())
+                }
+            })
+        }
+        val blendValueLabel = VisLabel("")
+        val blurValueLabel = VisLabel("")
+        val glassValueLabel = VisLabel("")
+        val blendSlider = VisSlider(0f, 1f, 0.01f, false).apply {
+            value = renderBlendProvider()
+            addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) {
+                    renderBlendChanged(value)
+                    blendValueLabel.setText("${(value * 100f).toInt()}%")
+                }
+            })
+        }
+        val blurSlider = VisSlider(0f, 3f, 1f, false).apply {
+            value = renderBlurProvider().toFloat()
+            addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) {
+                    renderBlurChanged(value.toInt())
+                    blurValueLabel.setText("${value.toInt()} px")
+                }
+            })
+        }
+        val glassSlider = VisSlider(0f, 1f, 0.01f, false).apply {
+            value = renderGlassTransmissionProvider()
+            addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) {
+                    renderGlassTransmissionChanged(value)
+                    glassValueLabel.setText("${(value * 100f).toInt()}%")
+                }
+            })
+        }
+        workerValueLabel.setText(workerSlider.value.toInt().toString())
+        blendValueLabel.setText("${(blendSlider.value * 100f).toInt()}%")
+        blurValueLabel.setText("${blurSlider.value.toInt()} px")
+        glassValueLabel.setText("${(glassSlider.value * 100f).toInt()}%")
         val content = VisTable()
         content.defaults().pad(4f).left().growX()
         val slot = VisTable().apply {
@@ -3755,6 +3810,21 @@ class SketchUiOverlay(
         slot.add(renderPreviewImage).width(480f).height(270f).center()
         content.add(slot).row()
         content.add(renderStatusLabel).left().growX().row()
+        val controls = VisTable()
+        controls.defaults().pad(2f).left()
+        controls.add(VisLabel("Workers")).width(58f)
+        controls.add(workerSlider).width(180f)
+        controls.add(workerValueLabel).left().row()
+        controls.add(VisLabel("Blend")).width(58f)
+        controls.add(blendSlider).width(180f)
+        controls.add(blendValueLabel).left().row()
+        controls.add(VisLabel("Blur")).width(58f)
+        controls.add(blurSlider).width(180f)
+        controls.add(blurValueLabel).left().row()
+        controls.add(VisLabel("Glass")).width(58f)
+        controls.add(glassSlider).width(180f)
+        controls.add(glassValueLabel).left().row()
+        content.add(controls).left().growX().row()
         window.add(content).pad(4f).grow()
         window.pack()
         window.isVisible = false

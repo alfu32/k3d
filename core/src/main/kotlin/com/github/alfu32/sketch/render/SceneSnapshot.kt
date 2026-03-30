@@ -21,6 +21,12 @@ data class RenderPointLight(
     val intensity: Float
 )
 
+data class RenderDirectionalLight(
+    val direction: Vector3,
+    val color: Color,
+    val intensity: Float
+)
+
 sealed interface RenderCameraSnapshot {
     val width: Int
     val height: Int
@@ -66,8 +72,8 @@ sealed interface RenderCameraSnapshot {
         private val tanHalfFov = tan(Math.toRadians((fieldOfViewDeg * 0.5f).toDouble())).toFloat()
 
         override fun rayForPixel(x: Float, y: Float): Ray {
-            val sx = ((x / width.toFloat()) * 2f - 1f).coerceIn(-1f, 1f)
-            val sy = (1f - (y / height.toFloat()) * 2f).coerceIn(-1f, 1f)
+            val sx = ((((x + 0.5f) / width.toFloat()) * 2f) - 1f).coerceIn(-1f, 1f)
+            val sy = (1f - (((y + 0.5f) / height.toFloat()) * 2f)).coerceIn(-1f, 1f)
             val aspect = width.toFloat() / height.toFloat().coerceAtLeast(1f)
             val dir = Vector3(forward)
                 .mulAdd(right, sx * aspect * tanHalfFov)
@@ -92,8 +98,8 @@ sealed interface RenderCameraSnapshot {
         private val correctedUp = Vector3(right).crs(forward).nor()
 
         override fun rayForPixel(x: Float, y: Float): Ray {
-            val sx = ((x / width.toFloat()) * 2f - 1f).coerceIn(-1f, 1f)
-            val sy = (1f - (y / height.toFloat()) * 2f).coerceIn(-1f, 1f)
+            val sx = ((((x + 0.5f) / width.toFloat()) * 2f) - 1f).coerceIn(-1f, 1f)
+            val sy = (1f - (((y + 0.5f) / height.toFloat()) * 2f)).coerceIn(-1f, 1f)
             val halfWidth = worldViewportWidth * zoom * 0.5f
             val halfHeight = worldViewportHeight * zoom * 0.5f
             val origin = Vector3(position)
@@ -108,5 +114,7 @@ data class SceneSnapshot(
     val camera: RenderCameraSnapshot,
     val triangles: List<RenderTriangle>,
     val lights: List<RenderPointLight>,
+    val directionalLights: List<RenderDirectionalLight>,
+    val ambientLight: Color,
     val skyColor: Color
 )
