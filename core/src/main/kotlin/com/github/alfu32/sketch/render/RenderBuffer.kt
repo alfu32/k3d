@@ -9,13 +9,16 @@ class RenderBuffer(
     val height: Int
 ) {
     private val pixels = IntArray(width * height)
+    private val passIndices = IntArray(width * height) { Int.MIN_VALUE }
 
     fun clear(color: Color = Color.CLEAR) {
         val packed = Color.rgba8888(color)
         pixels.fill(packed)
+        passIndices.fill(Int.MIN_VALUE)
     }
 
-    fun setBlock(x: Int, y: Int, w: Int, h: Int, color: Color) {
+    @Synchronized
+    fun setBlock(x: Int, y: Int, w: Int, h: Int, color: Color, passIndex: Int) {
         val packed = Color.rgba8888(color)
         val clampedX0 = x.coerceIn(0, width)
         val clampedY0 = y.coerceIn(0, height)
@@ -24,7 +27,11 @@ class RenderBuffer(
         for (yy in clampedY0 until clampedY1) {
             val row = yy * width
             for (xx in clampedX0 until clampedX1) {
-                pixels[row + xx] = packed
+                val index = row + xx
+                if (passIndex >= passIndices[index]) {
+                    pixels[index] = packed
+                    passIndices[index] = passIndex
+                }
             }
         }
     }
@@ -50,6 +57,7 @@ class RenderBuffer(
         }
     }
 
+    @Synchronized
     fun writeTileToPixmap(pixmap: Pixmap, tile: RenderTile) {
         val clampedX1 = (tile.x + tile.width).coerceIn(0, width)
         val clampedY1 = (tile.y + tile.height).coerceIn(0, height)

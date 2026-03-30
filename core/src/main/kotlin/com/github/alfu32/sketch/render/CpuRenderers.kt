@@ -70,7 +70,7 @@ class CpuRayTracer(
         }
         rgb.scl(1f / sampleCount.toFloat())
         val alpha = hitCount.toFloat() / sampleCount.toFloat()
-        buffer.setBlock(tile.x, tile.y, tile.width, tile.height, Color(rgb.x, rgb.y, rgb.z, alpha))
+        buffer.setBlock(tile.x, tile.y, tile.width, tile.height, Color(rgb.x, rgb.y, rgb.z, alpha), tile.passIndex)
         return hitCount > 0
     }
 
@@ -146,7 +146,7 @@ class CpuPathTracer(
         }
         rgb.scl(1f / sampleCount.toFloat())
         val alpha = hitCount.toFloat() / sampleCount.toFloat()
-        buffer.setBlock(tile.x, tile.y, tile.width, tile.height, Color(rgb.x, rgb.y, rgb.z, alpha))
+        buffer.setBlock(tile.x, tile.y, tile.width, tile.height, Color(rgb.x, rgb.y, rgb.z, alpha), tile.passIndex)
         return hitCount > 0
     }
 
@@ -232,12 +232,13 @@ private fun directLightingAtHit(snapshot: SceneSnapshot, hit: Hit, glassTransmis
             return@forEach
         }
         val shadowOrigin = Vector3(hit.point).mulAdd(hit.normal, HIT_EPSILON)
-        if (isOccluded(snapshot.triangles, Ray(shadowOrigin, toLight), Float.POSITIVE_INFINITY, glassTransmission)) {
+        val visibility = shadowTransmittance(snapshot.triangles, Ray(shadowOrigin, toLight), Float.POSITIVE_INFINITY, glassTransmission)
+        if (visibility <= 0.001f) {
             return@forEach
         }
-        shaded.x += hit.triangle.albedo.r * light.color.r * light.intensity * ndotl
-        shaded.y += hit.triangle.albedo.g * light.color.g * light.intensity * ndotl
-        shaded.z += hit.triangle.albedo.b * light.color.b * light.intensity * ndotl
+        shaded.x += hit.triangle.albedo.r * light.color.r * light.intensity * ndotl * visibility
+        shaded.y += hit.triangle.albedo.g * light.color.g * light.intensity * ndotl * visibility
+        shaded.z += hit.triangle.albedo.b * light.color.b * light.intensity * ndotl * visibility
     }
     snapshot.lights.forEach { light ->
         val toLight = Vector3(light.position).sub(hit.point)
@@ -249,33 +250,42 @@ private fun directLightingAtHit(snapshot: SceneSnapshot, hit: Hit, glassTransmis
             return@forEach
         }
         val shadowOrigin = Vector3(hit.point).mulAdd(hit.normal, HIT_EPSILON)
-        if (isOccluded(snapshot.triangles, Ray(shadowOrigin, toLight), dist - 0.02f, glassTransmission)) {
+        val visibility = shadowTransmittance(snapshot.triangles, Ray(shadowOrigin, toLight), dist - 0.02f, glassTransmission)
+        if (visibility <= 0.001f) {
             return@forEach
         }
         val attenuation = light.intensity / dist2
-        shaded.x += hit.triangle.albedo.r * light.color.r * attenuation * ndotl
-        shaded.y += hit.triangle.albedo.g * light.color.g * attenuation * ndotl
-        shaded.z += hit.triangle.albedo.b * light.color.b * attenuation * ndotl
+        shaded.x += hit.triangle.albedo.r * light.color.r * attenuation * ndotl * visibility
+        shaded.y += hit.triangle.albedo.g * light.color.g * attenuation * ndotl * visibility
+        shaded.z += hit.triangle.albedo.b * light.color.b * attenuation * ndotl * visibility
     }
     return shaded
 }
 
-private fun isOccluded(
+private fun shadowTransmittance(
     triangles: List<RenderTriangle>,
     ray: Ray,
     maxDistance: Float,
     glassTransmission: Float
-): Boolean {
+): Float {
+    var transmittance = 1f
     triangles.forEach { triangle ->
-        if (transmissionWeight(triangle, glassTransmission) >= 0.999f) {
+        if (transmittance <= 0.001f) {
+            return 0f
+        }
+        val weight = transmissionWeight(triangle, glassTransmission)
+        if (weight >= 0.999f) {
             return@forEach
         }
         val hit = intersectTriangle(ray, triangle) ?: return@forEach
         if (hit.t < maxDistance) {
-            return true
+            if (weight <= 0.001f) {
+                return 0f
+            }
+            transmittance *= weight
         }
     }
-    return false
+    return transmittance.coerceIn(0f, 1f)
 }
 
 private fun transmissionWeight(triangle: RenderTriangle, glassTransmission: Float): Float {

@@ -587,6 +587,7 @@ class SketchUiOverlay(
     private lateinit var renderPreviewImage: Image
     private lateinit var renderStatusLabel: VisLabel
     private lateinit var renderResolutionValueLabel: VisLabel
+    private var renderPreviewCell: Cell<Image>? = null
     private var renderWindowPositionInitialized = false
     private val renderWindowXKey = "render_window_x"
     private val renderWindowYKey = "render_window_y"
@@ -3852,7 +3853,7 @@ class SketchUiOverlay(
                     .also { tutorialPreviewSlotDrawable = it }
             touchable = Touchable.disabled
         }
-        slot.add(renderPreviewImage).width(480f).height(270f).center()
+        renderPreviewCell = slot.add(renderPreviewImage).width(480f).height(270f).center()
         content.add(slot).row()
         content.add(renderStatusLabel).left().growX().row()
         val controls = VisTable()
@@ -4300,6 +4301,7 @@ class SketchUiOverlay(
         val clampedWidth = width.coerceAtLeast(1).toFloat()
         val clampedHeight = height.coerceAtLeast(1).toFloat()
         renderPreviewImage.setSize(clampedWidth, clampedHeight)
+        renderPreviewCell?.width(clampedWidth)?.height(clampedHeight)
         renderWindow.pack()
         ensureRenderWindowPosition()
         renderWindow.isVisible = true
