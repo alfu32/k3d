@@ -6,7 +6,6 @@ import com.badlogic.gdx.graphics.PixmapIO
 import java.io.File
 import java.io.FileOutputStream
 import java.util.ArrayDeque
-import kotlin.concurrent.thread
 
 data class RenderStatus(
     val running: Boolean,
@@ -18,81 +17,73 @@ data class RenderStatus(
 )
 
 class RenderController {
-    private data class TileUpdate(
-        val generation: Int,
-        val tile: RenderTile
-    )
-
     private data class Job(
         val snapshot: SceneSnapshot,
         val mode: RenderMode,
         val buffer: RenderBuffer,
         val scheduler: ProgressiveTileScheduler,
-        val generation: Int
+        val renderer: CpuRenderer
     )
 
-    private val pendingTileUpdates = ArrayDeque<TileUpdate>()
-    private var worker: Thread? = null
-    @Volatile private var stopRequested = false
-    @Volatile private var running = false
-    @Volatile private var mode: RenderMode? = null
-    @Volatile private var completedTiles = 0
-    @Volatile private var totalTiles = 0
-    @Volatile private var currentPassLabel = ""
-    @Volatile private var activeGeneration = 0
+    private val pendingTileUpdates = ArrayDeque<RenderTile>()
     private var currentJob: Job? = null
+    private var running = false
+    private var mode: RenderMode? = null
+    private var completedTiles = 0
+    private var totalTiles = 0
+    private var currentPassLabel = ""
 
     fun start(snapshot: SceneSnapshot, mode: RenderMode) {
-        stop()
+        pendingTileUpdates.clear()
         val buffer = RenderBuffer(snapshot.camera.width, snapshot.camera.height).apply {
             clear(Color.CLEAR)
         }
         val scheduler = ProgressiveTileScheduler(snapshot.camera.width, snapshot.camera.height)
-        val generation = activeGeneration + 1
-        activeGeneration = generation
-        synchronized(pendingTileUpdates) {
-            pendingTileUpdates.clear()
-        }
-        val job = Job(snapshot, mode, buffer, scheduler, generation)
-        currentJob = job
+        currentJob = Job(
+            snapshot = snapshot,
+            mode = mode,
+            buffer = buffer,
+            scheduler = scheduler,
+            renderer = when (mode) {
+                RenderMode.RAYTRACE -> CpuRayTracer()
+                RenderMode.PATHTRACE -> CpuPathTracer()
+            }
+        )
         this.mode = mode
         completedTiles = 0
         totalTiles = scheduler.totalTiles
         currentPassLabel = if (totalTiles > 0) "pass 64" else ""
-        stopRequested = false
-        running = true
-        worker = thread(
-            start = true,
-            isDaemon = true,
-            name = "k3d-render-worker"
-        ) {
-            val renderer: CpuRenderer = when (mode) {
-                RenderMode.RAYTRACE -> CpuRayTracer()
-                RenderMode.PATHTRACE -> CpuPathTracer()
-            }
-            try {
-                while (!stopRequested && generation == activeGeneration) {
-                    val tile = scheduler.nextTile() ?: break
-                    currentPassLabel = "pass ${tile.pixelStep}"
-                    renderer.renderTile(job.snapshot, tile, job.buffer, seed = (tile.passIndex.toLong() shl 32) xor (tile.x.toLong() shl 16) xor tile.y.toLong())
-                    synchronized(pendingTileUpdates) {
-                        pendingTileUpdates.addLast(TileUpdate(generation, tile))
-                    }
-                    completedTiles += 1
-                }
-            } finally {
-                if (generation == activeGeneration) {
-                    running = false
-                }
-            }
+        running = totalTiles > 0
+    }
+
+    fun step(maxTiles: Int): Boolean {
+        val job = currentJob ?: return false
+        if (!running) {
+            return false
         }
+        var changed = false
+        var remaining = maxTiles.coerceAtLeast(1)
+        while (remaining > 0) {
+            val tile = job.scheduler.nextTile() ?: break
+            currentPassLabel = "pass ${tile.pixelStep}"
+            job.renderer.renderTile(
+                snapshot = job.snapshot,
+                tile = tile,
+                buffer = job.buffer,
+                seed = (tile.passIndex.toLong() shl 32) xor (tile.x.toLong() shl 16) xor tile.y.toLong()
+            )
+            pendingTileUpdates.addLast(tile)
+            completedTiles += 1
+            changed = true
+            remaining -= 1
+        }
+        if (completedTiles >= totalTiles) {
+            running = false
+        }
+        return changed
     }
 
     fun stop() {
-        stopRequested = true
-        activeGeneration += 1
-        worker?.join(100)
-        worker = null
         running = false
     }
 
@@ -115,21 +106,13 @@ class RenderController {
     fun flushPreviewUpdates(pixmap: Pixmap): Boolean {
         val job = currentJob ?: return false
         var changed = false
-        synchronized(pendingTileUpdates) {
-            while (pendingTileUpdates.isNotEmpty()) {
-                val update = pendingTileUpdates.removeFirst()
-                if (update.generation != job.generation) {
-                    continue
-                }
-                job.buffer.writeTileToPixmap(pixmap, update.tile)
-                changed = true
-            }
+        while (pendingTileUpdates.isNotEmpty()) {
+            val tile = pendingTileUpdates.removeFirst()
+            job.buffer.writeTileToPixmap(pixmap, tile)
+            changed = true
         }
         return changed
     }
-
-    fun currentBufferWidth(): Int = currentJob?.buffer?.width ?: 0
-    fun currentBufferHeight(): Int = currentJob?.buffer?.height ?: 0
 
     fun savePng(file: File) {
         val job = currentJob ?: error("No render image available.")

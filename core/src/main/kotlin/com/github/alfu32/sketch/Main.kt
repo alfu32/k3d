@@ -4912,6 +4912,14 @@ class Main(
     private fun processRenderPreview() {
         val pixmap = renderPreviewPixmap ?: return
         val texture = renderPreviewTexture ?: return
+        val tilesPerFrame = when (renderController.status().mode) {
+            RenderMode.PATHTRACE -> 2
+            RenderMode.RAYTRACE -> 6
+            null -> 0
+        }
+        if (tilesPerFrame > 0) {
+            renderController.step(tilesPerFrame)
+        }
         val changed = renderController.flushPreviewUpdates(pixmap)
         if (changed) {
             texture.draw(pixmap, 0, 0)
