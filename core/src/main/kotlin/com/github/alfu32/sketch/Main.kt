@@ -12,6 +12,7 @@ import com.badlogic.gdx.graphics.Camera
 import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.PerspectiveCamera
+import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.VertexAttribute
 import com.badlogic.gdx.graphics.VertexAttributes
 import com.badlogic.gdx.graphics.g3d.Environment
@@ -58,6 +59,12 @@ import com.github.alfu32.sketch.model.ModelCleanup
 import com.github.alfu32.sketch.model.ModelUnit
 import com.github.alfu32.sketch.model.VoxelStore
 import com.github.alfu32.sketch.render.SketchShaderProvider
+import com.github.alfu32.sketch.render.RenderCameraSnapshot
+import com.github.alfu32.sketch.render.RenderController
+import com.github.alfu32.sketch.render.RenderMode
+import com.github.alfu32.sketch.render.RenderPointLight
+import com.github.alfu32.sketch.render.RenderTriangle
+import com.github.alfu32.sketch.render.SceneSnapshot
 import com.github.alfu32.sketch.console.AppFacade
 import com.github.alfu32.sketch.console.ConsoleGroovyRuntime
 import com.github.alfu32.sketch.console.CameraFacade
@@ -331,6 +338,10 @@ class Main(
     private var instanceGeometryDirty = true
     private val capturedFeedbackLines = mutableListOf<FeedbackWorldLine>()
     private val pendingPngExports = ArrayDeque<PendingPngExport>()
+    private val renderController = RenderController()
+    private var renderPreviewPixmap: Pixmap? = null
+    private var renderPreviewTexture: Texture? = null
+    private val renderPreviewMaxDimension = 640
     private val pendingTutorialPreviewCaptures = ArrayDeque<PendingTutorialPreviewCapture>()
     private var pendingTutorialPreviewDelayFrames = 0
     private val tutorialThumbnailWidth = 380
@@ -952,6 +963,10 @@ class Main(
             ::clearHotspotReference,
             { activeCameraMode },
             ::setCameraMode,
+            ::startRaytraceRender,
+            ::startPathtraceRender,
+            ::stopOfflineRender,
+            ::saveOfflineRender,
             ::updateNormalOverlayLineWidth,
             ::updateFeedbackOverlayLineWidth,
             ::tutorialUiState,
@@ -2830,6 +2845,7 @@ class Main(
         Gdx.gl.glEnable(GL20.GL_BLEND)
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
         processPendingPngExports()
+        processRenderPreview()
         drawAnnotations2D()
         drawSelectedSegments2DOverlay()
         drawCursor2DOverlay()
@@ -2949,6 +2965,7 @@ class Main(
         if (::mcpServer.isInitialized) {
             mcpServer.stop()
         }
+        renderController.stop()
         consoleThread?.shutdown()
         try {
             consoleThread?.join(500)
@@ -2964,6 +2981,10 @@ class Main(
         shadowBatch.dispose()
         shadowLight.dispose()
         uiOverlay.dispose()
+        renderPreviewTexture?.dispose()
+        renderPreviewTexture = null
+        renderPreviewPixmap?.dispose()
+        renderPreviewPixmap = null
         spriteBatch.dispose()
         if (ownsTextFont) {
             textFont.dispose()
@@ -4786,6 +4807,162 @@ class Main(
                 }
             }
         }
+    }
+
+    private fun startRaytraceRender() {
+        startOfflineRender(RenderMode.RAYTRACE)
+    }
+
+    private fun startPathtraceRender() {
+        startOfflineRender(RenderMode.PATHTRACE)
+    }
+
+    private fun startOfflineRender(mode: RenderMode) {
+        val (width, height) = currentOfflineRenderResolution()
+        ensureOfflineRenderSurface(width, height)
+        val snapshot = buildRenderSceneSnapshot(width, height)
+        renderPreviewPixmap?.setColor(Color.CLEAR)
+        renderPreviewPixmap?.fill()
+        renderPreviewTexture?.draw(renderPreviewPixmap, 0, 0)
+        renderController.start(snapshot, mode)
+        renderPreviewTexture?.let { uiOverlay.setRenderPreview(it, width, height) }
+        uiOverlay.setRenderStatus("${mode.displayName()} starting...")
+        uiOverlay.showRenderWindow()
+        statusModel.message = "${mode.displayName()} started."
+    }
+
+    private fun stopOfflineRender() {
+        if (!renderController.isRunning()) {
+            statusModel.message = "Renderer is idle."
+            return
+        }
+        renderController.stop()
+        val status = renderController.status()
+        uiOverlay.setRenderStatus("${status.mode?.displayName() ?: "Render"} stopped.")
+        statusModel.message = "Render stopped."
+    }
+
+    private fun saveOfflineRender() {
+        if (!renderController.hasImage()) {
+            statusModel.message = "No render image to save."
+            return
+        }
+        val defaultName = "render_${LocalDateTime.now().format(screenshotTimestampFormatter)}.png"
+        if (!BuildFlags.WEB_BUILD && !isAndroidRuntime()) {
+            val requested = showDesktopFileDialog("Save Render", FileDialog.SAVE, defaultName)
+            if (requested == null) {
+                statusModel.message = "Save cancelled."
+                return
+            }
+            val target = if (requested.extension.equals("png", ignoreCase = true)) {
+                requested
+            } else {
+                File(requested.parentFile, "${requested.name}.png")
+            }
+            try {
+                renderController.savePng(target.absoluteFile)
+                statusModel.message = "Render saved: ${target.absolutePath}"
+            } catch (t: Throwable) {
+                statusModel.message = "Render save failed: ${t.message ?: t.javaClass.simpleName}"
+            }
+            return
+        }
+        val target = Gdx.files.local(defaultName).file()
+        try {
+            renderController.savePng(target)
+            statusModel.message = "Render saved: ${target.absolutePath}"
+        } catch (t: Throwable) {
+            statusModel.message = "Render save failed: ${t.message ?: t.javaClass.simpleName}"
+        }
+    }
+
+    private fun currentOfflineRenderResolution(): Pair<Int, Int> {
+        val viewportWidth = activeCamera.viewportWidth.coerceAtLeast(1f)
+        val viewportHeight = activeCamera.viewportHeight.coerceAtLeast(1f)
+        val aspect = viewportWidth / viewportHeight
+        return if (aspect >= 1f) {
+            val width = renderPreviewMaxDimension
+            val height = (width / aspect).toInt().coerceAtLeast(1)
+            width to height
+        } else {
+            val height = renderPreviewMaxDimension
+            val width = (height * aspect).toInt().coerceAtLeast(1)
+            width to height
+        }
+    }
+
+    private fun ensureOfflineRenderSurface(width: Int, height: Int) {
+        val pixmap = renderPreviewPixmap
+        val texture = renderPreviewTexture
+        if (pixmap != null && texture != null && pixmap.width == width && pixmap.height == height) {
+            return
+        }
+        renderPreviewTexture?.dispose()
+        renderPreviewPixmap?.dispose()
+        renderPreviewPixmap = Pixmap(width, height, Pixmap.Format.RGBA8888).apply {
+            setColor(Color.CLEAR)
+            fill()
+        }
+        renderPreviewTexture = Texture(width, height, Pixmap.Format.RGBA8888).apply {
+            setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest)
+            draw(renderPreviewPixmap, 0, 0)
+        }
+    }
+
+    private fun processRenderPreview() {
+        val pixmap = renderPreviewPixmap ?: return
+        val texture = renderPreviewTexture ?: return
+        val changed = renderController.flushPreviewUpdates(pixmap)
+        if (changed) {
+            texture.draw(pixmap, 0, 0)
+            uiOverlay.setRenderPreview(texture, pixmap.width, pixmap.height)
+        }
+        val status = renderController.status()
+        if (status.mode != null) {
+            val percent = if (status.totalTiles <= 0) {
+                0
+            } else {
+                ((status.completedTiles * 100f) / status.totalTiles).toInt().coerceIn(0, 100)
+            }
+            val state = if (status.running) "running" else "ready"
+            uiOverlay.setRenderStatus(
+                "${status.mode.displayName()} | ${status.currentPassLabel.ifBlank { "pass -" }} | " +
+                    "${status.completedTiles}/${status.totalTiles} | $percent% | ${status.resolutionLabel} | $state"
+            )
+        } else {
+            uiOverlay.setRenderStatus("Idle")
+        }
+    }
+
+    private fun buildRenderSceneSnapshot(width: Int, height: Int): SceneSnapshot {
+        val triangles = mutableListOf<RenderTriangle>()
+        scene.collectWorldTriangles { a, b, c, color, _ ->
+            val edge1 = Vector3(b).sub(a)
+            val edge2 = Vector3(c).sub(a)
+            val normal = edge1.crs(edge2)
+            if (normal.len2() <= 1e-8f) {
+                return@collectWorldTriangles
+            }
+            triangles += RenderTriangle(
+                a = Vector3(a),
+                b = Vector3(b),
+                c = Vector3(c),
+                normal = normal.nor(),
+                albedo = Color(color)
+            )
+        }
+        val lightPosition = Vector3(activeCamera.position).add(0f, 1f, 0f)
+        val light = RenderPointLight(
+            position = lightPosition,
+            color = Color.WHITE.cpy(),
+            intensity = 60f
+        )
+        return SceneSnapshot(
+            camera = RenderCameraSnapshot.from(activeCamera, width, height),
+            triangles = triangles,
+            lights = listOf(light),
+            skyColor = Color(0.6f, 0.75f, 0.9f, 1f)
+        )
     }
 
     private fun captureTutorialThumbnailBase64(): String? {

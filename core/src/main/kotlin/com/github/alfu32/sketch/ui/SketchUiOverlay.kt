@@ -130,6 +130,10 @@ class SketchUiOverlay(
     private val hotspotClearReference: (String) -> Unit,
     private val cameraModeProvider: () -> CameraMode,
     private val cameraModeChanged: (CameraMode) -> Unit,
+    private val renderRaytraceRequested: () -> Unit,
+    private val renderPathtraceRequested: () -> Unit,
+    private val renderStopRequested: () -> Unit,
+    private val renderSaveRequested: () -> Unit,
     private val normalLineWidthChanged: (Float) -> Unit,
     private val feedbackLineWidthChanged: (Float) -> Unit,
     private val tutorialStateProvider: () -> TutorialUiState,
@@ -400,7 +404,7 @@ class SketchUiOverlay(
     private var toolbarsVisible = true
     private val uiPrefs by lazy { Gdx.app.getPreferences("k3d-ui-layout") }
     private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
-    private val toolbarLayoutVersion = 9
+    private val toolbarLayoutVersion = 10
     private val toolbarsVisibleKey = "toolbars.visible"
     private val uiToolbarButtonSizeKey = "ui_toolbar_button_size_px"
     private val uiToolbarAutoCollapseKey = "ui_toolbar_auto_collapse"
@@ -417,7 +421,8 @@ class SketchUiOverlay(
         "builtin_toolbar_hvac",
         "builtin_toolbar_voxel",
         "builtin_toolbar_actions",
-        "builtin_toolbar_camera"
+        "builtin_toolbar_camera",
+        "builtin_toolbar_rendering"
     )
     private var toolbarButtonSize = 32f
     private var toolbarIconSizePx = 32
@@ -562,6 +567,13 @@ class SketchUiOverlay(
     private var tutorialMessagePositionInitialized = false
     private val tutorialMessageWindowXKey = "tutorial_message_window_x"
     private val tutorialMessageWindowYKey = "tutorial_message_window_y"
+    private lateinit var renderWindow: CollapsibleWindow
+    private lateinit var renderPreviewImage: Image
+    private lateinit var renderStatusLabel: VisLabel
+    private var renderWindowPositionInitialized = false
+    private val renderWindowXKey = "render_window_x"
+    private val renderWindowYKey = "render_window_y"
+    private var renderPreviewTexture: Texture? = null
     private val tutorialActionTargets = mutableMapOf<String, Actor>()
     private val tutorialListItemMaxChars = 48
     private val tutorialCollapsedSections = mutableMapOf<String, Boolean>()
@@ -750,6 +762,7 @@ class SketchUiOverlay(
         lightingPanel = buildLightingPanel()
         rightSidePanel = buildRightSidePanel()
         tutorialMessageWindow = buildTutorialMessageWindow()
+        renderWindow = buildRenderWindow()
         val mainRow = Table()
         mainRow.add().expand().fill()
 
@@ -758,6 +771,7 @@ class SketchUiOverlay(
 
         stage.addActor(rightSidePanel)
         stage.addActor(tutorialMessageWindow)
+        stage.addActor(renderWindow)
         positionPanels()
         needsPanelLayout = true
 
@@ -1355,6 +1369,7 @@ class SketchUiOverlay(
 
     fun dispose() {
         disposeTutorialPreviewTextures()
+        clearRenderPreviewReference()
         stage.dispose()
         iconTextures.forEach { it.dispose() }
     }
@@ -1479,6 +1494,10 @@ class SketchUiOverlay(
             title = "Camera",
             toolbarId = "builtin_toolbar_camera"
         )
+        val rendering = buildRenderingToolbarWindow(
+            title = "Rendering",
+            toolbarId = "builtin_toolbar_rendering"
+        )
 
         builtInToolbars.clear()
         builtInToolbars["builtin_toolbar_construction_points"] = pointConstruction
@@ -1489,11 +1508,12 @@ class SketchUiOverlay(
         builtInToolbars["builtin_toolbar_voxel"] = voxel
         builtInToolbars["builtin_toolbar_actions"] = actions
         builtInToolbars["builtin_toolbar_camera"] = camera
+        builtInToolbars["builtin_toolbar_rendering"] = rendering
         builtInToolbars.forEach { (toolbarId, window) ->
             applyToolbarState(toolbarId, window)
         }
         toolbarsPositioned = false
-        return listOf(pointConstruction, entityConstruction, modification, architecture, hvac, voxel, actions, camera)
+        return listOf(pointConstruction, entityConstruction, modification, architecture, hvac, voxel, actions, camera, rendering)
     }
 
     private fun buildToolsToolbarWindow(
@@ -1717,6 +1737,55 @@ class SketchUiOverlay(
         }
         syncCameraModeButtons()
 
+        window.add(content).pad(0f).left()
+        window.pack()
+        window.setSize(window.prefWidth, window.prefHeight)
+        attachToolbarPersistence(window, toolbarId)
+        registerToolbarBinding(toolbarId, window, content, slots)
+        return window
+    }
+
+    private fun buildRenderingToolbarWindow(title: String, toolbarId: String): CollapsibleWindow {
+        val window = CollapsibleWindow(title, showCloseButton = false)
+        window.isResizable = false
+        val content = VisTable()
+        content.defaults().pad(0f).left()
+        val slots = mutableListOf<ToolbarButtonSlot>()
+        val buttons = listOf(
+            VisTextButton("RT").apply {
+                addListener(object : ClickListener() {
+                    override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                        renderRaytraceRequested()
+                    }
+                })
+            },
+            VisTextButton("GI").apply {
+                addListener(object : ClickListener() {
+                    override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                        renderPathtraceRequested()
+                    }
+                })
+            },
+            VisTextButton("Stop").apply {
+                addListener(object : ClickListener() {
+                    override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                        renderStopRequested()
+                    }
+                })
+            },
+            VisTextButton("Save").apply {
+                addListener(object : ClickListener() {
+                    override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                        renderSaveRequested()
+                    }
+                })
+            }
+        )
+        buttons.forEach { button ->
+            val buttonWidth = button.prefWidth.coerceAtLeast(54f)
+            val cell = content.add(button).height(toolbarButtonSize).minWidth(buttonWidth)
+            slots += ToolbarButtonSlot(button, cell, buttonWidth, toolbarButtonSize)
+        }
         window.add(content).pad(0f).left()
         window.pack()
         window.setSize(window.prefWidth, window.prefHeight)
@@ -3667,6 +3736,36 @@ class SketchUiOverlay(
         return window
     }
 
+    private fun buildRenderWindow(): CollapsibleWindow {
+        val window = CollapsibleWindow("Rendering", showCloseButton = false)
+        window.isResizable = false
+        renderPreviewImage = Image().apply {
+            setScaling(Scaling.fit)
+            touchable = Touchable.disabled
+        }
+        renderStatusLabel = VisLabel("Idle")
+        val content = VisTable()
+        content.defaults().pad(4f).left().growX()
+        val slot = VisTable().apply {
+            background = tutorialPreviewSlotDrawable
+                ?: createButtonBackgroundDrawable(Color(0.12f, 0.12f, 0.14f, 1f), Color(0.35f, 0.35f, 0.4f, 1f))
+                    .also { tutorialPreviewSlotDrawable = it }
+            touchable = Touchable.disabled
+        }
+        slot.add(renderPreviewImage).width(480f).height(270f).center()
+        content.add(slot).row()
+        content.add(renderStatusLabel).left().growX().row()
+        window.add(content).pad(4f).grow()
+        window.pack()
+        window.isVisible = false
+        window.addListener(object : InputListener() {
+            override fun touchUp(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int) {
+                saveRenderWindowPosition()
+            }
+        })
+        return window
+    }
+
     private fun buildTutorialPreviewPane(title: String, image: Image): VisTable {
         val pane = VisTable()
         pane.defaults().pad(2f).left().growX()
@@ -3754,6 +3853,13 @@ class SketchUiOverlay(
         }
         if (::tutorialPreviewAfterImage.isInitialized) {
             tutorialPreviewAfterImage.drawable = null
+        }
+    }
+
+    private fun clearRenderPreviewReference() {
+        renderPreviewTexture = null
+        if (::renderPreviewImage.isInitialized) {
+            renderPreviewImage.drawable = null
         }
     }
 
@@ -4017,6 +4123,71 @@ class SketchUiOverlay(
         uiPrefs.putFloat(tutorialMessageWindowXKey, tutorialMessageWindow.x)
         uiPrefs.putFloat(tutorialMessageWindowYKey, tutorialMessageWindow.y)
         uiPrefs.flush()
+    }
+
+    private fun ensureRenderWindowPosition() {
+        if (renderWindowPositionInitialized) {
+            return
+        }
+        renderWindowPositionInitialized = true
+        val savedX = if (uiPrefs.contains(renderWindowXKey)) uiPrefs.getFloat(renderWindowXKey) else Float.NaN
+        val savedY = if (uiPrefs.contains(renderWindowYKey)) uiPrefs.getFloat(renderWindowYKey) else Float.NaN
+        val desiredX = if (savedX.isFinite()) savedX else ((stage.width - renderWindow.width) * 0.5f).coerceAtLeast(0f)
+        val desiredY = if (savedY.isFinite()) savedY else ((stage.height - renderWindow.height) * 0.5f).coerceAtLeast(0f)
+        val maxX = (stage.width - renderWindow.width).coerceAtLeast(0f)
+        val maxY = (stage.height - renderWindow.height).coerceAtLeast(0f)
+        renderWindow.setPosition(desiredX.coerceIn(0f, maxX), desiredY.coerceIn(0f, maxY))
+    }
+
+    private fun saveRenderWindowPosition() {
+        if (!::renderWindow.isInitialized) {
+            return
+        }
+        uiPrefs.putFloat(renderWindowXKey, renderWindow.x)
+        uiPrefs.putFloat(renderWindowYKey, renderWindow.y)
+        uiPrefs.flush()
+    }
+
+    fun showRenderWindow() {
+        if (!::renderWindow.isInitialized) {
+            return
+        }
+        renderWindow.pack()
+        ensureRenderWindowPosition()
+        renderWindow.isVisible = true
+        renderWindow.toFront()
+    }
+
+    fun clearRenderPreview() {
+        if (!::renderStatusLabel.isInitialized) {
+            return
+        }
+        clearRenderPreviewReference()
+        renderStatusLabel.setText("Idle")
+    }
+
+    fun setRenderPreview(texture: Texture, width: Int, height: Int) {
+        if (!::renderPreviewImage.isInitialized) {
+            return
+        }
+        if (renderPreviewTexture !== texture) {
+            renderPreviewTexture = texture
+            renderPreviewImage.drawable = TextureRegionDrawable(TextureRegion(texture))
+        }
+        val clampedWidth = width.coerceAtLeast(1).toFloat()
+        val clampedHeight = height.coerceAtLeast(1).toFloat()
+        renderPreviewImage.setSize(clampedWidth, clampedHeight)
+        renderWindow.pack()
+        ensureRenderWindowPosition()
+        renderWindow.isVisible = true
+        renderWindow.toFront()
+    }
+
+    fun setRenderStatus(text: String) {
+        if (!::renderStatusLabel.isInitialized) {
+            return
+        }
+        renderStatusLabel.setText(text)
     }
 
     private fun updateHvacSettingsPanel() {
