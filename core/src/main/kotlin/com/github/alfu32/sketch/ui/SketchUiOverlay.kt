@@ -3757,9 +3757,11 @@ class SketchUiOverlay(
     private fun buildRenderWindow(): CollapsibleWindow {
         val window = CollapsibleWindow("Rendering", showCloseButton = false)
         window.isResizable = false
+        val (previewWidth, previewHeight) = fixedRenderPreviewDisplaySize()
         renderPreviewImage = Image().apply {
             setScaling(Scaling.fit)
             touchable = Touchable.disabled
+            setSize(previewWidth, previewHeight)
         }
         renderStatusLabel = VisLabel("Idle")
         renderResolutionValueLabel = VisLabel(renderResolutionLabelProvider())
@@ -3853,7 +3855,7 @@ class SketchUiOverlay(
                     .also { tutorialPreviewSlotDrawable = it }
             touchable = Touchable.disabled
         }
-        renderPreviewCell = slot.add(renderPreviewImage).width(480f).height(270f).center()
+        renderPreviewCell = slot.add(renderPreviewImage).width(previewWidth).height(previewHeight).center()
         content.add(slot).row()
         content.add(renderStatusLabel).left().growX().row()
         val controls = VisTable()
@@ -4298,10 +4300,9 @@ class SketchUiOverlay(
             renderPreviewTexture = texture
             renderPreviewImage.drawable = TextureRegionDrawable(TextureRegion(texture))
         }
-        val clampedWidth = width.coerceAtLeast(1).toFloat()
-        val clampedHeight = height.coerceAtLeast(1).toFloat()
-        renderPreviewImage.setSize(clampedWidth, clampedHeight)
-        renderPreviewCell?.width(clampedWidth)?.height(clampedHeight)
+        val (previewWidth, previewHeight) = fixedRenderPreviewDisplaySize()
+        renderPreviewImage.setSize(previewWidth, previewHeight)
+        renderPreviewCell?.width(previewWidth)?.height(previewHeight)
         renderWindow.pack()
         ensureRenderWindowPosition()
         renderWindow.isVisible = true
@@ -4320,6 +4321,12 @@ class SketchUiOverlay(
             return
         }
         renderResolutionValueLabel.setText(text)
+    }
+
+    private fun fixedRenderPreviewDisplaySize(): Pair<Float, Float> {
+        val width = (Gdx.graphics.backBufferWidth.coerceAtLeast(1) / 4f).coerceIn(240f, 480f)
+        val height = (Gdx.graphics.backBufferHeight.coerceAtLeast(1) / 4f).coerceIn(135f, 270f)
+        return width to height
     }
 
     private fun updateHvacSettingsPanel() {
