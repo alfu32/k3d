@@ -69,7 +69,7 @@ class CpuRayTracer(
             rgb.z += sample.color.b
         }
         rgb.scl(1f / sampleCount.toFloat())
-        val alpha = if (hitCount > 0) 1f else 0f
+        val alpha = 1f
         buffer.setBlock(tile.x, tile.y, tile.width, tile.height, Color(rgb.x, rgb.y, rgb.z, alpha), tile.passIndex)
         return hitCount > 0
     }
@@ -145,7 +145,7 @@ class CpuPathTracer(
             rgb.add(sample.color)
         }
         rgb.scl(1f / sampleCount.toFloat())
-        val alpha = if (hitCount > 0) 1f else 0f
+        val alpha = 1f
         buffer.setBlock(tile.x, tile.y, tile.width, tile.height, Color(rgb.x, rgb.y, rgb.z, alpha), tile.passIndex)
         return hitCount > 0
     }
@@ -349,14 +349,11 @@ private fun intersectTriangle(ray: Ray, triangle: RenderTriangle): Hit? {
 }
 
 private fun background(skyColor: Color, direction: Vector3): Color {
-    val blend = ((direction.y + 1f) * 0.5f).coerceIn(0f, 1f)
-    val horizon = Color(1f, 1f, 1f, 1f)
-    return Color(
-        MathUtils.lerp(horizon.r, skyColor.r, blend),
-        MathUtils.lerp(horizon.g, skyColor.g, blend),
-        MathUtils.lerp(horizon.b, skyColor.b, blend),
-        1f
-    )
+    return if (direction.y <= 0f) {
+        Color(1f, 1f, 1f, 1f)
+    } else {
+        Color(0x44 / 255f, 0x44 / 255f, 1f, 1f)
+    }
 }
 
 private fun cosineHemisphere(normal: Vector3, random: RenderRng): Vector3 {
