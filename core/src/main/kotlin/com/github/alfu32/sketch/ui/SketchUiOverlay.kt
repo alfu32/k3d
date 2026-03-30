@@ -134,6 +134,9 @@ class SketchUiOverlay(
     private val renderPathtraceRequested: () -> Unit,
     private val renderStopRequested: () -> Unit,
     private val renderSaveRequested: () -> Unit,
+    private val renderResolutionDivisorProvider: () -> Int,
+    private val renderResolutionLabelProvider: () -> String,
+    private val renderResolutionDivisorChanged: (Int) -> Unit,
     private val renderWorkerCountProvider: () -> Int,
     private val renderWorkerCountMaxProvider: () -> Int,
     private val renderWorkerCountChanged: (Int) -> Unit,
@@ -145,6 +148,8 @@ class SketchUiOverlay(
     private val renderBlurChanged: (Int) -> Unit,
     private val renderGlassTransmissionProvider: () -> Float,
     private val renderGlassTransmissionChanged: (Float) -> Unit,
+    private val renderCameraLightIntensityProvider: () -> Float,
+    private val renderCameraLightIntensityChanged: (Float) -> Unit,
     private val normalLineWidthChanged: (Float) -> Unit,
     private val feedbackLineWidthChanged: (Float) -> Unit,
     private val tutorialStateProvider: () -> TutorialUiState,
@@ -581,6 +586,7 @@ class SketchUiOverlay(
     private lateinit var renderWindow: CollapsibleWindow
     private lateinit var renderPreviewImage: Image
     private lateinit var renderStatusLabel: VisLabel
+    private lateinit var renderResolutionValueLabel: VisLabel
     private var renderWindowPositionInitialized = false
     private val renderWindowXKey = "render_window_x"
     private val renderWindowYKey = "render_window_y"
@@ -3755,6 +3761,24 @@ class SketchUiOverlay(
             touchable = Touchable.disabled
         }
         renderStatusLabel = VisLabel("Idle")
+        renderResolutionValueLabel = VisLabel(renderResolutionLabelProvider())
+        val sizePresetDivisors = intArrayOf(1, 2, 4, 8, 16)
+        val sizePresetLabels = sizePresetDivisors.map { "Screen / $it" }
+        val sizePresetSelect = VisSelectBox<String>().apply {
+            setItems(*sizePresetLabels.toTypedArray())
+            val currentIndex = sizePresetDivisors.indexOf(renderResolutionDivisorProvider()).let { index ->
+                if (index >= 0) index else sizePresetDivisors.indexOf(4).coerceAtLeast(0)
+            }
+            selected = sizePresetLabels[currentIndex]
+            addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) {
+                    val divisorIndex = sizePresetLabels.indexOf(selected)
+                    val divisor = sizePresetDivisors.getOrElse(divisorIndex) { 4 }
+                    renderResolutionDivisorChanged(divisor)
+                    renderResolutionValueLabel.setText(renderResolutionLabelProvider())
+                }
+            })
+        }
         val maxWorkers = renderWorkerCountMaxProvider().coerceAtLeast(1)
         val workerValueLabel = VisLabel("")
         val workerSlider = VisSlider(1f, maxWorkers.toFloat(), 1f, false).apply {
@@ -3770,6 +3794,7 @@ class SketchUiOverlay(
         val blendValueLabel = VisLabel("")
         val blurValueLabel = VisLabel("")
         val glassValueLabel = VisLabel("")
+        val cameraLightValueLabel = VisLabel("")
         val pruningCheckBox = VisCheckBox("").apply {
             isChecked = renderPruningEnabledProvider()
             addListener(object : ChangeListener() {
@@ -3805,10 +3830,20 @@ class SketchUiOverlay(
                 }
             })
         }
+        val cameraLightSlider = VisSlider(0f, 100f, 1f, false).apply {
+            value = renderCameraLightIntensityProvider()
+            addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) {
+                    renderCameraLightIntensityChanged(value)
+                    cameraLightValueLabel.setText(value.toInt().toString())
+                }
+            })
+        }
         workerValueLabel.setText(workerSlider.value.toInt().toString())
         blendValueLabel.setText("${(blendSlider.value * 100f).toInt()}%")
         blurValueLabel.setText("${blurSlider.value.toInt()} px")
         glassValueLabel.setText("${(glassSlider.value * 100f).toInt()}%")
+        cameraLightValueLabel.setText(cameraLightSlider.value.toInt().toString())
         val content = VisTable()
         content.defaults().pad(4f).left().growX()
         val slot = VisTable().apply {
@@ -3822,6 +3857,9 @@ class SketchUiOverlay(
         content.add(renderStatusLabel).left().growX().row()
         val controls = VisTable()
         controls.defaults().pad(2f).left()
+        controls.add(VisLabel("Size")).width(58f)
+        controls.add(sizePresetSelect).width(180f)
+        controls.add(renderResolutionValueLabel).left().row()
         controls.add(VisLabel("Workers")).width(58f)
         controls.add(workerSlider).width(180f)
         controls.add(workerValueLabel).left().row()
@@ -3836,6 +3874,9 @@ class SketchUiOverlay(
         controls.add(VisLabel("Glass")).width(58f)
         controls.add(glassSlider).width(180f)
         controls.add(glassValueLabel).left().row()
+        controls.add(VisLabel("Light")).width(58f)
+        controls.add(cameraLightSlider).width(180f)
+        controls.add(cameraLightValueLabel).left().row()
         content.add(controls).left().growX().row()
         window.add(content).pad(4f).grow()
         window.pack()
@@ -4270,6 +4311,13 @@ class SketchUiOverlay(
             return
         }
         renderStatusLabel.setText(text)
+    }
+
+    fun setRenderResolutionLabel(text: String) {
+        if (!::renderResolutionValueLabel.isInitialized) {
+            return
+        }
+        renderResolutionValueLabel.setText(text)
     }
 
     private fun updateHvacSettingsPanel() {

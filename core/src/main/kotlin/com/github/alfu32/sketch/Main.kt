@@ -351,8 +351,11 @@ class Main(
     private var renderOverlayBlend = 0.72f
     private var renderOverlayBlurRadius = 1
     private var renderGlassTransmission = 1f
+    private var renderCameraLightIntensity = 20f
     private var renderWorkerCount = 1
     private var renderPruningEnabled = false
+    private var renderResolutionDivisor = 4
+    private val renderResolutionDivisors = intArrayOf(1, 2, 4, 8, 16)
     private val pendingTutorialPreviewCaptures = ArrayDeque<PendingTutorialPreviewCapture>()
     private var pendingTutorialPreviewDelayFrames = 0
     private val tutorialThumbnailWidth = 380
@@ -700,6 +703,7 @@ class Main(
             inputBuffer = ""
         )
         renderWorkerCount = defaultOfflineRenderWorkerCount()
+        renderResolutionDivisor = defaultOfflineRenderResolutionDivisor()
         normalOverlayLineWidth = runtimePrefs.getFloat(normalLineWidthPrefKey, normalOverlayLineWidth).coerceIn(1f, 8f)
         feedbackOverlayLineWidth = runtimePrefs.getFloat(feedbackLineWidthPrefKey, feedbackOverlayLineWidth).coerceIn(1f, 16f)
         scene = GroupScene(Color(0.8f, 0.8f, 0.8f, 1f))
@@ -979,6 +983,9 @@ class Main(
             ::startPathtraceRender,
             ::stopOfflineRender,
             ::saveOfflineRender,
+            { renderResolutionDivisor },
+            ::currentOfflineRenderResolutionLabel,
+            ::updateRenderResolutionDivisor,
             { renderWorkerCount },
             ::currentOfflineRenderMaxWorkerCount,
             ::updateRenderWorkerCount,
@@ -990,6 +997,8 @@ class Main(
             ::updateRenderOverlayBlurRadius,
             { renderGlassTransmission },
             ::updateRenderGlassTransmission,
+            { renderCameraLightIntensity },
+            ::updateRenderCameraLightIntensity,
             ::updateNormalOverlayLineWidth,
             ::updateFeedbackOverlayLineWidth,
             ::tutorialUiState,
@@ -4860,7 +4869,8 @@ class Main(
         pendingRenderBaseCapture = true
         renderCompositeDirty = true
         renderPreviewTexture?.let { uiOverlay.setRenderPreview(it, width, height) }
-        uiOverlay.setRenderStatus("${mode.displayName()} starting...")
+        uiOverlay.setRenderResolutionLabel("${width}x${height}")
+        uiOverlay.setRenderStatus("${mode.displayName()} starting... | ${width}x${height}")
         uiOverlay.showRenderWindow()
         statusModel.message = "${mode.displayName()} started."
     }
@@ -4942,11 +4952,21 @@ class Main(
     private fun currentOfflineRenderResolution(): Pair<Int, Int> {
         val screenWidth = Gdx.graphics.backBufferWidth.coerceAtLeast(1)
         val screenHeight = Gdx.graphics.backBufferHeight.coerceAtLeast(1)
-        val divisors = intArrayOf(1, 2, 4, 8, 16)
-        val divisor = divisors.firstOrNull { d ->
-            maxOf(screenWidth / d, screenHeight / d) <= renderPreviewMaxDimension
-        } ?: divisors.last()
+        val divisor = renderResolutionDivisor.coerceAtLeast(1)
         return (screenWidth / divisor).coerceAtLeast(1) to (screenHeight / divisor).coerceAtLeast(1)
+    }
+
+    private fun currentOfflineRenderResolutionLabel(): String {
+        val (width, height) = currentOfflineRenderResolution()
+        return "${width}x${height}"
+    }
+
+    private fun defaultOfflineRenderResolutionDivisor(): Int {
+        val screenWidth = Gdx.graphics.backBufferWidth.coerceAtLeast(1)
+        val screenHeight = Gdx.graphics.backBufferHeight.coerceAtLeast(1)
+        return renderResolutionDivisors.firstOrNull { divisor ->
+            maxOf(screenWidth / divisor, screenHeight / divisor) <= renderPreviewMaxDimension
+        } ?: renderResolutionDivisors.last()
     }
 
     private fun defaultOfflineRenderWorkerCount(): Int {
@@ -5202,7 +5222,7 @@ class Main(
         val light = RenderPointLight(
             position = lightPosition,
             color = Color.WHITE.cpy(),
-            intensity = 60f
+            intensity = renderCameraLightIntensity.coerceAtLeast(0f)
         )
         return SceneSnapshot(
             camera = RenderCameraSnapshot.from(activeCamera, width, height),
@@ -9629,6 +9649,11 @@ class Main(
         renderWorkerCount = value.coerceIn(1, currentOfflineRenderMaxWorkerCount())
     }
 
+    private fun updateRenderResolutionDivisor(value: Int) {
+        renderResolutionDivisor = renderResolutionDivisors.firstOrNull { it == value } ?: defaultOfflineRenderResolutionDivisor()
+        uiOverlay.setRenderResolutionLabel(currentOfflineRenderResolutionLabel())
+    }
+
     private fun updateRenderPruningEnabled(value: Boolean) {
         renderPruningEnabled = value
     }
@@ -9640,6 +9665,10 @@ class Main(
 
     private fun updateRenderGlassTransmission(value: Float) {
         renderGlassTransmission = value.coerceIn(0f, 1f)
+    }
+
+    private fun updateRenderCameraLightIntensity(value: Float) {
+        renderCameraLightIntensity = value.coerceIn(0f, 100f)
     }
 
     private fun updateSelectedVectorTextTracking(textId: String, tracking: Float) {
