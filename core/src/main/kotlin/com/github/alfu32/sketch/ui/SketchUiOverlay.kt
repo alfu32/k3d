@@ -137,6 +137,8 @@ class SketchUiOverlay(
     private val renderWorkerCountProvider: () -> Int,
     private val renderWorkerCountMaxProvider: () -> Int,
     private val renderWorkerCountChanged: (Int) -> Unit,
+    private val renderPruningEnabledProvider: () -> Boolean,
+    private val renderPruningEnabledChanged: (Boolean) -> Unit,
     private val renderBlendProvider: () -> Float,
     private val renderBlendChanged: (Float) -> Unit,
     private val renderBlurProvider: () -> Int,
@@ -3768,6 +3770,14 @@ class SketchUiOverlay(
         val blendValueLabel = VisLabel("")
         val blurValueLabel = VisLabel("")
         val glassValueLabel = VisLabel("")
+        val pruningCheckBox = VisCheckBox("").apply {
+            isChecked = renderPruningEnabledProvider()
+            addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) {
+                    renderPruningEnabledChanged(isChecked)
+                }
+            })
+        }
         val blendSlider = VisSlider(0f, 1f, 0.01f, false).apply {
             value = renderBlendProvider()
             addListener(object : ChangeListener() {
@@ -3815,6 +3825,8 @@ class SketchUiOverlay(
         controls.add(VisLabel("Workers")).width(58f)
         controls.add(workerSlider).width(180f)
         controls.add(workerValueLabel).left().row()
+        controls.add(VisLabel("Prune")).width(58f)
+        controls.add(pruningCheckBox).left().colspan(2).row()
         controls.add(VisLabel("Blend")).width(58f)
         controls.add(blendSlider).width(180f)
         controls.add(blendValueLabel).left().row()

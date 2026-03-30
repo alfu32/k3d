@@ -352,6 +352,7 @@ class Main(
     private var renderOverlayBlurRadius = 1
     private var renderGlassTransmission = 1f
     private var renderWorkerCount = 1
+    private var renderPruningEnabled = false
     private val pendingTutorialPreviewCaptures = ArrayDeque<PendingTutorialPreviewCapture>()
     private var pendingTutorialPreviewDelayFrames = 0
     private val tutorialThumbnailWidth = 380
@@ -981,6 +982,8 @@ class Main(
             { renderWorkerCount },
             ::currentOfflineRenderMaxWorkerCount,
             ::updateRenderWorkerCount,
+            { renderPruningEnabled },
+            ::updateRenderPruningEnabled,
             { renderOverlayBlend },
             ::updateRenderOverlayBlend,
             { renderOverlayBlurRadius },
@@ -4853,7 +4856,7 @@ class Main(
         renderPreviewTexture?.draw(renderPreviewPixmap, 0, 0)
         renderCompositeBasePixmap?.setColor(Color.CLEAR)
         renderCompositeBasePixmap?.fill()
-        renderController.start(snapshot, mode, renderWorkerCount, renderGlassTransmission)
+        renderController.start(snapshot, mode, renderWorkerCount, renderGlassTransmission, renderPruningEnabled)
         pendingRenderBaseCapture = true
         renderCompositeDirty = true
         renderPreviewTexture?.let { uiOverlay.setRenderPreview(it, width, height) }
@@ -9624,6 +9627,10 @@ class Main(
 
     private fun updateRenderWorkerCount(value: Int) {
         renderWorkerCount = value.coerceIn(1, currentOfflineRenderMaxWorkerCount())
+    }
+
+    private fun updateRenderPruningEnabled(value: Boolean) {
+        renderPruningEnabled = value
     }
 
     private fun updateRenderOverlayBlurRadius(value: Int) {

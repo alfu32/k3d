@@ -39,12 +39,22 @@ class RenderController {
     @Volatile private var currentPassLabel = ""
     @Volatile private var glassTransmission = 1f
 
-    fun start(snapshot: SceneSnapshot, mode: RenderMode, workerCount: Int, glassTransmission: Float) {
+    fun start(
+        snapshot: SceneSnapshot,
+        mode: RenderMode,
+        workerCount: Int,
+        glassTransmission: Float,
+        pruningEnabled: Boolean
+    ) {
         stop()
         val buffer = RenderBuffer(snapshot.camera.width, snapshot.camera.height).apply {
             clear(Color.CLEAR)
         }
-        val scheduler = ProgressiveTileScheduler(snapshot.camera.width, snapshot.camera.height)
+        val scheduler = ProgressiveTileScheduler(
+            snapshot.camera.width,
+            snapshot.camera.height,
+            pruningEnabled = pruningEnabled
+        )
         val job = Job(
             snapshot = snapshot,
             mode = mode,
@@ -92,6 +102,7 @@ class RenderController {
         var remaining = maxTiles.coerceAtLeast(1)
         while (remaining > 0) {
             val tile = job.scheduler.nextTile() ?: break
+            syncProgress(job)
             currentPassLabel = "pass ${tile.pixelStep}"
             val hadHit = job.renderer.renderTile(
                 snapshot = job.snapshot,
@@ -106,10 +117,10 @@ class RenderController {
             synchronized(job.pendingTileUpdates) {
                 job.pendingTileUpdates.addLast(tile)
             }
-            completedTiles += 1
             changed = true
             remaining -= 1
         }
+        syncProgress(job)
         if (completedTiles >= totalTiles) {
             running = false
         }
@@ -169,6 +180,7 @@ class RenderController {
         try {
             while (!job.cancelled) {
                 val tile = job.scheduler.nextTile() ?: break
+                syncProgress(job)
                 currentPassLabel = "pass ${tile.pixelStep}"
                 val hadHit = job.renderer.renderTile(
                     snapshot = job.snapshot,
@@ -183,19 +195,29 @@ class RenderController {
                 synchronized(job.pendingTileUpdates) {
                     job.pendingTileUpdates.addLast(tile)
                 }
-                synchronized(stateLock) {
-                    if (currentJob === job) {
-                        completedTiles += 1
-                    }
-                }
+                syncProgress(job)
             }
         } finally {
             synchronized(stateLock) {
+                syncProgressLocked(job)
                 job.activeWorkers = (job.activeWorkers - 1).coerceAtLeast(0)
                 if (currentJob === job && job.activeWorkers <= 0) {
                     running = false
                 }
             }
+        }
+    }
+
+    private fun syncProgress(job: Job) {
+        synchronized(stateLock) {
+            syncProgressLocked(job)
+        }
+    }
+
+    private fun syncProgressLocked(job: Job) {
+        if (currentJob === job) {
+            completedTiles = job.scheduler.completedTiles
+            totalTiles = job.scheduler.totalTiles
         }
     }
 }

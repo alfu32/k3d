@@ -18,7 +18,7 @@ i:b:/plugins/encode_base64.groovy:439:1
 i:b:/plugins/plugins.json:327:1
 i:b:/plugins/exporters.groovy:16276:1
 i:b:/plugins/examplePlugins.groovy:299:1
-i:b:/icons.svg:478356:1
+i:b:/icons.svg:484256:1
 i:b:/appicon2.png:2687:1
 i:b:/com/kotcrab/vis/ui/skin/x1/font-small.fnt:58927:1
 i:b:/com/kotcrab/vis/ui/skin/x1/default.fnt:36596:1

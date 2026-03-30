@@ -15,7 +15,8 @@ data class RenderTile(
 class ProgressiveTileScheduler(
     width: Int,
     height: Int,
-    tileSizes: IntArray = intArrayOf(32, 16, 8, 2, 1)
+    tileSizes: IntArray = intArrayOf(32, 16, 8, 2, 1),
+    private val pruningEnabled: Boolean = false
 ) {
     private val passSteps = tileSizes.copyOf()
     private val passGridWidths = IntArray(tileSizes.size)
@@ -87,6 +88,9 @@ class ProgressiveTileScheduler(
 
     @Synchronized
     fun markEmpty(tile: RenderTile) {
+        if (!pruningEnabled) {
+            return
+        }
         if (tile.passIndex >= passSteps.lastIndex) {
             return
         }
@@ -101,6 +105,9 @@ class ProgressiveTileScheduler(
     }
 
     private fun isPruned(tile: RenderTile): Boolean {
+        if (!pruningEnabled) {
+            return false
+        }
         if (tile.passIndex <= 0) {
             return false
         }
