@@ -351,6 +351,7 @@ class Main(
     private var renderOverlayBlend = 0.72f
     private var renderOverlayBlurRadius = 1
     private var renderGlassTransmission = 1f
+    private var renderLightLevel = 1f
     private var renderCameraLightIntensity = 20f
     private var renderWorkerCount = 1
     private var renderPruningEnabled = false
@@ -997,6 +998,8 @@ class Main(
             ::updateRenderOverlayBlurRadius,
             { renderGlassTransmission },
             ::updateRenderGlassTransmission,
+            { renderLightLevel },
+            ::updateRenderLightLevel,
             { renderCameraLightIntensity },
             ::updateRenderCameraLightIntensity,
             ::updateNormalOverlayLineWidth,
@@ -4983,23 +4986,25 @@ class Main(
     }
 
     private fun currentAmbientRenderColor(): Color {
+        val level = renderLightLevel.coerceAtLeast(0f)
         return Color(
-            ambientLightValue * ambientLightAlpha,
-            ambientLightValue * ambientLightAlpha,
-            ambientLightValue * ambientLightAlpha,
+            ambientLightValue * ambientLightAlpha * level,
+            ambientLightValue * ambientLightAlpha * level,
+            ambientLightValue * ambientLightAlpha * level,
             1f
         )
     }
 
     private fun currentDirectionalRenderLights(): List<RenderDirectionalLight> {
         val lights = mutableListOf<RenderDirectionalLight>()
+        val level = renderLightLevel.coerceAtLeast(0f)
         if (::mainLight.isInitialized) {
             val direction = Vector3(mainLight.direction)
             if (direction.len2() > 1e-6f) {
                 lights += RenderDirectionalLight(
                     direction = direction.nor(),
                     color = Color(mainLight.color),
-                    intensity = 1f
+                    intensity = level
                 )
             }
         }
@@ -5014,7 +5019,7 @@ class Main(
                         shadowLightValue * shadowLightAlpha,
                         1f
                     ),
-                    intensity = 1f
+                    intensity = level
                 )
             }
         }
@@ -5227,7 +5232,7 @@ class Main(
         val light = RenderPointLight(
             position = lightPosition,
             color = Color.WHITE.cpy(),
-            intensity = renderCameraLightIntensity.coerceAtLeast(0f)
+            intensity = renderCameraLightIntensity.coerceAtLeast(0f) * renderLightLevel.coerceAtLeast(0f)
         )
         return SceneSnapshot(
             camera = RenderCameraSnapshot.from(activeCamera, width, height),
@@ -9670,6 +9675,10 @@ class Main(
 
     private fun updateRenderGlassTransmission(value: Float) {
         renderGlassTransmission = value.coerceIn(0f, 1f)
+    }
+
+    private fun updateRenderLightLevel(value: Float) {
+        renderLightLevel = value.coerceIn(0f, 2f)
     }
 
     private fun updateRenderCameraLightIntensity(value: Float) {

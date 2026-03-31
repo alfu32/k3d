@@ -148,6 +148,8 @@ class SketchUiOverlay(
     private val renderBlurChanged: (Int) -> Unit,
     private val renderGlassTransmissionProvider: () -> Float,
     private val renderGlassTransmissionChanged: (Float) -> Unit,
+    private val renderLightLevelProvider: () -> Float,
+    private val renderLightLevelChanged: (Float) -> Unit,
     private val renderCameraLightIntensityProvider: () -> Float,
     private val renderCameraLightIntensityChanged: (Float) -> Unit,
     private val normalLineWidthChanged: (Float) -> Unit,
@@ -3797,6 +3799,7 @@ class SketchUiOverlay(
         val blendValueLabel = VisLabel("")
         val blurValueLabel = VisLabel("")
         val glassValueLabel = VisLabel("")
+        val lightLevelValueLabel = VisLabel("")
         val cameraLightValueLabel = VisLabel("")
         val pruningCheckBox = VisCheckBox("").apply {
             isChecked = renderPruningEnabledProvider()
@@ -3833,6 +3836,15 @@ class SketchUiOverlay(
                 }
             })
         }
+        val lightLevelSlider = VisSlider(0f, 2f, 0.01f, false).apply {
+            value = renderLightLevelProvider()
+            addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) {
+                    renderLightLevelChanged(value)
+                    lightLevelValueLabel.setText("${(value * 100f).toInt()}%")
+                }
+            })
+        }
         val cameraLightSlider = VisSlider(0f, 100f, 1f, false).apply {
             value = renderCameraLightIntensityProvider()
             addListener(object : ChangeListener() {
@@ -3846,6 +3858,7 @@ class SketchUiOverlay(
         blendValueLabel.setText("${(blendSlider.value * 100f).toInt()}%")
         blurValueLabel.setText("${blurSlider.value.toInt()} px")
         glassValueLabel.setText("${(glassSlider.value * 100f).toInt()}%")
+        lightLevelValueLabel.setText("${(lightLevelSlider.value * 100f).toInt()}%")
         cameraLightValueLabel.setText(cameraLightSlider.value.toInt().toString())
         val content = VisTable()
         content.defaults().pad(4f).left().growX()
@@ -3877,6 +3890,9 @@ class SketchUiOverlay(
         controls.add(VisLabel("Glass")).width(58f)
         controls.add(glassSlider).width(180f)
         controls.add(glassValueLabel).left().row()
+        controls.add(VisLabel("Level")).width(58f)
+        controls.add(lightLevelSlider).width(180f)
+        controls.add(lightLevelValueLabel).left().row()
         controls.add(VisLabel("Light")).width(58f)
         controls.add(cameraLightSlider).width(180f)
         controls.add(cameraLightValueLabel).left().row()

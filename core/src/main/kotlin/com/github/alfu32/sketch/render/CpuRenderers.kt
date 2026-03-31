@@ -80,6 +80,7 @@ class CpuRayTracer(
         val direct = directLightingAtHit(snapshot, hit, glassTransmission)
         val transmission = transmissionWeight(hit.triangle, glassTransmission)
         if (transmission > 0.001f && depth > 0) {
+            val transmissionColor = transmissionColor(hit.triangle, glassTransmission)
             val transmittedRay = transmissionRay(hit, ray)
             val transmitted = if (transmittedRay != null) {
                 trace(snapshot, transmittedRay, depth - 1, glassTransmission).color
@@ -95,9 +96,9 @@ class CpuRayTracer(
             val localWeight = (1f - transmission).coerceIn(0f, 1f)
             return SampleResult(
                 Color(
-                    (direct.x * localWeight + transmitted.r * transmission).coerceIn(0f, 1f),
-                    (direct.y * localWeight + transmitted.g * transmission).coerceIn(0f, 1f),
-                    (direct.z * localWeight + transmitted.b * transmission).coerceIn(0f, 1f),
+                    (direct.x * localWeight + transmitted.r * transmissionColor.x).coerceIn(0f, 1f),
+                    (direct.y * localWeight + transmitted.g * transmissionColor.y).coerceIn(0f, 1f),
+                    (direct.z * localWeight + transmitted.b * transmissionColor.z).coerceIn(0f, 1f),
                     1f
                 ),
                 true
@@ -188,6 +189,7 @@ class CpuPathTracer(
         }
         val transmission = transmissionWeight(hit.triangle, glassTransmission)
         if (transmission > 0.001f) {
+            val transmissionColor = transmissionColor(hit.triangle, glassTransmission)
             val transmittedRay = transmissionRay(hit, ray)
             val transmitted = if (transmittedRay != null) {
                 trace(snapshot, transmittedRay, random, depth - 1, glassTransmission)
@@ -202,7 +204,11 @@ class CpuPathTracer(
                 )
             }
             val localWeight = (1f - transmission).coerceIn(0f, 1f)
-            return direct.scl(localWeight).add(transmitted.scl(transmission)).limit01()
+            return direct.scl(localWeight).add(
+                transmitted.x * transmissionColor.x,
+                transmitted.y * transmissionColor.y,
+                transmitted.z * transmissionColor.z
+            ).limit01()
         }
         val bounceDir = cosineHemisphere(hit.normal, random)
         val bounced = trace(
@@ -233,12 +239,12 @@ private fun directLightingAtHit(snapshot: SceneSnapshot, hit: Hit, glassTransmis
         }
         val shadowOrigin = Vector3(hit.point).mulAdd(hit.normal, HIT_EPSILON)
         val visibility = shadowTransmittance(snapshot.triangles, Ray(shadowOrigin, toLight), Float.POSITIVE_INFINITY, glassTransmission)
-        if (visibility <= 0.001f) {
+        if (visibility.maxComponent() <= 0.001f) {
             return@forEach
         }
-        shaded.x += hit.triangle.albedo.r * light.color.r * light.intensity * ndotl * visibility
-        shaded.y += hit.triangle.albedo.g * light.color.g * light.intensity * ndotl * visibility
-        shaded.z += hit.triangle.albedo.b * light.color.b * light.intensity * ndotl * visibility
+        shaded.x += hit.triangle.albedo.r * light.color.r * light.intensity * ndotl * visibility.x
+        shaded.y += hit.triangle.albedo.g * light.color.g * light.intensity * ndotl * visibility.y
+        shaded.z += hit.triangle.albedo.b * light.color.b * light.intensity * ndotl * visibility.z
     }
     snapshot.lights.forEach { light ->
         val toLight = Vector3(light.position).sub(hit.point)
@@ -251,13 +257,13 @@ private fun directLightingAtHit(snapshot: SceneSnapshot, hit: Hit, glassTransmis
         }
         val shadowOrigin = Vector3(hit.point).mulAdd(hit.normal, HIT_EPSILON)
         val visibility = shadowTransmittance(snapshot.triangles, Ray(shadowOrigin, toLight), dist - 0.02f, glassTransmission)
-        if (visibility <= 0.001f) {
+        if (visibility.maxComponent() <= 0.001f) {
             return@forEach
         }
         val attenuation = light.intensity / dist2
-        shaded.x += hit.triangle.albedo.r * light.color.r * attenuation * ndotl * visibility
-        shaded.y += hit.triangle.albedo.g * light.color.g * attenuation * ndotl * visibility
-        shaded.z += hit.triangle.albedo.b * light.color.b * attenuation * ndotl * visibility
+        shaded.x += hit.triangle.albedo.r * light.color.r * attenuation * ndotl * visibility.x
+        shaded.y += hit.triangle.albedo.g * light.color.g * attenuation * ndotl * visibility.y
+        shaded.z += hit.triangle.albedo.b * light.color.b * attenuation * ndotl * visibility.z
     }
     return shaded
 }
@@ -267,11 +273,11 @@ private fun shadowTransmittance(
     ray: Ray,
     maxDistance: Float,
     glassTransmission: Float
-): Float {
-    var transmittance = 1f
+): Vector3 {
+    val transmittance = Vector3(1f, 1f, 1f)
     triangles.forEach { triangle ->
-        if (transmittance <= 0.001f) {
-            return 0f
+        if (transmittance.maxComponent() <= 0.001f) {
+            return Vector3.Zero.cpy()
         }
         val weight = transmissionWeight(triangle, glassTransmission)
         if (weight >= 0.999f) {
@@ -280,17 +286,29 @@ private fun shadowTransmittance(
         val hit = intersectTriangle(ray, triangle) ?: return@forEach
         if (hit.t < maxDistance) {
             if (weight <= 0.001f) {
-                return 0f
+                return Vector3.Zero.cpy()
             }
-            transmittance *= weight
+            val tint = transmissionColor(triangle, glassTransmission)
+            transmittance.x *= tint.x
+            transmittance.y *= tint.y
+            transmittance.z *= tint.z
         }
     }
-    return transmittance.coerceIn(0f, 1f)
+    return transmittance.limit01()
 }
 
 private fun transmissionWeight(triangle: RenderTriangle, glassTransmission: Float): Float {
     val alpha = triangle.albedo.a.coerceIn(0f, 1f)
     return ((1f - alpha) * glassTransmission).coerceIn(0f, 1f)
+}
+
+private fun transmissionColor(triangle: RenderTriangle, glassTransmission: Float): Vector3 {
+    val weight = transmissionWeight(triangle, glassTransmission)
+    return Vector3(
+        triangle.albedo.r.coerceIn(0f, 1f) * weight,
+        triangle.albedo.g.coerceIn(0f, 1f) * weight,
+        triangle.albedo.b.coerceIn(0f, 1f) * weight
+    )
 }
 
 private fun transmissionRay(hit: Hit, ray: Ray): Ray? {
@@ -403,6 +421,8 @@ private fun Vector3.limit01(): Vector3 {
     z = z.coerceIn(0f, 1f)
     return this
 }
+
+private fun Vector3.maxComponent(): Float = max(max(x, y), z)
 
 private class RenderRng(seed: Long) {
     private var state = if (seed != 0L) seed else 0x6A09E667F3BCC909L
