@@ -22,6 +22,11 @@ import kotlin.math.sqrt
 
 object MeshIo {
     data class Triangle(val a: Vector3, val b: Vector3, val c: Vector3)
+    data class Segment(val start: Vector3, val end: Vector3)
+    data class DxfGeometry(
+        val triangles: List<Triangle> = emptyList(),
+        val segments: List<Segment> = emptyList()
+    )
 
     data class ExportSettings(
         val threeMf: ThreeMfExportSettings = ThreeMfExportSettings()
@@ -132,7 +137,7 @@ object MeshIo {
             ImportFormat.GLTF -> parseGltfJson(String(bytes, StandardCharsets.UTF_8), null)
             ImportFormat.GLB -> parseGlb(bytes)
             ImportFormat.DAE -> parseCollada(bytes)
-            ImportFormat.DXF -> parseDxf(String(bytes, StandardCharsets.UTF_8))
+            ImportFormat.DXF -> parseDxf(String(bytes, StandardCharsets.UTF_8)).triangles
             ImportFormat.THREE_MF -> parse3mf(bytes, settings.threeMf)
             ImportFormat.AMF -> parseAmf(bytes)
             ImportFormat.IFC -> parseIfc(String(bytes, StandardCharsets.UTF_8))
@@ -152,10 +157,21 @@ object MeshIo {
             ExportFormat.GLTF -> writeGltf(triangles)
             ExportFormat.GLB -> writeGlb(triangles)
             ExportFormat.DAE -> writeCollada(triangles).toByteArray(StandardCharsets.UTF_8)
-            ExportFormat.DXF -> writeDxf(triangles).toByteArray(StandardCharsets.UTF_8)
+            ExportFormat.DXF -> writeDxf(triangles, emptyList()).toByteArray(StandardCharsets.UTF_8)
             ExportFormat.THREE_MF -> write3mf(triangles, settings.threeMf)
             ExportFormat.AMF -> writeAmf(triangles).toByteArray(StandardCharsets.UTF_8)
         }
+    }
+
+    fun importDxfGeometry(bytes: ByteArray): DxfGeometry {
+        return parseDxf(String(bytes, StandardCharsets.UTF_8))
+    }
+
+    fun exportDxfGeometry(
+        triangles: List<Triangle>,
+        segments: List<Segment>
+    ): ByteArray {
+        return writeDxf(triangles, segments).toByteArray(StandardCharsets.UTF_8)
     }
 
     private fun parseObj(text: String): List<Triangle> {
@@ -918,66 +934,192 @@ object MeshIo {
         return out
     }
 
-    private fun parseDxf(text: String): List<Triangle> {
-        val lines = text.lineSequence().map { it.trimEnd('\r') }.toList()
-        val out = ArrayList<Triangle>(2048)
+    private data class DxfPair(val code: Int, val value: String)
+
+    private data class DxfEntity(
+        val type: String,
+        val pairs: List<DxfPair>
+    )
+
+    private fun parseDxf(text: String): DxfGeometry {
+        val rawLines = text.lineSequence().map { it.trimEnd('\r') }.toList()
+        val entities = ArrayList<DxfEntity>(2048)
         var i = 0
-        var inFace = false
-        val values = linkedMapOf<Int, Double>()
-        fun flushFace() {
-            if (!inFace) return
-            val a = Vector3(
-                values[10]?.toFloat() ?: 0f,
-                values[20]?.toFloat() ?: 0f,
-                values[30]?.toFloat() ?: 0f
-            )
-            val b = Vector3(
-                values[11]?.toFloat() ?: 0f,
-                values[21]?.toFloat() ?: 0f,
-                values[31]?.toFloat() ?: 0f
-            )
-            val c = Vector3(
-                values[12]?.toFloat() ?: 0f,
-                values[22]?.toFloat() ?: 0f,
-                values[32]?.toFloat() ?: 0f
-            )
-            val d = Vector3(
-                values[13]?.toFloat() ?: c.x,
-                values[23]?.toFloat() ?: c.y,
-                values[33]?.toFloat() ?: c.z
-            )
-            if (a.dst2(b) > 1e-12f && a.dst2(c) > 1e-12f && b.dst2(c) > 1e-12f) {
-                out.add(Triangle(Vector3(a), Vector3(b), Vector3(c)))
+        var pendingSection = false
+        var inEntities = false
+        var currentType: String? = null
+        var currentPairs = ArrayList<DxfPair>(16)
+
+        fun flushEntity() {
+            val type = currentType ?: return
+            if (inEntities) {
+                entities.add(DxfEntity(type, currentPairs.toList()))
             }
-            if (d.dst2(c) > 1e-10f && a.dst2(d) > 1e-12f && c.dst2(d) > 1e-12f) {
-                out.add(Triangle(Vector3(a), Vector3(c), Vector3(d)))
-            }
+            currentType = null
+            currentPairs = ArrayList(16)
         }
-        while (i + 1 < lines.size) {
-            val code = lines[i].trim().toIntOrNull()
-            val value = lines[i + 1].trim()
-            if (code == null) {
-                i += 2
+
+        while (i + 1 < rawLines.size) {
+            val code = rawLines[i].trim().toIntOrNull()
+            val value = rawLines[i + 1].trim()
+            i += 2
+            if (code == null) continue
+            if (pendingSection && code == 2) {
+                inEntities = value.equals("ENTITIES", ignoreCase = true)
+                pendingSection = false
                 continue
             }
             if (code == 0) {
-                if (inFace) {
-                    flushFace()
-                    values.clear()
-                    inFace = false
+                if (value.equals("SECTION", ignoreCase = true)) {
+                    flushEntity()
+                    pendingSection = true
+                    inEntities = false
+                    continue
                 }
-                if (value.equals("3DFACE", ignoreCase = true)) {
-                    inFace = true
+                if (value.equals("ENDSEC", ignoreCase = true) || value.equals("EOF", ignoreCase = true)) {
+                    flushEntity()
+                    inEntities = false
+                    pendingSection = false
+                    continue
                 }
-            } else if (inFace) {
-                value.toDoubleOrNull()?.let { parsed ->
-                    values[code] = parsed
+                flushEntity()
+                if (inEntities) {
+                    currentType = value.uppercase(Locale.US)
+                }
+                continue
+            }
+            if (currentType != null) {
+                currentPairs.add(DxfPair(code, value))
+            }
+        }
+        flushEntity()
+
+        val triangles = ArrayList<Triangle>(2048)
+        val segments = ArrayList<Segment>(4096)
+        var entityIndex = 0
+        while (entityIndex < entities.size) {
+            val entity = entities[entityIndex]
+            when (entity.type) {
+                "3DFACE", "SOLID", "TRACE" -> {
+                    parseDxfFaceEntity(entity)?.let { triangles.addAll(it) }
+                }
+                "LINE" -> {
+                    parseDxfLineEntity(entity)?.let { segments.add(it) }
+                }
+                "LWPOLYLINE" -> {
+                    segments.addAll(parseDxfLwPolyline(entity))
+                }
+                "POLYLINE" -> {
+                    val polylineEntities = ArrayList<DxfEntity>(8)
+                    var lookahead = entityIndex + 1
+                    while (lookahead < entities.size) {
+                        val next = entities[lookahead]
+                        if (next.type == "SEQEND") {
+                            polylineEntities.add(next)
+                            break
+                        }
+                        if (next.type != "VERTEX") {
+                            lookahead--
+                            break
+                        }
+                        polylineEntities.add(next)
+                        lookahead++
+                    }
+                    segments.addAll(parseDxfPolyline(entity, polylineEntities))
+                    entityIndex = lookahead
                 }
             }
-            i += 2
+            entityIndex++
         }
-        flushFace()
+        return DxfGeometry(triangles = triangles, segments = segments)
+    }
+
+    private fun parseDxfFaceEntity(entity: DxfEntity): List<Triangle>? {
+        val a = dxfPoint(entity.pairs, 10, 20, 30) ?: return null
+        val b = dxfPoint(entity.pairs, 11, 21, 31) ?: return null
+        val c = dxfPoint(entity.pairs, 12, 22, 32) ?: return null
+        val d = dxfPoint(entity.pairs, 13, 23, 33) ?: Vector3(c)
+        val out = ArrayList<Triangle>(2)
+        if (a.dst2(b) > 1e-12f && a.dst2(c) > 1e-12f && b.dst2(c) > 1e-12f) {
+            out.add(Triangle(Vector3(a), Vector3(b), Vector3(c)))
+        }
+        if (d.dst2(c) > 1e-10f && a.dst2(d) > 1e-12f && c.dst2(d) > 1e-12f) {
+            out.add(Triangle(Vector3(a), Vector3(c), Vector3(d)))
+        }
         return out
+    }
+
+    private fun parseDxfLineEntity(entity: DxfEntity): Segment? {
+        val start = dxfPoint(entity.pairs, 10, 20, 30) ?: return null
+        val end = dxfPoint(entity.pairs, 11, 21, 31) ?: return null
+        if (start.dst2(end) <= 1e-12f) {
+            return null
+        }
+        return Segment(start, end)
+    }
+
+    private fun parseDxfLwPolyline(entity: DxfEntity): List<Segment> {
+        val xs = entity.pairs.filter { it.code == 10 }.mapNotNull { it.value.toFloatOrNull() }
+        val ys = entity.pairs.filter { it.code == 20 }.mapNotNull { it.value.toFloatOrNull() }
+        val zs = entity.pairs.filter { it.code == 30 }.mapNotNull { it.value.toFloatOrNull() }
+        val count = min(xs.size, ys.size)
+        if (count < 2) {
+            return emptyList()
+        }
+        val closed = ((dxfInt(entity.pairs, 70) ?: 0) and 1) != 0
+        val points = ArrayList<Vector3>(count)
+        for (index in 0 until count) {
+            points.add(Vector3(xs[index], ys[index], zs.getOrNull(index) ?: 0f))
+        }
+        return dxfPolylineSegments(points, closed)
+    }
+
+    private fun parseDxfPolyline(entity: DxfEntity, nestedEntities: List<DxfEntity>): List<Segment> {
+        val closed = ((dxfInt(entity.pairs, 70) ?: 0) and 1) != 0
+        val points = ArrayList<Vector3>(nestedEntities.size)
+        nestedEntities.forEach { nested ->
+            if (nested.type != "VERTEX") return@forEach
+            dxfPoint(nested.pairs, 10, 20, 30)?.let { points.add(it) }
+        }
+        return dxfPolylineSegments(points, closed)
+    }
+
+    private fun dxfPolylineSegments(points: List<Vector3>, closed: Boolean): List<Segment> {
+        if (points.size < 2) {
+            return emptyList()
+        }
+        val out = ArrayList<Segment>(points.size)
+        for (index in 0 until points.lastIndex) {
+            val start = points[index]
+            val end = points[index + 1]
+            if (start.dst2(end) > 1e-12f) {
+                out.add(Segment(Vector3(start), Vector3(end)))
+            }
+        }
+        if (closed && points.first().dst2(points.last()) > 1e-12f) {
+            out.add(Segment(Vector3(points.last()), Vector3(points.first())))
+        }
+        return out
+    }
+
+    private fun dxfPoint(
+        pairs: List<DxfPair>,
+        xCode: Int,
+        yCode: Int,
+        zCode: Int
+    ): Vector3? {
+        val x = dxfFloat(pairs, xCode) ?: return null
+        val y = dxfFloat(pairs, yCode) ?: return null
+        val z = dxfFloat(pairs, zCode) ?: 0f
+        return Vector3(x, y, z)
+    }
+
+    private fun dxfFloat(pairs: List<DxfPair>, code: Int): Float? {
+        return pairs.firstOrNull { it.code == code }?.value?.toFloatOrNull()
+    }
+
+    private fun dxfInt(pairs: List<DxfPair>, code: Int): Int? {
+        return pairs.firstOrNull { it.code == code }?.value?.toIntOrNull()
     }
 
     private fun parse3mf(bytes: ByteArray, settings: ThreeMfImportSettings): List<Triangle> {
@@ -1362,9 +1504,14 @@ object MeshIo {
         return sb.toString()
     }
 
-    private fun writeDxf(triangles: List<Triangle>): String {
+    private fun writeDxf(triangles: List<Triangle>, segments: List<Segment>): String {
         val sb = StringBuilder()
         sb.append("0\nSECTION\n2\nENTITIES\n")
+        segments.forEach { segment ->
+            sb.append("0\nLINE\n8\n0\n")
+            sb.append("10\n").append(fmt(segment.start.x)).append("\n20\n").append(fmt(segment.start.y)).append("\n30\n").append(fmt(segment.start.z)).append("\n")
+            sb.append("11\n").append(fmt(segment.end.x)).append("\n21\n").append(fmt(segment.end.y)).append("\n31\n").append(fmt(segment.end.z)).append("\n")
+        }
         triangles.forEach { tri ->
             sb.append("0\n3DFACE\n8\n0\n")
             sb.append("10\n").append(fmt(tri.a.x)).append("\n20\n").append(fmt(tri.a.y)).append("\n30\n").append(fmt(tri.a.z)).append("\n")

@@ -24,6 +24,7 @@ class GroupScene(
 ) {
     data class Axes(val u: Vector3, val v: Vector3, val w: Vector3)
     data class MeshTriangle(val a: Vector3, val b: Vector3, val c: Vector3, val color: Color = Color(1f, 1f, 1f, 1f))
+    data class MeshSegment(val start: Vector3, val end: Vector3)
     enum class PrototypeKind { MESH, VOXEL, ARCHITECTURE }
     enum class HoleHandleKind {
         CORNER_0, CORNER_1, CORNER_2, CORNER_3,
@@ -724,7 +725,21 @@ class GroupScene(
         triangles: List<MeshTriangle>,
         includeEdges: Boolean = true
     ): ObjectPrototype? {
-        if (triangles.isEmpty()) {
+        return createImportedPrototype(
+            name = name,
+            triangles = triangles,
+            segments = emptyList(),
+            includeTriangleEdges = includeEdges
+        )
+    }
+
+    fun createImportedPrototype(
+        name: String,
+        triangles: List<MeshTriangle>,
+        segments: List<MeshSegment>,
+        includeTriangleEdges: Boolean = true
+    ): ObjectPrototype? {
+        if (triangles.isEmpty() && segments.isEmpty()) {
             return null
         }
         val bounds = BoundingBox()
@@ -737,6 +752,14 @@ class GroupScene(
             bounds.ext(tri.a)
             bounds.ext(tri.b)
             bounds.ext(tri.c)
+        }
+        segments.forEach { segment ->
+            if (!hasBounds) {
+                bounds.set(segment.start, segment.start)
+                hasBounds = true
+            }
+            bounds.ext(segment.start)
+            bounds.ext(segment.end)
         }
         if (!hasBounds) {
             return null
@@ -768,15 +791,20 @@ class GroupScene(
                     val b = Vector3(tri.b).sub(localOrigin)
                     val c = Vector3(tri.c).sub(localOrigin)
                     prototype.faceStore.addTriangle(a, b, c, tri.color)
-                    if (includeEdges) {
+                    if (includeTriangleEdges) {
                         prototype.lineStore.addSegment(a, b, autoCleanup = false)
                         prototype.lineStore.addSegment(b, c, autoCleanup = false)
                         prototype.lineStore.addSegment(c, a, autoCleanup = false)
                     }
                 }
+                segments.forEach { segment ->
+                    val start = Vector3(segment.start).sub(localOrigin)
+                    val end = Vector3(segment.end).sub(localOrigin)
+                    prototype.lineStore.addSegment(start, end, autoCleanup = false)
+                }
             }
         }
-        if (includeEdges) {
+        if (includeTriangleEdges || segments.isNotEmpty()) {
             prototype.lineStore.cleanupJts()
         }
         registerPrototype(prototype)

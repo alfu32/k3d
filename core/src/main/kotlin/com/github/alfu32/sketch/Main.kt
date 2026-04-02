@@ -51,6 +51,7 @@ import com.github.alfu32.sketch.input.SnapResult
 import com.github.alfu32.sketch.input.Snapper
 import com.github.alfu32.sketch.input.ToolPointerProcessor
 import com.github.alfu32.sketch.model.ArchitectureStore
+import com.github.alfu32.sketch.model.DraftLineStore
 import com.github.alfu32.sketch.model.DraftTextStore
 import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.model.HvacStore
@@ -4123,7 +4124,7 @@ class Main(
             format = MeshIo.ExportFormat.DAE
         ),
         MeshExportOption(
-            label = "DXF 3DFACE (*.dxf)",
+            label = "DXF LINE + 3DFACE (*.dxf)",
             extensions = listOf("dxf"),
             defaultExtension = "dxf",
             format = MeshIo.ExportFormat.DXF
@@ -4433,15 +4434,16 @@ class Main(
 
     private data class MeshExportPayload(
         val bytes: ByteArray,
-        val triangleCount: Int,
+        val elementCount: Int,
         val scopeLabel: String,
+        val elementLabel: String = "triangle(s)",
         val ifcProductCount: Int? = null
     ) {
         fun statusMessage(target: String): String {
             return if (ifcProductCount != null) {
                 "Exported IFC to $target ($ifcProductCount products, $scopeLabel)."
             } else {
-                "Exported $triangleCount triangle(s) to $target ($scopeLabel)."
+                "Exported $elementCount $elementLabel to $target ($scopeLabel)."
             }
         }
     }
@@ -4493,6 +4495,9 @@ class Main(
     }
 
     private fun exportMeshBytes(format: MeshIo.ExportFormat): MeshExportPayload? {
+        if (format == MeshIo.ExportFormat.DXF) {
+            return exportDxfBytes()
+        }
         val selected = collectSelectedWorldTrianglesForExport()
         val triangles = if (selected.isNotEmpty()) selected else collectAllWorldTrianglesForExport()
         if (triangles.isEmpty()) {
@@ -4506,7 +4511,27 @@ class Main(
             return null
         }
         val scopeLabel = if (selected.isNotEmpty()) "selection" else "full model"
-        return MeshExportPayload(bytes, triangles.size, scopeLabel)
+        return MeshExportPayload(bytes, triangles.size, scopeLabel, elementLabel = "triangle(s)")
+    }
+
+    private fun exportDxfBytes(): MeshExportPayload? {
+        val selectedTriangles = collectSelectedWorldTrianglesForExport()
+        val selectedSegments = collectSelectedWorldSegmentsForExport()
+        val useSelection = selectedTriangles.isNotEmpty() || selectedSegments.isNotEmpty()
+        val triangles = if (useSelection) selectedTriangles else collectAllWorldTrianglesForExport()
+        val segments = if (useSelection) selectedSegments else collectAllWorldSegmentsForExport()
+        if (triangles.isEmpty() && segments.isEmpty()) {
+            statusModel.message = "Export failed: no DXF geometry in the model."
+            return null
+        }
+        val bytes = try {
+            MeshIo.exportDxfGeometry(triangles, segments)
+        } catch (t: Throwable) {
+            statusModel.message = "Export failed: ${t.message ?: t.javaClass.simpleName}"
+            return null
+        }
+        val scopeLabel = if (useSelection) "selection" else "full model"
+        return MeshExportPayload(bytes, triangles.size + segments.size, scopeLabel, elementLabel = "entity(ies)")
     }
 
     private fun meshExportSettings(format: MeshIo.ExportFormat): MeshIo.ExportSettings {
@@ -4607,6 +4632,63 @@ class Main(
         return out
     }
 
+    private fun collectAllWorldSegmentsForExport(): List<MeshIo.Segment> {
+        val out = ArrayList<MeshIo.Segment>(4096)
+        val seen = HashSet<String>()
+        fun appendSegment(ownerKey: String, segment: DraftLineStore.Segment, toWorld: ((Vector3) -> Vector3)? = null) {
+            val key = "$ownerKey:${segment.id}"
+            if (!seen.add(key)) return
+            val start = if (toWorld != null) toWorld(segment.start) else Vector3(segment.start)
+            val end = if (toWorld != null) toWorld(segment.end) else Vector3(segment.end)
+            out.add(MeshIo.Segment(start, end))
+        }
+        scene.root.lineStore.getSegments().forEach { segment ->
+            appendSegment("root", segment)
+        }
+        scene.walkGroups(scene.root) { group ->
+            group.lineStore.getSegments().forEach { segment ->
+                appendSegment(group.id, segment) { local -> group.toWorld(local) }
+            }
+        }
+        return out
+    }
+
+    private fun collectSelectedWorldSegmentsForExport(): List<MeshIo.Segment> {
+        val out = ArrayList<MeshIo.Segment>(2048)
+        val seen = HashSet<String>()
+        val selectedGroups = scene.selectedGroups().toSet()
+        val selectedArchitecture = scene.selectedArchitectureElements(scene.root)
+        val selectedHvac = scene.selectedHvacElements(scene.root)
+
+        fun appendSegment(ownerKey: String, segment: DraftLineStore.Segment, toWorld: ((Vector3) -> Vector3)? = null) {
+            val key = "$ownerKey:${segment.id}"
+            if (!seen.add(key)) return
+            val start = if (toWorld != null) toWorld(segment.start) else Vector3(segment.start)
+            val end = if (toWorld != null) toWorld(segment.end) else Vector3(segment.end)
+            out.add(MeshIo.Segment(start, end))
+        }
+
+        scene.root.lineStore.getSegments().forEach { segment ->
+            val selectedByLine = scene.root.lineStore.isSelected(segment)
+            val selectedByArchitecture = scene.isGeneratedArchitectureSegment(segment) &&
+                selectedArchitecture.contains(scene.generatedArchitectureOwner(segment))
+            val selectedByHvac = scene.isGeneratedHvacSegment(segment) &&
+                selectedHvac.contains(scene.generatedHvacOwner(segment))
+            if (selectedByLine || selectedByArchitecture || selectedByHvac) {
+                appendSegment("root", segment)
+            }
+        }
+
+        scene.walkGroups(scene.root) { group ->
+            val includeAll = selectedGroups.contains(group)
+            val source = if (includeAll) group.lineStore.getSegments() else group.lineStore.getSelected()
+            source.forEach { segment ->
+                appendSegment(group.id, segment) { local -> group.toWorld(local) }
+            }
+        }
+        return out
+    }
+
     private fun exportIfcPayloadFromSelection(): MeshExportPayload? {
         val selected = collectSelectedWorldTrianglesForExport()
         val triangles = if (selected.isNotEmpty()) selected else collectAllWorldTrianglesForExport()
@@ -4633,8 +4715,9 @@ class Main(
             val bytes = tmp.readBytes()
             MeshExportPayload(
                 bytes = bytes,
-                triangleCount = triangles.size,
+                elementCount = triangles.size,
                 scopeLabel = if (selected.isNotEmpty()) "selection" else "full model",
+                elementLabel = "triangle(s)",
                 ifcProductCount = report.productCount
             )
         } catch (t: Throwable) {
@@ -4649,8 +4732,14 @@ class Main(
         val extension = nameHint?.substringAfterLast('.', "")?.lowercase().orEmpty()
         val resolvedFormat = MeshIo.importFormatForExtension(extension)
         val importSettings = meshImportSettings()
-        val triangles = when {
-            resolvedFormat != null -> MeshIo.importTriangles(bytes, resolvedFormat, importSettings)
+        val geometry = when {
+            resolvedFormat == MeshIo.ImportFormat.DXF -> {
+                val dxf = MeshIo.importDxfGeometry(bytes)
+                ImportedMeshGeometry(dxf.triangles, dxf.segments)
+            }
+            resolvedFormat != null -> ImportedMeshGeometry(
+                triangles = MeshIo.importTriangles(bytes, resolvedFormat, importSettings)
+            )
             else -> {
                 // Fallback when SAF providers omit extension metadata.
                 val obj = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.OBJ, importSettings)
@@ -4658,20 +4747,31 @@ class Main(
                 val glb = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.GLB, importSettings)
                 val gltf = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.GLTF, importSettings)
                 val dae = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.DAE, importSettings)
-                val dxf = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.DXF, importSettings)
+                val dxf = MeshIo.importDxfGeometry(bytes)
                 val threemf = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.THREE_MF, importSettings)
                 val amf = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.AMF, importSettings)
                 val fbx = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.FBX, importSettings)
                 val ifc = MeshIo.importTriangles(bytes, MeshIo.ImportFormat.IFC, importSettings)
-                listOf(obj, stl, glb, gltf, dae, dxf, threemf, amf, fbx, ifc).maxByOrNull { it.size }.orEmpty()
+                listOf(
+                    ImportedMeshGeometry(triangles = obj),
+                    ImportedMeshGeometry(triangles = stl),
+                    ImportedMeshGeometry(triangles = glb),
+                    ImportedMeshGeometry(triangles = gltf),
+                    ImportedMeshGeometry(triangles = dae),
+                    ImportedMeshGeometry(triangles = dxf.triangles, segments = dxf.segments),
+                    ImportedMeshGeometry(triangles = threemf),
+                    ImportedMeshGeometry(triangles = amf),
+                    ImportedMeshGeometry(triangles = fbx),
+                    ImportedMeshGeometry(triangles = ifc)
+                ).maxByOrNull { it.score() } ?: ImportedMeshGeometry()
             }
         }
-        if (triangles.isEmpty()) {
-            statusModel.message = "Import failed: no triangles parsed from ${nameHint ?: "selected file"}."
+        if (geometry.triangles.isEmpty() && geometry.segments.isEmpty()) {
+            statusModel.message = "Import failed: no supported DXF/mesh geometry parsed from ${nameHint ?: "selected file"}."
             return
         }
         val prototypeName = importedPrototypeName(nameHint)
-        val meshTriangles = triangles.map { tri ->
+        val meshTriangles = geometry.triangles.map { tri ->
             GroupScene.MeshTriangle(
                 a = Vector3(tri.a),
                 b = Vector3(tri.b),
@@ -4679,13 +4779,29 @@ class Main(
                 color = Color(scene.defaultFaceColor)
             )
         }
-        val prototype = scene.createMeshPrototype(prototypeName, meshTriangles, includeEdges = true)
+        val meshSegments = geometry.segments.map { segment ->
+            GroupScene.MeshSegment(Vector3(segment.start), Vector3(segment.end))
+        }
+        val prototype = scene.createImportedPrototype(
+            name = prototypeName,
+            triangles = meshTriangles,
+            segments = meshSegments,
+            includeTriangleEdges = meshSegments.isEmpty()
+        )
         if (prototype == null) {
             statusModel.message = "Import failed: could not create object prototype."
             return
         }
         startObjectPlacement(prototype.id)
-        statusModel.message = "Imported ${triangles.size} triangle(s) as '$prototypeName'. Click to place object."
+        statusModel.message =
+            "Imported ${geometry.triangles.size} face(s) and ${geometry.segments.size} line(s) as '$prototypeName'. Click to place object."
+    }
+
+    private data class ImportedMeshGeometry(
+        val triangles: List<MeshIo.Triangle> = emptyList(),
+        val segments: List<MeshIo.Segment> = emptyList()
+    ) {
+        fun score(): Int = triangles.size + segments.size
     }
 
     private fun meshImportSettings(): MeshIo.ImportSettings {
