@@ -5011,6 +5011,31 @@ class Main(
             return
         }
         val defaultName = "render_${LocalDateTime.now().format(screenshotTimestampFormatter)}.png"
+        if (isAndroidRuntime()) {
+            val bridge = AndroidSaf.bridge
+            if (bridge == null) {
+                statusModel.message = "Render save failed: Android file picker is unavailable."
+                return
+            }
+            val bytes = try {
+                buildOfflineRenderPngBytes()
+            } catch (t: Throwable) {
+                statusModel.message = "Render save failed: ${t.message ?: t.javaClass.simpleName}"
+                return
+            }
+            bridge.createDocument(defaultName) { uri, displayName ->
+                if (uri.isNullOrBlank()) {
+                    statusModel.message = "Save cancelled."
+                    return@createDocument
+                }
+                if (!bridge.writeBytes(uri, bytes)) {
+                    statusModel.message = "Render save failed: cannot write selected destination."
+                    return@createDocument
+                }
+                statusModel.message = "Render saved: ${displayName ?: defaultName}"
+            }
+            return
+        }
         if (!BuildFlags.WEB_BUILD && !isAndroidRuntime()) {
             val requested = showDesktopFileDialog("Save Render", FileDialog.SAVE, defaultName)
             if (requested == null) {
@@ -5040,17 +5065,28 @@ class Main(
     }
 
     private fun writeOfflineRenderFile(target: File) {
+        target.parentFile?.mkdirs()
+        target.writeBytes(buildOfflineRenderPngBytes())
+    }
+
+    private fun buildOfflineRenderPngBytes(): ByteArray {
         val composed = renderPreviewPixmap
-        if (composed == null) {
-            renderController.savePng(target)
-            return
+        return if (composed == null) {
+            renderController.buildPngBytes()
+        } else {
+            buildFlippedPixmapPngBytes(composed)
         }
-        writeFlippedPixmapPng(target, composed)
     }
 
     private fun writeFlippedPixmapPng(target: File, source: Pixmap) {
+        target.parentFile?.mkdirs()
+        target.writeBytes(buildFlippedPixmapPngBytes(source))
+    }
+
+    private fun buildFlippedPixmapPngBytes(source: Pixmap): ByteArray {
         val flipped = Pixmap(source.width, source.height, Pixmap.Format.RGBA8888)
         val writer = PixmapIO.PNG((source.width * source.height * 4).coerceAtLeast(1024))
+        val output = ByteArrayOutputStream()
         try {
             for (y in 0 until source.height) {
                 val dstY = source.height - 1 - y
@@ -5058,13 +5094,12 @@ class Main(
                     flipped.drawPixel(x, dstY, source.getPixel(x, y))
                 }
             }
-            target.parentFile?.mkdirs()
-            FileOutputStream(target).use { out ->
-                writer.write(out, flipped)
-            }
+            output.use { out -> writer.write(out, flipped) }
+            return output.toByteArray()
         } finally {
             writer.dispose()
             flipped.dispose()
+            output.close()
         }
     }
 

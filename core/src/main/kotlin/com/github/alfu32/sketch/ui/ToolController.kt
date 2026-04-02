@@ -1,7 +1,10 @@
 package com.github.alfu32.sketch.ui
 
+import com.badlogic.gdx.Application
+import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Vector3
+import com.github.alfu32.sketch.InputModifiers
 
 class ToolController(
     private val status: StatusModel,
@@ -99,6 +102,9 @@ class ToolController(
     }
 
     fun update(delta: Float) {
+        if (Gdx.app?.type == Application.ApplicationType.Android && activeTool.supportsCopyMode()) {
+            setCopyMode(InputModifiers.isCtrlPressed())
+        }
         val pluginTool = (activeTool as? PluginToolAdapter) ?: return
         pluginTool.update(delta, status)
     }
@@ -120,10 +126,17 @@ class ToolController(
     }
 
     fun toggleCopyMode(): Boolean {
+        return setCopyMode(!status.copyMode)
+    }
+
+    fun setCopyMode(enabled: Boolean): Boolean {
         if (!activeTool.supportsCopyMode()) {
             return false
         }
-        status.copyMode = !status.copyMode
+        if (status.copyMode == enabled) {
+            return true
+        }
+        status.copyMode = enabled
         activeTool.onCopyModeChanged(status, status.copyMode)
         return true
     }

@@ -4,8 +4,10 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.PixmapIO
 import com.github.alfu32.sketch.BuildFlags
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.OutputStream
 import java.util.ArrayDeque
 
 data class RenderStatus(
@@ -168,14 +170,26 @@ class RenderController {
     }
 
     fun savePng(file: File) {
+        FileOutputStream(file).use { out ->
+            writePng(out)
+        }
+    }
+
+    fun buildPngBytes(): ByteArray {
+        val output = ByteArrayOutputStream()
+        output.use { out ->
+            writePng(out)
+        }
+        return output.toByteArray()
+    }
+
+    private fun writePng(output: OutputStream) {
         val job = currentJob ?: error("No render image available.")
         val pixmap = Pixmap(job.buffer.width, job.buffer.height, Pixmap.Format.RGBA8888)
         val writer = PixmapIO.PNG((job.buffer.width * job.buffer.height * 4).coerceAtLeast(1024))
         try {
             job.buffer.toFlippedPixmap(pixmap)
-            FileOutputStream(file).use { out ->
-                writer.write(out, pixmap)
-            }
+            writer.write(output, pixmap)
         } finally {
             writer.dispose()
             pixmap.dispose()

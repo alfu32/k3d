@@ -1512,10 +1512,6 @@ class SelectTool(
                     }
                 }
             }
-            if (bestForGroup == null && coarseBounds != null && coarseT != null && coarseT >= 0f) {
-                val point = Vector3(ray.origin).mulAdd(ray.direction, coarseT)
-                bestForGroup = GroupHitWorld(group, point, coarseT)
-            }
             if (bestForGroup != null) {
                 if (best == null || bestForGroup!!.t < best!!.t) {
                     best = bestForGroup
