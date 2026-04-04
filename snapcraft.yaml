@@ -62,16 +62,15 @@ parts:
       - libxrandr2
       - libxrender1
       - libxxf86vm1
-    build-snaps:
-      - gradle/latest/stable
     override-build: |
       set -eux
 
       export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")"
       export GRADLE_USER_HOME="$CRAFT_PART_BUILD/.gradle"
-      export PATH="$JAVA_HOME/bin:/snap/bin:$PATH"
+      export PATH="$JAVA_HOME/bin:$PATH"
 
-      gradle --no-daemon generateAssetList :lwjgl3:jar :core:pluginApiJar
+      chmod 755 ./gradlew
+      ./gradlew --no-daemon generateAssetList :lwjgl3:jar
 
       APP_JAR="$(find lwjgl3/build/libs -maxdepth 1 -type f -name 'octodraw-*.jar' ! -name '*-linux.jar' ! -name '*-mac.jar' ! -name '*-win.jar' | head -n 1)"
       if [ -z "$APP_JAR" ]; then
@@ -79,7 +78,6 @@ parts:
         exit 1
       fi
 
-      PLUGIN_API_JAR="$(find core/build/libs -maxdepth 1 -type f -name '*plugin*.jar' | head -n 1 || true)"
       MODULES="$("$JAVA_HOME/bin/jdeps" \
         --ignore-missing-deps \
         --multi-release 21 \
@@ -105,10 +103,6 @@ parts:
         install -d "$CRAFT_PART_INSTALL/opt/octodraw/tutorials"
         cp -a docs/tutorial/. "$CRAFT_PART_INSTALL/opt/octodraw/tutorials/"
       fi
-      if [ -n "$PLUGIN_API_JAR" ]; then
-        install -m 0644 "$PLUGIN_API_JAR" "$CRAFT_PART_INSTALL/opt/octodraw/plugins/"
-      fi
-
       cat > "$CRAFT_PART_INSTALL/bin/octodraw" <<'EOF'
       #!/bin/sh
       set -eu
