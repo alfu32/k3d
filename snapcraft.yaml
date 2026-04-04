@@ -69,6 +69,11 @@ parts:
       export GRADLE_USER_HOME="$CRAFT_PART_BUILD/.gradle"
       export PATH="$JAVA_HOME/bin:$PATH"
 
+      if [ -d .gradle-user/wrapper/dists ]; then
+        install -d "$GRADLE_USER_HOME/wrapper"
+        cp -a .gradle-user/wrapper/dists "$GRADLE_USER_HOME/wrapper/"
+      fi
+
       chmod 755 ./gradlew
       ./gradlew --no-daemon generateAssetList :lwjgl3:jar
 
