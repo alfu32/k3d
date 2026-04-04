@@ -135,4 +135,4 @@ parts:
       EOF
       chmod 755 "$CRAFT_PART_INSTALL/bin/octodraw"
 
-      craftctl set version "${OCTODRAW_SNAP_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0)}"
+      craftctl set version="${OCTODRAW_SNAP_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0)}"
