@@ -1,44 +1,47 @@
 name: octodraw
 title: Octodraw
+base: core24
+adopt-info: octodraw
 summary: 3D drafting and modeling tool
 description: |
-  Octodraw is a 3D drafting and modeling application.
-base: core22
-grade: stable
-confinement: strict
-adopt-info: octodraw
+  Octodraw is a 3D drafting and modeling application packaged directly
+  from the repository Gradle build. The snap ships the fat desktop jar,
+  runtime assets, tutorials, plugin API jar, and a bundled JRE 21 built
+  with jlink.
 
-architectures:
-  - build-on:
-      - amd64
-    build-for:
-      - amd64
+grade: devel
+confinement: devmode
+
+platforms:
+  amd64:
+  arm64:
 
 apps:
   octodraw:
-    command: octodraw-jre
+    command: bin/octodraw
+    desktop: snap/gui/octodraw.desktop
     environment:
       OCTODRAW_PLUGINS_DIR: $SNAP_USER_COMMON/plugins
-      ALSA_CONFIG_PATH: $SNAP/usr/share/alsa/alsa.conf
     plugs:
-      - audio-playback
-      - desktop
-      - desktop-legacy
       - home
+      - removable-media
       - network
       - network-bind
       - opengl
-      - removable-media
       - wayland
       - x11
+      - audio-playback
 
 parts:
   octodraw:
-    plugin: dump
-    source: source
+    plugin: nil
+    source: .
+    build-packages:
+      - git
+      - openjdk-21-jdk-headless
     stage-packages:
-      - libasound2
-      - libasound2-data
+      - libharfbuzz0b
+      - libasound2t64
       - libdrm2
       - libegl1
       - libgbm1
@@ -59,18 +62,78 @@ parts:
       - libxrandr2
       - libxrender1
       - libxxf86vm1
-    override-pull: |
-      craftctl default
-      craftctl set version "${OCTODRAW_SNAP_VERSION:-0.0.0}"
+    build-snaps:
+      - gradle/latest/stable
     override-build: |
-      craftctl default
-      chmod 755 "$CRAFT_PART_INSTALL/octodraw-editor" "$CRAFT_PART_INSTALL/octodraw-jre"
-      if [ -d "$CRAFT_PART_INSTALL/jre/bin" ]; then
-        find "$CRAFT_PART_INSTALL/jre/bin" -type f -exec chmod 755 {} \;
+      set -eux
+
+      export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")"
+      export GRADLE_USER_HOME="$CRAFT_PART_BUILD/.gradle"
+      export PATH="$JAVA_HOME/bin:/snap/bin:$PATH"
+
+      gradle --no-daemon generateAssetList :lwjgl3:jar :core:pluginApiJar
+
+      APP_JAR="$(find lwjgl3/build/libs -maxdepth 1 -type f -name 'octodraw-*.jar' ! -name '*-linux.jar' ! -name '*-mac.jar' ! -name '*-win.jar' | head -n 1)"
+      if [ -z "$APP_JAR" ]; then
+        echo "Unable to locate built desktop jar." >&2
+        exit 1
       fi
-      if [ -f "$CRAFT_PART_INSTALL/jre/lib/jspawnhelper" ]; then
-        chmod 755 "$CRAFT_PART_INSTALL/jre/lib/jspawnhelper"
+
+      PLUGIN_API_JAR="$(find core/build/libs -maxdepth 1 -type f -name '*plugin*.jar' | head -n 1 || true)"
+      MODULES="$("$JAVA_HOME/bin/jdeps" \
+        --ignore-missing-deps \
+        --multi-release 21 \
+        --print-module-deps \
+        "$APP_JAR"),jdk.crypto.ec,jdk.unsupported"
+
+      install -d "$CRAFT_PART_INSTALL/opt/octodraw"
+      install -d "$CRAFT_PART_INSTALL/opt/octodraw/plugins"
+      install -d "$CRAFT_PART_INSTALL/bin"
+
+      "$JAVA_HOME/bin/jlink" \
+        --add-modules "$MODULES" \
+        --strip-debug \
+        --no-header-files \
+        --no-man-pages \
+        --compress=2 \
+        --output "$CRAFT_PART_INSTALL/opt/octodraw/runtime"
+
+      install -m 0644 "$APP_JAR" "$CRAFT_PART_INSTALL/opt/octodraw/octodraw-editor.jar"
+
+      cp -a assets "$CRAFT_PART_INSTALL/opt/octodraw/"
+      if [ -d docs/tutorial ]; then
+        install -d "$CRAFT_PART_INSTALL/opt/octodraw/tutorials"
+        cp -a docs/tutorial/. "$CRAFT_PART_INSTALL/opt/octodraw/tutorials/"
       fi
-      if [ -f "$CRAFT_PART_INSTALL/jre/lib/jexec" ]; then
-        chmod 755 "$CRAFT_PART_INSTALL/jre/lib/jexec"
+      if [ -n "$PLUGIN_API_JAR" ]; then
+        install -m 0644 "$PLUGIN_API_JAR" "$CRAFT_PART_INSTALL/opt/octodraw/plugins/"
       fi
+
+      cat > "$CRAFT_PART_INSTALL/bin/octodraw" <<'EOF'
+      #!/bin/sh
+      set -eu
+
+      INSTALL_PATH="$SNAP/opt/octodraw"
+      JAVA_BIN="$INSTALL_PATH/runtime/bin/java"
+      PLUGINS_DIR="${OCTODRAW_PLUGINS_DIR:-${K3D_PLUGINS_DIR:-}}"
+      if [ -z "$PLUGINS_DIR" ]; then
+        PLUGINS_DIR="$SNAP_USER_COMMON/plugins"
+      fi
+      mkdir -p "$PLUGINS_DIR"
+
+      if [ -z "${1-}" ]; then
+        exec "$JAVA_BIN" -jar "$INSTALL_PATH/octodraw-editor.jar" edit --plugins-dir "$PLUGINS_DIR"
+      fi
+
+      case "$1" in
+        edit|version|update|help)
+          exec "$JAVA_BIN" -jar "$INSTALL_PATH/octodraw-editor.jar" "$@" --plugins-dir "$PLUGINS_DIR"
+          ;;
+        *)
+          exec "$JAVA_BIN" -jar "$INSTALL_PATH/octodraw-editor.jar" edit --file "$1" --plugins-dir "$PLUGINS_DIR"
+          ;;
+      esac
+      EOF
+      chmod 755 "$CRAFT_PART_INSTALL/bin/octodraw"
+
+      craftctl set version "${OCTODRAW_SNAP_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0)}"

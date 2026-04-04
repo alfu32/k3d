@@ -791,7 +791,6 @@ configureBundleTarTask("bundleLinuxTar", "linux", tasks.named("fetchJdkLinux"), 
 configureBundleTarTask("bundleMacArm64Tar", "mac", tasks.named("fetchJdkMacArm64"), file("$jdkCacheDir/mac-arm64"), true)
 
 tasks.register("bundleLinuxSnap") {
-  dependsOn "bundleLinuxDir"
   outputs.file rootProject.file("dist/octodraw-dist-${bundleVersion}-linux.snap")
   doLast {
     if (!os.contains("linux")) {
@@ -810,48 +809,26 @@ tasks.register("bundleLinuxSnap") {
     if (probe == null || probe.waitFor() != 0) {
       throw new GradleException("snapcraft not found. Install Snapcraft to build the Snap package.")
     }
-    def sourceDir = rootProject.file("dist/octodraw-dist-${bundleVersion}-linux")
-    if (!sourceDir.exists()) {
-      throw new GradleException("Linux bundle directory not found: ${sourceDir}")
-    }
-    def snapcraftProjectDir = file("$buildDir/snapcraft/project")
-    def snapcraftSourceDir = new File(snapcraftProjectDir, "source")
-    def snapDir = new File(snapcraftProjectDir, "snap")
-    project.delete(snapcraftProjectDir)
-    project.copy {
-      from(sourceDir)
-      into(snapcraftSourceDir)
-    }
-    project.copy {
-      from(rootProject.file("snapcraft.yaml"))
-      into(snapcraftProjectDir)
-    }
-    project.copy {
-      from(rootProject.file("snap"))
-      into(snapDir)
-    }
-    ensureUnixRuntimeExecutables(snapcraftSourceDir)
     def outFile = rootProject.file("dist/octodraw-dist-${bundleVersion}-linux.snap")
-    def defaultSnapName = "octodraw_${bundleVersion}_amd64.snap"
-    def builtSnap = new File(snapcraftProjectDir, defaultSnapName)
     project.delete(outFile)
-    project.delete(builtSnap)
+    def before = rootProject.file(".").listFiles()?.findAll { it.name.endsWith(".snap") }?.collectEntries {
+      [(it.absolutePath): it.lastModified()]
+    } ?: [:]
     def pack = new ProcessBuilder("snapcraft", "--destructive-mode")
-      .directory(snapcraftProjectDir)
+      .directory(rootProject.projectDir)
       .inheritIO()
     pack.environment().put("OCTODRAW_SNAP_VERSION", bundleVersion)
     def process = pack.start()
     if (process.waitFor() != 0) {
       throw new GradleException("snapcraft failed while building ${outFile.name}.")
     }
-    if (!builtSnap.exists()) {
-      def candidates = snapcraftProjectDir.listFiles()?.findAll { it.name.endsWith(".snap") } ?: []
-      if (candidates.isEmpty()) {
-        throw new GradleException("snapcraft completed without producing a .snap artifact.")
-      }
-      builtSnap = candidates.max { it.lastModified() }
-    }
-    if (!builtSnap.exists()) {
+    def candidates = rootProject.file(".").listFiles()?.findAll { file ->
+      file.name.endsWith(".snap") && (
+        !before.containsKey(file.absolutePath) || before[file.absolutePath] != file.lastModified()
+      )
+    } ?: []
+    def builtSnap = candidates ? candidates.max { it.lastModified() } : null
+    if (builtSnap == null || !builtSnap.exists()) {
       throw new GradleException("Snap artifact not found after snapcraft build.")
     }
     project.copy {
