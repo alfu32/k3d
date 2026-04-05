@@ -108,6 +108,8 @@ www-test/
 /server/nbproject/private/
 /shared/nbproject/private/
 
+
+/test-xyz/
 /nbbuild/
 /android/nbbuild/
 /core/nbbuild/

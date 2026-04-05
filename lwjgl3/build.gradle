@@ -802,7 +802,10 @@ tasks.register("bundleLinuxAppImage") {
       probe = new ProcessBuilder(appImageToolPath, "--version")
         .directory(project.projectDir)
         .redirectErrorStream(true)
-        .start()
+      if (appImageToolPath.endsWith(".AppImage")) {
+        probe.environment().put("APPIMAGE_EXTRACT_AND_RUN", "1")
+      }
+      probe = probe.start()
       probe.inputStream.text
     } catch (IOException ignored) {
       probe = null
