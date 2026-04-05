@@ -789,6 +789,110 @@ configureBundleTask("bundleWin", "win", tasks.named("fetchJdkWin"), file("$jdkCa
 configureBundleTask("bundleMacArm64", "mac", tasks.named("fetchJdkMacArm64"), file("$jdkCacheDir/mac-arm64"), true, false)
 configureBundleTarTask("bundleLinuxTar", "linux", tasks.named("fetchJdkLinux"), file("$jdkCacheDir/linux-x64"), true)
 configureBundleTarTask("bundleMacArm64Tar", "mac", tasks.named("fetchJdkMacArm64"), file("$jdkCacheDir/mac-arm64"), true)
+tasks.register("bundleLinuxAppImage") {
+  dependsOn "bundleLinuxDir"
+  outputs.file rootProject.file("dist/octodraw-dist-${bundleVersion}-linux.AppImage")
+  doLast {
+    if (!os.contains("linux")) {
+      throw new GradleException("AppImage packaging is only supported on Linux hosts.")
+    }
+    def appImageToolPath = System.getenv("APPIMAGETOOL") ?: "appimagetool"
+    def probe = null
+    try {
+      probe = new ProcessBuilder(appImageToolPath, "--version")
+        .directory(project.projectDir)
+        .redirectErrorStream(true)
+        .start()
+      probe.inputStream.text
+    } catch (IOException ignored) {
+      probe = null
+    }
+    if (probe == null || probe.waitFor() != 0) {
+      throw new GradleException("appimagetool not found. Install appimagetool or set APPIMAGETOOL.")
+    }
+
+    def bundleDir = rootProject.file("dist/octodraw-dist-${bundleVersion}-linux")
+    if (!bundleDir.exists()) {
+      throw new GradleException("Linux bundle directory not found: ${bundleDir}")
+    }
+
+    def appDir = file("$buildDir/appimage/Octodraw.AppDir")
+    def outFile = rootProject.file("dist/octodraw-dist-${bundleVersion}-linux.AppImage")
+    project.delete(appDir)
+    project.delete(outFile)
+
+    def payloadDir = new File(appDir, "usr/lib/octodraw")
+    def binDir = new File(appDir, "usr/bin")
+    def applicationsDir = new File(appDir, "usr/share/applications")
+    def iconDir = new File(appDir, "usr/share/icons/hicolor/512x512/apps")
+    [payloadDir, binDir, applicationsDir, iconDir].each { it.mkdirs() }
+
+    project.copy {
+      from(bundleDir)
+      into(payloadDir)
+    }
+
+    def launcher = new File(binDir, "octodraw")
+    launcher.text = """#!/bin/sh
+set -eu
+HERE="\$(CDPATH= cd -- "\$(dirname -- "\$0")" && pwd)"
+APPDIR="\$(CDPATH= cd -- "\$HERE/../.." && pwd)"
+exec "\$APPDIR/usr/lib/octodraw/octodraw-jre" "\$@"
+"""
+    launcher.setExecutable(true, false)
+
+    def appRun = new File(appDir, "AppRun")
+    appRun.text = """#!/bin/sh
+set -eu
+HERE="\$(CDPATH= cd -- "\$(dirname -- "\$0")" && pwd)"
+exec "\$HERE/usr/bin/octodraw" "\$@"
+"""
+    appRun.setExecutable(true, false)
+
+    def desktopEntry = """[Desktop Entry]
+Name=Octodraw
+Comment=3D drafting and modeling tool
+Exec=octodraw %U
+Icon=octodraw
+Terminal=false
+Type=Application
+Categories=Graphics;3DGraphics;Engineering;
+MimeType=application/octet-stream;
+StartupWMClass=Octodraw
+"""
+    new File(appDir, "octodraw.desktop").text = desktopEntry
+    new File(applicationsDir, "octodraw.desktop").text = desktopEntry
+
+    def iconSource = rootProject.file("assets/appicon_512x512.png")
+    if (!iconSource.exists()) {
+      iconSource = rootProject.file("assets/appicon.png")
+    }
+    project.copy {
+      from(iconSource)
+      into(appDir)
+      rename { "octodraw.png" }
+    }
+    project.copy {
+      from(iconSource)
+      into(iconDir)
+      rename { "octodraw.png" }
+    }
+
+    ensureUnixRuntimeExecutables(payloadDir)
+
+    def pack = new ProcessBuilder(appImageToolPath, appDir.absolutePath, outFile.absolutePath)
+      .directory(rootProject.projectDir)
+      .inheritIO()
+    pack.environment().put("ARCH", "x86_64")
+    if (appImageToolPath.endsWith(".AppImage")) {
+      pack.environment().put("APPIMAGE_EXTRACT_AND_RUN", "1")
+    }
+    def process = pack.start()
+    if (process.waitFor() != 0) {
+      throw new GradleException("appimagetool failed while building ${outFile.name}.")
+    }
+  }
+}
 
 tasks.register("bundleLinuxSnap") {
   outputs.file rootProject.file("dist/octodraw-dist-${bundleVersion}-linux.snap")

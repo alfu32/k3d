@@ -27,13 +27,22 @@ jobs:
         with:
           distribution: "temurin"
           java-version: "21"
+      - name: Fetch appimagetool
+        run: |
+          set -euo pipefail
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool.AppImage" \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool.AppImage"
       - name: Build Linux bundle + JVM jars
-        run: ./gradlew :lwjgl3:bundleLinuxTar :lwjgl3:jarLinux :core:pluginApiJar -PreleaseNumber="${{ inputs.tag }}"
+        env:
+          APPIMAGETOOL: ${{ runner.temp }}/appimagetool.AppImage
+        run: ./gradlew :lwjgl3:bundleLinuxTar :lwjgl3:bundleLinuxAppImage :lwjgl3:jarLinux :core:pluginApiJar -PreleaseNumber="${{ inputs.tag }}"
       - uses: actions/upload-artifact@v4
         with:
           name: octodraw-linux
           path: |
             dist/*.tar.gz
+            dist/*.AppImage
             lwjgl3/build/libs/*.jar
             core/build/libs/octodraw-plugin*.jar
 
@@ -369,7 +378,7 @@ jobs:
           else
             gh release edit "$TAG" --draft="$DRAFT" --prerelease="$PRERELEASE"
           fi
-          files=$(find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.snap" -o -name "*.jar" -o -name "*.msi" -o -name "*.msix" -o -name "*.apk" -o -name "*.aab" \))
+          files=$(find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.AppImage" -o -name "*.snap" -o -name "*.jar" -o -name "*.msi" -o -name "*.msix" -o -name "*.apk" -o -name "*.aab" \))
           if [ -z "$files" ]; then
             echo "No release artifacts found."
             exit 1
