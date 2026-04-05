@@ -7,6 +7,7 @@ description: |
   Octodraw is a 3D drafting and modeling application packaged directly
   from the repository Gradle build. The snap ships the fat desktop jar,
   runtime assets, tutorials, and a bundled JRE 21 built with jlink.
+icon: snap/gui/icon.png
 
 grade: devel
 confinement: strict
@@ -46,6 +47,7 @@ parts:
     stage-packages:
       - libharfbuzz0b
       - libasound2t64
+      - libgif7
       - libdrm2
       - libegl1
       - libgbm1
@@ -53,6 +55,8 @@ parts:
       - libgl1-mesa-dri
       - libglx-mesa0
       - libglu1-mesa
+      - libjpeg-turbo8
+      - liblcms2-2
       - libwayland-client0
       - libwayland-cursor0
       - libwayland-egl1
@@ -65,6 +69,7 @@ parts:
       - libxkbcommon0
       - libxrandr2
       - libxrender1
+      - libxtst6
       - libxxf86vm1
     override-build: |
       set -eux

@@ -2,7 +2,7 @@
 Name=Octodraw
 Comment=3D drafting and modeling tool
 Exec=octodraw %U
-Icon=${SNAP}/meta/gui/icon.png
+Icon=snap/gui/icon.png
 Terminal=false
 Type=Application
 Categories=Graphics;3DGraphics;Engineering;
