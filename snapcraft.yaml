@@ -97,6 +97,7 @@ parts:
       install -d "$CRAFT_PART_INSTALL/opt/octodraw"
       install -d "$CRAFT_PART_INSTALL/opt/octodraw/plugins"
       install -d "$CRAFT_PART_INSTALL/bin"
+      install -d "$CRAFT_PART_INSTALL/snap/gui"
       rm -rf "$CRAFT_PART_INSTALL/opt/octodraw/runtime"
 
       "$JAVA_HOME/bin/jlink" \
@@ -114,6 +115,8 @@ parts:
         install -d "$CRAFT_PART_INSTALL/opt/octodraw/tutorials"
         cp -a docs/tutorial/. "$CRAFT_PART_INSTALL/opt/octodraw/tutorials/"
       fi
+      install -m 0644 snap/gui/octodraw.desktop "$CRAFT_PART_INSTALL/snap/gui/octodraw.desktop"
+      install -m 0644 snap/gui/icon.png "$CRAFT_PART_INSTALL/snap/gui/icon.png"
       cat > "$CRAFT_PART_INSTALL/bin/octodraw" <<'EOF'
       #!/bin/sh
       set -eu
