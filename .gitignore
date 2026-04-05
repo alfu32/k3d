@@ -172,4 +172,4 @@ Thumbs.db
 **/resource-config.json
 /core/src/main/kotlin/com/github/alfu32/sketch/K3DVersion.kt
 /.secrets/
-
+*.snap

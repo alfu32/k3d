@@ -77,6 +77,7 @@ parts:
       export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")"
       export GRADLE_USER_HOME="$CRAFT_PART_BUILD/.gradle"
       export PATH="$JAVA_HOME/bin:$PATH"
+      SNAP_VERSION="${OCTODRAW_SNAP_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0)}"
 
       if [ -d .gradle-user/wrapper/dists ]; then
         install -d "$GRADLE_USER_HOME/wrapper"
@@ -84,9 +85,12 @@ parts:
       fi
 
       chmod 755 ./gradlew
-      ./gradlew --no-daemon generateAssetList :lwjgl3:jar
+      ./gradlew --no-daemon -PreleaseNumber="$SNAP_VERSION" generateAssetList :lwjgl3:jar
 
-      APP_JAR="$(find lwjgl3/build/libs -maxdepth 1 -type f -name 'octodraw-*.jar' ! -name '*-linux.jar' ! -name '*-mac.jar' ! -name '*-win.jar' | head -n 1)"
+      APP_JAR="lwjgl3/build/libs/octodraw-$SNAP_VERSION.jar"
+      if [ ! -f "$APP_JAR" ]; then
+        APP_JAR="$(find lwjgl3/build/libs -maxdepth 1 -type f -name 'octodraw-*.jar' ! -name '*-linux.jar' ! -name '*-mac.jar' ! -name '*-win.jar' -printf '%T@ %p\n' | sort -nr | awk 'NR==1 {print $2}')"
+      fi
       if [ -z "$APP_JAR" ]; then
         echo "Unable to locate built desktop jar." >&2
         exit 1
@@ -149,4 +153,4 @@ parts:
       EOF
       chmod 755 "$CRAFT_PART_INSTALL/bin/octodraw"
 
-      craftctl set version="${OCTODRAW_SNAP_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0)}"
+      craftctl set version="$SNAP_VERSION"
