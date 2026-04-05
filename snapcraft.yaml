@@ -87,11 +87,12 @@ parts:
         exit 1
       fi
 
-      MODULES="$("$JAVA_HOME/bin/jdeps" \
+      MODULES_RAW="$("$JAVA_HOME/bin/jdeps" \
         --ignore-missing-deps \
         --multi-release 21 \
         --print-module-deps \
         "$APP_JAR"),jdk.crypto.ec,jdk.unsupported"
+      MODULES="$(printf '%s\n' "$MODULES_RAW" | tr ',' '\n' | sed '/^$/d' | sort -u | paste -sd, -)"
 
       install -d "$CRAFT_PART_INSTALL/opt/octodraw"
       install -d "$CRAFT_PART_INSTALL/opt/octodraw/plugins"
