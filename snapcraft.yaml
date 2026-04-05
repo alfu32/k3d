@@ -6,11 +6,10 @@ summary: 3D drafting and modeling tool
 description: |
   Octodraw is a 3D drafting and modeling application packaged directly
   from the repository Gradle build. The snap ships the fat desktop jar,
-  runtime assets, tutorials, plugin API jar, and a bundled JRE 21 built
-  with jlink.
+  runtime assets, tutorials, and a bundled JRE 21 built with jlink.
 
 grade: devel
-confinement: devmode
+confinement: strict
 
 platforms:
   amd64:
@@ -21,8 +20,13 @@ apps:
     command: bin/octodraw
     desktop: snap/gui/octodraw.desktop
     environment:
+      OCTODRAW_HOME: $SNAP_USER_COMMON
+      K3D_HOME: $SNAP_USER_COMMON
       OCTODRAW_PLUGINS_DIR: $SNAP_USER_COMMON/plugins
+      K3D_PLUGINS_DIR: $SNAP_USER_COMMON/plugins
     plugs:
+      - desktop
+      - desktop-legacy
       - home
       - removable-media
       - network

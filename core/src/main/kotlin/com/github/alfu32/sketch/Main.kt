@@ -8609,6 +8609,11 @@ class Main(
                 java.io.File(System.getProperty("user.home", ".")).absoluteFile
             }
         }
+        val envHome = System.getenv("OCTODRAW_HOME")?.trim().orEmpty()
+            .ifBlank { System.getenv("K3D_HOME")?.trim().orEmpty() }
+        if (envHome.isNotBlank()) {
+            return java.io.File(envHome).absoluteFile
+        }
         val localAppData = System.getenv("LOCALAPPDATA")?.trim().orEmpty()
         if (localAppData.isNotBlank()) {
             return java.io.File(localAppData, "Octodraw").absoluteFile
