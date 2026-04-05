@@ -264,10 +264,32 @@ if [[ -n "\${OCTODRAW_JAVA_OPTS:-}" ]]; then
 else
   JAVA_OPTS=("\${DEFAULT_JAVA_OPTS[@]}")
 fi
+APP_HOME="\${OCTODRAW_HOME:-\${K3D_HOME:-}}"
+if [[ -z "\$APP_HOME" ]]; then
+  if [[ -n "\${XDG_DATA_HOME:-}" ]]; then
+    APP_HOME="\$XDG_DATA_HOME/octodraw"
+  elif [[ -n "\${HOME:-}" ]]; then
+    APP_HOME="\$HOME/.local/share/octodraw"
+  else
+    APP_HOME="\$INSTALL_PATH"
+  fi
+fi
+mkdir -p "\$APP_HOME"
+export OCTODRAW_HOME="\$APP_HOME"
+if [[ -z "\${K3D_HOME:-}" ]]; then
+  export K3D_HOME="\$APP_HOME"
+fi
 PLUGINS_DIR="\${OCTODRAW_PLUGINS_DIR:-\${K3D_PLUGINS_DIR:-}}"
 if [[ -z "\$PLUGINS_DIR" ]]; then
-  PLUGINS_DIR="\$INSTALL_PATH/plugins"
+  if [[ -d "\$INSTALL_PATH/plugins" && -w "\$INSTALL_PATH/plugins" ]]; then
+    PLUGINS_DIR="\$INSTALL_PATH/plugins"
+  elif [[ ! -e "\$INSTALL_PATH/plugins" && -w "\$INSTALL_PATH" ]]; then
+    PLUGINS_DIR="\$INSTALL_PATH/plugins"
+  else
+    PLUGINS_DIR="\$APP_HOME/plugins"
+  fi
 fi
+mkdir -p "\$PLUGINS_DIR"
 if [[ -z "\${1-}" ]]; then
   java "\${JAVA_OPTS[@]}" -jar "\$INSTALL_PATH/octodraw-editor.jar" edit --plugins-dir "\$PLUGINS_DIR"
   exit \$?
@@ -299,10 +321,32 @@ if [[ -n "\${OCTODRAW_JAVA_OPTS:-}" ]]; then
 else
   JAVA_OPTS=("\${DEFAULT_JAVA_OPTS[@]}")
 fi
+APP_HOME="\${OCTODRAW_HOME:-\${K3D_HOME:-}}"
+if [[ -z "\$APP_HOME" ]]; then
+  if [[ -n "\${XDG_DATA_HOME:-}" ]]; then
+    APP_HOME="\$XDG_DATA_HOME/octodraw"
+  elif [[ -n "\${HOME:-}" ]]; then
+    APP_HOME="\$HOME/.local/share/octodraw"
+  else
+    APP_HOME="\$INSTALL_PATH"
+  fi
+fi
+mkdir -p "\$APP_HOME"
+export OCTODRAW_HOME="\$APP_HOME"
+if [[ -z "\${K3D_HOME:-}" ]]; then
+  export K3D_HOME="\$APP_HOME"
+fi
 PLUGINS_DIR="\${OCTODRAW_PLUGINS_DIR:-\${K3D_PLUGINS_DIR:-}}"
 if [[ -z "\$PLUGINS_DIR" ]]; then
-  PLUGINS_DIR="\$INSTALL_PATH/plugins"
+  if [[ -d "\$INSTALL_PATH/plugins" && -w "\$INSTALL_PATH/plugins" ]]; then
+    PLUGINS_DIR="\$INSTALL_PATH/plugins"
+  elif [[ ! -e "\$INSTALL_PATH/plugins" && -w "\$INSTALL_PATH" ]]; then
+    PLUGINS_DIR="\$INSTALL_PATH/plugins"
+  else
+    PLUGINS_DIR="\$APP_HOME/plugins"
+  fi
 fi
+mkdir -p "\$PLUGINS_DIR"
 if [[ -z "\${1-}" ]]; then
   "\$JAVA_BIN" "\${JAVA_OPTS[@]}" -jar "\$INSTALL_PATH/octodraw-editor.jar" edit --plugins-dir "\$PLUGINS_DIR"
   exit \$?

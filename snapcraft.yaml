@@ -97,6 +97,7 @@ parts:
       install -d "$CRAFT_PART_INSTALL/opt/octodraw"
       install -d "$CRAFT_PART_INSTALL/opt/octodraw/plugins"
       install -d "$CRAFT_PART_INSTALL/bin"
+      rm -rf "$CRAFT_PART_INSTALL/opt/octodraw/runtime"
 
       "$JAVA_HOME/bin/jlink" \
         --add-modules "$MODULES" \
