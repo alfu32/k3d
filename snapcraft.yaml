@@ -25,6 +25,7 @@ apps:
       K3D_HOME: $SNAP_USER_COMMON
       OCTODRAW_PLUGINS_DIR: $SNAP_USER_COMMON/plugins
       K3D_PLUGINS_DIR: $SNAP_USER_COMMON/plugins
+      ALSA_CONFIG_PATH: $SNAP/usr/share/alsa/alsa.conf
     plugs:
       - desktop
       - desktop-legacy
@@ -47,14 +48,19 @@ parts:
     stage-packages:
       - libharfbuzz0b
       - libasound2t64
+      - libasound2-data
+      - alsa-topology-conf
+      - alsa-ucm-conf
       - libgif7
       - libdrm2
       - libegl1
       - libgbm1
       - libgl1
+      - libgles2
       - libgl1-mesa-dri
       - libglx-mesa0
       - libglu1-mesa
+      - libopengl0
       - libjpeg-turbo8
       - liblcms2-2
       - libwayland-client0
@@ -132,6 +138,11 @@ parts:
 
       INSTALL_PATH="$SNAP/opt/octodraw"
       JAVA_BIN="$INSTALL_PATH/runtime/bin/java"
+      RUNTIME_HOME="${OCTODRAW_HOME:-${K3D_HOME:-$SNAP_USER_COMMON}}"
+      mkdir -p "$RUNTIME_HOME" "$RUNTIME_HOME/.prefs" "$RUNTIME_HOME/.config"
+      export HOME="$RUNTIME_HOME"
+      export XDG_DATA_HOME="$RUNTIME_HOME"
+      export XDG_CONFIG_HOME="$RUNTIME_HOME/.config"
       PLUGINS_DIR="${OCTODRAW_PLUGINS_DIR:-${K3D_PLUGINS_DIR:-}}"
       if [ -z "$PLUGINS_DIR" ]; then
         PLUGINS_DIR="$SNAP_USER_COMMON/plugins"
@@ -139,15 +150,15 @@ parts:
       mkdir -p "$PLUGINS_DIR"
 
       if [ -z "${1-}" ]; then
-        exec "$JAVA_BIN" -jar "$INSTALL_PATH/octodraw-editor.jar" edit --plugins-dir "$PLUGINS_DIR"
+        exec "$JAVA_BIN" -Duser.home="$RUNTIME_HOME" -jar "$INSTALL_PATH/octodraw-editor.jar" edit --plugins-dir "$PLUGINS_DIR"
       fi
 
       case "$1" in
         edit|version|update|help)
-          exec "$JAVA_BIN" -jar "$INSTALL_PATH/octodraw-editor.jar" "$@" --plugins-dir "$PLUGINS_DIR"
+          exec "$JAVA_BIN" -Duser.home="$RUNTIME_HOME" -jar "$INSTALL_PATH/octodraw-editor.jar" "$@" --plugins-dir "$PLUGINS_DIR"
           ;;
         *)
-          exec "$JAVA_BIN" -jar "$INSTALL_PATH/octodraw-editor.jar" edit --file "$1" --plugins-dir "$PLUGINS_DIR"
+          exec "$JAVA_BIN" -Duser.home="$RUNTIME_HOME" -jar "$INSTALL_PATH/octodraw-editor.jar" edit --file "$1" --plugins-dir "$PLUGINS_DIR"
           ;;
       esac
       EOF

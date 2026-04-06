@@ -17,6 +17,7 @@ fun main(args: Array<String>) {
       return
     val commandArgs = handleCommand(args) ?: return
     val (width, height) = parseSize(args)
+    val osName = System.getProperty("os.name")?.lowercase().orEmpty()
     Lwjgl3Application(Main(commandArgs), Lwjgl3ApplicationConfiguration().apply {
         var ver = K3DVersion()
         setTitle("Octodraw 3D ${preferVersion(ver)}")
@@ -40,7 +41,9 @@ fun main(args: Array<String>) {
         //// This uses the dependency `com.badlogicgames.gdx:gdx-lwjgl3-angle` to function.
         //// You can choose to remove the following line and the mentioned dependency if you want; they
         //// are not intended for games that use GL30 (which is compatibility with OpenGL ES 3.0).
-        setOpenGLEmulation(Lwjgl3ApplicationConfiguration.GLEmulation.ANGLE_GLES20, 0, 0)
+        if (osName.contains("win") || osName.contains("mac")) {
+            setOpenGLEmulation(Lwjgl3ApplicationConfiguration.GLEmulation.ANGLE_GLES20, 0, 0)
+        }
 
     })
 }
