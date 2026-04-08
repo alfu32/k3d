@@ -52,6 +52,7 @@ def resolveGitValue = { List<String> args ->
 tasks.register('generateK3DVersion') {
   def outFile = file("src/main/kotlin/com/github/alfu32/sketch/K3DVersion.kt")
   outputs.file(outFile)
+  outputs.upToDateWhen { false }
   doLast {
     def commit = resolveGitValue(["git", "rev-parse", "HEAD"])
     def branch = resolveGitValue(["git", "branch", "--show-current"])

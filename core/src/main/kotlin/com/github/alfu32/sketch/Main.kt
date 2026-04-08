@@ -150,10 +150,11 @@ import com.github.alfu32.sketch.tools.VoxelVolumeTool
 import com.github.alfu32.sketch.tutorial.TutorialManager
 import com.github.alfu32.sketch.tutorial.TutorialMode
 import com.github.alfu32.sketch.tutorial.TutorialUiState
-import com.github.alfu32.sketch.ui.SketchUiOverlay
+import com.github.alfu32.sketch.ui.PermanentGridNormalAxis
 import com.github.alfu32.sketch.ui.LightingSettings
 import com.github.alfu32.sketch.ui.CameraMode
 import com.github.alfu32.sketch.ui.ShadowSettings
+import com.github.alfu32.sketch.ui.SketchUiOverlay
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.ToolController
 import com.github.alfu32.sketch.ui.ToolId
@@ -292,6 +293,8 @@ class Main(
     private val selectedLineWidth = 8f
     private val normalLineWidthPrefKey = "ui.normal_line_width"
     private val feedbackLineWidthPrefKey = "ui.feedback_line_width"
+    private val permanentGridVisiblePrefKey = "ui.permanent_grid_visible"
+    private val permanentGridNormalPrefKey = "ui.permanent_grid_normal_axis"
     private lateinit var toolController: ToolController
     private lateinit var toolInput: ToolInputProcessor
     private lateinit var uiOverlay: SketchUiOverlay
@@ -333,6 +336,8 @@ class Main(
     private var groundPlaneSize = minimumGroundPlaneSize
     private var normalOverlayLineWidth = 1f
     private var feedbackOverlayLineWidth = 3f
+    private var permanentGridVisible = true
+    private var permanentGridNormalAxis = PermanentGridNormalAxis.Y_UP
     private var visibleRenderableGroupIds = emptySet<String>()
     private var shadowModelTrackedEdgeCount = -1
     private var shadowModelTrackedFaceCount = -1
@@ -708,6 +713,10 @@ class Main(
         renderResolutionDivisor = defaultOfflineRenderResolutionDivisor()
         normalOverlayLineWidth = runtimePrefs.getFloat(normalLineWidthPrefKey, normalOverlayLineWidth).coerceIn(1f, 8f)
         feedbackOverlayLineWidth = runtimePrefs.getFloat(feedbackLineWidthPrefKey, feedbackOverlayLineWidth).coerceIn(1f, 16f)
+        permanentGridVisible = runtimePrefs.getBoolean(permanentGridVisiblePrefKey, permanentGridVisible)
+        permanentGridNormalAxis = PermanentGridNormalAxis.fromPrefValue(
+            runtimePrefs.getString(permanentGridNormalPrefKey, permanentGridNormalAxis.prefValue)
+        )
         scene = GroupScene(Color(0.8f, 0.8f, 0.8f, 1f))
         vectorGlyphCatalog = loadVectorGlyphCatalog(vectorTextSettings.glyphSourcePath)
         modelCleanup = ModelCleanup(scene)
@@ -1005,6 +1014,8 @@ class Main(
             ::updateRenderCameraLightIntensity,
             ::updateNormalOverlayLineWidth,
             ::updateFeedbackOverlayLineWidth,
+            ::updatePermanentGridVisible,
+            ::updatePermanentGridNormalAxis,
             ::tutorialUiState,
             ::startTutorialRecording,
             ::stopTutorialRecording,
@@ -2842,11 +2853,14 @@ class Main(
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
 
-        setLineWidth(2f)
-        shapeRenderer.projectionMatrix = activeCamera.combined
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
-        drawGrid(baseGridHalfSize, gridSpacing)
-        shapeRenderer.end()
+        if (permanentGridVisible) {
+            applyNormalLineWidth()
+            shapeRenderer.projectionMatrix = activeCamera.combined
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
+            drawGrid(baseGridHalfSize, gridSpacing)
+            shapeRenderer.end()
+            resetLineWidth()
+        }
 
         modelBatch.begin(activeCamera)
         modelBatch.render(faceBackRenderable, environment)
@@ -2862,6 +2876,7 @@ class Main(
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
         Gdx.gl.glDepthMask(true)
 
+        applyNormalLineWidth()
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         drawAxes(2.5f)
         drawActiveGroupAxes(1.8f)
@@ -2876,6 +2891,7 @@ class Main(
         drawDimensions()
         toolController.render(shapeRenderer)
         shapeRenderer.end()
+        resetLineWidth()
 
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
         Gdx.gl.glEnable(GL20.GL_BLEND)
@@ -2901,7 +2917,7 @@ class Main(
             shapeRenderer.color = Color(0.25f, 0.55f, 0.95f, 0.18f)
             shapeRenderer.rect(windowRect.x, windowRect.y, windowRect.width, windowRect.height)
             shapeRenderer.end()
-            applyNormalOverlayLineWidth()
+            applyNormalLineWidth()
             shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
             shapeRenderer.color = Color(0.25f, 0.55f, 0.95f, 0.9f)
             if (windowRect.dashed) {
@@ -2918,7 +2934,7 @@ class Main(
                 shapeRenderer.rect(windowRect.x, windowRect.y, windowRect.width, windowRect.height)
             }
             shapeRenderer.end()
-            resetNormalOverlayLineWidth()
+            resetLineWidth()
             Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
         }
 
@@ -2952,12 +2968,12 @@ class Main(
 
         shapeRenderer.projectionMatrix = uiOverlay.stage.camera.combined
         shapeRenderer.transformMatrix = Matrix4().idt()
-        applyNormalOverlayLineWidth()
+        applyNormalLineWidth()
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         shapeRenderer.color = Color(0.9f, 0.1f, 0.1f, 1f)
         shapeRenderer.line(start.x, start.y, base.x, base.y)
         shapeRenderer.end()
-        resetNormalOverlayLineWidth()
+        resetLineWidth()
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
         shapeRenderer.color = Color(0.9f, 0.1f, 0.1f, 1f)
@@ -3053,10 +3069,25 @@ class Main(
 
     private fun drawGrid(halfSize: Int, step: Float) {
         shapeRenderer.color = Color(0.35f, 0.35f, 0.35f, 1f)
+        val extent = halfSize * step
         for (i in -halfSize..halfSize) {
             val offset = i * step
-            shapeRenderer.line(-halfSize * step, 0f, offset, halfSize * step, 0f, offset)
-            shapeRenderer.line(offset, 0f, -halfSize * step, offset, 0f, halfSize * step)
+            when (permanentGridNormalAxis) {
+                PermanentGridNormalAxis.Y_UP -> {
+                    shapeRenderer.line(-extent, 0f, offset, extent, 0f, offset)
+                    shapeRenderer.line(offset, 0f, -extent, offset, 0f, extent)
+                }
+
+                PermanentGridNormalAxis.X_RIGHT -> {
+                    shapeRenderer.line(0f, -extent, offset, 0f, extent, offset)
+                    shapeRenderer.line(0f, offset, -extent, 0f, offset, extent)
+                }
+
+                PermanentGridNormalAxis.Z_BACK -> {
+                    shapeRenderer.line(-extent, offset, 0f, extent, offset, 0f)
+                    shapeRenderer.line(offset, -extent, 0f, offset, extent, 0f)
+                }
+            }
         }
     }
 
@@ -5941,18 +5972,16 @@ class Main(
         return text.take(head) + ".." + text.takeLast(tail)
     }
 
-    // Line width rendering is disabled for consistent behavior across platforms (notably Android).
     private fun setLineWidth(width: Float) {
-        @Suppress("UNUSED_VARIABLE")
-        val ignored = width
+        Gdx.gl.glLineWidth(width.coerceAtLeast(1f))
     }
 
-    private fun applyNormalOverlayLineWidth() {
-        Gdx.gl.glLineWidth(normalOverlayLineWidth)
+    private fun applyNormalLineWidth() {
+        setLineWidth(normalOverlayLineWidth)
     }
 
-    private fun resetNormalOverlayLineWidth() {
-        Gdx.gl.glLineWidth(1f)
+    private fun resetLineWidth() {
+        setLineWidth(1f)
     }
 
     private fun drawDraftLines() {
@@ -5982,7 +6011,7 @@ class Main(
                 }
                 val isSelected = selected.contains(segment)
                 shapeRenderer.color = if (isSelected) selectedLineColor else defaultColor
-                setLineWidth(if (isSelected) selectedLineWidth else 2f)
+                setLineWidth(if (isSelected) selectedLineWidth else normalOverlayLineWidth)
                 val start = group.toWorld(segment.start)
                 val end = group.toWorld(segment.end)
                 if (isSelected) {
@@ -6000,7 +6029,7 @@ class Main(
             }
             val isSelected = scene.root.lineStore.isSelected(segment)
             shapeRenderer.color = if (isSelected) selectedLineColor else defaultColor
-            setLineWidth(if (isSelected) selectedLineWidth else 2f)
+            setLineWidth(if (isSelected) selectedLineWidth else normalOverlayLineWidth)
             if (isSelected) {
                 drawDashedLine(segment.start, segment.end, 0.4f, 0.25f)
             } else {
@@ -6011,10 +6040,10 @@ class Main(
         }
         scene.collectActivePrototypeWorldLines { start, end ->
             shapeRenderer.color = prototypeGuideLineColor
-            setLineWidth(2f)
+            applyNormalLineWidth()
             drawDashedLine(start, end, 0.2f, 0.2f)
         }
-        setLineWidth(2f)
+        applyNormalLineWidth()
     }
 
     private fun drawArchitectureHoleGuides() {
@@ -6045,7 +6074,7 @@ class Main(
         shapeRenderer.color = architectureHoleGuideColor
         setLineWidth(3f)
         guides.forEach { (a, b) -> shapeRenderer.line(a, b) }
-        setLineWidth(2f)
+        applyNormalLineWidth()
     }
 
     private fun drawArchitectureWallEndpointHitAreas() {
@@ -6083,7 +6112,7 @@ class Main(
         shapeRenderer.color = architectureHoleHotspotColor
         holeMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.world, 0.18f) }
         slabHoleMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.world, 0.18f) }
-        setLineWidth(2f)
+        applyNormalLineWidth()
     }
 
     private fun drawArchitectureConstructionHotspots() {
@@ -6112,7 +6141,7 @@ class Main(
         frameMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.world, hotspotSize) }
         shapeRenderer.color = architectureHoleHotspotColor
         holeMarkers.forEach { marker -> drawArchitectureHandleSquare(marker.world, hotspotSize) }
-        setLineWidth(2f)
+        applyNormalLineWidth()
     }
 
     private fun drawHvacControlPoints() {
@@ -6136,7 +6165,7 @@ class Main(
             }
             drawArchitectureHandleSquare(marker.center, marker.halfSize)
         }
-        setLineWidth(2f)
+        applyNormalLineWidth()
     }
 
     private fun drawArchitectureHandleSquare(center: Vector3, halfSize: Float) {
@@ -6198,7 +6227,7 @@ class Main(
                 Vector3(lineEnd).mulAdd(slashDir, slashLen * 0.5f)
             )
         }
-        setLineWidth(2f)
+        applyNormalLineWidth()
     }
 
     private fun drawAnnotations2D() {
@@ -6285,7 +6314,7 @@ class Main(
             shapeRenderer.circle(screen.x, screen.y, marker.radiusPx, 20)
         }
         shapeRenderer.end()
-        applyNormalOverlayLineWidth()
+        applyNormalLineWidth()
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         markers.forEach { marker ->
             val screen = activeCamera.project(Vector3(marker.world))
@@ -6317,7 +6346,7 @@ class Main(
             shapeRenderer.circle(screen.x, screen.y, marker.radiusPx + 1f, 20)
         }
         shapeRenderer.end()
-        resetNormalOverlayLineWidth()
+        resetLineWidth()
     }
 
     private fun drawSelectedSegments2DOverlay() {
@@ -6995,7 +7024,7 @@ class Main(
             shapeRenderer.color = line.color
             shapeRenderer.line(line.start, line.end)
         }
-        setLineWidth(2f)
+        applyNormalLineWidth()
     }
 
     private fun drawSelectionHighlights() {
@@ -9803,6 +9832,18 @@ class Main(
     private fun updateFeedbackOverlayLineWidth(width: Float) {
         feedbackOverlayLineWidth = width.coerceIn(1f, 16f)
         runtimePrefs.putFloat(feedbackLineWidthPrefKey, feedbackOverlayLineWidth)
+        runtimePrefs.flush()
+    }
+
+    private fun updatePermanentGridVisible(visible: Boolean) {
+        permanentGridVisible = visible
+        runtimePrefs.putBoolean(permanentGridVisiblePrefKey, permanentGridVisible)
+        runtimePrefs.flush()
+    }
+
+    private fun updatePermanentGridNormalAxis(axis: PermanentGridNormalAxis) {
+        permanentGridNormalAxis = axis
+        runtimePrefs.putString(permanentGridNormalPrefKey, permanentGridNormalAxis.prefValue)
         runtimePrefs.flush()
     }
 

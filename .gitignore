@@ -173,3 +173,4 @@ Thumbs.db
 /core/src/main/kotlin/com/github/alfu32/sketch/K3DVersion.kt
 /.secrets/
 *.snap
+/appimagetool-x86_64.AppImage
