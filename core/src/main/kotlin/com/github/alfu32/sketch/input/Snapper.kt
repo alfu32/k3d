@@ -16,6 +16,14 @@ class Snapper(
     private var camera: Camera,
     private val scene: GroupScene,
     private val guideManager: GuideManager,
+    private val defaultGridPlaneProvider: () -> GuideManager.GuideBasis = {
+        GuideManager.GuideBasis(
+            Vector3(0f, 0f, 0f),
+            Vector3(1f, 0f, 0f),
+            Vector3(0f, 0f, 1f),
+            Vector3(0f, 1f, 0f)
+        )
+    },
     private val lineSnapVisible: ((GroupScene.GroupNode, DraftLineStore.Segment) -> Boolean)? = null,
     private val faceSnapVisible: ((GroupScene.GroupNode, DraftFaceStore.Triangle) -> Boolean)? = null,
     initialGridSpacing: Float = 1f,
@@ -118,7 +126,7 @@ class Snapper(
                 best = pickBetter(best, candidate)
             }
         } else {
-            val fallbackNormal = facingNormal(Vector3(0f, 1f, 0f), ray.direction)
+            val fallbackNormal = facingNormal(Vector3(defaultGridPlaneProvider().axisW), ray.direction)
             snapToLineEndpointsAllGroups(fallbackNormal, screenX, screenY, ray, group)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
@@ -159,22 +167,13 @@ class Snapper(
         return SnapResult(candidate.world, candidate.normal, candidate.type, screenX, screenY, true)
     }
 
-    private fun intersectGround(ray: com.badlogic.gdx.math.collision.Ray): PlaneHit? {
-        val dirY = ray.direction.y
-        if (abs(dirY) < epsilon) {
-            return null
-        }
-        val t = -ray.origin.y / dirY
-        if (t <= 0f) {
-            return null
-        }
-        val point = Vector3(ray.origin).mulAdd(ray.direction, t)
-        val normal = facingNormal(Vector3(0f, 1f, 0f), ray.direction)
-        return PlaneHit(point, normal, t)
+    private fun intersectDefaultGridPlane(ray: com.badlogic.gdx.math.collision.Ray): PlaneHit? {
+        val plane = defaultGridPlaneProvider()
+        return intersectPlane(ray, plane.origin, plane.axisW)
     }
 
     private fun pickBaseHit(ray: com.badlogic.gdx.math.collision.Ray): PlaneHit? {
-        var best = intersectGround(ray)
+        var best = intersectDefaultGridPlane(ray)
         val guides = guideManager.getGridGuides()
         for (guide in guides) {
             val planes = listOf(
@@ -723,8 +722,10 @@ class Snapper(
     }
 
     private fun isSupportedGuidePoint(point: Vector3): Boolean {
-        val groundTolerance = max(1e-3f, gridSpacing * 0.05f)
-        if (abs(point.y) <= groundTolerance) {
+        val plane = defaultGridPlaneProvider()
+        val gridPlaneTolerance = max(1e-3f, gridSpacing * 0.05f)
+        val planeDistance = abs(Vector3(point).sub(plane.origin).dot(plane.axisW))
+        if (planeDistance <= gridPlaneTolerance) {
             return true
         }
         val featureTolerance = max(5e-2f, gridSpacing * 0.15f)

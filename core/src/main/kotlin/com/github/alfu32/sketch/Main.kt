@@ -290,6 +290,10 @@ class Main(
     private val prototypeGuideLineColor = Color(0.2f, 0.65f, 1f, 1f)
     private val selectedEntityBoxColor = Color(0.2f, 0.7f, 0.95f, 1f)
     private val editModeBoxColor = Color(1f, 0.6f, 0.2f, 1f)
+    private val permanentGridMinorLineColor = Color(0.35f, 0.35f, 0.35f, 1f)
+    private val permanentGridFifthLineColor = Color(0.2f, 0.6f, 0.2f, 1f)
+    private val permanentGridTenthLineColor = Color(0.72f, 0.2f, 0.2f, 1f)
+    private val permanentGridOriginLineColor = Color(0.05f, 0.05f, 0.05f, 1f)
     private val selectedLineWidth = 8f
     private val normalLineWidthPrefKey = "ui.normal_line_width"
     private val feedbackLineWidthPrefKey = "ui.feedback_line_width"
@@ -725,6 +729,7 @@ class Main(
             activeCamera,
             scene,
             guideManager,
+            defaultGridPlaneProvider = ::currentPermanentGridGuideBasis,
             lineSnapVisible = ::isLineSnapVisibleForSnapping,
             faceSnapVisible = ::isFaceVisibleForSnapping,
             initialGridSpacing = gridSpacing,
@@ -2853,14 +2858,19 @@ class Main(
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
 
+        resetLineWidth()
+        shapeRenderer.projectionMatrix = activeCamera.combined
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         if (permanentGridVisible) {
-            applyNormalLineWidth()
-            shapeRenderer.projectionMatrix = activeCamera.combined
-            shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
             drawGrid(baseGridHalfSize, gridSpacing)
-            shapeRenderer.end()
-            resetLineWidth()
         }
+        drawAxes(2.5f)
+        drawActiveGroupAxes(1.8f)
+        drawCameraTarget(1f)
+        drawGuides()
+        drawAdaptiveGridPointCloud()
+        shapeRenderer.end()
+        resetLineWidth()
 
         modelBatch.begin(activeCamera)
         modelBatch.render(faceBackRenderable, environment)
@@ -2877,12 +2887,8 @@ class Main(
         Gdx.gl.glDepthMask(true)
 
         applyNormalLineWidth()
+        shapeRenderer.projectionMatrix = activeCamera.combined
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
-        drawAxes(2.5f)
-        drawActiveGroupAxes(1.8f)
-        drawCameraTarget(1f)
-        drawGuides()
-        drawAdaptiveGridPointCloud()
         drawSelectionHighlights()
         drawDraftLines()
         drawVectorTextEdges3D()
@@ -3068,27 +3074,65 @@ class Main(
     }
 
     private fun drawGrid(halfSize: Int, step: Float) {
-        shapeRenderer.color = Color(0.35f, 0.35f, 0.35f, 1f)
+        val basis = currentPermanentGridGuideBasis()
+        val origin = basis.origin
+        val axisU = basis.axisU
+        val axisV = basis.axisV
         val extent = halfSize * step
         for (i in -halfSize..halfSize) {
             val offset = i * step
-            when (permanentGridNormalAxis) {
-                PermanentGridNormalAxis.Y_UP -> {
-                    shapeRenderer.line(-extent, 0f, offset, extent, 0f, offset)
-                    shapeRenderer.line(offset, 0f, -extent, offset, 0f, extent)
-                }
-
-                PermanentGridNormalAxis.X_RIGHT -> {
-                    shapeRenderer.line(0f, -extent, offset, 0f, extent, offset)
-                    shapeRenderer.line(0f, offset, -extent, 0f, offset, extent)
-                }
-
-                PermanentGridNormalAxis.Z_BACK -> {
-                    shapeRenderer.line(-extent, offset, 0f, extent, offset, 0f)
-                    shapeRenderer.line(offset, -extent, 0f, offset, extent, 0f)
-                }
-            }
+            val color = permanentGridLineColor(i)
+            val startU = Vector3(origin).mulAdd(axisU, -extent).mulAdd(axisV, offset)
+            val endU = Vector3(origin).mulAdd(axisU, extent).mulAdd(axisV, offset)
+            val startV = Vector3(origin).mulAdd(axisV, -extent).mulAdd(axisU, offset)
+            val endV = Vector3(origin).mulAdd(axisV, extent).mulAdd(axisU, offset)
+            shapeRenderer.color = color
+            shapeRenderer.line(startU.x, startU.y, startU.z, endU.x, endU.y, endU.z)
+            shapeRenderer.color = color
+            shapeRenderer.line(startV.x, startV.y, startV.z, endV.x, endV.y, endV.z)
         }
+    }
+
+    private fun permanentGridLineColor(index: Int): Color {
+        val absIndex = kotlin.math.abs(index)
+        return when {
+            index == 0 -> permanentGridOriginLineColor
+            absIndex % 10 == 0 -> permanentGridTenthLineColor
+            absIndex % 5 == 0 -> permanentGridFifthLineColor
+            else -> permanentGridMinorLineColor
+        }
+    }
+
+    private fun currentPermanentGridGuideBasis(origin: Vector3 = Vector3.Zero): GuideManager.GuideBasis {
+        val normal = currentPermanentGridNormalVector()
+        val up = Vector3(0f, 1f, 0f)
+        val forward = Vector3(0f, 0f, 1f)
+
+        var axisV = projectVectorOntoPlane(up, normal)
+        if (axisV.len2() <= 1e-6f) {
+            axisV = projectVectorOntoPlane(forward, normal)
+        }
+        if (axisV.len2() <= 1e-6f) {
+            axisV = Vector3(1f, 0f, 0f)
+        } else {
+            axisV.nor()
+        }
+
+        val axisU = Vector3(axisV).crs(normal).nor()
+        return GuideManager.GuideBasis(Vector3(origin), axisU, axisV, normal)
+    }
+
+    private fun currentPermanentGridNormalVector(): Vector3 {
+        return when (permanentGridNormalAxis) {
+            PermanentGridNormalAxis.Y_UP -> Vector3(0f, 1f, 0f)
+            PermanentGridNormalAxis.X_RIGHT -> Vector3(1f, 0f, 0f)
+            PermanentGridNormalAxis.Z_BACK -> Vector3(0f, 0f, 1f)
+        }
+    }
+
+    private fun projectVectorOntoPlane(vector: Vector3, normal: Vector3): Vector3 {
+        val dot = vector.dot(normal)
+        return Vector3(vector).mulAdd(normal, -dot)
     }
 
     private fun drawAxes(length: Float) {
@@ -3255,19 +3299,25 @@ class Main(
             return
         }
         val snapCenter = snap.world ?: return
-        val snapNormal = (snap.normal ?: Vector3(0f, 1f, 0f)).cpy()
+        val snapNormal = (snap.normal ?: currentPermanentGridNormalVector()).cpy()
         if (snapNormal.len2() <= 1e-6f) {
             adaptiveGridCloudState = null
             return
         }
         snapNormal.nor()
         val baseExtent = baseGridHalfSize * gridSpacing
-        val onGround = kotlin.math.abs(snapCenter.y) <= gridSpacing * 0.2f
-        val nearBaseGridEdge = onGround &&
-            (kotlin.math.abs(snapCenter.x) >= baseExtent * 0.75f || kotlin.math.abs(snapCenter.z) >= baseExtent * 0.75f)
-        val outsideBaseGrid = !onGround ||
-            kotlin.math.abs(snapCenter.x) > baseExtent ||
-            kotlin.math.abs(snapCenter.z) > baseExtent
+        val baseGridBasis = currentPermanentGridGuideBasis()
+        val baseLocal = Vector3(snapCenter).sub(baseGridBasis.origin)
+        val basePlaneAlignment = kotlin.math.abs(snapNormal.dot(baseGridBasis.axisW))
+        val onBaseGridPlane = basePlaneAlignment >= 0.98f &&
+            kotlin.math.abs(baseLocal.dot(baseGridBasis.axisW)) <= gridSpacing * 0.2f
+        val baseU = baseLocal.dot(baseGridBasis.axisU)
+        val baseV = baseLocal.dot(baseGridBasis.axisV)
+        val nearBaseGridEdge = onBaseGridPlane &&
+            (kotlin.math.abs(baseU) >= baseExtent * 0.75f || kotlin.math.abs(baseV) >= baseExtent * 0.75f)
+        val outsideBaseGrid = !onBaseGridPlane ||
+            kotlin.math.abs(baseU) > baseExtent ||
+            kotlin.math.abs(baseV) > baseExtent
         val shouldActivate = nearBaseGridEdge || outsideBaseGrid || guideManager.hasGridGuides()
         if (!shouldActivate && adaptiveGridCloudState == null) {
             return
