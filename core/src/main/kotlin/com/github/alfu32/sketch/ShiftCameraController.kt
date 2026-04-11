@@ -93,7 +93,8 @@ class ShiftCameraController(
             return true
         }
         if (orbitRotating) {
-            orbitRotateMoved = true
+            rotatePositionAroundTarget(screenX, screenY)
+            return true
         }
         return super.touchDragged(screenX, screenY, pointer)
     }
@@ -228,6 +229,29 @@ class ShiftCameraController(
 
         target.set(camera.position).add(rotateView)
         camera.lookAt(target)
+        camera.update()
+    }
+
+    private fun rotatePositionAroundTarget(screenX: Int, screenY: Int) {
+        val width = Gdx.graphics.width.coerceAtLeast(1).toFloat()
+        val height = Gdx.graphics.height.coerceAtLeast(1).toFloat()
+        val deltaX = (screenX - lastRotateScreenX).toFloat() / width
+        val deltaY = (lastRotateScreenY - screenY).toFloat() / height
+        lastRotateScreenX = screenX
+        lastRotateScreenY = screenY
+        if (abs(deltaX) <= 1e-7f && abs(deltaY) <= 1e-7f) {
+            return
+        }
+        orbitRotateMoved = true
+
+        rotateAxis.set(camera.direction).crs(camera.up)
+        rotateAxis.y = 0f
+        if (rotateAxis.len2() > 1e-8f && abs(deltaY) > 1e-7f) {
+            camera.rotateAround(target, rotateAxis.nor(), deltaY * rotateAngle)
+        }
+        if (abs(deltaX) > 1e-7f) {
+            camera.rotateAround(target, Vector3.Y, deltaX * -rotateAngle)
+        }
         camera.update()
     }
 
