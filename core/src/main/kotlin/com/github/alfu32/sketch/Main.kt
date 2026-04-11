@@ -185,7 +185,7 @@ import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /** [com.badlogic.gdx.ApplicationListener] implementation shared by all platforms. */
-class Main(
+class Main @JvmOverloads constructor(
     private val startupArgs: kotlin.Array<String> = emptyArray(),
     private val runtimeProfile: RuntimeProfile = RuntimeProfile.AUTO,
     private val inputProcessorDecorator: InputProcessorDecorator = PassthroughInputProcessorDecorator
