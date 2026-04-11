@@ -14,6 +14,7 @@ class ShiftCameraController(
     camera: PerspectiveCamera,
     private val pickModelPoint: (screenX: Int, screenY: Int) -> Vector3?
 ) : CameraInputController(camera) {
+    var panButton: Int = Input.Buttons.MIDDLE
     private var translating = false
     private var orbitRotating = false
     private var orbitRotateAroundPosition = false
@@ -53,8 +54,8 @@ class ShiftCameraController(
             rotateButton = if (alt) -1 else Input.Buttons.RIGHT
             translateButton = -1
         }
-        translating = shift && button == Input.Buttons.RIGHT
-        orbitRotating = !shift && button == Input.Buttons.RIGHT
+        translating = button == panButton || (shift && button == Input.Buttons.RIGHT)
+        orbitRotating = !translating && button == Input.Buttons.RIGHT
         orbitRotateAroundPosition = orbitRotating && alt
         if (orbitRotating) {
             orbitRotateMoved = false
@@ -98,7 +99,7 @@ class ShiftCameraController(
     }
 
     override fun touchUp(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
-        if (button == Input.Buttons.RIGHT) {
+        if (button == Input.Buttons.RIGHT || button == panButton) {
             val shouldSnapTarget = orbitRotating && orbitRotateMoved && !translating
             translating = false
             orbitRotating = false
@@ -120,10 +121,11 @@ class ShiftCameraController(
         zoomDir.scl(1f / distance)
         var step = amount * zoomSpeed
         val minDistance = minOrbitZoomTargetDistance
+        val zoomingIn = step > 0f
 
-        // If the orbit distance is already very small, treat zoom as a pure dolly and
+        // If the orbit distance is very small, treat zoom as a pure dolly and
         // keep the current close framing instead of forcing target glue/clamping.
-        if (distance < minDistance) {
+        if ((zoomingIn && distance - step <= minDistance + 1e-4f) || distance < minDistance) {
             camera.position.mulAdd(zoomDir, step)
             target.mulAdd(zoomDir, step)
             camera.lookAt(target)
