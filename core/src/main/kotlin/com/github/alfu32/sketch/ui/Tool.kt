@@ -1,5 +1,6 @@
 package com.github.alfu32.sketch.ui
 
+import com.badlogic.gdx.Input
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Vector3
 import com.github.alfu32.sketch.tools.ToolFeedbackColors
@@ -9,6 +10,75 @@ data class ToolMeasurement(
     val endWorld: Vector3,
     val lineColor: com.badlogic.gdx.graphics.Color = ToolFeedbackColors.PRIMARY
 )
+
+sealed class ToolOperatorAction {
+    data class KeyDown(val keycode: Int) : ToolOperatorAction()
+    object ToggleCopyMode : ToolOperatorAction()
+    object ShowDistanceInput : ToolOperatorAction()
+}
+
+data class ToolOperator(
+    val id: String,
+    val label: String,
+    val action: ToolOperatorAction
+) {
+    companion object {
+        fun key(id: String, label: String, keycode: Int): ToolOperator {
+            return ToolOperator(id, label, ToolOperatorAction.KeyDown(keycode))
+        }
+    }
+}
+
+object ToolOperatorPresets {
+    private fun lineMode(): ToolOperator = ToolOperator.key("line-mode", "Line", Input.Keys.L)
+    private fun arcThrough(): ToolOperator = ToolOperator.key("arc-through", "Arc 3pt", Input.Keys.A)
+    private fun arcCenter(): ToolOperator = ToolOperator.key("arc-center", "Arc Center", Input.Keys.C)
+    fun finish(label: String = "Finish"): ToolOperator = ToolOperator.key("finish", label, Input.Keys.ENTER)
+    fun undoPoint(label: String = "Undo Pt"): ToolOperator = ToolOperator.key("undo-point", label, Input.Keys.BACKSPACE)
+    fun cancel(label: String = "Cancel"): ToolOperator = ToolOperator.key("cancel", label, Input.Keys.ESCAPE)
+
+    private fun arcPathOperators(): List<ToolOperator> {
+        return listOf(
+            lineMode(),
+            arcThrough(),
+            arcCenter(),
+            undoPoint(),
+            finish(),
+            cancel()
+        )
+    }
+
+    fun forTool(toolId: ToolId): List<ToolOperator> {
+        return when (toolId) {
+            ToolId.LINE,
+            ToolId.CONSTRUCTION_LINE,
+            ToolId.ARCH_WALL,
+            ToolId.HVAC_VENTILATION -> listOf(finish(), cancel())
+
+            ToolId.POLYLINE,
+            ToolId.DOUBLE_LINE,
+            ToolId.EXTRUDE_SWIPE,
+            ToolId.ARCH_WINDOW_FRAME -> arcPathOperators()
+
+            ToolId.MESH,
+            ToolId.VOXEL_VOLUME,
+            ToolId.VOXEL_FRAME,
+            ToolId.ARCH_SLAB,
+            ToolId.ARCH_STAIR,
+            ToolId.ARCH_ADD_HOLE,
+            ToolId.ARCH_DOOR_FRAME,
+            ToolId.PLANE_SECTION -> listOf(finish(), cancel())
+
+            ToolId.HVAC_PLUMBING -> listOf(finish(), undoPoint(), cancel())
+
+            ToolId.VOXEL,
+            ToolId.AXIAL_GRID,
+            ToolId.PLANAR_GRID -> listOf(cancel())
+
+            else -> emptyList()
+        }
+    }
+}
 
 interface Tool {
     val id: ToolId
@@ -33,6 +103,8 @@ interface Tool {
     fun onCopyModeChanged(status: StatusModel, enabled: Boolean) {
         // Default no-op.
     }
+
+    fun toolOperators(status: StatusModel): List<ToolOperator> = ToolOperatorPresets.forTool(id)
 
     fun onTextInput(status: StatusModel, text: String) {
         status.inputBuffer = text

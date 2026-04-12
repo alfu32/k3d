@@ -156,6 +156,7 @@ class SketchUiOverlay(
     private val feedbackLineWidthChanged: (Float) -> Unit,
     private val permanentGridVisibleChanged: (Boolean) -> Unit,
     private val permanentGridNormalChanged: (PermanentGridNormalAxis) -> Unit,
+    private val inToolOperatorAction: (ToolOperatorAction) -> Unit,
     private val tutorialStateProvider: () -> TutorialUiState,
     private val tutorialStartRecording: () -> Unit,
     private val tutorialStopRecording: () -> Unit,
@@ -177,7 +178,7 @@ class SketchUiOverlay(
         val toolbarId: String,
         val window: CollapsibleWindow,
         val content: Table,
-        val slots: List<ToolbarButtonSlot>,
+        var slots: List<ToolbarButtonSlot>,
         var hovered: Boolean = false,
         var expanded: Boolean = true,
         var visibleButtonIndex: Int = -1
@@ -415,6 +416,9 @@ class SketchUiOverlay(
     private var updatingCameraModeButtons = false
     private val pluginPanels = mutableMapOf<String, CollapsibleWindow>()
     private val pluginPanelPositions = mutableMapOf<String, PanelPosition>()
+    private lateinit var inToolOperatorsWindow: CollapsibleWindow
+    private lateinit var inToolOperatorsContent: VisTable
+    private var inToolOperatorsSignature = ""
     private var hoverPopoverWindow: CollapsibleWindow? = null
     private var hoverPopoverTarget: AppImageTextButton? = null
     private var hoverPopoverText: String = ""
@@ -424,7 +428,8 @@ class SketchUiOverlay(
     private var toolbarsVisible = true
     private val uiPrefs by lazy { Gdx.app.getPreferences("k3d-ui-layout") }
     private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
-    private val toolbarLayoutVersion = 10
+    private val toolbarLayoutVersion = 11
+    private val inToolOperatorsToolbarId = "builtin_toolbar_in_tool_operators"
     private val toolbarsVisibleKey = "toolbars.visible"
     private val uiToolbarButtonSizeKey = "ui_toolbar_button_size_px"
     private val uiToolbarAutoCollapseKey = "ui_toolbar_auto_collapse"
@@ -436,6 +441,7 @@ class SketchUiOverlay(
     private val toolbarLayoutMargin = 4f
     private val toolbarLayoutGap = 4f
     private val orderedBuiltInToolbarIds = listOf(
+        inToolOperatorsToolbarId,
         "builtin_toolbar_construction_points",
         "builtin_toolbar_construction_entities",
         "builtin_toolbar_modification",
@@ -1107,6 +1113,7 @@ class SketchUiOverlay(
         updateTutorialUi()
         refreshPluginToolbar()
         toolButtons[status.activeTool]?.isChecked = true
+        rebuildInToolOperators()
         updatePluginToolSelection()
         updatePaintColorButton()
         updateButtonLabels()
@@ -1411,6 +1418,8 @@ class SketchUiOverlay(
         toolGroup.setUncheckLast(false)
 
         val pointConstructionTools = listOf(
+            ToolId.AXIAL_GRID,
+            ToolId.PLANAR_GRID,
             ToolId.LINE,
             ToolId.CONSTRUCTION_LINE,
             ToolId.POLYLINE,
@@ -1528,8 +1537,13 @@ class SketchUiOverlay(
             title = "Rendering",
             toolbarId = "builtin_toolbar_rendering"
         )
+        val inToolOperators = buildInToolOperatorsWindow(
+            title = "In-tool Operators",
+            toolbarId = inToolOperatorsToolbarId
+        )
 
         builtInToolbars.clear()
+        builtInToolbars[inToolOperatorsToolbarId] = inToolOperators
         builtInToolbars["builtin_toolbar_construction_points"] = pointConstruction
         builtInToolbars["builtin_toolbar_construction_entities"] = entityConstruction
         builtInToolbars["builtin_toolbar_modification"] = modification
@@ -1543,7 +1557,7 @@ class SketchUiOverlay(
             applyToolbarState(toolbarId, window)
         }
         toolbarsPositioned = false
-        return listOf(pointConstruction, entityConstruction, modification, architecture, hvac, voxel, actions, camera, rendering)
+        return listOf(inToolOperators, pointConstruction, entityConstruction, modification, architecture, hvac, voxel, actions, camera, rendering)
     }
 
     private fun buildToolsToolbarWindow(
@@ -1600,6 +1614,75 @@ class SketchUiOverlay(
         buttonLabels[button] = toolId.displayName
         registerTutorialActionTarget("tool.start.${toolId.name.lowercase(Locale.US)}", button)
         return button
+    }
+
+    private fun buildInToolOperatorsWindow(title: String, toolbarId: String): CollapsibleWindow {
+        val window = CollapsibleWindow(title, showCloseButton = false)
+        window.isResizable = false
+        val content = VisTable()
+        content.defaults().pad(1f).left()
+        window.add(content).pad(0f).left()
+        window.pack()
+        window.setSize(window.prefWidth, window.prefHeight)
+        inToolOperatorsWindow = window
+        inToolOperatorsContent = content
+        attachToolbarPersistence(window, toolbarId)
+        registerToolbarBinding(toolbarId, window, content, emptyList())
+        rebuildInToolOperators(force = true)
+        return window
+    }
+
+    private fun rebuildInToolOperators(force: Boolean = false) {
+        if (!::inToolOperatorsContent.isInitialized || !::inToolOperatorsWindow.isInitialized) {
+            return
+        }
+        val operators = controller.inToolOperators()
+        val signature = buildString {
+            append(status.activeTool.name)
+            append('|')
+            operators.forEach { operator ->
+                append(operator.id)
+                append(':')
+                append(operator.label)
+                append(':')
+                append(operator.action)
+                append('|')
+            }
+        }
+        if (!force && signature == inToolOperatorsSignature) {
+            return
+        }
+        inToolOperatorsSignature = signature
+        inToolOperatorsContent.clearChildren()
+
+        val slots = mutableListOf<ToolbarButtonSlot>()
+        val toolNameButton = VisTextButton(status.activeTool.displayName).apply {
+            touchable = Touchable.disabled
+        }
+        val toolNameWidth = toolNameButton.prefWidth.coerceAtLeast(86f)
+        val toolNameCell = inToolOperatorsContent.add(toolNameButton).height(toolbarButtonSize).minWidth(toolNameWidth)
+        slots += ToolbarButtonSlot(toolNameButton, toolNameCell, toolNameWidth, toolbarButtonSize)
+
+        operators.forEach { operator ->
+            val button = VisTextButton(operator.label)
+            button.addListener(object : ClickListener() {
+                override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                    inToolOperatorAction(operator.action)
+                    updateFromStatus()
+                }
+            })
+            val buttonWidth = button.prefWidth.coerceAtLeast(58f)
+            val cell = inToolOperatorsContent.add(button).height(toolbarButtonSize).minWidth(buttonWidth)
+            slots += ToolbarButtonSlot(button, cell, buttonWidth, toolbarButtonSize)
+        }
+
+        inToolOperatorsContent.invalidateHierarchy()
+        inToolOperatorsWindow.invalidateHierarchy()
+        inToolOperatorsWindow.pack()
+        toolbarBindingsById[inToolOperatorsToolbarId]?.let { binding ->
+            binding.slots = slots
+            applyToolbarAutoCollapse(binding, force = true)
+        }
     }
 
     private fun buildActionsToolbarWindow(title: String, toolbarId: String): CollapsibleWindow {
@@ -1885,7 +1968,10 @@ class SketchUiOverlay(
         if (binding.slots.isEmpty()) {
             return false
         }
-        val expanded = !toolbarAutoCollapse || binding.hovered || binding.slots.size <= 1
+        val expanded = binding.toolbarId == inToolOperatorsToolbarId ||
+            !toolbarAutoCollapse ||
+            binding.hovered ||
+            binding.slots.size <= 1
         val visibleButtonIndex = if (expanded) -1 else preferredCollapsedToolbarButtonIndex(binding)
         if (!force && binding.expanded == expanded && binding.visibleButtonIndex == visibleButtonIndex) {
             return false
@@ -5305,6 +5391,7 @@ class SketchUiOverlay(
         hoverPopoverText = ""
         hoverPopoverElapsed = 0f
         hoveredButtons.clear()
+        inToolOperatorsSignature = ""
         buttonLabels.clear()
         buttonMarkers.clear()
         toolButtons.clear()
@@ -6374,6 +6461,8 @@ class SketchUiOverlay(
     private fun createIconDrawable(toolId: ToolId): TextureRegionDrawable {
         val iconName = when (toolId) {
             ToolId.SELECT -> "select"
+            ToolId.AXIAL_GRID -> "axis"
+            ToolId.PLANAR_GRID -> "grid"
             ToolId.LINE -> "line"
             ToolId.CONSTRUCTION_LINE -> "construction_line"
             ToolId.POLYLINE -> "polyline"
@@ -6423,6 +6512,8 @@ class SketchUiOverlay(
         iconDrawables[iconName]?.let { return it }
         val color = when (toolId) {
             ToolId.SELECT -> Color(0.85f, 0.85f, 0.85f, 1f)
+            ToolId.AXIAL_GRID -> Color(0.55f, 0.9f, 0.65f, 1f)
+            ToolId.PLANAR_GRID -> Color(0.45f, 0.75f, 0.95f, 1f)
             ToolId.LINE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.CONSTRUCTION_LINE -> Color(0.65f, 0.9f, 0.65f, 1f)
             ToolId.POLYLINE -> Color(0.95f, 0.75f, 0.25f, 1f)

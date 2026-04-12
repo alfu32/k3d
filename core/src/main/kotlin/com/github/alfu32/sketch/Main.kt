@@ -110,6 +110,7 @@ import com.github.alfu32.sketch.tools.ArchitectureWindowFrameTool
 import com.github.alfu32.sketch.tools.ExtrudeSwipeTool
 import com.github.alfu32.sketch.tools.MeshIntersectionTool
 import com.github.alfu32.sketch.tools.FaceOutlineTool
+import com.github.alfu32.sketch.tools.GuidePlacementTool
 import com.github.alfu32.sketch.tools.CopyMultipleTool
 import com.github.alfu32.sketch.tools.PlanarTranslateMultipleTool
 import com.github.alfu32.sketch.tools.VolumetricTranslateMultipleTool
@@ -809,6 +810,32 @@ class Main @JvmOverloads constructor(
                     ::glyphCatalogForSource,
                     ::observeTutorialUiAction
                 ),
+                GuidePlacementTool(
+                    ToolId.AXIAL_GRID,
+                    "Pick point for axial grid helper.",
+                    "Axial grid",
+                    { point, normal ->
+                        guideManager.addAxisGuide(point, normal)
+                        recordTutorialAction(
+                            "guide.axis.place",
+                            "Place an axial grid helper at a picked point."
+                        )
+                    },
+                    { toolController.setTool(ToolId.SELECT) }
+                ),
+                GuidePlacementTool(
+                    ToolId.PLANAR_GRID,
+                    "Pick point for planar grid helper.",
+                    "Planar grid",
+                    { point, normal ->
+                        guideManager.addGridGuide(point, normal)
+                        recordTutorialAction(
+                            "guide.grid.place",
+                            "Place a planar grid helper at a picked point."
+                        )
+                    },
+                    { toolController.setTool(ToolId.SELECT) }
+                ),
                 LineTool(scene) { toolController.setTool(ToolId.SELECT) },
                 ConstructionLineTool(scene) { toolController.setTool(ToolId.SELECT) },
                 PolylineToolInternal(scene, polylineSettings),
@@ -1035,6 +1062,7 @@ class Main @JvmOverloads constructor(
             ::updateFeedbackOverlayLineWidth,
             ::updatePermanentGridVisible,
             ::updatePermanentGridNormalAxis,
+            { action -> toolInput.performOperator(action) },
             ::tutorialUiState,
             ::startTutorialRecording,
             ::stopTutorialRecording,

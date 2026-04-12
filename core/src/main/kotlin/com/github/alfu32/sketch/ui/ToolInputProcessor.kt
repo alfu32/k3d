@@ -103,10 +103,18 @@ class ToolInputProcessor(
         }
     }
 
-    override fun keyDown(keycode: Int): Boolean {
-        if (uiCapturesInput()) {
-            return true
+    fun performOperator(action: ToolOperatorAction): Boolean {
+        return when (action) {
+            is ToolOperatorAction.KeyDown -> handleKeyDownUnchecked(action.keycode)
+            ToolOperatorAction.ToggleCopyMode -> controller.toggleCopyMode()
+            ToolOperatorAction.ShowDistanceInput -> {
+                showDistanceInput()
+                true
+            }
         }
+    }
+
+    private fun handleKeyDownUnchecked(keycode: Int): Boolean {
         if (controller.handleKeyDown(keycode)) {
             return true
         }
@@ -218,6 +226,13 @@ class ToolInputProcessor(
             }
         }
         return false
+    }
+
+    override fun keyDown(keycode: Int): Boolean {
+        if (uiCapturesInput()) {
+            return true
+        }
+        return handleKeyDownUnchecked(keycode)
     }
 
     override fun keyUp(keycode: Int): Boolean {

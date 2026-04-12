@@ -49,6 +49,29 @@ class ToolController(
         return activeTool
     }
 
+    fun inToolOperators(): List<ToolOperator> {
+        val operators = mutableListOf<ToolOperator>()
+        if (activeTool.supportsCopyMode()) {
+            operators += ToolOperator(
+                id = "copy-mode",
+                label = if (status.copyMode) "Copy Off" else "Copy On",
+                action = ToolOperatorAction.ToggleCopyMode
+            )
+        }
+        operators += activeTool.toolOperators(status)
+        if (status.anchorWorld != null) {
+            operators += ToolOperator(
+                id = "distance-input",
+                label = "Distance",
+                action = ToolOperatorAction.ShowDistanceInput
+            )
+        }
+        if (activeTool.id != ToolId.SELECT && operators.none { it.id == "cancel" }) {
+            operators += ToolOperatorPresets.cancel()
+        }
+        return operators.distinctBy { it.id }
+    }
+
     fun registerTool(tool: Tool) {
         toolMap[tool.id] = tool
     }

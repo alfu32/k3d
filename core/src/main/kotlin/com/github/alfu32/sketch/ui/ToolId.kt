@@ -2,6 +2,8 @@ package com.github.alfu32.sketch.ui
 
 enum class ToolId(val displayName: String) {
     SELECT("Select"),
+    AXIAL_GRID("Axial Grid"),
+    PLANAR_GRID("Planar Grid"),
     LINE("Line"),
     CONSTRUCTION_LINE("Construction Line"),
     POLYLINE("Polyline"),
