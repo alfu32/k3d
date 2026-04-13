@@ -179,7 +179,7 @@ class AndroidLauncher : AndroidApplication() {
             "--plugins-dir", pluginsDir.absolutePath
         )
 
-        initialize(Main(args, inputProcessorDecorator = AndroidTouchInputDecorator()), cfg)
+        initialize(Main(args), cfg)
         Gdx.input.setCatchKey(Input.Keys.BACK, true)
         Gdx.input.setCatchKey(Input.Keys.ESCAPE, true)
         Gdx.input.setCatchKey(Input.Keys.CONTROL_LEFT, true)

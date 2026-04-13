@@ -243,12 +243,6 @@ class Main @JvmOverloads constructor(
         TEXT
     }
 
-    private enum class TouchGesture(val cameraButton: Int?) {
-        TWO_FINGER_VERTICAL(null),
-        THREE_FINGER_ORBIT(Input.Buttons.RIGHT),
-        FOUR_FINGER_PAN(Input.Buttons.MIDDLE)
-    }
-
     private lateinit var camera: PerspectiveCamera
     private lateinit var walkCamera: PerspectiveCamera
     private lateinit var orthoCamera: OrthographicCamera
@@ -258,13 +252,6 @@ class Main @JvmOverloads constructor(
     private lateinit var orthoCameraController: OrthographicCameraController
     private var activeCameraMode: CameraMode = CameraMode.ORBIT
     private var activeCameraInputProcessor: InputProcessor = InputAdapter()
-    private var activeTouchGesture: TouchGesture? = null
-    private var activeTouchGestureProcessor: InputProcessor? = null
-    private var activeTouchGestureCameraMode = CameraMode.ORBIT
-    private var touchGestureStartY = 0
-    private var touchGestureLastY = 0
-    private val touchGestureDirectionThreshold = 8
-    private val touchGestureScrollPixelsPerWheelUnit = 48f
     private lateinit var shapeRenderer: ShapeRenderer
     private lateinit var spriteBatch: SpriteBatch
     private lateinit var textFont: BitmapFont
@@ -1724,40 +1711,9 @@ class Main @JvmOverloads constructor(
             processorProvider = { activeCameraInputProcessor },
             shouldForward = { !uiOverlay.isUiHit(Gdx.input.x, Gdx.input.y) }
         )
-        val cameraTouchGestureRouter = object : InputAdapter() {
-            override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
-                val gesture = touchGestureForButton(button) ?: return false
-                if (uiOverlay.isUiHit(screenX, screenY)) {
-                    return false
-                }
-                return beginTouchGesture(gesture, screenX, screenY)
-            }
-
-            override fun touchDragged(screenX: Int, screenY: Int, pointer: Int): Boolean {
-                if (activeTouchGesture == null) {
-                    return false
-                }
-                return dragTouchGesture(screenX, screenY)
-            }
-
-            override fun touchUp(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
-                if (touchGestureForButton(button) == null) {
-                    return false
-                }
-                return finishTouchGesture(screenX, screenY)
-            }
-
-            override fun touchCancelled(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
-                if (touchGestureForButton(button) == null && activeTouchGesture == null) {
-                    return false
-                }
-                return finishTouchGesture(screenX, screenY)
-            }
-        }
         val cameraEventRouter = CameraEventRouter { activeCameraInputProcessor }
         val inputMultiplexer = InputMultiplexer(
             cameraScrollForwarder,
-            cameraTouchGestureRouter,
             uiOverlay.stage,
             uiBlocker,
             toolPointer,
@@ -1801,81 +1757,6 @@ class Main @JvmOverloads constructor(
         if (!BuildFlags.WEB_BUILD && !webSafeRuntime) {
             startConsoleIfRequested()
         }
-    }
-
-    private fun touchGestureForButton(button: Int): TouchGesture? {
-        return when (button) {
-            TouchGestureButtons.TWO_FINGER_VERTICAL_DRAG -> TouchGesture.TWO_FINGER_VERTICAL
-            TouchGestureButtons.THREE_FINGER_ORBIT -> TouchGesture.THREE_FINGER_ORBIT
-            TouchGestureButtons.FOUR_FINGER_PAN -> TouchGesture.FOUR_FINGER_PAN
-            else -> null
-        }
-    }
-
-    private fun beginTouchGesture(gesture: TouchGesture, screenX: Int, screenY: Int): Boolean {
-        if (activeTouchGesture != null) {
-            finishTouchGesture(screenX, screenY)
-        }
-        activeTouchGesture = gesture
-        activeTouchGestureProcessor = activeCameraInputProcessor
-        activeTouchGestureCameraMode = activeCameraMode
-        touchGestureStartY = screenY
-        touchGestureLastY = screenY
-        val gestureProcessor = activeTouchGestureProcessor ?: activeCameraInputProcessor
-        return when (gesture) {
-            TouchGesture.TWO_FINGER_VERTICAL -> {
-                walkCameraController.setTouchAdvanceDirection(0)
-                true
-            }
-            TouchGesture.THREE_FINGER_ORBIT,
-            TouchGesture.FOUR_FINGER_PAN -> {
-                gestureProcessor.touchDown(screenX, screenY, 0, gesture.cameraButton ?: return true)
-                true
-            }
-        }
-    }
-
-    private fun dragTouchGesture(screenX: Int, screenY: Int): Boolean {
-        return when (activeTouchGesture) {
-            TouchGesture.TWO_FINGER_VERTICAL -> {
-                if (activeTouchGestureCameraMode == CameraMode.WALKTHROUGH) {
-                    val dyFromStart = screenY - touchGestureStartY
-                    val direction = when {
-                        dyFromStart > touchGestureDirectionThreshold -> 1
-                        dyFromStart < -touchGestureDirectionThreshold -> -1
-                        else -> 0
-                    }
-                    walkCameraController.setTouchAdvanceDirection(direction)
-                } else {
-                    val dy = screenY - touchGestureLastY
-                    touchGestureLastY = screenY
-                    if (dy != 0) {
-                        (activeTouchGestureProcessor ?: activeCameraInputProcessor)
-                            .scrolled(0f, dy.toFloat() / touchGestureScrollPixelsPerWheelUnit)
-                    }
-                }
-                true
-            }
-            TouchGesture.THREE_FINGER_ORBIT,
-            TouchGesture.FOUR_FINGER_PAN -> {
-                (activeTouchGestureProcessor ?: activeCameraInputProcessor).touchDragged(screenX, screenY, 0)
-                true
-            }
-            null -> false
-        }
-    }
-
-    private fun finishTouchGesture(screenX: Int, screenY: Int): Boolean {
-        val gesture = activeTouchGesture ?: return false
-        if (gesture == TouchGesture.TWO_FINGER_VERTICAL) {
-            walkCameraController.setTouchAdvanceDirection(0)
-        } else {
-            (activeTouchGestureProcessor ?: activeCameraInputProcessor)
-                .touchUp(screenX, screenY, 0, gesture.cameraButton ?: return true)
-        }
-        activeTouchGesture = null
-        activeTouchGestureProcessor = null
-        return true
     }
 
     private fun configureOrthoViewport(width: Int, height: Int) {
