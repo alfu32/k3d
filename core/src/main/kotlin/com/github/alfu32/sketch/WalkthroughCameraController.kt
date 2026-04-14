@@ -14,8 +14,11 @@ class WalkthroughCameraController(
     private val eyeHeight: Float = 6f
 ) : InputAdapter() {
     var lookButton: Int = Input.Buttons.RIGHT
+    var panButton: Int = Input.Buttons.MIDDLE
     var moveSpeed: Float = 24f
     var lookDegreesPerPixel: Float = 0.25f
+    var panUnitsPerPixel: Float = 0.05f
+    var scrollMoveScale: Float = 0.2f
     var heightAdjustSpeed: Float = 8f
     var minEyeOffset: Float = -5f
     var maxEyeOffset: Float = 60f
@@ -29,6 +32,7 @@ class WalkthroughCameraController(
     private var raisingHeight = false
     private var loweringHeight = false
     private var looking = false
+    private var panning = false
     private var jumpQueued = false
     private var eyeOffset = 0f
     private var jumpOffset = 0f
@@ -42,6 +46,7 @@ class WalkthroughCameraController(
     private val forward = Vector3()
     private val right = Vector3()
     private val move = Vector3()
+    private val screenUp = Vector3()
 
     init {
         syncFromCamera()
@@ -130,23 +135,28 @@ class WalkthroughCameraController(
     }
 
     override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
-        if (button != lookButton) {
-            return false
+        when (button) {
+            lookButton -> looking = true
+            panButton -> panning = true
+            else -> return false
         }
-        looking = true
         lastX = screenX
         lastY = screenY
         return true
     }
 
     override fun touchDragged(screenX: Int, screenY: Int, pointer: Int): Boolean {
-        if (!looking) {
+        if (!looking && !panning) {
             return false
         }
         val dx = screenX - lastX
         val dy = screenY - lastY
         lastX = screenX
         lastY = screenY
+        if (panning) {
+            panByPixels(dx.toFloat(), dy.toFloat())
+            return true
+        }
         yawDeg += dx * lookDegreesPerPixel
         pitchDeg = (pitchDeg - dy * lookDegreesPerPixel).coerceIn(-89f, 89f)
         updateDirectionFromAngles()
@@ -155,11 +165,45 @@ class WalkthroughCameraController(
     }
 
     override fun touchUp(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
-        if (button != lookButton) {
+        return when (button) {
+            lookButton -> {
+                looking = false
+                true
+            }
+            panButton -> {
+                panning = false
+                true
+            }
+            else -> false
+        }
+    }
+
+    override fun scrolled(amountX: Float, amountY: Float): Boolean {
+        if (amountY == 0f) {
             return false
         }
-        looking = false
+        camera.position.mulAdd(camera.direction, amountY * moveSpeed * scrollMoveScale)
+        camera.update()
         return true
+    }
+
+    private fun panByPixels(dx: Float, dy: Float) {
+        right.set(camera.direction).crs(camera.up)
+        if (right.len2() <= 1e-8f) {
+            right.set(1f, 0f, 0f)
+        } else {
+            right.nor()
+        }
+        screenUp.set(camera.up)
+        if (screenUp.len2() <= 1e-8f) {
+            screenUp.set(up)
+        } else {
+            screenUp.nor()
+        }
+        camera.position
+            .mulAdd(right, -dx * panUnitsPerPixel)
+            .mulAdd(screenUp, dy * panUnitsPerPixel)
+        camera.update()
     }
 
     private fun updateDirectionFromAngles() {

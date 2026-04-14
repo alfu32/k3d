@@ -154,6 +154,7 @@ import com.github.alfu32.sketch.tutorial.TutorialUiState
 import com.github.alfu32.sketch.ui.PermanentGridNormalAxis
 import com.github.alfu32.sketch.ui.LightingSettings
 import com.github.alfu32.sketch.ui.CameraMode
+import com.github.alfu32.sketch.ui.CameraInteractionMode
 import com.github.alfu32.sketch.ui.ShadowSettings
 import com.github.alfu32.sketch.ui.SketchUiOverlay
 import com.github.alfu32.sketch.ui.StatusModel
@@ -252,6 +253,14 @@ class Main @JvmOverloads constructor(
     private lateinit var orthoCameraController: OrthographicCameraController
     private var activeCameraMode: CameraMode = CameraMode.ORBIT
     private var activeCameraInputProcessor: InputProcessor = InputAdapter()
+    private var cameraInteractionMode: CameraInteractionMode = CameraInteractionMode.NONE
+    private var cameraInteractionDragMode: CameraInteractionMode = CameraInteractionMode.NONE
+    private var cameraInteractionCameraMode: CameraMode = CameraMode.ORBIT
+    private var cameraInteractionProcessor: InputProcessor? = null
+    private var cameraInteractionPointer = -1
+    private var cameraInteractionButton = -1
+    private var cameraInteractionLastY = 0
+    private val cameraInteractionZoomPixelsPerWheelUnit = 48f
     private lateinit var shapeRenderer: ShapeRenderer
     private lateinit var spriteBatch: SpriteBatch
     private lateinit var textFont: BitmapFont
@@ -1023,6 +1032,8 @@ class Main @JvmOverloads constructor(
             ::clearHotspotReference,
             { activeCameraMode },
             ::setCameraMode,
+            { cameraInteractionMode },
+            ::setCameraInteractionMode,
             ::startRaytraceRender,
             ::startPathtraceRender,
             ::stopOfflineRender,
@@ -1711,11 +1722,29 @@ class Main @JvmOverloads constructor(
             processorProvider = { activeCameraInputProcessor },
             shouldForward = { !uiOverlay.isUiHit(Gdx.input.x, Gdx.input.y) }
         )
+        val cameraInteractionRouter = object : InputAdapter() {
+            override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
+                return beginCameraInteraction(screenX, screenY, pointer, button)
+            }
+
+            override fun touchDragged(screenX: Int, screenY: Int, pointer: Int): Boolean {
+                return dragCameraInteraction(screenX, screenY, pointer)
+            }
+
+            override fun touchUp(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
+                return finishCameraInteraction(screenX, screenY, pointer, button)
+            }
+
+            override fun touchCancelled(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
+                return cancelCameraInteraction(screenX, screenY, pointer)
+            }
+        }
         val cameraEventRouter = CameraEventRouter { activeCameraInputProcessor }
         val inputMultiplexer = InputMultiplexer(
             cameraScrollForwarder,
             uiOverlay.stage,
             uiBlocker,
+            cameraInteractionRouter,
             toolPointer,
             toolInput,
             cameraEventRouter
@@ -1765,6 +1794,102 @@ class Main @JvmOverloads constructor(
         val worldHeight = 22f
         orthoCamera.viewportHeight = worldHeight
         orthoCamera.viewportWidth = worldHeight * aspect
+    }
+
+    private fun setCameraInteractionMode(mode: CameraInteractionMode) {
+        cameraInteractionMode = mode
+        statusModel.message = when (mode) {
+            CameraInteractionMode.NONE -> "Camera touch interaction disabled."
+            CameraInteractionMode.ROTATE -> "Camera touch interaction: rotate."
+            CameraInteractionMode.PAN -> "Camera touch interaction: pan."
+            CameraInteractionMode.ZOOM -> "Camera touch interaction: zoom."
+        }
+    }
+
+    private fun beginCameraInteraction(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
+        val mode = cameraInteractionMode
+        if (mode == CameraInteractionMode.NONE || button != Input.Buttons.LEFT || uiOverlay.isUiHit(screenX, screenY)) {
+            return false
+        }
+        if (cameraInteractionDragMode != CameraInteractionMode.NONE) {
+            cancelCameraInteraction(screenX, screenY, cameraInteractionPointer)
+        }
+        cameraInteractionDragMode = mode
+        cameraInteractionCameraMode = activeCameraMode
+        cameraInteractionProcessor = activeCameraInputProcessor
+        cameraInteractionPointer = pointer
+        cameraInteractionLastY = screenY
+        cameraInteractionButton = when (mode) {
+            CameraInteractionMode.ROTATE -> Input.Buttons.RIGHT
+            CameraInteractionMode.PAN -> Input.Buttons.MIDDLE
+            CameraInteractionMode.ZOOM,
+            CameraInteractionMode.NONE -> -1
+        }
+        if (cameraInteractionButton >= 0) {
+            (cameraInteractionProcessor ?: activeCameraInputProcessor)
+                .touchDown(screenX, screenY, pointer, cameraInteractionButton)
+        }
+        return true
+    }
+
+    private fun dragCameraInteraction(screenX: Int, screenY: Int, pointer: Int): Boolean {
+        if (cameraInteractionDragMode == CameraInteractionMode.NONE || pointer != cameraInteractionPointer) {
+            return false
+        }
+        val processor = cameraInteractionProcessor ?: activeCameraInputProcessor
+        if (cameraInteractionDragMode == CameraInteractionMode.ZOOM) {
+            val dy = screenY - cameraInteractionLastY
+            cameraInteractionLastY = screenY
+            if (dy != 0) {
+                processor.scrolled(0f, cameraInteractionZoomAmount(dy))
+            }
+            return true
+        }
+        processor.touchDragged(screenX, screenY, pointer)
+        return true
+    }
+
+    private fun finishCameraInteraction(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
+        if (cameraInteractionDragMode == CameraInteractionMode.NONE || pointer != cameraInteractionPointer) {
+            return false
+        }
+        if (button != Input.Buttons.LEFT) {
+            return false
+        }
+        if (cameraInteractionButton >= 0) {
+            (cameraInteractionProcessor ?: activeCameraInputProcessor)
+                .touchUp(screenX, screenY, pointer, cameraInteractionButton)
+        }
+        clearCameraInteractionDrag()
+        return true
+    }
+
+    private fun cancelCameraInteraction(screenX: Int, screenY: Int, pointer: Int): Boolean {
+        if (cameraInteractionDragMode == CameraInteractionMode.NONE || pointer != cameraInteractionPointer) {
+            return false
+        }
+        if (cameraInteractionButton >= 0) {
+            (cameraInteractionProcessor ?: activeCameraInputProcessor)
+                .touchUp(screenX, screenY, pointer, cameraInteractionButton)
+        }
+        clearCameraInteractionDrag()
+        return true
+    }
+
+    private fun clearCameraInteractionDrag() {
+        cameraInteractionDragMode = CameraInteractionMode.NONE
+        cameraInteractionProcessor = null
+        cameraInteractionPointer = -1
+        cameraInteractionButton = -1
+    }
+
+    private fun cameraInteractionZoomAmount(deltaYPixels: Int): Float {
+        val units = deltaYPixels.toFloat() / cameraInteractionZoomPixelsPerWheelUnit
+        return when (cameraInteractionCameraMode) {
+            CameraMode.ORTHOGRAPHIC -> units
+            CameraMode.ORBIT,
+            CameraMode.WALKTHROUGH -> -units
+        }
     }
 
     private fun setCameraMode(mode: CameraMode) {

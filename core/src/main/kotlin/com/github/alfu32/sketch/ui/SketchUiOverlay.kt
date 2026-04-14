@@ -130,6 +130,8 @@ class SketchUiOverlay(
     private val hotspotClearReference: (String) -> Unit,
     private val cameraModeProvider: () -> CameraMode,
     private val cameraModeChanged: (CameraMode) -> Unit,
+    private val cameraInteractionModeProvider: () -> CameraInteractionMode,
+    private val cameraInteractionModeChanged: (CameraInteractionMode) -> Unit,
     private val renderRaytraceRequested: () -> Unit,
     private val renderPathtraceRequested: () -> Unit,
     private val renderStopRequested: () -> Unit,
@@ -414,6 +416,9 @@ class SketchUiOverlay(
     private val cameraModeButtons = mutableMapOf<CameraMode, VisTextButton>()
     private val cameraModeLabels = mutableMapOf<CameraMode, String>()
     private var updatingCameraModeButtons = false
+    private val cameraInteractionModeButtons = mutableMapOf<CameraInteractionMode, VisTextButton>()
+    private val cameraInteractionModeLabels = mutableMapOf<CameraInteractionMode, String>()
+    private var updatingCameraInteractionModeButtons = false
     private val pluginPanels = mutableMapOf<String, CollapsibleWindow>()
     private val pluginPanelPositions = mutableMapOf<String, PanelPosition>()
     private lateinit var inToolOperatorsWindow: CollapsibleWindow
@@ -428,7 +433,7 @@ class SketchUiOverlay(
     private var toolbarsVisible = true
     private val uiPrefs by lazy { Gdx.app.getPreferences("k3d-ui-layout") }
     private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
-    private val toolbarLayoutVersion = 11
+    private val toolbarLayoutVersion = 12
     private val inToolOperatorsToolbarId = "builtin_toolbar_in_tool_operators"
     private val toolbarsVisibleKey = "toolbars.visible"
     private val uiToolbarButtonSizeKey = "ui_toolbar_button_size_px"
@@ -1119,6 +1124,7 @@ class SketchUiOverlay(
         updateButtonLabels()
         refreshToolbarAutoCollapseStates()
         syncCameraModeButtons()
+        syncCameraInteractionModeButtons()
     }
 
     fun refreshLightingControls() {
@@ -1193,6 +1199,21 @@ class SketchUiOverlay(
             button.setText(if (active) "• $label" else label)
         }
         updatingCameraModeButtons = false
+    }
+
+    private fun syncCameraInteractionModeButtons() {
+        if (cameraInteractionModeButtons.isEmpty()) {
+            return
+        }
+        updatingCameraInteractionModeButtons = true
+        val mode = cameraInteractionModeProvider()
+        cameraInteractionModeButtons.forEach { (interactionMode, button) ->
+            val active = interactionMode == mode
+            button.isChecked = active
+            val label = cameraInteractionModeLabels[interactionMode] ?: interactionMode.displayName
+            button.setText(if (active) "• $label" else label)
+        }
+        updatingCameraInteractionModeButtons = false
     }
 
     fun act(delta: Float) {
@@ -1822,8 +1843,15 @@ class SketchUiOverlay(
             setMinCheckCount(0)
             setUncheckLast(true)
         }
+        val interactionGroup = ButtonGroup<VisTextButton>().apply {
+            setMaxCheckCount(1)
+            setMinCheckCount(0)
+            setUncheckLast(true)
+        }
         cameraModeButtons.clear()
         cameraModeLabels.clear()
+        cameraInteractionModeButtons.clear()
+        cameraInteractionModeLabels.clear()
         listOf(
             CameraMode.ORBIT to "Orbit",
             CameraMode.WALKTHROUGH to "Walk",
@@ -1849,6 +1877,37 @@ class SketchUiOverlay(
             slots += ToolbarButtonSlot(button, cell, buttonWidth, toolbarButtonSize)
         }
         syncCameraModeButtons()
+
+        listOf(
+            CameraInteractionMode.ROTATE to "Rotate",
+            CameraInteractionMode.PAN to "Pan",
+            CameraInteractionMode.ZOOM to "Zoom"
+        ).forEach { (mode, label) ->
+            val button = VisTextButton(label, "toggle")
+            button.addListener(object : ClickListener() {
+                override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                    if (updatingCameraInteractionModeButtons) {
+                        return
+                    }
+                    val next = if (cameraInteractionModeProvider() == mode) {
+                        CameraInteractionMode.NONE
+                    } else {
+                        mode
+                    }
+                    tutorialUiActionObserved("ui.action.camera_interaction.${mode.name.lowercase(Locale.US)}", label)
+                    cameraInteractionModeChanged(next)
+                    syncCameraInteractionModeButtons()
+                }
+            })
+            registerTutorialActionTarget("ui.action.camera_interaction.${mode.name.lowercase(Locale.US)}", button)
+            cameraInteractionModeButtons[mode] = button
+            cameraInteractionModeLabels[mode] = label
+            interactionGroup.add(button)
+            val buttonWidth = button.prefWidth.coerceAtLeast(58f)
+            val cell = content.add(button).height(toolbarButtonSize).minWidth(buttonWidth)
+            slots += ToolbarButtonSlot(button, cell, buttonWidth, toolbarButtonSize)
+        }
+        syncCameraInteractionModeButtons()
 
         window.add(content).pad(0f).left()
         window.pack()
@@ -1945,6 +2004,7 @@ class SketchUiOverlay(
 
     private fun preferredCollapsedToolbarButtonIndex(binding: ToolbarBinding): Int {
         val activePluginToolId = pluginHost?.activePluginToolId()
+        val cameraInteractionMode = cameraInteractionModeProvider()
         binding.slots.forEachIndexed { index, slot ->
             val actor = slot.actor
             if (actor is AppImageTextButton) {
@@ -1957,7 +2017,16 @@ class SketchUiOverlay(
                     return index
                 }
             }
-            if (actor is VisTextButton && cameraModeButtons[cameraModeProvider()] === actor) {
+            if (cameraInteractionMode != CameraInteractionMode.NONE &&
+                actor is VisTextButton &&
+                cameraInteractionModeButtons[cameraInteractionMode] === actor
+            ) {
+                return index
+            }
+            if (cameraInteractionMode == CameraInteractionMode.NONE &&
+                actor is VisTextButton &&
+                cameraModeButtons[cameraModeProvider()] === actor
+            ) {
                 return index
             }
         }

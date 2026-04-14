@@ -1,6 +1,7 @@
 package com.github.alfu32.sketch.input
 
 import com.badlogic.gdx.graphics.Camera
+import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
@@ -170,6 +171,16 @@ class Snapper(
     private fun intersectDefaultGridPlane(ray: com.badlogic.gdx.math.collision.Ray): PlaneHit? {
         val plane = defaultGridPlaneProvider()
         return intersectPlane(ray, plane.origin, plane.axisW)
+            ?: intersectOrthographicViewPlane(ray, plane.origin)
+    }
+
+    private fun intersectOrthographicViewPlane(ray: com.badlogic.gdx.math.collision.Ray, origin: Vector3): PlaneHit? {
+        val ortho = camera as? OrthographicCamera ?: return null
+        val normal = Vector3(ortho.direction)
+        if (normal.len2() <= 1e-8f) {
+            return null
+        }
+        return intersectPlane(ray, origin, normal.nor())
     }
 
     private fun pickBaseHit(ray: com.badlogic.gdx.math.collision.Ray): PlaneHit? {
@@ -610,11 +621,15 @@ class Snapper(
         if (abs(denom) < epsilon) {
             return null
         }
-        val t = Vector3(point).sub(ray.origin).dot(normal) / denom
-        if (t <= 0f) {
+        val lineT = Vector3(point).sub(ray.origin).dot(normal) / denom
+        if (!lineT.isFinite()) {
             return null
         }
-        val hitPoint = Vector3(ray.origin).mulAdd(ray.direction, t)
+        if (camera !is OrthographicCamera && lineT <= 0f) {
+            return null
+        }
+        val hitPoint = Vector3(ray.origin).mulAdd(ray.direction, lineT)
+        val t = rayT(ray, hitPoint) ?: return null
         val facing = facingNormal(Vector3(normal), ray.direction)
         return PlaneHit(hitPoint, facing, t)
     }
@@ -948,8 +963,12 @@ class Snapper(
     }
 
     private fun rayT(ray: com.badlogic.gdx.math.collision.Ray, point: Vector3): Float? {
-        val t = Vector3(point).sub(ray.origin).dot(ray.direction)
-        return if (t > 0f) t else null
+        val t = if (camera is OrthographicCamera) {
+            Vector3(point).sub(camera.position).dot(camera.direction)
+        } else {
+            Vector3(point).sub(ray.origin).dot(ray.direction)
+        }
+        return if (t.isFinite() && t >= -1e-4f) max(0f, t) else null
     }
     private data class PlaneHit(
         val point: Vector3,
