@@ -15,6 +15,7 @@ sealed class ToolOperatorAction {
     data class KeyDown(val keycode: Int) : ToolOperatorAction()
     object ToggleCopyMode : ToolOperatorAction()
     object ShowDistanceInput : ToolOperatorAction()
+    object ExitObjectEdit : ToolOperatorAction()
 }
 
 data class ToolOperator(
@@ -30,18 +31,19 @@ data class ToolOperator(
 }
 
 object ToolOperatorPresets {
-    private fun lineMode(): ToolOperator = ToolOperator.key("line-mode", "Line", Input.Keys.L)
-    private fun arcThrough(): ToolOperator = ToolOperator.key("arc-through", "Arc 3pt", Input.Keys.A)
-    private fun arcCenter(): ToolOperator = ToolOperator.key("arc-center", "Arc Center", Input.Keys.C)
+    private fun lineSegment(): ToolOperator = ToolOperator.key("segment-line", "Line Seg", Input.Keys.L)
+    private fun arcSegment(): ToolOperator = ToolOperator.key("segment-arc", "Arc Seg", Input.Keys.A)
+    private fun circleSegment(): ToolOperator = ToolOperator.key("segment-circle", "Circle Seg", Input.Keys.C)
     fun finish(label: String = "Finish"): ToolOperator = ToolOperator.key("finish", label, Input.Keys.ENTER)
     fun undoPoint(label: String = "Undo Pt"): ToolOperator = ToolOperator.key("undo-point", label, Input.Keys.BACKSPACE)
-    fun cancel(label: String = "Cancel"): ToolOperator = ToolOperator.key("cancel", label, Input.Keys.ESCAPE)
+    fun cancel(label: String = "Esc"): ToolOperator = ToolOperator.key("cancel", label, Input.Keys.ESCAPE)
+    fun closeObject(): ToolOperator = ToolOperator("close-object", "Close Object", ToolOperatorAction.ExitObjectEdit)
 
     private fun arcPathOperators(): List<ToolOperator> {
         return listOf(
-            lineMode(),
-            arcThrough(),
-            arcCenter(),
+            lineSegment(),
+            arcSegment(),
+            circleSegment(),
             undoPoint(),
             finish(),
             cancel()

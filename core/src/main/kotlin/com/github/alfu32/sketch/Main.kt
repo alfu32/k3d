@@ -881,7 +881,8 @@ class Main @JvmOverloads constructor(
                 HelicoidalRotateMultipleTool(scene),
                 PaintTool(scene, { activeCamera }) { statusModel.paintColor.cpy() },
                 objectPlaceTool
-            )
+            ),
+            objectEditingProvider = { scene.isEditing() }
         )
         toolInput = ToolInputProcessor(
             controller = toolController,

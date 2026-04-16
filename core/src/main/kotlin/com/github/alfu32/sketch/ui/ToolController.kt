@@ -8,7 +8,8 @@ import com.github.alfu32.sketch.InputModifiers
 
 class ToolController(
     private val status: StatusModel,
-    tools: List<Tool>
+    tools: List<Tool>,
+    private val objectEditingProvider: () -> Boolean = { false }
 ) {
     private val toolMap = tools.associateBy { it.id }.toMutableMap()
     private val toolChangeListeners = mutableListOf<(ToolId, ToolId) -> Unit>()
@@ -51,6 +52,10 @@ class ToolController(
 
     fun inToolOperators(): List<ToolOperator> {
         val operators = mutableListOf<ToolOperator>()
+        val objectEditing = objectEditingProvider()
+        if (objectEditing) {
+            operators += ToolOperatorPresets.closeObject()
+        }
         if (activeTool.supportsCopyMode()) {
             operators += ToolOperator(
                 id = "copy-mode",
@@ -66,7 +71,7 @@ class ToolController(
                 action = ToolOperatorAction.ShowDistanceInput
             )
         }
-        if (activeTool.id != ToolId.SELECT && operators.none { it.id == "cancel" }) {
+        if ((activeTool.id != ToolId.SELECT || objectEditing) && operators.none { it.id == "cancel" }) {
             operators += ToolOperatorPresets.cancel()
         }
         return operators.distinctBy { it.id }

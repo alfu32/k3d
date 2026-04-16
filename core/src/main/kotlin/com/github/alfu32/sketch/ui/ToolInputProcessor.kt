@@ -111,6 +111,13 @@ class ToolInputProcessor(
                 showDistanceInput()
                 true
             }
+            ToolOperatorAction.ExitObjectEdit -> {
+                val exited = exitGroupEditAction()
+                if (exited && controller.activeToolId() != ToolId.SELECT) {
+                    controller.resetToDefault()
+                }
+                exited
+            }
         }
     }
 
