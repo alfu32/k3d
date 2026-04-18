@@ -986,6 +986,8 @@ class Main @JvmOverloads constructor(
             ::objectPrototypeInfo,
             ::startObjectPlacement,
             ::deleteObjectPrototype,
+            ::toggleObjectPrototypeExternal,
+            ::pickObjectPrototypeExternalFile,
             ::modelUnitInfo,
             ::updateModelUnit,
             { gridSpacing },
@@ -4400,6 +4402,7 @@ class Main @JvmOverloads constructor(
     )
 
     private val exportOptions = meshExportOptions + pngExportOption
+    private val octdImportOption = DesktopFileDialogOption("Octodraw Model (*.octd)", setOf("octd"), "octd")
 
     private fun showImportMeshDialog() {
         if (BuildFlags.WEB_BUILD) {
@@ -4416,11 +4419,11 @@ class Main @JvmOverloads constructor(
             message = "Choose the mesh format to show in the system dialog.",
             options = listOf(
                 DesktopFileDialogOption(
-                    "All supported (*.obj, *.stl, *.stla, *.stlb, *.gltf, *.glb, *.dae, *.dxf, *.3mf, *.amf, *.ifc, *.fbx)",
-                    meshExportOptions.flatMap { it.extensions }.toSet(),
+                    "All supported (*.octd, *.obj, *.stl, *.stla, *.stlb, *.gltf, *.glb, *.dae, *.dxf, *.3mf, *.amf, *.ifc, *.fbx)",
+                    meshExportOptions.flatMap { it.extensions }.toSet() + setOf("octd"),
                     "obj"
                 )
-            ) + meshExportOptions.map { option ->
+            ) + listOf(octdImportOption) + meshExportOptions.map { option ->
                 DesktopFileDialogOption(option.label, option.extensions.toSet(), option.defaultExtension)
             }
         ) ?: run {
@@ -4498,9 +4501,9 @@ class Main @JvmOverloads constructor(
     }
 
     private fun webMeshAcceptFilter(): String {
-        return meshExportOptions
+        return (meshExportOptions
             .flatMap { it.extensions }
-            .distinct()
+            .distinct() + listOf("octd"))
             .joinToString(",") { ".${it.lowercase()}" }
     }
 
@@ -4552,7 +4555,7 @@ class Main @JvmOverloads constructor(
             if (option.pngScreenshotExport) {
                 schedulePngExportToWeb(suggestedName, bridge)
             } else {
-                val payload = createWebExportPayloadForOption(option) ?: return@showMeshExportOptionDialog
+                val payload = createWebExportPayloadForOption(option, suggestedName) ?: return@showMeshExportOptionDialog
                 val base64 = java.util.Base64.getEncoder().encodeToString(payload.bytes)
                 bridge.saveBinaryDocument(
                     suggestedName,
@@ -4604,7 +4607,7 @@ class Main @JvmOverloads constructor(
                 }
                 val extension = targetName.substringAfterLast('.', "").lowercase()
                 val optionForExtension = meshExportOptionForExtension(extension) ?: option
-                val payload = createExportPayloadForOption(optionForExtension) ?: return@createDocument
+                val payload = createExportPayloadForOption(optionForExtension, targetName) ?: return@createDocument
                 if (!bridge.writeBytes(uri, payload.bytes)) {
                     statusModel.message = "Export failed: cannot write selected destination."
                     return@createDocument
@@ -4702,7 +4705,7 @@ class Main @JvmOverloads constructor(
             schedulePngExportToFile(target)
             return
         }
-        val export = createExportPayloadForOption(option) ?: return
+        val export = createExportPayloadForOption(option, target.name) ?: return
         try {
             target.parentFile?.mkdirs()
             target.writeBytes(export.bytes)
@@ -4719,50 +4722,59 @@ class Main @JvmOverloads constructor(
         }
     }
 
-    private fun createExportPayloadForOption(option: MeshExportOption): MeshExportPayload? {
+    private fun createExportPayloadForOption(option: MeshExportOption, targetName: String? = null): MeshExportPayload? {
         option.unsupportedReason?.let { reason ->
             statusModel.message = reason
             return null
         }
         if (option.ifcExport) {
-            return exportIfcPayloadFromSelection()
+            return exportIfcPayloadFromSelection(targetName)
         }
         val format = option.format ?: return null
-        return exportMeshBytes(format)
+        return exportMeshBytes(format, targetName)
     }
 
-    private fun exportMeshBytes(format: MeshIo.ExportFormat): MeshExportPayload? {
+    private fun exportMeshBytes(format: MeshIo.ExportFormat, targetName: String? = null): MeshExportPayload? {
         if (format == MeshIo.ExportFormat.DXF) {
-            return exportDxfBytes()
+            return exportDxfBytes(targetName)
         }
         val selected = collectSelectedWorldTrianglesForExport()
-        val triangles = if (selected.isNotEmpty()) selected else collectAllWorldTrianglesForExport()
+        val useSelection = hasAnySelectionForExport()
+        val triangles = if (useSelection) selected else collectAllWorldTrianglesForExport()
         if (triangles.isEmpty()) {
-            statusModel.message = "Export failed: no mesh triangles in the model."
+            statusModel.message = if (useSelection) {
+                "Export failed: selection contains no mesh triangles."
+            } else {
+                "Export failed: no mesh triangles in the model."
+            }
             return null
         }
         val bytes = try {
-            MeshIo.exportTriangles(triangles, format, meshExportSettings(format))
+            MeshIo.exportTriangles(triangles, format, meshExportSettings(targetName))
         } catch (t: Throwable) {
             statusModel.message = "Export failed: ${t.message ?: t.javaClass.simpleName}"
             return null
         }
-        val scopeLabel = if (selected.isNotEmpty()) "selection" else "full model"
+        val scopeLabel = if (useSelection) "selection" else "full model"
         return MeshExportPayload(bytes, triangles.size, scopeLabel, elementLabel = "triangle(s)")
     }
 
-    private fun exportDxfBytes(): MeshExportPayload? {
+    private fun exportDxfBytes(targetName: String? = null): MeshExportPayload? {
         val selectedTriangles = collectSelectedWorldTrianglesForExport()
         val selectedSegments = collectSelectedWorldSegmentsForExport()
-        val useSelection = selectedTriangles.isNotEmpty() || selectedSegments.isNotEmpty()
+        val useSelection = hasAnySelectionForExport()
         val triangles = if (useSelection) selectedTriangles else collectAllWorldTrianglesForExport()
         val segments = if (useSelection) selectedSegments else collectAllWorldSegmentsForExport()
         if (triangles.isEmpty() && segments.isEmpty()) {
-            statusModel.message = "Export failed: no DXF geometry in the model."
+            statusModel.message = if (useSelection) {
+                "Export failed: selection contains no DXF geometry."
+            } else {
+                "Export failed: no DXF geometry in the model."
+            }
             return null
         }
         val bytes = try {
-            MeshIo.exportDxfGeometry(triangles, segments)
+            MeshIo.exportDxfGeometry(triangles, segments, meshExportSettings(targetName))
         } catch (t: Throwable) {
             statusModel.message = "Export failed: ${t.message ?: t.javaClass.simpleName}"
             return null
@@ -4771,41 +4783,35 @@ class Main @JvmOverloads constructor(
         return MeshExportPayload(bytes, triangles.size + segments.size, scopeLabel, elementLabel = "entity(ies)")
     }
 
-    private fun meshExportSettings(format: MeshIo.ExportFormat): MeshIo.ExportSettings {
-        return when (format) {
-            MeshIo.ExportFormat.THREE_MF -> {
-                MeshIo.ExportSettings(
-                    threeMf = MeshIo.ThreeMfExportSettings(
-                        unit = MeshIo.ThreeMfUnit.MILLIMETER,
-                        coordinateScale = threeMfCoordinateScale()
-                    )
-                )
-            }
+    private fun meshExportSettings(targetName: String? = null): MeshIo.ExportSettings {
+        val unit = exportUnitForTargetName(targetName)
+        return MeshIo.ExportSettings(
+            coordinateScale = exportCoordinateScale(unit),
+            unit = unit,
+            threeMf = MeshIo.ThreeMfExportSettings(coordinateScale = 1f)
+        )
+    }
 
-            else -> MeshIo.ExportSettings()
+    private fun exportCoordinateScale(unit: MeshIo.ExportUnit): Float {
+        val metersPerModelUnit = modelUnit.size.coerceAtLeast(1e-9f)
+        return if (unit == MeshIo.ExportUnit.UNITLESS) {
+            metersPerModelUnit
+        } else {
+            metersPerModelUnit / unit.metersPerUnit.coerceAtLeast(1e-9f)
         }
     }
 
-    private fun threeMfCoordinateScale(): Float {
-        val unitScale = modelUnit.size.coerceAtLeast(1e-6f)
-        val unitNameScale = resolveUnitToMillimeterScale(modelUnit.name) ?: 1f
-        return unitScale * unitNameScale
+    private fun exportUnitForTargetName(targetName: String?): MeshIo.ExportUnit {
+        val base = targetName
+            ?.substringAfterLast('/')
+            ?.substringAfterLast('\\')
+            ?.substringBeforeLast('.', "")
+            .orEmpty()
+        val token = base.split(Regex("[._\\-\\s]+")).lastOrNull().orEmpty()
+        return MeshIo.ExportUnit.fromSuffix(token) ?: MeshIo.ExportUnit.UNITLESS
     }
 
-    private fun resolveUnitToMillimeterScale(name: String): Float? {
-        return when (name.trim().lowercase(Locale.US)) {
-            "", "unit", "units" -> null
-            "micron", "microns", "um", "μm", "µm" -> 0.001f
-            "mm", "millimeter", "millimeters", "millimetre", "millimetres" -> 1f
-            "cm", "centimeter", "centimeters", "centimetre", "centimetres" -> 10f
-            "m", "meter", "meters", "metre", "metres" -> 1000f
-            "in", "inch", "inches", "\"" -> 25.4f
-            "ft", "foot", "feet", "'" -> 304.8f
-            else -> null
-        }
-    }
-
-    private fun createWebExportPayloadForOption(option: MeshExportOption): MeshExportPayload? {
+    private fun createWebExportPayloadForOption(option: MeshExportOption, targetName: String? = null): MeshExportPayload? {
         option.unsupportedReason?.let { reason ->
             statusModel.message = reason
             return null
@@ -4815,7 +4821,7 @@ class Main @JvmOverloads constructor(
             return null
         }
         val format = option.format ?: return null
-        return exportMeshBytes(format)
+        return exportMeshBytes(format, targetName)
     }
 
     private fun collectAllWorldTrianglesForExport(): List<MeshIo.Triangle> {
@@ -4865,8 +4871,71 @@ class Main @JvmOverloads constructor(
                     )
                 )
             }
+            if (!includeAll && scene.isVoxelGroup(group)) {
+                val selectedVoxels = scene.selectedVoxels(group)
+                if (selectedVoxels.isNotEmpty()) {
+                    appendSelectedVoxelTrianglesForExport(group, selectedVoxels, out)
+                }
+            }
         }
         return out
+    }
+
+    private fun appendSelectedVoxelTrianglesForExport(
+        group: GroupScene.GroupNode,
+        selectedVoxels: Set<VoxelStore.Key>,
+        out: MutableList<MeshIo.Triangle>
+    ) {
+        val corners = arrayOf(
+            Vector3(0f, 0f, 0f),
+            Vector3(1f, 0f, 0f),
+            Vector3(1f, 1f, 0f),
+            Vector3(0f, 1f, 0f),
+            Vector3(0f, 0f, 1f),
+            Vector3(1f, 0f, 1f),
+            Vector3(1f, 1f, 1f),
+            Vector3(0f, 1f, 1f)
+        )
+        data class FaceDef(val indices: IntArray, val dx: Int, val dy: Int, val dz: Int)
+        val faces = arrayOf(
+            FaceDef(intArrayOf(0, 3, 7, 4), -1, 0, 0),
+            FaceDef(intArrayOf(1, 5, 6, 2), 1, 0, 0),
+            FaceDef(intArrayOf(0, 4, 5, 1), 0, -1, 0),
+            FaceDef(intArrayOf(3, 2, 6, 7), 0, 1, 0),
+            FaceDef(intArrayOf(0, 1, 2, 3), 0, 0, -1),
+            FaceDef(intArrayOf(4, 7, 6, 5), 0, 0, 1)
+        )
+        selectedVoxels.forEach { key ->
+            val base = Vector3(key.x.toFloat(), key.y.toFloat(), key.z.toFloat())
+            faces.forEach { face ->
+                val neighbor = VoxelStore.Key(key.x + face.dx, key.y + face.dy, key.z + face.dz)
+                if (selectedVoxels.contains(neighbor)) {
+                    return@forEach
+                }
+                val a = group.toWorld(Vector3(corners[face.indices[0]]).add(base))
+                val b = group.toWorld(Vector3(corners[face.indices[1]]).add(base))
+                val c = group.toWorld(Vector3(corners[face.indices[2]]).add(base))
+                val d = group.toWorld(Vector3(corners[face.indices[3]]).add(base))
+                out.add(MeshIo.Triangle(a, c, b))
+                out.add(MeshIo.Triangle(a, d, c))
+            }
+        }
+    }
+
+    private fun hasAnySelectionForExport(): Boolean {
+        val info = selectionInfo()
+        return info.edgeCount > 0 ||
+            info.faceCount > 0 ||
+            info.voxelCount > 0 ||
+            info.hotspotCount > 0 ||
+            info.groupCount > 0 ||
+            info.dimensionCount > 0 ||
+            info.textCount > 0 ||
+            info.wallSelectedCount > 0 ||
+            info.slabSelectedCount > 0 ||
+            info.stairSelectedCount > 0 ||
+            info.frameSelectedCount > 0 ||
+            scene.selectedHvacElements(scene.root).isNotEmpty()
     }
 
     private fun collectAllWorldSegmentsForExport(): List<MeshIo.Segment> {
@@ -4926,11 +4995,18 @@ class Main @JvmOverloads constructor(
         return out
     }
 
-    private fun exportIfcPayloadFromSelection(): MeshExportPayload? {
-        val selected = collectSelectedWorldTrianglesForExport()
-        val triangles = if (selected.isNotEmpty()) selected else collectAllWorldTrianglesForExport()
-        if (triangles.isEmpty()) {
-            statusModel.message = "IFC export failed: no mesh triangles in the model."
+    private fun exportIfcPayloadFromSelection(targetName: String? = null): MeshExportPayload? {
+        val useSelection = hasAnySelectionForExport()
+        val selectedTriangles = collectSelectedWorldTrianglesForExport()
+        val selectedSegments = collectSelectedWorldSegmentsForExport()
+        val triangles = if (useSelection) selectedTriangles else collectAllWorldTrianglesForExport()
+        val segments = if (useSelection) selectedSegments else collectAllWorldSegmentsForExport()
+        if (triangles.isEmpty() && segments.isEmpty()) {
+            statusModel.message = if (useSelection) {
+                "IFC export failed: selection contains no mesh or line geometry."
+            } else {
+                "IFC export failed: no mesh or line geometry in the model."
+            }
             return null
         }
         val exportScene = GroupScene(Color(scene.defaultFaceColor))
@@ -4939,22 +5015,29 @@ class Main @JvmOverloads constructor(
                 exportScene.root.faceStore.addTriangle(Vector3(tri.a), Vector3(tri.b), Vector3(tri.c), scene.defaultFaceColor)
             }
         }
+        exportScene.root.lineStore.withChangeSuppressed {
+            segments.forEach { segment ->
+                exportScene.root.lineStore.addSegment(Vector3(segment.start), Vector3(segment.end), autoCleanup = false)
+            }
+        }
         exportScene.root.faceStore.notifyExternalChange()
+        exportScene.root.lineStore.notifyExternalChange()
         val tmp = kotlin.runCatching {
             File.createTempFile("octodraw-ifc-export-", ".ifc")
         }.getOrNull() ?: run {
             statusModel.message = "IFC export failed: cannot allocate temporary file."
             return null
         }
-        val unitScale = modelUnit.size.coerceAtLeast(1e-6f)
+        val ifcUnit = ifcExportUnitForTargetName(targetName)
+        val unitScale = exportCoordinateScale(ifcUnit).coerceAtLeast(1e-6f)
         return try {
-            val report = IfcExporter.export(exportScene, tmp, unitScale)
+            val report = IfcExporter.export(exportScene, tmp, unitScale, ifcUnit)
             val bytes = tmp.readBytes()
             MeshExportPayload(
                 bytes = bytes,
-                elementCount = triangles.size,
-                scopeLabel = if (selected.isNotEmpty()) "selection" else "full model",
-                elementLabel = "triangle(s)",
+                elementCount = triangles.size + segments.size,
+                scopeLabel = if (useSelection) "selection" else "full model",
+                elementLabel = "entity(ies)",
                 ifcProductCount = report.productCount
             )
         } catch (t: Throwable) {
@@ -4965,8 +5048,30 @@ class Main @JvmOverloads constructor(
         }
     }
 
+    private fun ifcExportUnitForTargetName(targetName: String?): MeshIo.ExportUnit {
+        val unit = exportUnitForTargetName(targetName)
+        return when (unit) {
+            MeshIo.ExportUnit.MICRON,
+            MeshIo.ExportUnit.MILLIMETER,
+            MeshIo.ExportUnit.CENTIMETER,
+            MeshIo.ExportUnit.METER -> unit
+            else -> MeshIo.ExportUnit.UNITLESS
+        }
+    }
+
     private fun importMeshPayload(nameHint: String?, bytes: ByteArray, sourcePath: String? = null) {
         val extension = nameHint?.substringAfterLast('.', "")?.lowercase().orEmpty()
+        if (extension == "octd") {
+            importOctdVoxelPayload(nameHint, bytes)
+            return
+        }
+        if (extension.isBlank()) {
+            val octdSnapshot = ModelPersistence.parseSnapshotBytes(bytes)
+            if (octdSnapshot != null && collectOctdSnapshotVoxels(octdSnapshot).isNotEmpty()) {
+                importOctdVoxelSnapshot(nameHint, octdSnapshot)
+                return
+            }
+        }
         val resolvedFormat = MeshIo.importFormatForExtension(extension)
         val importSettings = meshImportSettings()
         val geometry = when {
@@ -5034,6 +5139,69 @@ class Main @JvmOverloads constructor(
             "Imported ${geometry.triangles.size} face(s) and ${geometry.segments.size} line(s) as '$prototypeName'. Click to place object."
     }
 
+    private fun importOctdVoxelPayload(nameHint: String?, bytes: ByteArray) {
+        val snapshot = ModelPersistence.parseSnapshotBytes(bytes) ?: run {
+            statusModel.message = "Import failed: could not parse ${nameHint ?: "Octodraw model"}."
+            return
+        }
+        importOctdVoxelSnapshot(nameHint, snapshot)
+    }
+
+    private fun importOctdVoxelSnapshot(nameHint: String?, snapshot: ModelPersistence.ModelSnapshot) {
+        val voxels = collectOctdSnapshotVoxels(snapshot)
+        if (voxels.isEmpty()) {
+            statusModel.message = "Import failed: ${nameHint ?: "Octodraw model"} contains no voxel cubes."
+            return
+        }
+        val prototypeName = importedPrototypeName(nameHint).ifBlank { "Imported Voxels" }
+        val prototype = scene.createVoxelPrototype(prototypeName, voxels)
+        if (prototype == null) {
+            statusModel.message = "Import failed: could not create voxel object prototype."
+            return
+        }
+        startObjectPlacement(prototype.id)
+        statusModel.message = "Imported ${voxels.size} cube(s) as '$prototypeName'. Click to place object."
+    }
+
+    private fun collectOctdSnapshotVoxels(
+        snapshot: ModelPersistence.ModelSnapshot
+    ): List<Pair<VoxelStore.Key, Color>> {
+        val prototypes = snapshot.prototypes.associate { dto ->
+            dto.id to dto.toPrototype(scene.defaultFaceColor)
+        }
+        val out = linkedMapOf<VoxelStore.Key, Color>()
+
+        fun appendVoxel(point: Vector3, color: Color) {
+            val key = VoxelStore.Key(point.x.roundToInt(), point.y.roundToInt(), point.z.roundToInt())
+            out[key] = Color(color)
+        }
+
+        val rootInstance = snapshot.rootInstance?.toInstance(prototypes, scene.defaultFaceColor)
+        if (rootInstance != null) {
+            fun visit(group: GroupScene.GroupNode) {
+                if (group.kind == GroupScene.PrototypeKind.VOXEL) {
+                    group.voxelStore?.all().orEmpty().forEach { voxel ->
+                        appendVoxel(group.toWorld(Vector3(voxel.x.toFloat(), voxel.y.toFloat(), voxel.z.toFloat())), voxel.color)
+                    }
+                }
+                group.children.forEach { child ->
+                    child.parent = group
+                    visit(child)
+                }
+            }
+            visit(rootInstance)
+        } else {
+            snapshot.prototypes.forEach { dto ->
+                if (runCatching { GroupScene.PrototypeKind.valueOf(dto.kind) }.getOrNull() == GroupScene.PrototypeKind.VOXEL) {
+                    dto.voxels.forEach { voxel ->
+                        out[VoxelStore.Key(voxel.x, voxel.y, voxel.z)] = voxel.color.toColor()
+                    }
+                }
+            }
+        }
+        return out.map { (key, color) -> key to color }
+    }
+
     private data class ImportedMeshGeometry(
         val triangles: List<MeshIo.Triangle> = emptyList(),
         val segments: List<MeshIo.Segment> = emptyList()
@@ -5042,10 +5210,10 @@ class Main @JvmOverloads constructor(
     }
 
     private fun meshImportSettings(): MeshIo.ImportSettings {
-        val millimetersPerModelUnit = threeMfCoordinateScale().coerceAtLeast(1e-9f)
+        val metersPerModelUnit = modelUnit.size.coerceAtLeast(1e-9f)
         return MeshIo.ImportSettings(
             threeMf = MeshIo.ThreeMfImportSettings(
-                modelUnitsPerMillimeter = 1f / millimetersPerModelUnit
+                modelUnitsPerMillimeter = 0.001f / metersPerModelUnit
             )
         )
     }
@@ -5068,10 +5236,11 @@ class Main @JvmOverloads constructor(
     }
 
     private fun exportIfcModel(file: File) {
-        val unitScale = modelUnit.size.coerceAtLeast(1e-6f)
+        val export = exportIfcPayloadFromSelection(file.name) ?: return
         try {
-            val report = IfcExporter.export(scene, file, unitScale)
-            statusModel.message = "Exported IFC to ${file.absolutePath} (${report.productCount} products)"
+            file.parentFile?.mkdirs()
+            file.writeBytes(export.bytes)
+            statusModel.message = export.statusMessage(file.absolutePath)
         } catch (t: Throwable) {
             statusModel.message = "IFC export failed: ${t.message ?: t.javaClass.simpleName}"
             t.printStackTrace()
@@ -7448,8 +7617,11 @@ class Main @JvmOverloads constructor(
     }
 
     private fun snapshotForPersistence(includeUndoHistory: Boolean): ModelPersistence.ModelSnapshot {
+        if (!BuildFlags.WEB_BUILD && !restoringSnapshot) {
+            saveExternalObjectPrototypes()
+        }
         val undoHistory = if (includeUndoHistory) undoManager.exportHistory() else null
-        return ModelPersistence.snapshot(
+        val snapshot = ModelPersistence.snapshot(
             scene,
             camera,
             orbitCameraController.target,
@@ -7461,6 +7633,127 @@ class Main @JvmOverloads constructor(
             circleSegments,
             undoHistory
         )
+        if (!BuildFlags.WEB_BUILD) {
+            stripExternalObjectPrototypeGeometry(snapshot)
+        }
+        return snapshot
+    }
+
+    private fun stripExternalObjectPrototypeGeometry(snapshot: ModelPersistence.ModelSnapshot) {
+        val rootId = scene.rootPrototypeId()
+        snapshot.prototypes.forEach { prototype ->
+            if (prototype.id == rootId || !prototype.externalReferenceEnabled || prototype.externalReferencePath.isBlank()) {
+                return@forEach
+            }
+            clearPrototypeDtoGeometry(prototype)
+        }
+    }
+
+    private fun clearPrototypeDtoGeometry(prototype: ModelPersistence.ObjectPrototypeDto) {
+        prototype.voxels.clear()
+        prototype.architectureWalls.clear()
+        prototype.architectureSlabs.clear()
+        prototype.architectureStairs.clear()
+        prototype.architectureFrames.clear()
+        prototype.hvacPlumbingRuns.clear()
+        prototype.hvacVentilationDucts.clear()
+        prototype.hotspots.clear()
+        prototype.prototypeVertices.clear()
+        prototype.segments.clear()
+        prototype.faces.clear()
+        prototype.dimensions.clear()
+        prototype.texts.clear()
+    }
+
+    private fun saveExternalObjectPrototypes(): Int {
+        if (BuildFlags.WEB_BUILD || !::scene.isInitialized) {
+            return 0
+        }
+        var saved = 0
+        scene.objectPrototypes().forEach { prototype ->
+            if (saveExternalObjectPrototype(prototype)) {
+                saved++
+            }
+        }
+        return saved
+    }
+
+    private fun saveExternalObjectPrototype(prototype: GroupScene.ObjectPrototype): Boolean {
+        if (!prototype.externalReferenceEnabled || prototype.externalReferencePath.isBlank()) {
+            return false
+        }
+        val dto = ModelPersistence.ObjectPrototypeDto.fromPrototype(prototype).apply {
+            externalReferenceEnabled = false
+        }
+        val snapshot = ModelPersistence.ModelSnapshot().apply {
+            prototypes = mutableListOf(dto)
+            modelUnit = ModelPersistence.ModelUnitDto(this@Main.modelUnit)
+        }
+        return try {
+            val bytes = ModelPersistence.saveSnapshotBytes(snapshot)
+            if (isSafXrefPath(prototype.externalReferencePath)) {
+                val bridge = AndroidSaf.bridge ?: return false
+                bridge.writeBytes(prototype.externalReferencePath, bytes)
+            } else {
+                val target = resolveXrefFile(prototype.externalReferencePath)
+                target.parentFile?.mkdirs()
+                target.writeBytes(bytes)
+            }
+            true
+        } catch (t: Throwable) {
+            statusModel.message = "External object save failed (${prototype.name}): ${t.message ?: t.javaClass.simpleName}"
+            false
+        }
+    }
+
+    private fun loadExternalObjectPrototypes(): Int {
+        if (BuildFlags.WEB_BUILD || !::scene.isInitialized) {
+            return 0
+        }
+        var loaded = 0
+        scene.objectPrototypes().forEach { prototype ->
+            if (!prototype.externalReferenceEnabled || prototype.externalReferencePath.isBlank()) {
+                return@forEach
+            }
+            val snapshot = if (isSafXrefPath(prototype.externalReferencePath)) {
+                val bytes = AndroidSaf.bridge?.readBytes(prototype.externalReferencePath) ?: return@forEach
+                ModelPersistence.parseSnapshotBytes(bytes)
+            } else {
+                ModelPersistence.parseSnapshotFile(resolveXrefFile(prototype.externalReferencePath))
+            } ?: return@forEach
+            val dto = externalPrototypeDto(snapshot) ?: return@forEach
+            val externalPath = prototype.externalReferencePath
+            dto.applyTo(prototype, scene.defaultFaceColor)
+            prototype.externalReferenceEnabled = true
+            prototype.externalReferencePath = externalPath
+            prototype.lineStore.notifyExternalChange()
+            prototype.faceStore.notifyExternalChange()
+            prototype.dimensionStore.notifyExternalChange()
+            loaded++
+        }
+        if (loaded > 0) {
+            scene.recomputeAllInstanceGeometryFromPrototypes()
+            markSceneRuntimeDirty()
+        }
+        return loaded
+    }
+
+    private fun externalPrototypeDto(snapshot: ModelPersistence.ModelSnapshot): ModelPersistence.ObjectPrototypeDto? {
+        return snapshot.prototypes.firstOrNull { it.id != scene.rootPrototypeId() }
+            ?: snapshot.prototypes.firstOrNull()
+    }
+
+    private fun resolveXrefFile(path: String): File {
+        val raw = File(path)
+        if (raw.isAbsolute) {
+            return raw
+        }
+        val base = if (::modelFile.isInitialized) modelFile.parentFile else null
+        return File(base ?: File("."), path).absoluteFile
+    }
+
+    private fun isSafXrefPath(path: String): Boolean {
+        return path.startsWith("content://", ignoreCase = true)
     }
 
     private fun enqueueAsyncModelSave(snapshot: ModelPersistence.ModelSnapshot, file: File = modelFile) {
@@ -7535,6 +7828,7 @@ class Main @JvmOverloads constructor(
         if (history == null || history.entries.isEmpty()) {
             undoManager.reset("Loaded")
         }
+        loadExternalObjectPrototypes()
         orbitCameraController.target.set(cameraTarget)
         syncCameraModesAfterOrbitStateChange()
         statusModel.message = "Loaded $displayName"
@@ -7837,6 +8131,7 @@ class Main @JvmOverloads constructor(
             restoringSnapshot = false
             load.sceneApplied = true
             load.sceneProgress = 1f
+            loadExternalObjectPrototypes()
             initializeModelLoadIndexing(load)
             return
         }
@@ -10367,7 +10662,9 @@ class Main @JvmOverloads constructor(
             SketchUiOverlay.ObjectPrototypeInfo(
                 id = prototype.id,
                 name = prototype.name,
-                instanceCount = scene.objectPrototypeInstanceCount(prototype.id)
+                instanceCount = scene.objectPrototypeInstanceCount(prototype.id),
+                external = prototype.externalReferenceEnabled,
+                externalPath = prototype.externalReferencePath
             )
         }
     }
@@ -10387,6 +10684,83 @@ class Main @JvmOverloads constructor(
         } else {
             statusModel.message = "Cannot delete: object has instances."
         }
+    }
+
+    private fun toggleObjectPrototypeExternal(prototypeId: String, enabled: Boolean) {
+        val prototype = scene.objectPrototypeById(prototypeId) ?: return
+        if (prototype.externalReferenceEnabled == enabled) {
+            return
+        }
+        if (enabled && prototype.externalReferencePath.isBlank()) {
+            pickObjectPrototypeExternalFile(prototypeId)
+            return
+        }
+        prototype.externalReferenceEnabled = enabled
+        if (enabled) {
+            saveExternalObjectPrototype(prototype)
+        }
+        statusModel.message = if (enabled) "Object stored externally." else "Object stored internally."
+        undoManager.commit("Toggle Object XRef")
+        saveModel()
+    }
+
+    private fun pickObjectPrototypeExternalFile(prototypeId: String) {
+        val prototype = scene.objectPrototypeById(prototypeId) ?: return
+        if (BuildFlags.WEB_BUILD) {
+            statusModel.message = "Object xref files are not available in web runtime."
+            return
+        }
+        val suggestedXrefName = defaultObjectXrefFileName(prototype)
+        if (isAndroidRuntime()) {
+            val bridge = AndroidSaf.bridge ?: run {
+                statusModel.message = "Object xref file picker is unavailable."
+                return
+            }
+            bridge.createDocument(suggestedXrefName) { uri, _ ->
+                val safeUri = uri?.trim().orEmpty()
+                if (safeUri.isBlank()) {
+                    statusModel.message = "Object xref file selection canceled."
+                    return@createDocument
+                }
+                prototype.externalReferencePath = safeUri
+                prototype.externalReferenceEnabled = true
+                if (!saveExternalObjectPrototype(prototype)) {
+                    return@createDocument
+                }
+                statusModel.message = "Object xref set."
+                undoManager.commit("Set Object XRef")
+                saveModel()
+            }
+            return
+        }
+        val defaultName = prototype.externalReferencePath
+            .takeIf { it.isNotBlank() }
+            ?.let { File(it).name }
+            ?: suggestedXrefName
+        val requested = showDesktopFileDialog(
+            title = "Object XRef File",
+            mode = FileDialog.SAVE,
+            defaultFileName = defaultName
+        ) ?: run {
+            statusModel.message = "Object xref file selection canceled."
+            return
+        }
+        val target = ensureFileExtension(requested.absoluteFile, setOf("octd"), "octd")
+        prototype.externalReferencePath = target.absolutePath
+        prototype.externalReferenceEnabled = true
+        if (!saveExternalObjectPrototype(prototype)) {
+            return
+        }
+        statusModel.message = "Object xref set to ${target.absolutePath}"
+        undoManager.commit("Set Object XRef")
+        saveModel()
+    }
+
+    private fun defaultObjectXrefFileName(prototype: GroupScene.ObjectPrototype): String {
+        val base = prototype.name.ifBlank { "object" }
+            .replace(Regex("[^A-Za-z0-9_.-]"), "_")
+            .ifBlank { "object" }
+        return if (base.endsWith(".octd", ignoreCase = true)) base else "$base.octd"
     }
 
     private fun modelUnitInfo(): ModelUnit {

@@ -132,7 +132,9 @@ class GroupScene(
         val faceStore: DraftFaceStore,
         val dimensionStore: DraftDimensionStore,
         val textStore: DraftTextStore,
-        val prototypeVertexIds: MutableMap<HotspotStore.VertexKey, String> = linkedMapOf()
+        val prototypeVertexIds: MutableMap<HotspotStore.VertexKey, String> = linkedMapOf(),
+        var externalReferenceEnabled: Boolean = false,
+        var externalReferencePath: String = ""
     )
 
     class GroupNode(
@@ -731,6 +733,46 @@ class GroupScene(
             segments = emptyList(),
             includeTriangleEdges = includeEdges
         )
+    }
+
+    fun createVoxelPrototype(
+        name: String,
+        voxels: Collection<Pair<VoxelStore.Key, Color>>
+    ): ObjectPrototype? {
+        if (voxels.isEmpty()) {
+            return null
+        }
+        val minX = voxels.minOf { it.first.x }
+        val minY = voxels.minOf { it.first.y }
+        val minZ = voxels.minOf { it.first.z }
+        val prototype = ObjectPrototype(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name.ifBlank { "Imported Voxels" },
+            definitionOrigin = Vector3(),
+            definitionAxisU = Vector3(1f, 0f, 0f),
+            definitionAxisV = Vector3(0f, 1f, 0f),
+            definitionAxisW = Vector3(0f, 0f, 1f),
+            gluedToSurface = false,
+            kind = PrototypeKind.VOXEL,
+            voxelColor = Color(defaultFaceColor),
+            voxelStore = VoxelStore(),
+            architectureStore = null,
+            hvacStore = null,
+            lineStore = DraftLineStore(),
+            faceStore = DraftFaceStore(defaultFaceColor),
+            dimensionStore = DraftDimensionStore(),
+            textStore = DraftTextStore()
+        )
+        voxels.forEach { (key, color) ->
+            prototype.voxelStore?.set(key.x - minX, key.y - minY, key.z - minZ, color)
+        }
+        rebuildVoxelGeometry(prototype)
+        registerPrototype(prototype)
+        refreshPrototypeVertexIds(prototype)
+        prototype.lineStore.notifyExternalChange()
+        prototype.faceStore.notifyExternalChange()
+        notifyChange()
+        return prototype
     }
 
     fun createImportedPrototype(
@@ -2076,7 +2118,9 @@ class GroupScene(
             textStore = clonedTextStore,
             prototypeVertexIds = linkedMapOf<HotspotStore.VertexKey, String>().also { map ->
                 source.prototypeVertexIds.forEach { (key, id) -> map[key] = id }
-            }
+            },
+            externalReferenceEnabled = source.externalReferenceEnabled,
+            externalReferencePath = source.externalReferencePath
         )
     }
 

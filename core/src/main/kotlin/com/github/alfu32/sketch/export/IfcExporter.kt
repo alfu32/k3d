@@ -36,11 +36,11 @@ object IfcExporter {
         fun all(): List<String> = entities
     }
 
-    fun export(scene: GroupScene, file: File, unitScale: Float): ExportReport {
+    fun export(scene: GroupScene, file: File, unitScale: Float, unit: MeshIo.ExportUnit = MeshIo.ExportUnit.METER): ExportReport {
         val scale = if (unitScale.isFinite() && unitScale > 0f) unitScale.toDouble() else 1.0
         val (meshes, lines) = collectGeometry(scene, scale)
         val writer = StepWriter()
-        val report = buildIfcData(writer, meshes, lines)
+        val report = buildIfcData(writer, meshes, lines, unit)
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
         val sb = StringBuilder()
         sb.appendLine("ISO-10303-21;")
@@ -60,7 +60,8 @@ object IfcExporter {
     private fun buildIfcData(
         writer: StepWriter,
         meshes: List<MeshChunk>,
-        lines: List<LineChunk>
+        lines: List<LineChunk>,
+        unit: MeshIo.ExportUnit
     ): ExportReport {
         val person = writer.add("IFCPERSON($,$,'Octodraw',$,$,$,$,$)")
         val org = writer.add("IFCORGANIZATION($,'Octodraw',$,$,$)")
@@ -73,9 +74,10 @@ object IfcExporter {
         val dirX = writer.add("IFCDIRECTION((1.,0.,0.))")
         val axis3d = writer.add("IFCAXIS2PLACEMENT3D(#$origin,#$dirZ,#$dirX)")
         val modelContext = writer.add("IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.E-5,#$axis3d,$)")
-        val unitLength = writer.add("IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.)")
-        val unitArea = writer.add("IFCSIUNIT(*,.AREAUNIT.,$,.SQUARE_METRE.)")
-        val unitVolume = writer.add("IFCSIUNIT(*,.VOLUMEUNIT.,$,.CUBIC_METRE.)")
+        val siPrefix = ifcSiPrefix(unit)
+        val unitLength = writer.add("IFCSIUNIT(*,.LENGTHUNIT.,$siPrefix,.METRE.)")
+        val unitArea = writer.add("IFCSIUNIT(*,.AREAUNIT.,$siPrefix,.SQUARE_METRE.)")
+        val unitVolume = writer.add("IFCSIUNIT(*,.VOLUMEUNIT.,$siPrefix,.CUBIC_METRE.)")
         val units = writer.add("IFCUNITASSIGNMENT((#$unitLength,#$unitArea,#$unitVolume))")
 
         val project = writer.add("IFCPROJECT('${ifcGuid()}',#$owner,'Octodraw Model',$,$,$,$,(#$modelContext),#$units)")
@@ -268,6 +270,15 @@ object IfcExporter {
             (point.y.toDouble() * unitScale).toFloat(),
             (point.z.toDouble() * unitScale).toFloat()
         )
+    }
+
+    private fun ifcSiPrefix(unit: MeshIo.ExportUnit): String {
+        return when (unit) {
+            MeshIo.ExportUnit.MICRON -> ".MICRO."
+            MeshIo.ExportUnit.MILLIMETER -> ".MILLI."
+            MeshIo.ExportUnit.CENTIMETER -> ".CENTI."
+            else -> "$"
+        }
     }
 
     private fun fmt(value: Double): String {

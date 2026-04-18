@@ -847,6 +847,8 @@ object ModelPersistence {
         var definitionAxisW: Vec3Dto = Vec3Dto()
         var gluedToSurface: Boolean = false
         var kind: String = GroupScene.PrototypeKind.MESH.name
+        var externalReferenceEnabled: Boolean = false
+        var externalReferencePath: String = ""
         var voxelColor: ColorDto? = null
         var voxels: MutableList<VoxelDto> = mutableListOf()
         var architectureWalls: MutableList<ArchitectureWallDto> = mutableListOf()
@@ -884,7 +886,9 @@ object ModelPersistence {
                 lineStore = DraftLineStore(),
                 faceStore = DraftFaceStore(defaultColor),
                 dimensionStore = DraftDimensionStore(),
-                textStore = DraftTextStore()
+                textStore = DraftTextStore(),
+                externalReferenceEnabled = externalReferenceEnabled,
+                externalReferencePath = externalReferencePath
             )
         }
 
@@ -895,6 +899,8 @@ object ModelPersistence {
             prototype.definitionAxisV.set(definitionAxisV.toVector3())
             prototype.definitionAxisW.set(definitionAxisW.toVector3())
             prototype.gluedToSurface = gluedToSurface
+            prototype.externalReferenceEnabled = externalReferenceEnabled
+            prototype.externalReferencePath = externalReferencePath
             val parsedKind = parsedKind()
             prototype.kind = when {
                 parsedKind == GroupScene.PrototypeKind.VOXEL && prototype.voxelStore == null -> GroupScene.PrototypeKind.MESH
@@ -1157,6 +1163,8 @@ object ModelPersistence {
                 dto.definitionAxisW = Vec3Dto(prototype.definitionAxisW)
                 dto.gluedToSurface = prototype.gluedToSurface
                 dto.kind = prototype.kind.name
+                dto.externalReferenceEnabled = prototype.externalReferenceEnabled
+                dto.externalReferencePath = prototype.externalReferencePath
                 dto.voxelColor = ColorDto(prototype.voxelColor)
                 dto.voxels = prototype.voxelStore?.all()?.map { voxel ->
                     VoxelDto(voxel.x, voxel.y, voxel.z, ColorDto(voxel.color))

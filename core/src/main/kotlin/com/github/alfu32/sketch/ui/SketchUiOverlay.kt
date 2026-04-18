@@ -83,6 +83,8 @@ class SketchUiOverlay(
     private val objectPrototypeProvider: () -> List<ObjectPrototypeInfo>,
     private val objectPrototypePlace: (String) -> Unit,
     private val objectPrototypeDelete: (String) -> Unit,
+    private val objectPrototypeExternalToggle: (String, Boolean) -> Unit,
+    private val objectPrototypeExternalPick: (String) -> Unit,
     private val modelUnitProvider: () -> com.github.alfu32.sketch.model.ModelUnit,
     private val modelUnitChanged: (String, Float) -> Unit,
     private val gridSpacingProvider: () -> Float,
@@ -562,6 +564,10 @@ class SketchUiOverlay(
     private val objectsList = com.kotcrab.vis.ui.widget.VisList<String>()
     private var objectPrototypeItems: List<ObjectPrototypeInfo> = emptyList()
     private lateinit var objectsDeleteButton: VisTextButton
+    private val objectsExternalCheck = VisCheckBox("Store externally")
+    private val objectsExternalPathLabel = VisLabel("XRef: -")
+    private lateinit var objectsExternalPickButton: VisTextButton
+    private var updatingObjectExternalFields = false
     private lateinit var modelSettingsPanel: DockSection
     private lateinit var uiSettingsPanel: DockSection
     private lateinit var rightSidePanel: CollapsibleWindow
@@ -2339,6 +2345,26 @@ class SketchUiOverlay(
             }
         })
         content.add(objectsDeleteButton).left().padTop(4f).row()
+        objectsExternalCheck.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                if (updatingObjectExternalFields) {
+                    return
+                }
+                val selected = selectedObjectPrototype() ?: return
+                objectPrototypeExternalToggle(selected.id, objectsExternalCheck.isChecked)
+            }
+        })
+        content.add(objectsExternalCheck).left().padTop(4f).row()
+        objectsExternalPickButton = VisTextButton("Pick XRef File")
+        objectsExternalPickButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                val selected = selectedObjectPrototype() ?: return
+                objectPrototypeExternalPick(selected.id)
+            }
+        })
+        content.add(objectsExternalPickButton).left().row()
+        objectsExternalPathLabel.setWrap(true)
+        content.add(objectsExternalPathLabel).left().growX().row()
         return buildDockSection("Objects", content, visible = true, collapsed = false)
     }
 
@@ -5185,13 +5211,21 @@ class SketchUiOverlay(
         if (prototypes != objectPrototypeItems) {
             objectPrototypeItems = prototypes
             val items = prototypes.map { prototype ->
-                "${prototype.name} (${prototype.instanceCount}) [${prototype.id.take(8)}]"
+                val storage = if (prototype.external) "external" else "internal"
+                "${prototype.name} | $storage | ${prototype.instanceCount} [${prototype.id.take(8)}]"
             }
             objectsList.setItems(*items.toTypedArray())
             objectsList.selectedIndex = -1
         }
         val selected = selectedObjectPrototype()
         objectsDeleteButton.isDisabled = selected == null || selected.instanceCount > 0
+        updatingObjectExternalFields = true
+        objectsExternalCheck.isDisabled = selected == null
+        objectsExternalPickButton.isDisabled = selected == null
+        objectsExternalCheck.isChecked = selected?.external == true
+        val path = selected?.externalPath?.takeIf { it.isNotBlank() } ?: "-"
+        objectsExternalPathLabel.setText("XRef: $path")
+        updatingObjectExternalFields = false
     }
 
     private fun updateModelSettingsPanel() {
@@ -6992,7 +7026,13 @@ class SketchUiOverlay(
 
     data class GroupInfo(val id: String, val name: String, val glued: Boolean, val editing: Boolean)
 
-    data class ObjectPrototypeInfo(val id: String, val name: String, val instanceCount: Int)
+    data class ObjectPrototypeInfo(
+        val id: String,
+        val name: String,
+        val instanceCount: Int,
+        val external: Boolean = false,
+        val externalPath: String = ""
+    )
 
     enum class ArchitectureElementKind {
         WALL,
