@@ -68,8 +68,11 @@ i:b:/icons.48.png:56210:1
 i:b:/appicon.3.png:52833:1
 i:b:/selected-tex.png:558:1
 i:b:/icons.2.png:19774:1
-i:b:/assets.txt:2992:1
+i:b:/icons-48px.png:50502:1
+i:b:/assets.txt:3037:1
+i:b:/icons-64px.png:72980:1
 i:b:/icons.mapping.48.csv:1536:1
+i:b:/icons-32px.png:23803:1
 i:b:/appicon_300x300.ico:4246:1
 i:b:/glyphs/alphabet.octd:1272176:1
 i:b:/glyphs/alphabet.octd.bak:186229:1
