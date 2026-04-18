@@ -728,6 +728,43 @@ object ModelPersistence {
                     }
                 }
                 instanceTasks.addLast(InstanceTask(snapshot.rootInstance!!, null, scene.root))
+            } else if (snapshot.prototypes.isNotEmpty()) {
+                val rootPrototype = scene.rootPrototype()
+                prototypeMap[rootPrototype.id] = rootPrototype
+                snapshot.prototypes.forEach { dto ->
+                    if (dto.id == rootPrototype.id) {
+                        prototypeTasks.addLast(PrototypeTask(dto, rootPrototype))
+                    } else {
+                        val prototype = dto.createPrototypeShell(defaultColor)
+                        scene.registerPrototypeForLoad(prototype)
+                        prototypeMap[prototype.id] = prototype
+                        prototypeTasks.addLast(PrototypeTask(dto, prototype))
+                    }
+                }
+                val objectPrototypeId = snapshot.prototypes
+                    .firstOrNull { it.id != rootPrototype.id }
+                    ?.id
+                val rootInstance = GroupInstanceDto().apply {
+                    id = "root"
+                    prototypeId = rootPrototype.id
+                    instanceOrigin = Vec3Dto(Vector3())
+                    instanceAxisU = Vec3Dto(Vector3(1f, 0f, 0f))
+                    instanceAxisV = Vec3Dto(Vector3(0f, 1f, 0f))
+                    instanceAxisW = Vec3Dto(Vector3(0f, 0f, 1f))
+                    if (objectPrototypeId != null) {
+                        children = mutableListOf(
+                            GroupInstanceDto().apply {
+                                id = java.util.UUID.randomUUID().toString()
+                                prototypeId = objectPrototypeId
+                                instanceOrigin = Vec3Dto(Vector3())
+                                instanceAxisU = Vec3Dto(Vector3(1f, 0f, 0f))
+                                instanceAxisV = Vec3Dto(Vector3(0f, 1f, 0f))
+                                instanceAxisW = Vec3Dto(Vector3(0f, 0f, 1f))
+                            }
+                        )
+                    }
+                }
+                instanceTasks.addLast(InstanceTask(rootInstance, null, scene.root))
             } else if (snapshot.rootGroup != null) {
                 legacyTasks.addLast(LegacyGroupTask(snapshot.rootGroup!!, null, scene.root))
             } else {
@@ -2308,6 +2345,9 @@ object ModelPersistence {
         if (snapshot.rootInstance != null && snapshot.prototypes.isNotEmpty()) {
             snapshot.prototypes.forEach { dto -> total += prototypeWork(dto) }
             total += instanceWork(snapshot.rootInstance!!)
+        } else if (snapshot.prototypes.isNotEmpty()) {
+            snapshot.prototypes.forEach { dto -> total += prototypeWork(dto) }
+            total += 2
         } else if (snapshot.rootGroup != null) {
             total += legacyWork(snapshot.rootGroup!!)
         } else {

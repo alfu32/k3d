@@ -7686,7 +7686,8 @@ class Main @JvmOverloads constructor(
             externalReferenceEnabled = false
         }
         val snapshot = ModelPersistence.ModelSnapshot().apply {
-            prototypes = mutableListOf(dto)
+            prototypes = mutableListOf(rootPrototypeDtoForXref(), dto)
+            rootInstance = rootInstanceDtoForXref(dto.id)
             modelUnit = ModelPersistence.ModelUnitDto(this@Main.modelUnit)
         }
         return try {
@@ -7754,6 +7755,40 @@ class Main @JvmOverloads constructor(
 
     private fun isSafXrefPath(path: String): Boolean {
         return path.startsWith("content://", ignoreCase = true)
+    }
+
+    private fun rootPrototypeDtoForXref(): ModelPersistence.ObjectPrototypeDto {
+        return ModelPersistence.ObjectPrototypeDto().apply {
+            id = scene.rootPrototypeId()
+            name = "Root"
+            definitionOrigin = ModelPersistence.Vec3Dto(Vector3())
+            definitionAxisU = ModelPersistence.Vec3Dto(Vector3(1f, 0f, 0f))
+            definitionAxisV = ModelPersistence.Vec3Dto(Vector3(0f, 1f, 0f))
+            definitionAxisW = ModelPersistence.Vec3Dto(Vector3(0f, 0f, 1f))
+            kind = GroupScene.PrototypeKind.MESH.name
+            externalReferenceEnabled = false
+        }
+    }
+
+    private fun rootInstanceDtoForXref(prototypeId: String): ModelPersistence.GroupInstanceDto {
+        return ModelPersistence.GroupInstanceDto().apply {
+            id = "root"
+            this.prototypeId = scene.rootPrototypeId()
+            instanceOrigin = ModelPersistence.Vec3Dto(Vector3())
+            instanceAxisU = ModelPersistence.Vec3Dto(Vector3(1f, 0f, 0f))
+            instanceAxisV = ModelPersistence.Vec3Dto(Vector3(0f, 1f, 0f))
+            instanceAxisW = ModelPersistence.Vec3Dto(Vector3(0f, 0f, 1f))
+            children = mutableListOf(
+                ModelPersistence.GroupInstanceDto().apply {
+                    id = java.util.UUID.randomUUID().toString()
+                    this.prototypeId = prototypeId
+                    instanceOrigin = ModelPersistence.Vec3Dto(Vector3())
+                    instanceAxisU = ModelPersistence.Vec3Dto(Vector3(1f, 0f, 0f))
+                    instanceAxisV = ModelPersistence.Vec3Dto(Vector3(0f, 1f, 0f))
+                    instanceAxisW = ModelPersistence.Vec3Dto(Vector3(0f, 0f, 1f))
+                }
+            )
+        }
     }
 
     private fun enqueueAsyncModelSave(snapshot: ModelPersistence.ModelSnapshot, file: File = modelFile) {
