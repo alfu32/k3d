@@ -16,9 +16,6 @@ appicon_71x71.png
 appsplash.png
 glyphs/alphabet.octd
 glyphs/alphabet.octd.bak
-icons-32px.png
-icons-48px.png
-icons-64px.png
 icons.2.png
 icons.48.png
 icons.64.png
