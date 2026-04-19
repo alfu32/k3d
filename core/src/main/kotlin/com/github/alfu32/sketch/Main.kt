@@ -969,6 +969,8 @@ class Main @JvmOverloads constructor(
             ::showImportMeshDialog,
             ::showExportMeshDialog,
             ::runCleanup,
+            ::undoAction,
+            ::redoAction,
             ::deleteSelection,
             ::flipSelectedFaces,
             ::voxelizeSelectedFaces,

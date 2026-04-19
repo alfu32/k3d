@@ -66,6 +66,8 @@ class SketchUiOverlay(
     private val importMeshAction: () -> Unit,
     private val exportMeshAction: () -> Unit,
     private val cleanupAction: () -> Unit,
+    private val undoAction: () -> Unit,
+    private val redoAction: () -> Unit,
     private val deleteSelectionAction: () -> Unit,
     private val flipFacesAction: () -> Unit,
     private val voxelizeFacesAction: () -> Unit,
@@ -415,11 +417,9 @@ class SketchUiOverlay(
     private val pluginToolButtons = mutableMapOf<String, AppImageTextButton>()
     private val pluginToolByWidget = mutableMapOf<AppImageTextButton, String>()
     private val pluginToolbars = mutableMapOf<String, CollapsibleWindow>()
-    private val cameraModeButtons = mutableMapOf<CameraMode, VisTextButton>()
-    private val cameraModeLabels = mutableMapOf<CameraMode, String>()
+    private val cameraModeButtons = mutableMapOf<CameraMode, AppImageTextButton>()
     private var updatingCameraModeButtons = false
-    private val cameraInteractionModeButtons = mutableMapOf<CameraInteractionMode, VisTextButton>()
-    private val cameraInteractionModeLabels = mutableMapOf<CameraInteractionMode, String>()
+    private val cameraInteractionModeButtons = mutableMapOf<CameraInteractionMode, AppImageTextButton>()
     private var updatingCameraInteractionModeButtons = false
     private val pluginPanels = mutableMapOf<String, CollapsibleWindow>()
     private val pluginPanelPositions = mutableMapOf<String, PanelPosition>()
@@ -1199,12 +1199,10 @@ class SketchUiOverlay(
         updatingCameraModeButtons = true
         val mode = cameraModeProvider()
         cameraModeButtons.forEach { (cameraMode, button) ->
-            val active = cameraMode == mode
-            button.isChecked = active
-            val label = cameraModeLabels[cameraMode] ?: cameraMode.displayName
-            button.setText(if (active) "• $label" else label)
+            button.isChecked = cameraMode == mode
         }
         updatingCameraModeButtons = false
+        updateButtonLabels()
     }
 
     private fun syncCameraInteractionModeButtons() {
@@ -1214,12 +1212,10 @@ class SketchUiOverlay(
         updatingCameraInteractionModeButtons = true
         val mode = cameraInteractionModeProvider()
         cameraInteractionModeButtons.forEach { (interactionMode, button) ->
-            val active = interactionMode == mode
-            button.isChecked = active
-            val label = cameraInteractionModeLabels[interactionMode] ?: interactionMode.displayName
-            button.setText(if (active) "• $label" else label)
+            button.isChecked = interactionMode == mode
         }
         updatingCameraInteractionModeButtons = false
+        updateButtonLabels()
     }
 
     fun act(delta: Float) {
@@ -1735,6 +1731,22 @@ class SketchUiOverlay(
             saveAsModelAction()
         }
 
+        val undoButton = createActionButton(
+            label = "Undo",
+            icon = iconFor("undo", createActionIconDrawable(Color(0.85f, 0.85f, 0.95f, 1f))),
+            tutorialActionId = "ui.action.undo"
+        ) {
+            undoAction()
+        }
+
+        val redoButton = createActionButton(
+            label = "Redo",
+            icon = iconFor("redo", createActionIconDrawable(Color(0.85f, 0.85f, 0.95f, 1f))),
+            tutorialActionId = "ui.action.redo"
+        ) {
+            redoAction()
+        }
+
         val importMeshButton = createActionButton(
             label = "Import Mesh",
             icon = iconFor("file_open", createActionIconDrawable(Color(0.9f, 0.78f, 0.45f, 1f))),
@@ -1814,6 +1826,8 @@ class SketchUiOverlay(
         val buttons = listOf(
             openButton,
             saveAsButton,
+            undoButton,
+            redoButton,
             importMeshButton,
             exportMeshButton,
             cleanupButton,
@@ -1844,26 +1858,31 @@ class SketchUiOverlay(
         content.defaults().pad(0f).left()
         val slots = mutableListOf<ToolbarButtonSlot>()
 
-        val group = ButtonGroup<VisTextButton>().apply {
+        val group = ButtonGroup<AppImageTextButton>().apply {
             setMaxCheckCount(1)
             setMinCheckCount(0)
             setUncheckLast(true)
         }
-        val interactionGroup = ButtonGroup<VisTextButton>().apply {
+        val interactionGroup = ButtonGroup<AppImageTextButton>().apply {
             setMaxCheckCount(1)
             setMinCheckCount(0)
             setUncheckLast(true)
         }
         cameraModeButtons.clear()
-        cameraModeLabels.clear()
         cameraInteractionModeButtons.clear()
-        cameraInteractionModeLabels.clear()
         listOf(
-            CameraMode.ORBIT to "Orbit",
-            CameraMode.WALKTHROUGH to "Walk",
-            CameraMode.ORTHOGRAPHIC to "Ortho"
-        ).forEach { (mode, label) ->
-            val button = VisTextButton(label, "toggle")
+            Triple(CameraMode.ORBIT, "Orbit", "camera_perspective"),
+            Triple(CameraMode.WALKTHROUGH, "Walk", "camera_first_person"),
+            Triple(CameraMode.ORTHOGRAPHIC, "Ortho", "camera_orthographic")
+        ).forEach { (mode, label, iconName) ->
+            val icon = iconFor(iconName, createActionIconDrawable(Color(0.65f, 0.78f, 0.95f, 1f)))
+            val button = AppImageTextButton(label, icon)
+            applyWhiteButtonStyle(button)
+            applyIconStyle(button, icon)
+            button.setText("")
+            buttonLabels[button] = label
+            button.addListener(hoverListener(button))
+            attachButtonMarker(button)
             button.addListener(object : ClickListener() {
                 override fun clicked(event: InputEvent?, x: Float, y: Float) {
                     if (updatingCameraModeButtons) {
@@ -1876,20 +1895,25 @@ class SketchUiOverlay(
             })
             registerTutorialActionTarget("ui.action.camera_mode.${mode.name.lowercase(Locale.US)}", button)
             cameraModeButtons[mode] = button
-            cameraModeLabels[mode] = label
             group.add(button)
-            val buttonWidth = button.prefWidth.coerceAtLeast(54f)
-            val cell = content.add(button).height(toolbarButtonSize).minWidth(buttonWidth)
-            slots += ToolbarButtonSlot(button, cell, buttonWidth, toolbarButtonSize)
+            val cell = content.add(button).size(toolbarButtonSize, toolbarButtonSize)
+            slots += ToolbarButtonSlot(button, cell, toolbarButtonSize, toolbarButtonSize)
         }
         syncCameraModeButtons()
 
         listOf(
-            CameraInteractionMode.ROTATE to "Rotate",
-            CameraInteractionMode.PAN to "Pan",
-            CameraInteractionMode.ZOOM to "Zoom"
-        ).forEach { (mode, label) ->
-            val button = VisTextButton(label, "toggle")
+            Triple(CameraInteractionMode.ROTATE, "Rotate", "camera_rotating_operation"),
+            Triple(CameraInteractionMode.PAN, "Pan", "camera_panning_operation"),
+            Triple(CameraInteractionMode.ZOOM, "Zoom", "camera_zooming_operation")
+        ).forEach { (mode, label, iconName) ->
+            val icon = iconFor(iconName, createActionIconDrawable(Color(0.7f, 0.85f, 0.65f, 1f)))
+            val button = AppImageTextButton(label, icon)
+            applyWhiteButtonStyle(button)
+            applyIconStyle(button, icon)
+            button.setText("")
+            buttonLabels[button] = label
+            button.addListener(hoverListener(button))
+            attachButtonMarker(button)
             button.addListener(object : ClickListener() {
                 override fun clicked(event: InputEvent?, x: Float, y: Float) {
                     if (updatingCameraInteractionModeButtons) {
@@ -1907,11 +1931,9 @@ class SketchUiOverlay(
             })
             registerTutorialActionTarget("ui.action.camera_interaction.${mode.name.lowercase(Locale.US)}", button)
             cameraInteractionModeButtons[mode] = button
-            cameraInteractionModeLabels[mode] = label
             interactionGroup.add(button)
-            val buttonWidth = button.prefWidth.coerceAtLeast(58f)
-            val cell = content.add(button).height(toolbarButtonSize).minWidth(buttonWidth)
-            slots += ToolbarButtonSlot(button, cell, buttonWidth, toolbarButtonSize)
+            val cell = content.add(button).size(toolbarButtonSize, toolbarButtonSize)
+            slots += ToolbarButtonSlot(button, cell, toolbarButtonSize, toolbarButtonSize)
         }
         syncCameraInteractionModeButtons()
 
@@ -6564,8 +6586,8 @@ class SketchUiOverlay(
     private fun createIconDrawable(toolId: ToolId): TextureRegionDrawable {
         val iconName = when (toolId) {
             ToolId.SELECT -> "select"
-            ToolId.AXIAL_GRID -> "axis"
-            ToolId.PLANAR_GRID -> "grid"
+            ToolId.AXIAL_GRID -> "grid_helper_axial"
+            ToolId.PLANAR_GRID -> "grid_helper_planar"
             ToolId.LINE -> "line"
             ToolId.CONSTRUCTION_LINE -> "construction_line"
             ToolId.POLYLINE -> "polyline"
@@ -6803,9 +6825,15 @@ class SketchUiOverlay(
             val isHovered = hoveredButtons.contains(button)
             val isActiveTool = toolButtonByWidget[button] == status.activeTool
             val isActivePluginTool = pluginToolByWidget[button] != null && pluginToolByWidget[button] == activePluginToolId
+            val isActiveCameraMode = cameraModeButtons.any { (mode, modeButton) ->
+                modeButton === button && mode == cameraModeProvider()
+            }
+            val isActiveCameraInteractionMode = cameraInteractionModeButtons.any { (mode, modeButton) ->
+                modeButton === button && mode == cameraInteractionModeProvider()
+            }
             val marker = buttonMarkers[button]
             marker?.color = when {
-                isActiveTool || isActivePluginTool -> activeColor
+                isActiveTool || isActivePluginTool || isActiveCameraMode || isActiveCameraInteractionMode -> activeColor
                 isHovered -> hoverColor
                 else -> neutralColor
             }
