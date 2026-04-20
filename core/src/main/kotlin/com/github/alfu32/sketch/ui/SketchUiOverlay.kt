@@ -82,6 +82,7 @@ class SketchUiOverlay(
     private val groupNameChanged: (String) -> Unit,
     private val groupGlueChanged: (Boolean) -> Unit,
     private val groupEditModeAction: () -> Unit,
+    private val objectCreateFromSelectionAction: () -> Unit,
     private val objectPrototypeProvider: () -> List<ObjectPrototypeInfo>,
     private val objectPrototypePlace: (String) -> Unit,
     private val objectPrototypeDelete: (String) -> Unit,
@@ -1796,6 +1797,14 @@ class SketchUiOverlay(
             groupEditModeAction()
         }
 
+        val createObjectButton = createActionButton(
+            label = "Create Object",
+            icon = iconFor("object_create", createActionIconDrawable(Color(0.65f, 0.85f, 0.95f, 1f))),
+            tutorialActionId = "ui.action.create_object_from_selection"
+        ) {
+            objectCreateFromSelectionAction()
+        }
+
         val flipButton = createActionButton(
             label = "Flip Faces",
             icon = iconFor("flip_faces", createActionIconDrawable(Color(0.45f, 0.65f, 0.95f, 1f))),
@@ -1834,6 +1843,7 @@ class SketchUiOverlay(
             colorButton,
             deleteButton,
             editObjectButton,
+            createObjectButton,
             flipButton,
             lightingButton,
             pluginButton

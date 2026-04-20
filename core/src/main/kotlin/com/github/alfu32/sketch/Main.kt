@@ -985,6 +985,7 @@ class Main @JvmOverloads constructor(
             ::updateGroupName,
             ::updateGroupGlue,
             ::enterSelectedObjectEditMode,
+            ::objectPrototypeSelection,
             ::objectPrototypeInfo,
             ::startObjectPlacement,
             ::deleteObjectPrototype,
