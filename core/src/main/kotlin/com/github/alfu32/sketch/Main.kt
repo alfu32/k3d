@@ -991,6 +991,7 @@ class Main @JvmOverloads constructor(
             ::deleteObjectPrototype,
             ::toggleObjectPrototypeExternal,
             ::pickObjectPrototypeExternalFile,
+            ::showImportObjectPrototypesDialog,
             ::modelUnitInfo,
             ::updateModelUnit,
             { gridSpacing },
@@ -7685,12 +7686,9 @@ class Main @JvmOverloads constructor(
         if (!prototype.externalReferenceEnabled || prototype.externalReferencePath.isBlank()) {
             return false
         }
-        val dto = ModelPersistence.ObjectPrototypeDto.fromPrototype(prototype).apply {
-            externalReferenceEnabled = false
-        }
         val snapshot = ModelPersistence.ModelSnapshot().apply {
-            prototypes = mutableListOf(rootPrototypeDtoForXref(), dto)
-            rootInstance = rootInstanceDtoForXref(dto.id)
+            prototypes = mutableListOf(rootPrototypeDtoForXref(prototype))
+            rootInstance = rootInstanceDtoForXref()
             modelUnit = ModelPersistence.ModelUnitDto(this@Main.modelUnit)
         }
         return try {
@@ -7743,7 +7741,9 @@ class Main @JvmOverloads constructor(
     }
 
     private fun externalPrototypeDto(snapshot: ModelPersistence.ModelSnapshot): ModelPersistence.ObjectPrototypeDto? {
-        return snapshot.prototypes.firstOrNull { it.id != scene.rootPrototypeId() }
+        val rootId = scene.rootPrototypeId()
+        return snapshot.prototypes.firstOrNull { it.id == rootId && objectPrototypeDtoHasImportableContent(it) }
+            ?: snapshot.prototypes.firstOrNull { it.id != rootId }
             ?: snapshot.prototypes.firstOrNull()
     }
 
@@ -7760,20 +7760,15 @@ class Main @JvmOverloads constructor(
         return path.startsWith("content://", ignoreCase = true)
     }
 
-    private fun rootPrototypeDtoForXref(): ModelPersistence.ObjectPrototypeDto {
-        return ModelPersistence.ObjectPrototypeDto().apply {
+    private fun rootPrototypeDtoForXref(prototype: GroupScene.ObjectPrototype): ModelPersistence.ObjectPrototypeDto {
+        return ModelPersistence.ObjectPrototypeDto.fromPrototype(prototype).apply {
             id = scene.rootPrototypeId()
-            name = "Root"
-            definitionOrigin = ModelPersistence.Vec3Dto(Vector3())
-            definitionAxisU = ModelPersistence.Vec3Dto(Vector3(1f, 0f, 0f))
-            definitionAxisV = ModelPersistence.Vec3Dto(Vector3(0f, 1f, 0f))
-            definitionAxisW = ModelPersistence.Vec3Dto(Vector3(0f, 0f, 1f))
-            kind = GroupScene.PrototypeKind.MESH.name
             externalReferenceEnabled = false
+            externalReferencePath = ""
         }
     }
 
-    private fun rootInstanceDtoForXref(prototypeId: String): ModelPersistence.GroupInstanceDto {
+    private fun rootInstanceDtoForXref(): ModelPersistence.GroupInstanceDto {
         return ModelPersistence.GroupInstanceDto().apply {
             id = "root"
             this.prototypeId = scene.rootPrototypeId()
@@ -7781,16 +7776,7 @@ class Main @JvmOverloads constructor(
             instanceAxisU = ModelPersistence.Vec3Dto(Vector3(1f, 0f, 0f))
             instanceAxisV = ModelPersistence.Vec3Dto(Vector3(0f, 1f, 0f))
             instanceAxisW = ModelPersistence.Vec3Dto(Vector3(0f, 0f, 1f))
-            children = mutableListOf(
-                ModelPersistence.GroupInstanceDto().apply {
-                    id = java.util.UUID.randomUUID().toString()
-                    this.prototypeId = prototypeId
-                    instanceOrigin = ModelPersistence.Vec3Dto(Vector3())
-                    instanceAxisU = ModelPersistence.Vec3Dto(Vector3(1f, 0f, 0f))
-                    instanceAxisV = ModelPersistence.Vec3Dto(Vector3(0f, 1f, 0f))
-                    instanceAxisW = ModelPersistence.Vec3Dto(Vector3(0f, 0f, 1f))
-                }
-            )
+            children = mutableListOf()
         }
     }
 
@@ -10784,6 +10770,10 @@ class Main @JvmOverloads constructor(
             return
         }
         val target = ensureFileExtension(requested.absoluteFile, setOf("octd"), "octd")
+        if (!confirmOverwriteXrefFile(target)) {
+            statusModel.message = "Object xref file selection canceled."
+            return
+        }
         prototype.externalReferencePath = target.absolutePath
         prototype.externalReferenceEnabled = true
         if (!saveExternalObjectPrototype(prototype)) {
@@ -10792,6 +10782,175 @@ class Main @JvmOverloads constructor(
         statusModel.message = "Object xref set to ${target.absolutePath}"
         undoManager.commit("Set Object XRef")
         saveModel()
+    }
+
+    private fun confirmOverwriteXrefFile(target: File): Boolean {
+        if (!target.exists()) {
+            return true
+        }
+        if (GraphicsEnvironment.isHeadless()) {
+            return true
+        }
+        var result = JOptionPane.NO_OPTION
+        val confirm = Runnable {
+            result = JOptionPane.showConfirmDialog(
+                null,
+                "The xref file already exists and will be overwritten:\n${target.absolutePath}",
+                "Overwrite XRef File",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+            )
+        }
+        return try {
+            if (EventQueue.isDispatchThread()) {
+                confirm.run()
+            } else {
+                EventQueue.invokeAndWait(confirm)
+            }
+            result == JOptionPane.YES_OPTION
+        } catch (t: Throwable) {
+            statusModel.message = "Overwrite warning failed: ${t.message ?: t.javaClass.simpleName}"
+            false
+        }
+    }
+
+    private fun showImportObjectPrototypesDialog() {
+        if (BuildFlags.WEB_BUILD) {
+            statusModel.message = "Object import from file is not available in web runtime."
+            return
+        }
+        if (isAndroidRuntime()) {
+            if (!showAndroidSafImportObjectPrototypesDialog()) {
+                statusModel.message = "Object import file picker is unavailable."
+            }
+            return
+        }
+        val statusBefore = statusModel.message
+        val requested = showDesktopFileDialog(
+            title = "Import Objects From Octodraw Model",
+            mode = FileDialog.LOAD,
+            allowedExtensions = setOf("octd")
+        )
+        if (requested == null) {
+            if (statusModel.message == statusBefore) {
+                statusModel.message = "Object import canceled."
+            }
+            return
+        }
+        val snapshot = ModelPersistence.parseSnapshotFile(requested)
+        if (snapshot == null) {
+            statusModel.message = "Object import failed: invalid model file."
+            return
+        }
+        importObjectPrototypesFromSnapshot(snapshot, requested.name)
+    }
+
+    private fun showAndroidSafImportObjectPrototypesDialog(): Boolean {
+        val bridge = AndroidSaf.bridge ?: return false
+        bridge.openDocument { uri, displayName ->
+            if (uri.isNullOrBlank()) {
+                statusModel.message = "Object import canceled."
+                return@openDocument
+            }
+            val bytes = bridge.readBytes(uri)
+            if (bytes == null || bytes.isEmpty()) {
+                statusModel.message = "Object import failed: cannot read selected file."
+                return@openDocument
+            }
+            val snapshot = ModelPersistence.parseSnapshotBytes(bytes)
+            if (snapshot == null) {
+                statusModel.message = "Object import failed: invalid model file."
+                return@openDocument
+            }
+            val nameHint = displayName ?: uri.substringAfterLast('/').substringBefore('?')
+            importObjectPrototypesFromSnapshot(snapshot, nameHint)
+        }
+        return true
+    }
+
+    private fun importObjectPrototypesFromSnapshot(snapshot: ModelPersistence.ModelSnapshot, displayName: String) {
+        val candidates = objectPrototypeDtosForImport(snapshot)
+        if (candidates.isEmpty()) {
+            statusModel.message = "No importable objects found in $displayName."
+            return
+        }
+        var imported = 0
+        var failed = 0
+        candidates.forEach { dto ->
+            val sourceWasRoot = dto.id == scene.rootPrototypeId()
+            prepareObjectPrototypeDtoForInternalImport(dto, displayName, sourceWasRoot)
+            val prototype = try {
+                dto.toPrototype(scene.defaultFaceColor)
+            } catch (_: Throwable) {
+                failed++
+                return@forEach
+            }
+            scene.registerPrototypeForLoad(prototype)
+            imported++
+        }
+        if (imported <= 0) {
+            statusModel.message = "Object import failed: no objects could be imported."
+            return
+        }
+        val failureSuffix = if (failed > 0) " ($failed failed)" else ""
+        statusModel.message = "Imported $imported object(s) from $displayName.$failureSuffix"
+        undoManager.commit("Import Objects")
+        saveModel()
+        markSceneRuntimeDirty()
+    }
+
+    private fun objectPrototypeDtosForImport(snapshot: ModelPersistence.ModelSnapshot): List<ModelPersistence.ObjectPrototypeDto> {
+        val rootId = scene.rootPrototypeId()
+        val objectDtos = snapshot.prototypes.filter { dto ->
+            dto.id != rootId && objectPrototypeDtoHasImportableContent(dto)
+        }
+        if (objectDtos.isNotEmpty()) {
+            return objectDtos
+        }
+        return snapshot.prototypes
+            .firstOrNull { dto -> dto.id == rootId && objectPrototypeDtoHasImportableContent(dto) }
+            ?.let { listOf(it) }
+            ?: emptyList()
+    }
+
+    private fun objectPrototypeDtoHasImportableContent(dto: ModelPersistence.ObjectPrototypeDto): Boolean {
+        return dto.voxels.isNotEmpty() ||
+            dto.architectureWalls.isNotEmpty() ||
+            dto.architectureSlabs.isNotEmpty() ||
+            dto.architectureStairs.isNotEmpty() ||
+            dto.architectureFrames.isNotEmpty() ||
+            dto.hvacPlumbingRuns.isNotEmpty() ||
+            dto.hvacVentilationDucts.isNotEmpty() ||
+            dto.hotspots.isNotEmpty() ||
+            dto.prototypeVertices.isNotEmpty() ||
+            dto.segments.isNotEmpty() ||
+            dto.faces.isNotEmpty() ||
+            dto.dimensions.isNotEmpty() ||
+            dto.texts.isNotEmpty()
+    }
+
+    private fun prepareObjectPrototypeDtoForInternalImport(
+        dto: ModelPersistence.ObjectPrototypeDto,
+        displayName: String,
+        sourceWasRoot: Boolean
+    ) {
+        val fallbackName = displayName.substringBeforeLast('.', displayName).ifBlank { "Imported Object" }
+        dto.id = java.util.UUID.randomUUID().toString()
+        if (dto.name.isBlank() || (sourceWasRoot && dto.name == "Root")) {
+            dto.name = fallbackName
+        }
+        dto.externalReferenceEnabled = false
+        dto.externalReferencePath = ""
+        if (dto.kind == GroupScene.PrototypeKind.MESH.name && objectPrototypeDtoHasArchitectureContent(dto)) {
+            dto.kind = GroupScene.PrototypeKind.ARCHITECTURE.name
+        }
+    }
+
+    private fun objectPrototypeDtoHasArchitectureContent(dto: ModelPersistence.ObjectPrototypeDto): Boolean {
+        return dto.architectureWalls.isNotEmpty() ||
+            dto.architectureSlabs.isNotEmpty() ||
+            dto.architectureStairs.isNotEmpty() ||
+            dto.architectureFrames.isNotEmpty()
     }
 
     private fun defaultObjectXrefFileName(prototype: GroupScene.ObjectPrototype): String {

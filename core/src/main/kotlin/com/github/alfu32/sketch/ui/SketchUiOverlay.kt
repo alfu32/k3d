@@ -88,6 +88,7 @@ class SketchUiOverlay(
     private val objectPrototypeDelete: (String) -> Unit,
     private val objectPrototypeExternalToggle: (String, Boolean) -> Unit,
     private val objectPrototypeExternalPick: (String) -> Unit,
+    private val objectPrototypeImportFromFile: () -> Unit,
     private val modelUnitProvider: () -> com.github.alfu32.sketch.model.ModelUnit,
     private val modelUnitChanged: (String, Float) -> Unit,
     private val gridSpacingProvider: () -> Float,
@@ -568,6 +569,7 @@ class SketchUiOverlay(
     private val objectsExternalCheck = VisCheckBox("Store externally")
     private val objectsExternalPathLabel = VisLabel("XRef: -")
     private lateinit var objectsExternalPickButton: VisTextButton
+    private lateinit var objectsImportButton: VisTextButton
     private var updatingObjectExternalFields = false
     private lateinit var modelSettingsPanel: DockSection
     private lateinit var uiSettingsPanel: DockSection
@@ -2395,6 +2397,13 @@ class SketchUiOverlay(
             }
         })
         content.add(objectsExternalPickButton).left().row()
+        objectsImportButton = VisTextButton("Import Objects From File")
+        objectsImportButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                objectPrototypeImportFromFile()
+            }
+        })
+        content.add(objectsImportButton).left().row()
         objectsExternalPathLabel.setWrap(true)
         content.add(objectsExternalPathLabel).left().growX().row()
         return buildDockSection("Objects", content, visible = true, collapsed = false)
