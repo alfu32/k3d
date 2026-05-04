@@ -104,8 +104,7 @@ class DraftLineStore {
         val segment = Segment(Vector3(start), Vector3(end))
         segment.id = id
         segments.add(segment)
-        segmentsById[segment.id] = segment
-        invalidateSpatialIndex()
+        insertSegmentRecord(segment)
         return segment
     }
 
@@ -137,8 +136,8 @@ class DraftLineStore {
         val removed = selected.toList()
         segments.removeAll(selected)
         selected.clear()
-        removed.forEach { segmentsById.remove(it.id) }
-        notifyChange()
+        removed.forEach(::removeSegmentRecord)
+        notifyChange(invalidateSpatialIndex = false)
         return before - segments.size
     }
 
@@ -151,8 +150,8 @@ class DraftLineStore {
         segments.removeAll(target)
         selected.removeAll(target)
         if (before != segments.size) {
-            target.forEach { segmentsById.remove(it.id) }
-            notifyChange()
+            target.forEach(::removeSegmentRecord)
+            notifyChange(invalidateSpatialIndex = false)
         }
         return before - segments.size
     }
@@ -235,12 +234,12 @@ class DraftLineStore {
             val b = transform(Vector3(segment.end))
             val next = Segment(a, b)
             segments.add(next)
-            segmentsById[next.id] = next
+            insertSegmentRecord(next)
             newSelected.add(next)
         }
         selected.clear()
         selected.addAll(newSelected)
-        notifyChange()
+        notifyChange(invalidateSpatialIndex = false)
         return newSelected.size
     }
 
@@ -738,11 +737,13 @@ class DraftLineStore {
             val raw = Segment(Vector3(start), Vector3(end))
             raw.id = id
             segments.add(raw)
-            segmentsById[raw.id] = raw
+            insertSegmentRecord(raw)
             return true
         }
         val before = segments.size
         val ignore = autoProcessingIgnorePredicate
+        val removedSegments = mutableListOf<Segment>()
+        val addedSegments = mutableListOf<Segment>()
         fun include(segment: Segment): Boolean = ignore?.invoke(segment) != true
         val newStart = snapToExistingEndpoint(start, ::include) ?: Vector3(start)
         val newEnd = snapToExistingEndpoint(end, ::include) ?: Vector3(end)
@@ -779,10 +780,18 @@ class DraftLineStore {
 
             if (u > epsilon && u < 1f - epsilon) {
                 segments.removeAt(currentIndex)
+                removedSegments.add(existing)
+                val preserveSelection = selected.remove(existing)
                 val first = Segment(Vector3(existing.start), Vector3(point))
                 val second = Segment(Vector3(point), Vector3(existing.end))
                 segments.add(currentIndex, first)
                 segments.add(currentIndex + 1, second)
+                addedSegments.add(first)
+                addedSegments.add(second)
+                if (preserveSelection) {
+                    selected.add(first)
+                    selected.add(second)
+                }
             }
 
             if (t > epsilon && t < 1f - epsilon) {
@@ -804,11 +813,17 @@ class DraftLineStore {
                     segment.id = id
                 }
                 segments.add(segment)
+                addedSegments.add(segment)
             }
         }
         val changed = segments.size != before
         if (changed) {
-            rebuildSegmentLookup()
+            if (spatialIndexDirty) {
+                rebuildSegmentLookup()
+            } else {
+                removedSegments.forEach(::removeSegmentRecord)
+                addedSegments.forEach(::insertSegmentRecord)
+            }
         }
         return changed
     }
@@ -863,6 +878,26 @@ class DraftLineStore {
         spatialIndex.remove(segment)
         spatialBoundsDirty = true
         hasSpatialBounds = false
+    }
+
+    private fun insertSegmentRecord(segment: Segment) {
+        segmentsById[segment.id] = segment
+        if (spatialIndexDirty) {
+            spatialBoundsDirty = true
+            hasSpatialBounds = false
+            return
+        }
+        registerSegment(segment)
+    }
+
+    private fun removeSegmentRecord(segment: Segment) {
+        segmentsById.remove(segment.id)
+        if (spatialIndexDirty) {
+            spatialBoundsDirty = true
+            hasSpatialBounds = false
+            return
+        }
+        unregisterSegment(segment)
     }
 
     private fun expandSpatialBounds(min: Vector3, max: Vector3) {
