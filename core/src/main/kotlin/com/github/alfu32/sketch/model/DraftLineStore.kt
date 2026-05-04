@@ -503,6 +503,17 @@ class DraftLineStore {
 
     fun aabbCandidates(min: Vector3, max: Vector3): List<Segment> = segmentsIntersectingQuery(min, max)
 
+    fun forEachRayCandidate(
+        ray: com.badlogic.gdx.math.collision.Ray,
+        visitor: (Segment) -> Boolean
+    ): Int = forEachSegmentCandidateForRay(ray, visitor)
+
+    fun forEachAabbCandidate(
+        min: Vector3,
+        max: Vector3,
+        visitor: (Segment) -> Boolean
+    ): Int = forEachSegmentCandidateInAabb(min, max, visitor)
+
     fun warmSpatialIndex() {
         ensureSpatialIndex()
     }

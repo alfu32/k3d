@@ -232,17 +232,23 @@ class Snapper(
         localRay: com.badlogic.gdx.math.collision.Ray
     ): SnapCandidate? {
         var best: SnapCandidate? = null
-        group.lineStore.rayCandidates(localRay).forEach { segment ->
-            if (!isLineSnapVisible(group, segment)) return@forEach
-            listOf(segment.start, segment.end).forEach { local ->
-                val point = group.toWorld(local)
-                val dist = screenDistance(point, screenX, screenY)
-                if (dist <= snapPixels) {
-                    val t = rayT(ray, point) ?: return@forEach
-                    val candidate = SnapCandidate(Vector3(point), Vector3(normal), SnapType.ENDPOINT, dist, t, SnapSource.LINE_ENDPOINT)
-                    best = pickBetter(best, candidate)
-                }
+        group.lineStore.forEachRayCandidate(localRay) { segment ->
+            if (!isLineSnapVisible(group, segment)) return@forEachRayCandidate true
+            val start = group.toWorld(segment.start)
+            var dist = screenDistance(start, screenX, screenY)
+            if (dist <= snapPixels) {
+                val t = rayT(ray, start) ?: return@forEachRayCandidate true
+                val candidate = SnapCandidate(Vector3(start), Vector3(normal), SnapType.ENDPOINT, dist, t, SnapSource.LINE_ENDPOINT)
+                best = pickBetter(best, candidate)
             }
+            val end = group.toWorld(segment.end)
+            dist = screenDistance(end, screenX, screenY)
+            if (dist <= snapPixels) {
+                val t = rayT(ray, end) ?: return@forEachRayCandidate true
+                val candidate = SnapCandidate(Vector3(end), Vector3(normal), SnapType.ENDPOINT, dist, t, SnapSource.LINE_ENDPOINT)
+                best = pickBetter(best, candidate)
+            }
+            true
         }
         return best
     }
@@ -256,16 +262,17 @@ class Snapper(
         localRay: com.badlogic.gdx.math.collision.Ray
     ): SnapCandidate? {
         var best: SnapCandidate? = null
-        group.lineStore.rayCandidates(localRay).forEach { segment ->
-            if (!isLineSnapVisible(group, segment)) return@forEach
+        group.lineStore.forEachRayCandidate(localRay) { segment ->
+            if (!isLineSnapVisible(group, segment)) return@forEachRayCandidate true
             val midpointLocal = Vector3(segment.start).add(segment.end).scl(0.5f)
             val midpoint = group.toWorld(midpointLocal)
             val dist = screenDistance(midpoint, screenX, screenY)
             if (dist <= snapPixels) {
-                val t = rayT(ray, midpoint) ?: return@forEach
+                val t = rayT(ray, midpoint) ?: return@forEachRayCandidate true
                 val candidate = SnapCandidate(midpoint, Vector3(normal), SnapType.MIDPOINT, dist, t, SnapSource.LINE_MIDPOINT)
                 best = pickBetter(best, candidate)
             }
+            true
         }
         return best
     }
@@ -286,17 +293,23 @@ class Snapper(
                 group.toLocal(ray.origin),
                 group.vectorToLocal(ray.direction).nor()
             )
-            group.lineStore.rayCandidates(localRay).forEach { segment ->
-                if (!isLineSnapVisible(group, segment)) return@forEach
-                listOf(segment.start, segment.end).forEach { local ->
-                    val point = if (group === scene.root) Vector3(local) else group.toWorld(local)
-                    val dist = screenDistance(point, screenX, screenY)
-                    if (dist <= snapPixels) {
-                        val t = rayT(ray, point) ?: return@forEach
-                        val candidate = SnapCandidate(Vector3(point), Vector3(normal), SnapType.ENDPOINT, dist, t, SnapSource.LINE_ENDPOINT)
-                        best = pickBetter(best, candidate)
-                    }
+            group.lineStore.forEachRayCandidate(localRay) { segment ->
+                if (!isLineSnapVisible(group, segment)) return@forEachRayCandidate true
+                val start = if (group === scene.root) Vector3(segment.start) else group.toWorld(segment.start)
+                var dist = screenDistance(start, screenX, screenY)
+                if (dist <= snapPixels) {
+                    val t = rayT(ray, start) ?: return@forEachRayCandidate true
+                    val candidate = SnapCandidate(Vector3(start), Vector3(normal), SnapType.ENDPOINT, dist, t, SnapSource.LINE_ENDPOINT)
+                    best = pickBetter(best, candidate)
                 }
+                val end = if (group === scene.root) Vector3(segment.end) else group.toWorld(segment.end)
+                dist = screenDistance(end, screenX, screenY)
+                if (dist <= snapPixels) {
+                    val t = rayT(ray, end) ?: return@forEachRayCandidate true
+                    val candidate = SnapCandidate(Vector3(end), Vector3(normal), SnapType.ENDPOINT, dist, t, SnapSource.LINE_ENDPOINT)
+                    best = pickBetter(best, candidate)
+                }
+                true
             }
         }
         return best
@@ -318,16 +331,17 @@ class Snapper(
                 group.toLocal(ray.origin),
                 group.vectorToLocal(ray.direction).nor()
             )
-            group.lineStore.rayCandidates(localRay).forEach { segment ->
-                if (!isLineSnapVisible(group, segment)) return@forEach
+            group.lineStore.forEachRayCandidate(localRay) { segment ->
+                if (!isLineSnapVisible(group, segment)) return@forEachRayCandidate true
                 val midpointLocal = Vector3(segment.start).add(segment.end).scl(0.5f)
                 val midpoint = if (group === scene.root) midpointLocal else group.toWorld(midpointLocal)
                 val dist = screenDistance(midpoint, screenX, screenY)
                 if (dist <= snapPixels) {
-                    val t = rayT(ray, midpoint) ?: return@forEach
+                    val t = rayT(ray, midpoint) ?: return@forEachRayCandidate true
                     val candidate = SnapCandidate(midpoint, Vector3(normal), SnapType.MIDPOINT, dist, t, SnapSource.LINE_MIDPOINT)
                     best = pickBetter(best, candidate)
                 }
+                true
             }
         }
         return best
@@ -343,17 +357,18 @@ class Snapper(
         localRay: com.badlogic.gdx.math.collision.Ray
     ): SnapCandidate? {
         var best: SnapCandidate? = null
-        group.lineStore.rayCandidates(localRay).forEach { segment ->
-            if (!isLineSnapVisible(group, segment)) return@forEach
+        group.lineStore.forEachRayCandidate(localRay) { segment ->
+            if (!isLineSnapVisible(group, segment)) return@forEachRayCandidate true
             val start = group.toWorld(segment.start)
             val end = group.toWorld(segment.end)
             val closest = closestPointOnSegment(base, start, end)
             val dist = screenDistance(closest, screenX, screenY)
             if (dist <= snapPixels) {
-                val t = rayT(ray, closest) ?: return@forEach
+                val t = rayT(ray, closest) ?: return@forEachRayCandidate true
                 val candidate = SnapCandidate(closest, Vector3(normal), SnapType.LINE, dist, t, SnapSource.LINE_SEGMENT)
                 best = pickBetter(best, candidate)
             }
+            true
         }
         return best
     }
@@ -392,8 +407,8 @@ class Snapper(
         localRay: com.badlogic.gdx.math.collision.Ray
     ): SnapCandidate? {
         var best: SnapCandidate? = null
-        group.faceStore.rayCandidates(localRay).forEach { tri ->
-            if (!isFaceSnapVisible(group, tri)) return@forEach
+        group.faceStore.forEachRayCandidate(localRay) { tri ->
+            if (!isFaceSnapVisible(group, tri)) return@forEachRayCandidate true
             val a = group.toWorld(tri.a)
             val b = group.toWorld(tri.b)
             val c = group.toWorld(tri.c)
@@ -415,6 +430,7 @@ class Snapper(
             snapEdgeCandidate(reference, c, a, normal, screenX, screenY, ray)?.let { candidate ->
                 best = pickBetter(best, candidate)
             }
+            true
         }
         return best
     }
@@ -436,8 +452,8 @@ class Snapper(
                 group.toLocal(ray.origin),
                 group.vectorToLocal(ray.direction).nor()
             )
-            group.faceStore.rayCandidates(localRay).forEach { tri ->
-                if (!isFaceSnapVisible(group, tri)) return@forEach
+            group.faceStore.forEachRayCandidate(localRay) { tri ->
+                if (!isFaceSnapVisible(group, tri)) return@forEachRayCandidate true
                 val a = if (group === scene.root) Vector3(tri.a) else group.toWorld(tri.a)
                 val b = if (group === scene.root) Vector3(tri.b) else group.toWorld(tri.b)
                 val c = if (group === scene.root) Vector3(tri.c) else group.toWorld(tri.c)
@@ -459,6 +475,7 @@ class Snapper(
                 snapEdgeCandidate(reference, c, a, normal, screenX, screenY, ray)?.let { candidate ->
                     best = pickBetter(best, candidate)
                 }
+                true
             }
         }
         return best
@@ -757,19 +774,28 @@ class Snapper(
         var found = false
         scene.queryGroupsByAabb(rootMin, rootMax, includeRoot = true).forEach { group ->
             if (found) return@forEach
-            val candidates = if (group === scene.root) {
-                group.lineStore.aabbCandidates(rootMin, rootMax)
+            if (group === scene.root) {
+                group.lineStore.forEachAabbCandidate(rootMin, rootMax) { seg ->
+                    if (!isLineSnapVisible(group, seg)) return@forEachAabbCandidate true
+                    val a = Vector3(seg.start)
+                    val b = Vector3(seg.end)
+                    if (distanceToSegmentSquared(point, a, b) <= tol2) {
+                        found = true
+                        return@forEachAabbCandidate false
+                    }
+                    true
+                }
             } else {
                 val (localMin, localMax) = worldAabbToLocalQueryBounds(group, point, tolerance)
-                group.lineStore.aabbCandidates(localMin, localMax)
-            }
-            candidates.forEach { seg ->
-                if (!isLineSnapVisible(group, seg)) return@forEach
-                val a = if (group === scene.root) Vector3(seg.start) else group.toWorld(seg.start)
-                val b = if (group === scene.root) Vector3(seg.end) else group.toWorld(seg.end)
-                if (distanceToSegmentSquared(point, a, b) <= tol2) {
-                    found = true
-                    return@forEach
+                group.lineStore.forEachAabbCandidate(localMin, localMax) { seg ->
+                    if (!isLineSnapVisible(group, seg)) return@forEachAabbCandidate true
+                    val a = group.toWorld(seg.start)
+                    val b = group.toWorld(seg.end)
+                    if (distanceToSegmentSquared(point, a, b) <= tol2) {
+                        found = true
+                        return@forEachAabbCandidate false
+                    }
+                    true
                 }
             }
         }
@@ -782,20 +808,30 @@ class Snapper(
         var found = false
         scene.queryGroupsByAabb(rootMin, rootMax, includeRoot = true).forEach { group ->
             if (found) return@forEach
-            val candidates = if (group === scene.root) {
-                group.faceStore.aabbCandidates(rootMin, rootMax)
+            if (group === scene.root) {
+                group.faceStore.forEachAabbCandidate(rootMin, rootMax) { tri ->
+                    if (!isFaceSnapVisible(group, tri)) return@forEachAabbCandidate true
+                    val a = Vector3(tri.a)
+                    val b = Vector3(tri.b)
+                    val c = Vector3(tri.c)
+                    if (pointNearTriangle(point, a, b, c, tolerance)) {
+                        found = true
+                        return@forEachAabbCandidate false
+                    }
+                    true
+                }
             } else {
                 val (localMin, localMax) = worldAabbToLocalQueryBounds(group, point, tolerance)
-                group.faceStore.aabbCandidates(localMin, localMax)
-            }
-            candidates.forEach { tri ->
-                if (!isFaceSnapVisible(group, tri)) return@forEach
-                val a = if (group === scene.root) Vector3(tri.a) else group.toWorld(tri.a)
-                val b = if (group === scene.root) Vector3(tri.b) else group.toWorld(tri.b)
-                val c = if (group === scene.root) Vector3(tri.c) else group.toWorld(tri.c)
-                if (pointNearTriangle(point, a, b, c, tolerance)) {
-                    found = true
-                    return@forEach
+                group.faceStore.forEachAabbCandidate(localMin, localMax) { tri ->
+                    if (!isFaceSnapVisible(group, tri)) return@forEachAabbCandidate true
+                    val a = group.toWorld(tri.a)
+                    val b = group.toWorld(tri.b)
+                    val c = group.toWorld(tri.c)
+                    if (pointNearTriangle(point, a, b, c, tolerance)) {
+                        found = true
+                        return@forEachAabbCandidate false
+                    }
+                    true
                 }
             }
         }

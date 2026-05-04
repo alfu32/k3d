@@ -2269,6 +2269,17 @@ class DraftFaceStore(
 
     fun aabbCandidates(min: Vector3, max: Vector3): List<Triangle> = trianglesIntersectingQuery(min, max)
 
+    fun forEachRayCandidate(
+        ray: com.badlogic.gdx.math.collision.Ray,
+        visitor: (Triangle) -> Boolean
+    ): Int = forEachTriangleCandidateForRay(ray, visitor)
+
+    fun forEachAabbCandidate(
+        min: Vector3,
+        max: Vector3,
+        visitor: (Triangle) -> Boolean
+    ): Int = forEachTriangleCandidateInAabb(min, max, visitor)
+
     fun warmSpatialIndex() {
         ensureSpatialIndex()
     }
