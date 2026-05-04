@@ -11954,7 +11954,7 @@ class Main @JvmOverloads constructor(
                 faceBackRenderable = MeshRenderableProvider(faceMesh, faceBackMaterial, GL20.GL_TRIANGLES)
             },
             vertexBuffer = rootFaceMeshBuffer,
-            vertexCount = rootFaceMeshVertexCount(),
+            vertexCount = rootFaceMeshVertexCapacity(),
             fillVertices = { vertices ->
                 var idx = 0
                 scene.root.faceStore.getTriangles().forEach { tri ->
@@ -11981,21 +11981,22 @@ class Main @JvmOverloads constructor(
                         color = color
                     )
                 }
-                scene.collectActivePrototypeWorldTriangles { a, b, c, _ ->
-                    idx = writeTriangleVertices(
-                        buffer = vertices,
-                        start = idx,
-                        ax = a.x,
-                        ay = a.y,
-                        az = a.z,
-                        bx = b.x,
-                        by = b.y,
-                        bz = b.z,
-                        cx = c.x,
-                        cy = c.y,
-                        cz = c.z,
-                        color = prototypeGuideFaceColor
-                    )
+                if (scene.isEditing()) {
+                    val activeGroup = scene.activeGroup()
+                    if (!activeGroup.editPrototypeMode && activeGroup.hasGeometryOverrides()) {
+                        val matrix = activeGroup.worldMatrix().`val`
+                        activeGroup.prototype.faceStore.getTriangles().forEach { tri ->
+                            idx = writeTriangleVerticesTransformed(
+                                buffer = vertices,
+                                start = idx,
+                                matrix = matrix,
+                                a = tri.a,
+                                b = tri.b,
+                                c = tri.c,
+                                color = prototypeGuideFaceColor
+                            )
+                        }
+                    }
                 }
                 idx
             }
@@ -12014,13 +12015,8 @@ class Main @JvmOverloads constructor(
         }
     }
 
-    private fun rootFaceMeshVertexCount(): Int {
-        var triangleCount = 0
-        scene.root.faceStore.getTriangles().forEach { tri ->
-            if (shouldIncludeRootTriangle(tri)) {
-                triangleCount++
-            }
-        }
+    private fun rootFaceMeshVertexCapacity(): Int {
+        var triangleCount = scene.root.faceStore.getTriangles().size
         if (scene.isEditing()) {
             val activeGroup = scene.activeGroup()
             if (!activeGroup.editPrototypeMode && activeGroup.hasGeometryOverrides()) {
