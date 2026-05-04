@@ -41,6 +41,7 @@ class ToolInputProcessor(
     private val cycleM = listOf(
         ToolId.MOVE,
         ToolId.ROTATE,
+        ToolId.ROTATE_2,
         ToolId.SCALE,
         ToolId.STRETCH,
         ToolId.ROTATE_STRETCH,
@@ -48,7 +49,9 @@ class ToolInputProcessor(
         ToolId.PLANAR_TRANSLATE_MULTIPLE,
         ToolId.VOLUMETRIC_TRANSLATE_MULTIPLE,
         ToolId.PLANAR_ROTATE_MULTIPLE,
-        ToolId.HELICOIDAL_ROTATE_MULTIPLE
+        ToolId.HELICOIDAL_ROTATE_MULTIPLE,
+        ToolId.ROTATIONAL_ARRAY,
+        ToolId.HELICAL_ARRAY
     )
 
     private fun ctrlPressed(): Boolean {

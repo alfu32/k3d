@@ -38,6 +38,7 @@ enum class ToolId(val displayName: String) {
     PUSH_PULL("Push/Pull"),
     MOVE("Move"),
     ROTATE("Rotate"),
+    ROTATE_2("Rotate 2"),
     SCALE("Scale"),
     STRETCH("Stretch"),
     ROTATE_STRETCH("Rotate Stretch"),
@@ -46,6 +47,8 @@ enum class ToolId(val displayName: String) {
     VOLUMETRIC_TRANSLATE_MULTIPLE("Volumetric Translate Multiple"),
     PLANAR_ROTATE_MULTIPLE("Planar Rotate Multiple"),
     HELICOIDAL_ROTATE_MULTIPLE("Helicoidal Rotate Multiple"),
+    ROTATIONAL_ARRAY("Rotational Array"),
+    HELICAL_ARRAY("Helical Array"),
     PAINT("Paint"),
     OBJECT_PLACE("Object"),
     PLUGIN("Plugin")

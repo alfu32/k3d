@@ -113,10 +113,13 @@ import com.github.alfu32.sketch.tools.MeshIntersectionTool
 import com.github.alfu32.sketch.tools.FaceOutlineTool
 import com.github.alfu32.sketch.tools.GuidePlacementTool
 import com.github.alfu32.sketch.tools.CopyMultipleTool
+import com.github.alfu32.sketch.tools.HelicalArrayTool
 import com.github.alfu32.sketch.tools.PlanarTranslateMultipleTool
 import com.github.alfu32.sketch.tools.VolumetricTranslateMultipleTool
 import com.github.alfu32.sketch.tools.PlanarRotateMultipleTool
 import com.github.alfu32.sketch.tools.HelicoidalRotateMultipleTool
+import com.github.alfu32.sketch.tools.Rotate2Tool
+import com.github.alfu32.sketch.tools.RotationalArrayTool
 import com.github.alfu32.sketch.tools.HotspotSettings
 import com.github.alfu32.sketch.tools.HvacPlumbingTool
 import com.github.alfu32.sketch.tools.HvacSettings
@@ -878,6 +881,7 @@ class Main @JvmOverloads constructor(
                 PushPullTool(scene),
                 MoveTool(scene),
                 RotateTool(scene),
+                Rotate2Tool(scene),
                 ScaleTool(scene),
                 StretchTool(scene),
                 RotateStretchTool(scene),
@@ -886,6 +890,8 @@ class Main @JvmOverloads constructor(
                 VolumetricTranslateMultipleTool(scene),
                 PlanarRotateMultipleTool(scene),
                 HelicoidalRotateMultipleTool(scene),
+                RotationalArrayTool(scene),
+                HelicalArrayTool(scene),
                 PaintTool(scene, { activeCamera }) { statusModel.paintColor.cpy() },
                 objectPlaceTool
             ),
@@ -1598,6 +1604,7 @@ class Main @JvmOverloads constructor(
             ToolId.PUSH_PULL,
             ToolId.MOVE,
             ToolId.ROTATE,
+            ToolId.ROTATE_2,
             ToolId.SCALE,
             ToolId.STRETCH,
             ToolId.ROTATE_STRETCH,
@@ -1606,6 +1613,8 @@ class Main @JvmOverloads constructor(
             ToolId.VOLUMETRIC_TRANSLATE_MULTIPLE,
             ToolId.PLANAR_ROTATE_MULTIPLE,
             ToolId.HELICOIDAL_ROTATE_MULTIPLE,
+            ToolId.ROTATIONAL_ARRAY,
+            ToolId.HELICAL_ARRAY,
             ToolId.PAINT
             ).forEach { toolId ->
                 pluginHost.getCommandPalette().registerCommand(

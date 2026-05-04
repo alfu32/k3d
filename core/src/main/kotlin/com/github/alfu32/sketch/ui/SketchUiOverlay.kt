@@ -1482,6 +1482,11 @@ class SketchUiOverlay(
             ToolId.HELICOIDAL_ROTATE_MULTIPLE,
             ToolId.PAINT
         )
+        val modification2Tools = listOf(
+            ToolId.ROTATE_2,
+            ToolId.ROTATIONAL_ARRAY,
+            ToolId.HELICAL_ARRAY
+        )
         val voxelTools = listOf(
             ToolId.VOXEL,
             ToolId.VOXEL_VOLUME,
@@ -1524,6 +1529,12 @@ class SketchUiOverlay(
             title = "Modification",
             toolbarId = "builtin_toolbar_modification",
             toolIds = modificationTools,
+            group = toolGroup
+        )
+        val modification2 = buildToolsToolbarWindow(
+            title = "Modification 2",
+            toolbarId = "builtin_toolbar_modification_2",
+            toolIds = modification2Tools,
             group = toolGroup
         )
         val voxel = buildToolsToolbarWindow(
@@ -1573,6 +1584,7 @@ class SketchUiOverlay(
         builtInToolbars["builtin_toolbar_construction_points"] = pointConstruction
         builtInToolbars["builtin_toolbar_construction_entities"] = entityConstruction
         builtInToolbars["builtin_toolbar_modification"] = modification
+        builtInToolbars["builtin_toolbar_modification_2"] = modification2
         builtInToolbars["builtin_toolbar_architecture"] = architecture
         builtInToolbars["builtin_toolbar_hvac"] = hvac
         builtInToolbars["builtin_toolbar_voxel"] = voxel
@@ -1583,7 +1595,19 @@ class SketchUiOverlay(
             applyToolbarState(toolbarId, window)
         }
         toolbarsPositioned = false
-        return listOf(inToolOperators, pointConstruction, entityConstruction, modification, architecture, hvac, voxel, actions, camera, rendering)
+        return listOf(
+            inToolOperators,
+            pointConstruction,
+            entityConstruction,
+            modification,
+            modification2,
+            architecture,
+            hvac,
+            voxel,
+            actions,
+            camera,
+            rendering
+        )
     }
 
     private fun buildToolsToolbarWindow(
@@ -6641,6 +6665,7 @@ class SketchUiOverlay(
             ToolId.PUSH_PULL -> "push_pull"
             ToolId.MOVE -> "move"
             ToolId.ROTATE -> "rotate"
+            ToolId.ROTATE_2 -> "rotate"
             ToolId.SCALE -> "scale"
             ToolId.STRETCH -> "stretch"
             ToolId.ROTATE_STRETCH -> "stretch-rotate"
@@ -6649,6 +6674,8 @@ class SketchUiOverlay(
             ToolId.VOLUMETRIC_TRANSLATE_MULTIPLE -> "multiple-copy-translate-volumetric"
             ToolId.PLANAR_ROTATE_MULTIPLE -> "multiple-copy-planar-rotate"
             ToolId.HELICOIDAL_ROTATE_MULTIPLE -> "multiple-copy-helicoidal-rotate"
+            ToolId.ROTATIONAL_ARRAY -> "multiple-copy-planar-rotate"
+            ToolId.HELICAL_ARRAY -> "multiple-copy-helicoidal-rotate"
             ToolId.PAINT -> "paint"
             ToolId.OBJECT_PLACE -> "select"
             ToolId.PLUGIN -> "plugins"
@@ -6692,6 +6719,7 @@ class SketchUiOverlay(
             ToolId.PUSH_PULL -> Color(0.45f, 0.95f, 0.55f, 1f)
             ToolId.MOVE -> Color(0.95f, 0.45f, 0.35f, 1f)
             ToolId.ROTATE -> Color(0.75f, 0.55f, 0.95f, 1f)
+            ToolId.ROTATE_2 -> Color(0.8f, 0.6f, 0.95f, 1f)
             ToolId.SCALE -> Color(0.95f, 0.55f, 0.75f, 1f)
             ToolId.STRETCH -> Color(0.95f, 0.65f, 0.25f, 1f)
             ToolId.ROTATE_STRETCH -> Color(0.85f, 0.6f, 0.25f, 1f)
@@ -6700,6 +6728,8 @@ class SketchUiOverlay(
             ToolId.VOLUMETRIC_TRANSLATE_MULTIPLE -> Color(0.65f, 0.9f, 0.65f, 1f)
             ToolId.PLANAR_ROTATE_MULTIPLE -> Color(0.75f, 0.65f, 0.95f, 1f)
             ToolId.HELICOIDAL_ROTATE_MULTIPLE -> Color(0.65f, 0.75f, 0.95f, 1f)
+            ToolId.ROTATIONAL_ARRAY -> Color(0.75f, 0.65f, 0.95f, 1f)
+            ToolId.HELICAL_ARRAY -> Color(0.65f, 0.75f, 0.95f, 1f)
             ToolId.PAINT -> Color(0.95f, 0.95f, 0.45f, 1f)
             ToolId.OBJECT_PLACE -> Color(0.85f, 0.85f, 0.85f, 1f)
             ToolId.PLUGIN -> Color(0.75f, 0.85f, 0.95f, 1f)

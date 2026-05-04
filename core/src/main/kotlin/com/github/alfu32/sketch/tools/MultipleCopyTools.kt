@@ -213,6 +213,43 @@ private fun copySelectedVoxelsWithLocalTransform(
     return changed
 }
 
+private fun transformSelectedVoxelsWithLocalTransform(
+    scene: GroupScene,
+    group: GroupScene.GroupNode,
+    transform: (Vector3) -> Vector3
+): Int {
+    if (!scene.isVoxelGroup(group)) {
+        return 0
+    }
+    val store = group.voxelStore ?: return 0
+    val selected = store.selected().toList()
+    if (selected.isEmpty()) {
+        return 0
+    }
+    val entries = selected.mapNotNull { key -> store.colorAt(key)?.let { color -> key to color } }
+    if (entries.isEmpty()) {
+        return 0
+    }
+    entries.forEach { (key, _) ->
+        store.remove(key.x, key.y, key.z)
+    }
+    var changed = 0
+    val nextSelection = linkedSetOf<com.github.alfu32.sketch.model.VoxelStore.Key>()
+    entries.forEach { (key, color) ->
+        val target = transform(Vector3(key.x.toFloat(), key.y.toFloat(), key.z.toFloat()))
+        val nx = target.x.roundToInt()
+        val ny = target.y.roundToInt()
+        val nz = target.z.roundToInt()
+        if (store.set(nx, ny, nz, color)) {
+            changed++
+        }
+        nextSelection.add(com.github.alfu32.sketch.model.VoxelStore.Key(nx, ny, nz))
+    }
+    store.replaceSelection(nextSelection)
+    scene.rebuildVoxelGeometry(group.prototype)
+    return changed
+}
+
 private fun mergeCounts(total: MultipleCopyCounts, step: MultipleCopyCounts) {
     total.architecture += step.architecture
     total.hvac += step.hvac
@@ -533,6 +570,126 @@ private fun buildMultipleCopyStatus(label: String, copies: Int, capped: Boolean,
         append(" texts ").append(total.texts)
         append(" groups ").append(total.groups)
     }
+}
+
+private fun buildTransformStatus(label: String, total: MultipleCopyCounts): String {
+    return buildString {
+        append(label)
+        append(" | architecture ").append(total.architecture)
+        append(" hvac ").append(total.hvac)
+        append(" voxels ").append(total.voxels)
+        append(" edges ").append(total.edges)
+        append(" faces ").append(total.faces)
+        append(" dims ").append(total.dimensions)
+        append(" texts ").append(total.texts)
+        append(" groups ").append(total.groups)
+    }
+}
+
+private fun applyRotationalCopyStep(
+    scene: GroupScene,
+    group: GroupScene.GroupNode,
+    centerWorld: Vector3,
+    axisWorld: Vector3,
+    degrees: Float,
+    liftWorld: Float
+): MultipleCopyCounts {
+    val centerLocal = group.toLocal(centerWorld)
+    val axisLocal = group.vectorToLocal(axisWorld).nor()
+    val localLift = group.vectorToLocal(Vector3(axisWorld).scl(liftWorld))
+    val rotationWorld = Quaternion().setFromAxis(axisWorld, degrees)
+    val rotationLocal = Quaternion().setFromAxis(axisLocal, degrees)
+    return applyCopyStep(
+        scene = scene,
+        group = group,
+        pointTransformWorld = { point ->
+            Vector3(point).sub(centerWorld).mul(rotationWorld).add(centerWorld).mulAdd(axisWorld, liftWorld)
+        },
+        vectorTransformWorld = { vector -> Vector3(vector).mul(rotationWorld) },
+        pointTransformLocal = { point ->
+            Vector3(point).sub(centerLocal).mul(rotationLocal).add(centerLocal).add(localLift)
+        },
+        pointTransformVoxelLocal = { point ->
+            Vector3(point).sub(centerLocal).mul(rotationLocal).add(centerLocal).add(localLift)
+        }
+    )
+}
+
+private fun applyRotationalTransform(
+    scene: GroupScene,
+    group: GroupScene.GroupNode,
+    centerWorld: Vector3,
+    axisWorld: Vector3,
+    degrees: Float,
+    liftWorld: Float
+): MultipleCopyCounts {
+    val total = MultipleCopyCounts()
+    val centerLocal = group.toLocal(centerWorld)
+    val axisLocal = group.vectorToLocal(axisWorld).nor()
+    val localLift = group.vectorToLocal(Vector3(axisWorld).scl(liftWorld))
+    val rotationWorld = Quaternion().setFromAxis(axisWorld, degrees)
+    val rotationLocal = Quaternion().setFromAxis(axisLocal, degrees)
+    val pointTransformWorld: (Vector3) -> Vector3 = { point ->
+        Vector3(point).sub(centerWorld).mul(rotationWorld).add(centerWorld).mulAdd(axisWorld, liftWorld)
+    }
+    val vectorTransformWorld: (Vector3) -> Vector3 = { vector -> Vector3(vector).mul(rotationWorld) }
+    val pointTransformLocal: (Vector3) -> Vector3 = { point ->
+        Vector3(point).sub(centerLocal).mul(rotationLocal).add(centerLocal).add(localLift)
+    }
+    val vectorTransformLocal: (Vector3) -> Vector3 = { vector -> Vector3(vector).mul(rotationLocal) }
+    total.architecture = scene.transformSelectedArchitectureElements(
+        group = group,
+        pointTransform = pointTransformWorld,
+        vectorTransform = vectorTransformWorld
+    )
+    total.hvac = scene.transformSelectedHvacElements(
+        group = group,
+        pointTransform = pointTransformWorld
+    )
+    total.faces = group.faceStore.transformSelected(pointTransformLocal)
+    total.edges = group.lineStore.transformSelected(pointTransformLocal)
+    total.dimensions = group.dimensionStore.transformSelected(pointTransformLocal)
+    total.texts = group.textStore.transformSelectedAdvanced(pointTransformLocal, vectorTransformLocal)
+    total.groups = scene.transformSelectedGroups(pointTransformWorld, vectorTransformWorld)
+    total.voxels = transformSelectedVoxelsWithLocalTransform(scene, group, pointTransformLocal)
+    return total
+}
+
+private fun renderRotationalPreview(
+    scene: GroupScene,
+    group: GroupScene.GroupNode,
+    renderer: ShapeRenderer,
+    previewCopies: Int,
+    centerWorld: Vector3,
+    axisWorld: Vector3,
+    degreesPerStep: Float,
+    liftWorldPerStep: Float
+) {
+    val centerLocal = group.toLocal(centerWorld)
+    val axisLocal = group.vectorToLocal(axisWorld).nor()
+    val localLiftStep = group.vectorToLocal(Vector3(axisWorld).scl(liftWorldPerStep))
+    renderMultiplePreview(
+        scene = scene,
+        group = group,
+        renderer = renderer,
+        previewCopies = previewCopies,
+        localPointTransformAtStep = { step, point ->
+            val q = Quaternion().setFromAxis(axisLocal, degreesPerStep * step.toFloat())
+            Vector3(point)
+                .sub(centerLocal)
+                .mul(q)
+                .add(centerLocal)
+                .mulAdd(localLiftStep, step.toFloat())
+        },
+        worldPointTransformAtStep = { step, point ->
+            val q = Quaternion().setFromAxis(axisWorld, degreesPerStep * step.toFloat())
+            Vector3(point)
+                .sub(centerWorld)
+                .mul(q)
+                .add(centerWorld)
+                .mulAdd(axisWorld, liftWorldPerStep * step.toFloat())
+        }
+    )
 }
 
 private fun axisCopyCount(step: Float, span: Float): Int {
@@ -1021,7 +1178,7 @@ class VolumetricTranslateMultipleTool(
 }
 
 abstract class BaseRotateMultipleTool(
-    private val scene: GroupScene,
+    protected val scene: GroupScene,
     private val helicoidal: Boolean
 ) : Tool {
     private var center: Vector3? = null
@@ -1030,8 +1187,15 @@ abstract class BaseRotateMultipleTool(
     private val hover = Vector3()
     private var hasHover = false
 
+    protected open fun centerPrompt(): String = "Pick rotation center (c)."
+    protected open fun referencePrompt(): String = "Pick reference point (u)."
+    protected open fun incrementPrompt(): String = "Pick increment point (v)."
+    protected open fun finalPrompt(): String = "Pick final point (w)."
+    protected open fun resultLabel(): String =
+        if (helicoidal) "Helicoidal rotate multiple" else "Planar rotate multiple"
+
     override fun onEnter(status: StatusModel) {
-        status.message = "Pick rotation center (c)."
+        status.message = centerPrompt()
     }
 
     override fun onExit(status: StatusModel) {
@@ -1059,17 +1223,17 @@ abstract class BaseRotateMultipleTool(
         }
         if (center == null) {
             center = Vector3(world)
-            status.message = "Pick reference point (u)."
+            status.message = referencePrompt()
             return true
         }
         if (reference == null) {
             reference = Vector3(world)
-            status.message = "Pick increment point (v)."
+            status.message = incrementPrompt()
             return true
         }
         if (increment == null) {
             increment = Vector3(world)
-            status.message = "Pick final point (w)."
+            status.message = finalPrompt()
             return true
         }
 
@@ -1155,44 +1319,20 @@ abstract class BaseRotateMultipleTool(
         }
 
         val group = scene.activeGroup()
-        val centerLocal = group.toLocal(c)
-        val axisLocal = group.vectorToLocal(normalAxis).nor()
-        val localLiftStep = group.vectorToLocal(Vector3(normalAxis).scl(perStepLiftWorld))
-        val rotationWorld = Quaternion().setFromAxis(normalAxis, stepAngle)
-        val rotationLocal = Quaternion().setFromAxis(axisLocal, stepAngle)
-
         val total = MultipleCopyCounts()
         repeat(copies) {
-            val stepCounts = applyCopyStep(
+            val stepCounts = applyRotationalCopyStep(
                 scene = scene,
                 group = group,
-                pointTransformWorld = { point ->
-                    Vector3(point).sub(c).mul(rotationWorld).add(c).mulAdd(normalAxis, perStepLiftWorld)
-                },
-                vectorTransformWorld = { vector -> Vector3(vector).mul(rotationWorld) },
-                pointTransformLocal = { point ->
-                    Vector3(point).sub(centerLocal).mul(rotationLocal).add(centerLocal).add(localLiftStep)
-                },
-                pointTransformVoxelLocal = { point ->
-                    Vector3(point).sub(centerLocal).mul(rotationLocal).add(centerLocal).add(localLiftStep)
-                }
+                centerWorld = c,
+                axisWorld = normalAxis,
+                degrees = stepAngle,
+                liftWorld = perStepLiftWorld
             )
             mergeCounts(total, stepCounts)
         }
 
-        status.message = buildString {
-            append(if (helicoidal) "Helicoidal rotate multiple: copies " else "Planar rotate multiple: copies ")
-            append(copies)
-            if (capped) append(" (capped)")
-            append(" | architecture ").append(total.architecture)
-            append(" hvac ").append(total.hvac)
-            append(" voxels ").append(total.voxels)
-            append(" edges ").append(total.edges)
-            append(" faces ").append(total.faces)
-            append(" dims ").append(total.dimensions)
-            append(" texts ").append(total.texts)
-            append(" groups ").append(total.groups)
-        }
+        status.message = buildMultipleCopyStatus(resultLabel(), copies, capped, total)
         clearTransient()
         return true
     }
@@ -1255,32 +1395,15 @@ abstract class BaseRotateMultipleTool(
                                         }
                                         val perStepLiftWorld =
                                             if (helicoidal) totalLiftWorld / max(totalCopies, 1).toFloat() else 0f
-                                        val group = scene.activeGroup()
-                                        val centerLocal = group.toLocal(c)
-                                        val axisLocal = group.vectorToLocal(normalAxis).nor()
-                                        val localLiftStep = group.vectorToLocal(Vector3(normalAxis).scl(perStepLiftWorld))
-
-                                        renderMultiplePreview(
+                                        renderRotationalPreview(
                                             scene = scene,
-                                            group = group,
+                                            group = scene.activeGroup(),
                                             renderer = renderer,
                                             previewCopies = previewCopies,
-                                            localPointTransformAtStep = { step, point ->
-                                                val q = Quaternion().setFromAxis(axisLocal, stepAngle * step.toFloat())
-                                                Vector3(point)
-                                                    .sub(centerLocal)
-                                                    .mul(q)
-                                                    .add(centerLocal)
-                                                    .mulAdd(localLiftStep, step.toFloat())
-                                            },
-                                            worldPointTransformAtStep = { step, point ->
-                                                val q = Quaternion().setFromAxis(normalAxis, stepAngle * step.toFloat())
-                                                Vector3(point)
-                                                    .sub(c)
-                                                    .mul(q)
-                                                    .add(c)
-                                                    .mulAdd(normalAxis, perStepLiftWorld * step.toFloat())
-                                            }
+                                            centerWorld = c,
+                                            axisWorld = normalAxis,
+                                            degreesPerStep = stepAngle,
+                                            liftWorldPerStep = perStepLiftWorld
                                         )
                                     }
                                 }
@@ -1320,4 +1443,425 @@ class HelicoidalRotateMultipleTool(
 ) : BaseRotateMultipleTool(scene, helicoidal = true) {
     override val id: ToolId = ToolId.HELICOIDAL_ROTATE_MULTIPLE
     override val message: String = "Pick rotation center (c)."
+}
+
+class RotationalArrayTool(
+    scene: GroupScene
+) : BaseRotateMultipleTool(scene, helicoidal = false) {
+    override val id: ToolId = ToolId.ROTATIONAL_ARRAY
+    override val message: String = "Pick rotation center (c)."
+    override fun referencePrompt(): String = "Pick first reference point (a)."
+    override fun incrementPrompt(): String = "Pick increment point (b)."
+    override fun finalPrompt(): String = "Pick final sweep point (d)."
+    override fun resultLabel(): String = "Rotational array"
+}
+
+class Rotate2Tool(
+    private val scene: GroupScene
+) : Tool {
+    override val id: ToolId = ToolId.ROTATE_2
+    override val message: String = "Pick rotation center (c)."
+
+    private var center: Vector3? = null
+    private var reference: Vector3? = null
+    private val hover = Vector3()
+    private var hasHover = false
+
+    override fun onEnter(status: StatusModel) {
+        status.message = "Pick rotation center (c)."
+    }
+
+    override fun onExit(status: StatusModel) {
+        clearTransient()
+        super.onExit(status)
+    }
+
+    override fun onCancel(status: StatusModel) {
+        clearTransient()
+        status.message = "Canceled."
+    }
+
+    override fun supportsCopyMode(): Boolean = true
+
+    override fun onCopyModeChanged(status: StatusModel, enabled: Boolean) {
+        status.message = when {
+            center == null -> "Pick rotation center (c)."
+            reference == null -> "Pick first reference point (a)."
+            else -> "Pick end angle point (b)."
+        }
+    }
+
+    override fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
+        if (valid && world != null) {
+            hover.set(world)
+            hasHover = true
+        } else {
+            hasHover = false
+        }
+    }
+
+    override fun onPointerDown(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean, button: Int): Boolean {
+        if (button != Input.Buttons.LEFT || !valid || world == null) {
+            return false
+        }
+        if (center == null) {
+            center = Vector3(world)
+            status.message = "Pick first reference point (a)."
+            return true
+        }
+        if (reference == null) {
+            reference = Vector3(world)
+            status.message = "Pick end angle point (b)."
+            return true
+        }
+
+        val c = center ?: return false
+        val a = reference ?: return false
+        val b = Vector3(world)
+        val ref = Vector3(a).sub(c)
+        val end = Vector3(b).sub(c)
+        if (ref.len2() <= MULTIPLE_COPY_EPS || end.len2() <= MULTIPLE_COPY_EPS) {
+            clearTransient()
+            status.message = "Rotate 2 canceled: vectors are too short."
+            return true
+        }
+        val axisWorld = Vector3(ref).crs(end)
+        if (axisWorld.len2() <= MULTIPLE_COPY_EPS) {
+            clearTransient()
+            status.message = "Rotate 2 canceled: c/a/b are collinear."
+            return true
+        }
+        axisWorld.nor()
+        val refProjected = projectOntoPlane(ref, axisWorld)
+        val endProjected = projectOntoPlane(end, axisWorld)
+        if (refProjected.len2() <= MULTIPLE_COPY_EPS || endProjected.len2() <= MULTIPLE_COPY_EPS) {
+            clearTransient()
+            status.message = "Rotate 2 canceled: projected vectors are too short."
+            return true
+        }
+        val degrees = signedAngleDeg(refProjected, endProjected, axisWorld)
+        if (abs(degrees) <= 1e-4f) {
+            clearTransient()
+            status.message = "Rotate 2 canceled: rotation angle is zero."
+            return true
+        }
+        val group = scene.activeGroup()
+        val total = if (status.copyMode) {
+            applyRotationalCopyStep(scene, group, c, axisWorld, degrees, 0f)
+        } else {
+            applyRotationalTransform(scene, group, c, axisWorld, degrees, 0f)
+        }
+        status.message = buildTransformStatus(
+            if (status.copyMode) "Rotate 2 copied" else "Rotate 2 rotated",
+            total
+        )
+        clearTransient()
+        return true
+    }
+
+    override fun render(renderer: ShapeRenderer) {
+        val c = center ?: return
+        renderer.color = ToolFeedbackColors.PRIMARY
+        drawCross(renderer, c, 0.18f)
+        reference?.let { a ->
+            renderer.color = ToolFeedbackColors.SECONDARY
+            drawCross(renderer, a, 0.18f)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            renderer.line(c.x, c.y, c.z, a.x, a.y, a.z)
+        }
+        if (hasHover) {
+            renderer.color = ToolFeedbackColors.SECONDARY
+            drawCross(renderer, hover, 0.18f)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            renderer.line(c.x, c.y, c.z, hover.x, hover.y, hover.z)
+            val a = reference
+            if (a != null) {
+                val ref = Vector3(a).sub(c)
+                val end = Vector3(hover).sub(c)
+                if (ref.len2() > MULTIPLE_COPY_EPS && end.len2() > MULTIPLE_COPY_EPS) {
+                    val axisWorld = Vector3(ref).crs(end)
+                    if (axisWorld.len2() > MULTIPLE_COPY_EPS) {
+                        axisWorld.nor()
+                        val refProjected = projectOntoPlane(ref, axisWorld)
+                        val endProjected = projectOntoPlane(end, axisWorld)
+                        if (refProjected.len2() > MULTIPLE_COPY_EPS && endProjected.len2() > MULTIPLE_COPY_EPS) {
+                            val degrees = signedAngleDeg(refProjected, endProjected, axisWorld)
+                            if (abs(degrees) > 1e-4f) {
+                                renderRotationalPreview(
+                                    scene = scene,
+                                    group = scene.activeGroup(),
+                                    renderer = renderer,
+                                    previewCopies = 1,
+                                    centerWorld = c,
+                                    axisWorld = axisWorld,
+                                    degreesPerStep = degrees,
+                                    liftWorldPerStep = 0f
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        val c = center ?: return null
+        if (!hasHover) {
+            return null
+        }
+        return ToolMeasurement(Vector3(c), Vector3(hover))
+    }
+
+    private fun clearTransient() {
+        center = null
+        reference = null
+        hasHover = false
+    }
+}
+
+class HelicalArrayTool(
+    private val scene: GroupScene
+) : Tool {
+    override val id: ToolId = ToolId.HELICAL_ARRAY
+    override val message: String = "Pick rotation center (c)."
+
+    private var center: Vector3? = null
+    private var reference: Vector3? = null
+    private var increment: Vector3? = null
+    private val hover = Vector3()
+    private var hasHover = false
+
+    override fun onEnter(status: StatusModel) {
+        status.message = "Pick rotation center (c)."
+    }
+
+    override fun onExit(status: StatusModel) {
+        clearTransient()
+        super.onExit(status)
+    }
+
+    override fun onCancel(status: StatusModel) {
+        clearTransient()
+        status.message = "Canceled."
+    }
+
+    override fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
+        if (valid && world != null) {
+            hover.set(world)
+            hasHover = true
+        } else {
+            hasHover = false
+        }
+    }
+
+    override fun onPointerDown(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean, button: Int): Boolean {
+        if (button != Input.Buttons.LEFT || !valid || world == null) {
+            return false
+        }
+        if (center == null) {
+            center = Vector3(world)
+            status.message = "Pick first reference point (a)."
+            return true
+        }
+        if (reference == null) {
+            reference = Vector3(world)
+            status.message = "Pick helical unit point (b)."
+            return true
+        }
+        if (increment == null) {
+            increment = Vector3(world)
+            status.message = "Pick final point (d)."
+            return true
+        }
+
+        val plan = resolveHelicalPlan(Vector3(world))
+        if (plan == null) {
+            clearTransient()
+            status.message = "Helical array canceled: invalid helical definition."
+            return true
+        }
+        val group = scene.activeGroup()
+        val total = MultipleCopyCounts()
+        repeat(plan.copies) {
+            val stepCounts = applyRotationalCopyStep(
+                scene = scene,
+                group = group,
+                centerWorld = plan.centerWorld,
+                axisWorld = plan.axisWorld,
+                degrees = plan.stepAngle,
+                liftWorld = plan.stepLiftWorld
+            )
+            mergeCounts(total, stepCounts)
+        }
+        status.message = buildMultipleCopyStatus("Helical array", plan.copies, plan.capped, total)
+        clearTransient()
+        return true
+    }
+
+    override fun render(renderer: ShapeRenderer) {
+        val c = center ?: return
+        renderer.color = ToolFeedbackColors.PRIMARY
+        drawCross(renderer, c, 0.18f)
+        reference?.let { a ->
+            renderer.color = ToolFeedbackColors.SECONDARY
+            drawCross(renderer, a, 0.18f)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            renderer.line(c.x, c.y, c.z, a.x, a.y, a.z)
+        }
+        increment?.let { b ->
+            renderer.color = ToolFeedbackColors.SECONDARY
+            drawCross(renderer, b, 0.18f)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            renderer.line(c.x, c.y, c.z, b.x, b.y, b.z)
+        }
+        if (hasHover) {
+            renderer.color = ToolFeedbackColors.SECONDARY
+            drawCross(renderer, hover, 0.18f)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            renderer.line(c.x, c.y, c.z, hover.x, hover.y, hover.z)
+            val plan = resolveHelicalPlan(hover) ?: return
+            renderRotationalPreview(
+                scene = scene,
+                group = scene.activeGroup(),
+                renderer = renderer,
+                previewCopies = plan.copies.coerceAtMost(MAX_MULTIPLE_COPY_PREVIEW_STEPS),
+                centerWorld = plan.centerWorld,
+                axisWorld = plan.axisWorld,
+                degreesPerStep = plan.stepAngle,
+                liftWorldPerStep = plan.stepLiftWorld
+            )
+        }
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        val c = center ?: return null
+        if (!hasHover) {
+            return null
+        }
+        return ToolMeasurement(Vector3(c), Vector3(hover))
+    }
+
+    private data class HelicalPlan(
+        val centerWorld: Vector3,
+        val axisWorld: Vector3,
+        val stepAngle: Float,
+        val stepLiftWorld: Float,
+        val copies: Int,
+        val capped: Boolean
+    )
+
+    private fun resolveHelicalPlan(finalPoint: Vector3): HelicalPlan? {
+        val c = center ?: return null
+        val a = reference ?: return null
+        val b = increment ?: return null
+        val upAxis = Vector3(0f, 1f, 0f)
+        val ref = Vector3(a).sub(c)
+        val unit = Vector3(b).sub(c)
+        val end = Vector3(finalPoint).sub(c)
+        val refProjected = projectOntoPlane(ref, upAxis)
+        val unitProjected = projectOntoPlane(unit, upAxis)
+        val endProjected = projectOntoPlane(end, upAxis)
+        if (refProjected.len2() <= MULTIPLE_COPY_EPS ||
+            unitProjected.len2() <= MULTIPLE_COPY_EPS ||
+            endProjected.len2() <= MULTIPLE_COPY_EPS
+        ) {
+            return null
+        }
+        val stepAngle = signedAngleDeg(refProjected, unitProjected, upAxis)
+        if (abs(stepAngle) <= 1e-4f) {
+            return null
+        }
+        val stepLiftWorld = b.y - a.y
+        val copies = resolveHelicalCopies(
+            refProjected = refProjected,
+            endProjected = endProjected,
+            stepAngle = stepAngle,
+            stepLiftWorld = stepLiftWorld,
+            startHeight = a.y,
+            endHeight = finalPoint.y
+        ) ?: return null
+        var capped = false
+        var resolvedCopies = copies
+        if (resolvedCopies > MAX_MULTIPLE_COPY_STEPS) {
+            resolvedCopies = MAX_MULTIPLE_COPY_STEPS
+            capped = true
+        }
+        if (resolvedCopies <= 0) {
+            return null
+        }
+        return HelicalPlan(
+            centerWorld = Vector3(c),
+            axisWorld = upAxis,
+            stepAngle = stepAngle,
+            stepLiftWorld = stepLiftWorld,
+            copies = resolvedCopies,
+            capped = capped
+        )
+    }
+
+    private fun resolveHelicalCopies(
+        refProjected: Vector3,
+        endProjected: Vector3,
+        stepAngle: Float,
+        stepLiftWorld: Float,
+        startHeight: Float,
+        endHeight: Float
+    ): Int? {
+        val direction = if (stepAngle >= 0f) 1f else -1f
+        val rawSweep = signedAngleDeg(refProjected, endProjected, Vector3(0f, 1f, 0f))
+        if (abs(stepLiftWorld) <= 1e-4f) {
+            var sweep = normalizeSignedSweep(rawSweep, direction)
+            if (abs(sweep) <= 1e-4f) {
+                sweep = 360f * direction
+            }
+            if (sweep * direction <= 0f) {
+                return null
+            }
+            var copies = floor(abs(sweep) / abs(stepAngle)).toInt()
+            if (abs(abs(sweep) - 360f) <= 1e-3f && copies > 1) {
+                copies -= 1
+            }
+            return if (copies > 0) copies else null
+        }
+        val heightEstimate = (endHeight - startHeight) / stepLiftWorld
+        if (heightEstimate <= 0f) {
+            return null
+        }
+        val approximateSweep = abs(stepAngle * heightEstimate)
+        val maxTurns = (floor(approximateSweep / 360f).toInt() + 8).coerceAtMost(MAX_MULTIPLE_COPY_STEPS)
+        var bestCopies = 0
+        var bestScore = Float.POSITIVE_INFINITY
+        for (turns in 0..maxTurns) {
+            var candidateSweep = rawSweep + 360f * direction * turns.toFloat()
+            if (candidateSweep * direction <= 0f) {
+                candidateSweep += 360f * direction
+            }
+            if (candidateSweep * direction <= 0f) {
+                continue
+            }
+            val candidateCopiesFloat = candidateSweep / stepAngle
+            if (candidateCopiesFloat <= 0f) {
+                continue
+            }
+            val candidateCopies = candidateCopiesFloat.roundToInt().coerceAtLeast(1)
+            val score = abs(candidateCopies.toFloat() - heightEstimate) +
+                abs(candidateCopiesFloat - candidateCopies.toFloat()) * 0.25f
+            if (score < bestScore) {
+                bestScore = score
+                bestCopies = candidateCopies
+            }
+        }
+        if (bestCopies <= 0) {
+            bestCopies = heightEstimate.roundToInt().coerceAtLeast(1)
+        }
+        return bestCopies
+    }
+
+    private fun clearTransient() {
+        center = null
+        reference = null
+        increment = null
+        hasHover = false
+    }
 }
