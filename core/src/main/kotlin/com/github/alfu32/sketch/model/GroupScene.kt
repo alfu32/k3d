@@ -502,11 +502,15 @@ class GroupScene(
     fun isEditing(): Boolean = activeGroup != root
 
     fun resetActiveGroup() {
+        val previousActive = activeGroup
         if (activeGroup != root) {
             activeGroup.editPrototypeMode = false
         }
         activeGroup = root
         activeGroup.editPrototypeMode = false
+        if (previousActive !== activeGroup || previousActive.editPrototypeMode) {
+            groupSpatialIndexDirty = true
+        }
     }
 
     fun setChangeListener(listener: () -> Unit) {
@@ -546,11 +550,16 @@ class GroupScene(
         if (group == activeGroup) {
             return false
         }
+        val previousActive = activeGroup
+        val previousEditMode = activeGroup.editPrototypeMode
         if (activeGroup != root) {
             activeGroup.editPrototypeMode = false
         }
         activeGroup = group
         activeGroup.editPrototypeMode = activeGroup != root
+        if (previousActive !== activeGroup || previousEditMode != activeGroup.editPrototypeMode) {
+            groupSpatialIndexDirty = true
+        }
         clearGroupSelection()
         return true
     }
@@ -558,9 +567,13 @@ class GroupScene(
     fun exitGroup(): Boolean {
         val current = activeGroup
         val parent = current.parent ?: return false
+        val previousEditMode = current.editPrototypeMode
         current.editPrototypeMode = false
         activeGroup = parent
         activeGroup.editPrototypeMode = activeGroup != root
+        if (current !== activeGroup || previousEditMode != activeGroup.editPrototypeMode) {
+            groupSpatialIndexDirty = true
+        }
         clearGroupSelection()
         return true
     }
@@ -1961,11 +1974,11 @@ class GroupScene(
     private fun recomputeInstanceGeometryFromPrototype(
         group: GroupNode,
         prototypeSourceStamp: Long = prototypeRuntimeGeometryStamp(group.prototype)
-    ) {
+    ): Boolean {
         if (group === root || group.editPrototypeMode) {
             group.runtimeHotspotPositions.clear()
             group.runtimeGeometrySourceStamp = Long.MIN_VALUE
-            return
+            return false
         }
         val sourceStamp = mixStamp(prototypeSourceStamp, groupRuntimeOverrideStamp(group))
         if (group.runtimeGeometrySourceStamp == sourceStamp &&
@@ -1974,7 +1987,7 @@ class GroupScene(
             group.dimensionStoreOverride != null &&
             group.textStoreOverride != null
         ) {
-            return
+            return false
         }
         ensurePrototypeRuntimeVertexIdsCurrent(group.prototype, prototypeSourceStamp)
         val selectedSegmentIds = group.lineStoreOverride?.getSelected()?.map { segment -> segment.id }?.toSet().orEmpty()
@@ -2021,6 +2034,7 @@ class GroupScene(
         group.dimensionStoreOverride = dimensionStore
         group.textStoreOverride = textStore
         group.runtimeGeometrySourceStamp = sourceStamp
+        return true
     }
 
     fun recomputeAllInstanceGeometryFromPrototypes() {
@@ -2031,11 +2045,17 @@ class GroupScene(
             ensurePrototypeRuntimeVertexIdsCurrent(prototype, sourceStamp)
         }
         prototypeRuntimeSourceStamps.keys.retainAll(prototypes.keys)
+        var anyGroupGeometryChanged = false
         walkGroups(root) { group ->
-            recomputeInstanceGeometryFromPrototype(
+            if (recomputeInstanceGeometryFromPrototype(
                 group,
                 prototypeStamps[group.prototype.id] ?: prototypeRuntimeGeometryStamp(group.prototype)
-            )
+            )) {
+                anyGroupGeometryChanged = true
+            }
+        }
+        if (anyGroupGeometryChanged) {
+            groupSpatialIndexDirty = true
         }
     }
 
