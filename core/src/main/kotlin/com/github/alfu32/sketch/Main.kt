@@ -2886,74 +2886,37 @@ class Main @JvmOverloads constructor(
     }
 
     private fun pickOrbitModelPoint(screenX: Int, screenY: Int): Vector3? {
-        val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
-        var bestPoint: Vector3? = null
-        var bestDist2 = Float.POSITIVE_INFINITY
+        return PerfStats.measure("main.pickOrbitModelPoint") {
+            val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
+            var bestPoint: Vector3? = null
+            var bestDist2 = Float.POSITIVE_INFINITY
 
-        fun testGroup(group: GroupScene.GroupNode) {
-            val localRay = com.badlogic.gdx.math.collision.Ray(
-                group.toLocal(ray.origin),
-                group.vectorToLocal(ray.direction).nor()
-            )
-            val hit = group.faceStore.pickTriangle(localRay) ?: return
-            val worldHit = group.toWorld(hit.point)
-            val dist2 = worldHit.dst2(ray.origin)
-            if (dist2 < bestDist2) {
-                bestDist2 = dist2
-                bestPoint = worldHit
+            fun testGroup(group: GroupScene.GroupNode) {
+                val localRay = com.badlogic.gdx.math.collision.Ray(
+                    group.toLocal(ray.origin),
+                    group.vectorToLocal(ray.direction).nor()
+                )
+                val hit = group.faceStore.pickTriangle(localRay) ?: return
+                val worldHit = group.toWorld(hit.point)
+                val dist2 = worldHit.dst2(ray.origin)
+                if (dist2 < bestDist2) {
+                    bestDist2 = dist2
+                    bestPoint = worldHit
+                }
             }
-        }
 
-        forEachCameraRayCandidateGroup(ray) { group ->
-            testGroup(group)
+            forEachCameraRayCandidateGroup(ray) { group ->
+                testGroup(group)
+            }
+            bestPoint
         }
-        return bestPoint
     }
 
     private fun forEachCameraRayCandidateGroup(
         ray: com.badlogic.gdx.math.collision.Ray,
         visitor: (GroupScene.GroupNode) -> Unit
     ) {
-        fun maybeVisit(group: GroupScene.GroupNode) {
-            val bounds = group.worldBounds() ?: group.geometryWorldBounds()
-            if (bounds != null) {
-                val t = rayAabbIntersectionT(ray.origin, ray.direction, bounds.min, bounds.max)
-                if (t == null) {
-                    return
-                }
-            }
-            visitor(group)
-        }
-        maybeVisit(scene.root)
-        scene.walkGroups(scene.root) { group ->
-            maybeVisit(group)
-        }
-    }
-
-    private fun rayAabbIntersectionT(origin: Vector3, direction: Vector3, min: Vector3, max: Vector3): Float? {
-        var tMin = Float.NEGATIVE_INFINITY
-        var tMax = Float.POSITIVE_INFINITY
-        fun axis(originValue: Float, directionValue: Float, minValue: Float, maxValue: Float): Boolean {
-            if (kotlin.math.abs(directionValue) < 1e-6f) {
-                return originValue in minValue..maxValue
-            }
-            val inv = 1f / directionValue
-            var t0 = (minValue - originValue) * inv
-            var t1 = (maxValue - originValue) * inv
-            if (t0 > t1) {
-                val swap = t0
-                t0 = t1
-                t1 = swap
-            }
-            tMin = kotlin.math.max(tMin, t0)
-            tMax = kotlin.math.min(tMax, t1)
-            return tMax >= tMin
-        }
-        if (!axis(origin.x, direction.x, min.x, max.x)) return null
-        if (!axis(origin.y, direction.y, min.y, max.y)) return null
-        if (!axis(origin.z, direction.z, min.z, max.z)) return null
-        if (tMax < 0f) return null
-        return if (tMin >= 0f) tMin else tMax
+        scene.queryGroupsByRay(ray, includeRoot = true).forEach(visitor)
     }
 
     override fun render() {

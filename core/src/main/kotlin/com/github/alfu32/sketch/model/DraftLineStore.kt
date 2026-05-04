@@ -78,6 +78,25 @@ class DraftLineStore {
 
     fun segmentById(id: String): Segment? = segmentsById[id]
 
+    fun deepCopy(): DraftLineStore {
+        val clone = DraftLineStore()
+        val clonedById = linkedMapOf<String, Segment>()
+        segments.forEach { segment ->
+            val copy = Segment(Vector3(segment.start), Vector3(segment.end))
+            copy.id = segment.id
+            clone.segments.add(copy)
+            clone.segmentsById[copy.id] = copy
+            clonedById[copy.id] = copy
+        }
+        selected.forEach { segment ->
+            clonedById[segment.id]?.let(clone.selected::add)
+        }
+        clone.spatialIndexDirty = true
+        clone.spatialBoundsDirty = true
+        clone.hasSpatialBounds = false
+        return clone
+    }
+
     fun getSelected(): Set<Segment> = selected
 
     fun isSelected(segment: Segment): Boolean = selected.contains(segment)

@@ -1073,39 +1073,11 @@ class GroupScene(
     }
 
     private fun cloneLineStore(source: DraftLineStore): DraftLineStore {
-        val clone = DraftLineStore()
-        source.getSegments().forEach { segment ->
-            clone.addSegment(segment.start, segment.end, autoCleanup = false, id = segment.id)
-        }
-        source.getSelected().forEach { segment ->
-            val matched = clone.getSegments().firstOrNull {
-                it.start.epsilonEquals(segment.start, 1e-6f) && it.end.epsilonEquals(segment.end, 1e-6f)
-            } ?: return@forEach
-            clone.addSelection(matched)
-        }
-        return clone
+        return source.deepCopy()
     }
 
     private fun cloneFaceStore(source: DraftFaceStore): DraftFaceStore {
-        val clone = DraftFaceStore(defaultFaceColor)
-        source.getTriangles().forEach { triangle ->
-            clone.addTriangle(
-                triangle.a,
-                triangle.b,
-                triangle.c,
-                source.colorFor(triangle),
-                id = triangle.id
-            )
-        }
-        source.getSelected().forEach { triangle ->
-            val matched = clone.getTriangles().firstOrNull {
-                it.a.epsilonEquals(triangle.a, 1e-6f) &&
-                    it.b.epsilonEquals(triangle.b, 1e-6f) &&
-                    it.c.epsilonEquals(triangle.c, 1e-6f)
-            } ?: return@forEach
-            clone.addSelection(matched)
-        }
-        return clone
+        return source.deepCopy()
     }
 
     private fun cloneDimensionStore(source: DraftDimensionStore): DraftDimensionStore {
@@ -1896,17 +1868,13 @@ class GroupScene(
         faceStore.notifyExternalChange()
 
         if (selectedSegmentIds.isNotEmpty()) {
-            lineStore.getSegments().forEach { segment ->
-                if (selectedSegmentIds.contains(segment.id)) {
-                    lineStore.addSelection(segment)
-                }
+            selectedSegmentIds.forEach { segmentId ->
+                lineStore.segmentById(segmentId)?.let(lineStore::addSelection)
             }
         }
         if (selectedFaceIds.isNotEmpty()) {
-            faceStore.getTriangles().forEach { triangle ->
-                if (selectedFaceIds.contains(triangle.id)) {
-                    faceStore.addSelection(triangle)
-                }
+            selectedFaceIds.forEach { triangleId ->
+                faceStore.triangleById(triangleId)?.let(faceStore::addSelection)
             }
         }
 

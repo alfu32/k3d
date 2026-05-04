@@ -107,6 +107,27 @@ class DraftFaceStore(
 
     fun triangleById(id: String): Triangle? = trianglesById[id]
 
+    fun deepCopy(): DraftFaceStore {
+        val clone = DraftFaceStore(com.badlogic.gdx.graphics.Color(defaultColor))
+        val clonedById = linkedMapOf<String, Triangle>()
+        triangles.forEach { triangle ->
+            val copy = Triangle(Vector3(triangle.a), Vector3(triangle.b), Vector3(triangle.c))
+            copy.id = triangle.id
+            clone.triangles.add(copy)
+            clone.trianglesById[copy.id] = copy
+            clone.colors[copy] = com.badlogic.gdx.graphics.Color(colors[triangle] ?: defaultColor)
+            clonedById[copy.id] = copy
+        }
+        selected.forEach { triangle ->
+            clonedById[triangle.id]?.let(clone.selected::add)
+        }
+        clone.visualVersion = visualVersion
+        clone.spatialIndexDirty = true
+        clone.spatialBoundsDirty = true
+        clone.hasSpatialBounds = false
+        return clone
+    }
+
     fun getSelected(): Set<Triangle> = selected
 
     fun colorFor(triangle: Triangle): com.badlogic.gdx.graphics.Color {
