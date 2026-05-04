@@ -97,6 +97,18 @@ class DraftLineStore {
         return clone
     }
 
+    fun appendSegmentRaw(start: Vector3, end: Vector3, id: String = UUID.randomUUID().toString()): Segment? {
+        if (start.dst2(end) <= epsilonSq) {
+            return null
+        }
+        val segment = Segment(Vector3(start), Vector3(end))
+        segment.id = id
+        segments.add(segment)
+        segmentsById[segment.id] = segment
+        invalidateSpatialIndex()
+        return segment
+    }
+
     fun getSelected(): Set<Segment> = selected
 
     fun isSelected(segment: Segment): Boolean = selected.contains(segment)

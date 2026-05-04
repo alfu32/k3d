@@ -128,6 +128,22 @@ class DraftFaceStore(
         return clone
     }
 
+    fun appendTriangleRaw(
+        a: Vector3,
+        b: Vector3,
+        c: Vector3,
+        color: com.badlogic.gdx.graphics.Color,
+        id: String = UUID.randomUUID().toString()
+    ): Triangle {
+        val triangle = Triangle(Vector3(a), Vector3(b), Vector3(c))
+        triangle.id = id
+        triangles.add(triangle)
+        trianglesById[triangle.id] = triangle
+        colors[triangle] = com.badlogic.gdx.graphics.Color(color)
+        invalidateSpatialIndex()
+        return triangle
+    }
+
     fun getSelected(): Set<Triangle> = selected
 
     fun colorFor(triangle: Triangle): com.badlogic.gdx.graphics.Color {

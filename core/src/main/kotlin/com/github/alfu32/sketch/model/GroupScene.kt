@@ -1465,27 +1465,20 @@ class GroupScene(
         if (sourceSegments.isEmpty() && sourceTriangles.isEmpty()) {
             return 0
         }
-        lineStore.withChangeSuppressed {
-            sourceSegments.forEach { segment ->
-                lineStore.addSegment(
-                    start = transform(Vector3(segment.start)),
-                    end = transform(Vector3(segment.end)),
-                    autoCleanup = false
-                )
-            }
+        sourceSegments.forEach { segment ->
+            lineStore.appendSegmentRaw(
+                start = transform(Vector3(segment.start)),
+                end = transform(Vector3(segment.end))
+            )
         }
-        faceStore.withChangeSuppressed {
-            sourceTriangles.forEach { triangle ->
-                faceStore.addTriangle(
-                    a = transform(Vector3(triangle.a)),
-                    b = transform(Vector3(triangle.b)),
-                    c = transform(Vector3(triangle.c)),
-                    color = faceStore.colorFor(triangle)
-                )
-            }
+        sourceTriangles.forEach { triangle ->
+            faceStore.appendTriangleRaw(
+                a = transform(Vector3(triangle.a)),
+                b = transform(Vector3(triangle.b)),
+                c = transform(Vector3(triangle.c)),
+                color = faceStore.colorFor(triangle)
+            )
         }
-        lineStore.notifyExternalChange()
-        faceStore.notifyExternalChange()
         return sourceSegments.size + sourceTriangles.size
     }
 
