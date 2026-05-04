@@ -1,8 +1,5 @@
 package com.github.alfu32.sketch.perf
 
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.LongAdder
 import kotlin.math.max
 
 object PerfStats {
@@ -18,13 +15,14 @@ object PerfStats {
     }
 
     private class Counter {
-        val calls = LongAdder()
-        val totalNs = LongAdder()
-        val maxNs = AtomicLong()
-        val lastNs = AtomicLong()
+        var calls: Long = 0L
+        var totalNs: Long = 0L
+        var maxNs: Long = 0L
+        var lastNs: Long = 0L
     }
 
-    private val counters = ConcurrentHashMap<String, Counter>()
+    private val lock = Any()
+    private val counters = linkedMapOf<String, Counter>()
 
     inline fun <T> measure(name: String, block: () -> T): T {
         val start = System.nanoTime()
@@ -37,37 +35,37 @@ object PerfStats {
 
     fun record(name: String, elapsedNs: Long) {
         val safeElapsed = max(0L, elapsedNs)
-        val counter = counters.computeIfAbsent(name) { Counter() }
-        counter.calls.increment()
-        counter.totalNs.add(safeElapsed)
-        counter.lastNs.set(safeElapsed)
-        while (true) {
-            val currentMax = counter.maxNs.get()
-            if (safeElapsed <= currentMax) {
-                break
-            }
-            if (counter.maxNs.compareAndSet(currentMax, safeElapsed)) {
-                break
+        synchronized(lock) {
+            val counter = counters.getOrPut(name) { Counter() }
+            counter.calls += 1L
+            counter.totalNs += safeElapsed
+            counter.lastNs = safeElapsed
+            if (safeElapsed > counter.maxNs) {
+                counter.maxNs = safeElapsed
             }
         }
     }
 
     fun snapshot(limit: Int = 16): List<Sample> {
-        return counters.entries
-            .map { (name, counter) ->
-                Sample(
-                    name = name,
-                    calls = counter.calls.sum(),
-                    totalNs = counter.totalNs.sum(),
-                    maxNs = counter.maxNs.get(),
-                    lastNs = counter.lastNs.get()
-                )
-            }
-            .sortedByDescending { it.totalNs }
-            .take(limit.coerceAtLeast(0))
+        return synchronized(lock) {
+            counters.entries
+                .map { (name, counter) ->
+                    Sample(
+                        name = name,
+                        calls = counter.calls,
+                        totalNs = counter.totalNs,
+                        maxNs = counter.maxNs,
+                        lastNs = counter.lastNs
+                    )
+                }
+                .sortedByDescending { it.totalNs }
+                .take(limit.coerceAtLeast(0))
+        }
     }
 
     fun clear() {
-        counters.clear()
+        synchronized(lock) {
+            counters.clear()
+        }
     }
 }
