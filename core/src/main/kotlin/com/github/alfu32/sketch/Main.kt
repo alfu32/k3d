@@ -357,6 +357,10 @@ class Main @JvmOverloads constructor(
     private var permanentGridVisible = true
     private var permanentGridNormalAxis = PermanentGridNormalAxis.Y_UP
     private var visibleRenderableGroupIds = emptySet<String>()
+    private var visibleRenderableGroupsStamp = Long.MIN_VALUE
+    private var visibleRenderableGroupsCache = emptyList<GroupScene.GroupNode>()
+    private var shadowRenderableGroupsStamp = Long.MIN_VALUE
+    private var shadowRenderableGroupsCache = emptyList<GroupScene.GroupNode>()
     private var shadowModelTrackedEdgeCount = -1
     private var shadowModelTrackedFaceCount = -1
     private val shadowBoundsCenterTmp = Vector3()
@@ -12045,6 +12049,27 @@ class Main @JvmOverloads constructor(
             !isBasicKindWireframe(BasicSelectionFilterKind.FACE)
     }
 
+    private fun computeRenderableFaceGroupsStamp(camera: Camera): Long {
+        var h = 1469598103934665603L
+        fun mix(v: Long) {
+            h = (h xor v) * 0x100000001b3L
+        }
+        fun mixFloat(v: Float) {
+            mix(java.lang.Float.floatToIntBits(v).toLong())
+        }
+        mix(scene.groupSpatialVersion())
+        mix(if (isBasicKindVisible(BasicSelectionFilterKind.FACE)) 1L else 0L)
+        mix(if (isBasicKindWireframe(BasicSelectionFilterKind.FACE)) 1L else 0L)
+        mix(if (isBasicKindVisible(BasicSelectionFilterKind.VOXEL)) 1L else 0L)
+        mix(if (isBasicKindWireframe(BasicSelectionFilterKind.VOXEL)) 1L else 0L)
+        mixFloat(camera.near)
+        mixFloat(camera.far)
+        mixFloat(camera.viewportWidth)
+        mixFloat(camera.viewportHeight)
+        camera.combined.`val`.forEach(::mixFloat)
+        return h
+    }
+
     private fun computeGroupFaceMeshVisualStamp(group: GroupScene.GroupNode): Long {
         var h = 1469598103934665603L
         fun mix(v: Long) {
@@ -12076,10 +12101,23 @@ class Main @JvmOverloads constructor(
         camera: Camera,
         updateVisibleIds: Boolean
     ): List<GroupScene.GroupNode> {
+        val stamp = computeRenderableFaceGroupsStamp(camera)
+        if (updateVisibleIds) {
+            if (visibleRenderableGroupsStamp == stamp) {
+                return visibleRenderableGroupsCache
+            }
+        } else if (shadowRenderableGroupsStamp == stamp) {
+            return shadowRenderableGroupsCache
+        }
         val candidates = scene.queryGroupsByFrustum(camera, includeRoot = false)
         if (candidates.isEmpty()) {
             if (updateVisibleIds) {
                 visibleRenderableGroupIds = emptySet()
+                visibleRenderableGroupsStamp = stamp
+                visibleRenderableGroupsCache = emptyList()
+            } else {
+                shadowRenderableGroupsStamp = stamp
+                shadowRenderableGroupsCache = emptyList()
             }
             return emptyList()
         }
@@ -12094,6 +12132,11 @@ class Main @JvmOverloads constructor(
         }
         if (updateVisibleIds) {
             visibleRenderableGroupIds = visibleIds ?: emptySet()
+            visibleRenderableGroupsStamp = stamp
+            visibleRenderableGroupsCache = renderable
+        } else {
+            shadowRenderableGroupsStamp = stamp
+            shadowRenderableGroupsCache = renderable
         }
         return renderable
     }

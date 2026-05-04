@@ -2,6 +2,7 @@ package com.github.alfu32.sketch.model
 
 import com.badlogic.gdx.graphics.Camera
 import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Quaternion
 import com.badlogic.gdx.math.Vector3
@@ -479,6 +480,7 @@ class GroupScene(
     private var changeListener: (() -> Unit)? = null
     private var groupSpatialIndex = SpatialHash3D(GROUP_SPATIAL_HASH_CELL_SIZE, { it: GroupNode -> it.id }, "groups")
     private var groupSpatialIndexDirty = true
+    private var groupSpatialVersion = 0L
     private val groupSpatialBoundsById = linkedMapOf<String, BoundingBox>()
     private val groupSpatialBoundsMin = Vector3()
     private val groupSpatialBoundsMax = Vector3()
@@ -501,6 +503,8 @@ class GroupScene(
 
     fun isEditing(): Boolean = activeGroup != root
 
+    fun groupSpatialVersion(): Long = groupSpatialVersion
+
     fun resetActiveGroup() {
         val previousActive = activeGroup
         if (activeGroup != root) {
@@ -510,6 +514,7 @@ class GroupScene(
         activeGroup.editPrototypeMode = false
         if (previousActive !== activeGroup || previousActive.editPrototypeMode) {
             groupSpatialIndexDirty = true
+            groupSpatialVersion += 1L
         }
     }
 
@@ -559,6 +564,7 @@ class GroupScene(
         activeGroup.editPrototypeMode = activeGroup != root
         if (previousActive !== activeGroup || previousEditMode != activeGroup.editPrototypeMode) {
             groupSpatialIndexDirty = true
+            groupSpatialVersion += 1L
         }
         clearGroupSelection()
         return true
@@ -573,6 +579,7 @@ class GroupScene(
         activeGroup.editPrototypeMode = activeGroup != root
         if (current !== activeGroup || previousEditMode != activeGroup.editPrototypeMode) {
             groupSpatialIndexDirty = true
+            groupSpatialVersion += 1L
         }
         clearGroupSelection()
         return true
@@ -2056,6 +2063,7 @@ class GroupScene(
         }
         if (anyGroupGeometryChanged) {
             groupSpatialIndexDirty = true
+            groupSpatialVersion += 1L
         }
     }
 
@@ -5141,6 +5149,21 @@ class GroupScene(
         ensureGroupSpatialIndex()
         if (!hasGroupSpatialBounds) {
             return emptyList()
+        }
+        if (camera is OrthographicCamera || groupSpatialBoundsById.size <= 1024) {
+            val result = mutableListOf<GroupNode>()
+            fun collect(group: GroupNode) {
+                if (!includeRoot && group === root) {
+                    return
+                }
+                val bounds = groupSpatialBoundsById[group.id] ?: return
+                if (camera.frustum.boundsInFrustum(bounds)) {
+                    result.add(group)
+                }
+            }
+            collect(root)
+            walkGroups(root) { group -> collect(group) }
+            return result
         }
         val planePoints = camera.frustum.planePoints
         if (planePoints.isEmpty()) {
@@ -8979,6 +9002,7 @@ class GroupScene(
 
     private fun notifyChange() {
         groupSpatialIndexDirty = true
+        groupSpatialVersion += 1L
         changeListener?.invoke()
     }
 
