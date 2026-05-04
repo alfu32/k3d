@@ -2,6 +2,7 @@ package com.github.alfu32.sketch.tui
 
 import com.github.alfu32.sketch.console.ConsoleGroovyRuntime
 import com.github.alfu32.sketch.console.TerminalController
+import com.github.alfu32.sketch.perf.PerfStats
 import org.codehaus.groovy.control.MultipleCompilationErrorsException
 import java.io.File
 import java.io.StringWriter
@@ -417,6 +418,10 @@ class ConsoleTui(
                 handleCircle(trimmed, args)
                 true
             }
+            ":perf" -> {
+                handlePerf(args)
+                true
+            }
             else -> {
                 outputPane.append("Unknown command: $trimmed (try :help)")
                 true
@@ -474,7 +479,12 @@ class ConsoleTui(
         outputPane.append(lines.joinToString("\n"))
     }
 
-    private fun handlePerf() {
+    private fun handlePerf(args: String = "") {
+        if (args.equals("reset", ignoreCase = true) || args.equals("clear", ignoreCase = true)) {
+            PerfStats.clear()
+            outputPane.append("Performance counters reset.")
+            return
+        }
         val runtime = Runtime.getRuntime()
         val usedMem = runtime.totalMemory() - runtime.freeMemory()
         val totalMem = runtime.totalMemory()
@@ -491,7 +501,15 @@ class ConsoleTui(
         val disk = File(userDir)
         val diskInfo = "Disk ($userDir): ${formatBytes(disk.usableSpace)} usable / ${formatBytes(disk.totalSpace)} total"
 
-        outputPane.append(listOf(heapInfo, cpuInfo, threadInfo, diskInfo).joinToString("\n"))
+        val perfLines = PerfStats.snapshot(limit = 12).map { sample ->
+            "${sample.name}: calls=${sample.calls}, total=${formatDuration(sample.totalNs)}, avg=${formatDuration(sample.avgNs)}, max=${formatDuration(sample.maxNs)}, last=${formatDuration(sample.lastNs)}"
+        }
+        val lines = mutableListOf(heapInfo, cpuInfo, threadInfo, diskInfo)
+        if (perfLines.isNotEmpty()) {
+            lines += "Hot paths:"
+            lines += perfLines
+        }
+        outputPane.append(lines.joinToString("\n"))
     }
 
     private fun buildCpuInfo(osBean: java.lang.management.OperatingSystemMXBean): String {
@@ -526,6 +544,15 @@ class ConsoleTui(
         return String.format(Locale.US, "%.2f %sB", scaled, prefix)
     }
 
+    private fun formatDuration(valueNs: Long): String {
+        return when {
+            valueNs >= 1_000_000_000L -> String.format(Locale.US, "%.2fs", valueNs / 1_000_000_000.0)
+            valueNs >= 1_000_000L -> String.format(Locale.US, "%.2fms", valueNs / 1_000_000.0)
+            valueNs >= 1_000L -> String.format(Locale.US, "%.2fµs", valueNs / 1_000.0)
+            else -> "${valueNs}ns"
+        }
+    }
+
     private fun Double.formatPercent(): String = String.format(Locale.US, "%.1f%%", this)
 
     fun printHelp() {
@@ -539,7 +566,7 @@ class ConsoleTui(
                   :examples             Show example snippets
                   :version / :ver / :v  Show version info
                   :history / :hist      Show history
-                  :perf                 Show performance stats
+                  :perf [reset]         Show or reset performance stats
                   :objects              List top-level objects
                   :list / :ls [name]    List fields/methods
                   :line / :l x,z[,y] .. Draw polyline

@@ -1,22 +1,34 @@
 package com.github.alfu32.sketch.model
 
 import com.badlogic.gdx.math.Vector3
+import com.github.alfu32.sketch.perf.PerfStats
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 
 class SpatialHash3D<T>(
     private val cellSize: Float,
-    private val keyOf: (T) -> String
+    private val keyOf: (T) -> String,
+    private val debugName: String = "spatial"
 ) {
-    data class CellKey(val x: Int, val y: Int, val z: Int)
+    private class CellBucket<T>(
+        val x: Int,
+        val y: Int,
+        val z: Int
+    ) {
+        val items = linkedMapOf<String, T>()
+    }
 
-    private val cells = linkedMapOf<CellKey, LinkedHashMap<String, T>>()
-    private val itemCells = linkedMapOf<String, MutableSet<CellKey>>()
+    private val cellsByHash = linkedMapOf<Long, MutableList<CellBucket<T>>>()
+    private val itemCells = linkedMapOf<String, MutableList<CellBucket<T>>>()
+    private val seenStamps = linkedMapOf<String, Int>()
+    private var queryStamp = 0
 
     fun clear() {
-        cells.clear()
+        cellsByHash.clear()
         itemCells.clear()
+        seenStamps.clear()
+        queryStamp = 0
     }
 
     fun insertAabb(min: Vector3, max: Vector3, item: T) {
@@ -25,24 +37,22 @@ class SpatialHash3D<T>(
 
     fun upsertAabb(min: Vector3, max: Vector3, item: T) {
         val key = keyOf(item)
-        val newKeys = cellKeysForAabb(min, max)
-        val oldKeys = itemCells[key]
+        val newBuckets = bucketsForAabb(min, max, create = true)
+        val oldBuckets = itemCells[key]
 
-        if (oldKeys != null) {
-            oldKeys.filter { it !in newKeys }.forEach { cellKey ->
-                cells[cellKey]?.let { bucket ->
-                    bucket.remove(key)
-                    if (bucket.isEmpty()) {
-                        cells.remove(cellKey)
-                    }
+        if (oldBuckets != null) {
+            oldBuckets.forEach { bucket ->
+                if (!newBuckets.contains(bucket)) {
+                    bucket.items.remove(key)
+                    removeBucketIfEmpty(bucket)
                 }
             }
         }
 
-        newKeys.forEach { cellKey ->
-            cells.getOrPut(cellKey) { linkedMapOf() }[key] = item
+        newBuckets.forEach { bucket ->
+            bucket.items[key] = item
         }
-        itemCells[key] = newKeys
+        itemCells[key] = newBuckets
     }
 
     fun remove(item: T) {
@@ -50,58 +60,137 @@ class SpatialHash3D<T>(
     }
 
     fun removeByKey(key: String) {
-        val oldKeys = itemCells.remove(key) ?: return
-        oldKeys.forEach { cellKey ->
-            cells[cellKey]?.let { bucket ->
-                bucket.remove(key)
-                if (bucket.isEmpty()) {
-                    cells.remove(cellKey)
-                }
-            }
+        val oldBuckets = itemCells.remove(key) ?: return
+        oldBuckets.forEach { bucket ->
+            bucket.items.remove(key)
+            removeBucketIfEmpty(bucket)
         }
+        seenStamps.remove(key)
     }
 
     fun queryAabb(min: Vector3, max: Vector3): List<T> {
-        if (cells.isEmpty()) {
+        if (cellsByHash.isEmpty()) {
             return emptyList()
         }
-        val deduped = linkedMapOf<String, T>()
-        cellKeysForAabb(min, max).forEach { cellKey ->
-            cells[cellKey].orEmpty().forEach { (key, item) ->
-                deduped.putIfAbsent(key, item)
+        return PerfStats.measure("spatial.$debugName.queryAabb") {
+            val result = ArrayList<T>()
+            val stamp = nextQueryStamp()
+            val minX = min(min.x, max.x)
+            val minY = min(min.y, max.y)
+            val minZ = min(min.z, max.z)
+            val maxX = max(min.x, max.x)
+            val maxY = max(min.y, max.y)
+            val maxZ = max(min.z, max.z)
+            val minCellX = floor(minX / cellSize).toInt()
+            val minCellY = floor(minY / cellSize).toInt()
+            val minCellZ = floor(minZ / cellSize).toInt()
+            val maxCellX = floor(maxX / cellSize).toInt()
+            val maxCellY = floor(maxY / cellSize).toInt()
+            val maxCellZ = floor(maxZ / cellSize).toInt()
+            for (x in minCellX..maxCellX) {
+                for (y in minCellY..maxCellY) {
+                    for (z in minCellZ..maxCellZ) {
+                        val bucket = findBucket(cellsByHash[cellHash(x, y, z)], x, y, z) ?: continue
+                        bucket.items.forEach { (key, item) ->
+                            if (seenStamps.put(key, stamp) != stamp) {
+                                result.add(item)
+                            }
+                        }
+                    }
+                }
             }
+            result
         }
-        return deduped.values.toList()
     }
 
-    private fun cellKeyOf(point: Vector3): CellKey = cellKey(point.x, point.y, point.z)
-
-    private fun cellKeysForAabb(min: Vector3, max: Vector3): MutableSet<CellKey> {
+    private fun bucketsForAabb(min: Vector3, max: Vector3, create: Boolean): MutableList<CellBucket<T>> {
         val minX = min(min.x, max.x)
         val minY = min(min.y, max.y)
         val minZ = min(min.z, max.z)
         val maxX = max(min.x, max.x)
         val maxY = max(min.y, max.y)
         val maxZ = max(min.z, max.z)
-        val minKey = cellKey(minX, minY, minZ)
-        val maxKey = cellKey(maxX, maxY, maxZ)
-        val result = linkedSetOf<CellKey>()
-        for (x in minKey.x..maxKey.x) {
-            for (y in minKey.y..maxKey.y) {
-                for (z in minKey.z..maxKey.z) {
-                    result.add(CellKey(x, y, z))
+        val minCellX = floor(minX / cellSize).toInt()
+        val minCellY = floor(minY / cellSize).toInt()
+        val minCellZ = floor(minZ / cellSize).toInt()
+        val maxCellX = floor(maxX / cellSize).toInt()
+        val maxCellY = floor(maxY / cellSize).toInt()
+        val maxCellZ = floor(maxZ / cellSize).toInt()
+        val result = ArrayList<CellBucket<T>>()
+        for (x in minCellX..maxCellX) {
+            for (y in minCellY..maxCellY) {
+                for (z in minCellZ..maxCellZ) {
+                    val bucket = findOrCreateBucket(x, y, z, create) ?: continue
+                    result.add(bucket)
                 }
             }
         }
         return result
     }
 
-    private fun cellKey(x: Float, y: Float, z: Float): CellKey {
-        return CellKey(
-            floor(x / cellSize).toInt(),
-            floor(y / cellSize).toInt(),
-            floor(z / cellSize).toInt()
-        )
+    private fun findOrCreateBucket(x: Int, y: Int, z: Int, create: Boolean): CellBucket<T>? {
+        val hash = cellHash(x, y, z)
+        val buckets = cellsByHash[hash] ?: if (create) {
+            mutableListOf<CellBucket<T>>().also { cellsByHash[hash] = it }
+        } else {
+            return null
+        }
+        val existing = findBucket(buckets, x, y, z)
+        if (existing != null || !create) {
+            return existing
+        }
+        return CellBucket<T>(x, y, z).also { buckets.add(it) }
+    }
+
+    private fun findBucket(
+        buckets: List<CellBucket<T>>?,
+        x: Int,
+        y: Int,
+        z: Int
+    ): CellBucket<T>? {
+        buckets?.forEach { bucket ->
+            if (bucket.x == x && bucket.y == y && bucket.z == z) {
+                return bucket
+            }
+        }
+        return null
+    }
+
+    private fun removeBucketIfEmpty(bucket: CellBucket<T>) {
+        if (bucket.items.isNotEmpty()) {
+            return
+        }
+        val hash = cellHash(bucket.x, bucket.y, bucket.z)
+        val buckets = cellsByHash[hash] ?: return
+        buckets.remove(bucket)
+        if (buckets.isEmpty()) {
+            cellsByHash.remove(hash)
+        }
+    }
+
+    private fun nextQueryStamp(): Int {
+        if (queryStamp == Int.MAX_VALUE) {
+            seenStamps.clear()
+            queryStamp = 0
+        }
+        queryStamp += 1
+        return queryStamp
+    }
+
+    private fun cellHash(x: Int, y: Int, z: Int): Long {
+        var hash = -3750763034362895579L
+        hash = mix(hash, x.toLong())
+        hash = mix(hash, y.toLong())
+        hash = mix(hash, z.toLong())
+        return hash
+    }
+
+    private fun mix(seed: Long, value: Long): Long {
+        var mixed = seed xor (value - 7046029254386353131L + (seed shl 6) + (seed ushr 2))
+        mixed = mixed xor (mixed ushr 33)
+        mixed *= -4417276706812531889L
+        mixed = mixed xor (mixed ushr 29)
+        return mixed
     }
 
     companion object {

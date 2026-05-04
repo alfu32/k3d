@@ -2,6 +2,7 @@ package com.github.alfu32.sketch.model
 
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
+import com.github.alfu32.sketch.perf.PerfStats
 import com.github.alfu32.sketch.tools.PlaneBasis
 import com.github.alfu32.sketch.tools.planeBasisFromNormal
 import com.github.alfu32.sketch.model.DraftLineStore
@@ -40,7 +41,7 @@ class DraftFaceStore(
     private val epsilon2d = (epsilon * jtsScale).toFloat()
     private val cutEps2d = 1e-2f
     private val planeEps = 1e-2f
-    private var spatialIndex = SpatialHash3D<String>(SPATIAL_HASH_CELL_SIZE) { it }
+    private var spatialIndex = SpatialHash3D(SPATIAL_HASH_CELL_SIZE, { it: Triangle -> it.id }, "triangles")
     private var spatialIndexDirty = true
     private var spatialBoundsDirty = true
     private val spatialBoundsMin = Vector3()
@@ -2270,12 +2271,12 @@ class DraftFaceStore(
                 kotlin.math.max(start.y, end.y),
                 kotlin.math.max(start.z, end.z)
             )
-        ).mapNotNull { id -> trianglesById[id] }
+        )
     }
 
     private fun trianglesIntersectingQuery(min: Vector3, max: Vector3): List<Triangle> {
         ensureSpatialIndex()
-        return if (hasSpatialBounds) spatialIndex.queryAabb(min, max).mapNotNull { id -> trianglesById[id] } else emptyList()
+        return if (hasSpatialBounds) spatialIndex.queryAabb(min, max) else emptyList()
     }
 
     private fun invalidateSpatialIndex() {
@@ -2295,13 +2296,15 @@ class DraftFaceStore(
         if (!spatialIndexDirty) {
             return
         }
-        spatialIndex.clear()
-        spatialBoundsDirty = false
-        hasSpatialBounds = false
-        triangles.forEach { triangle ->
-            registerTriangle(triangle)
+        PerfStats.measure("model.faces.ensureSpatialIndex") {
+            spatialIndex.clear()
+            spatialBoundsDirty = false
+            hasSpatialBounds = false
+            triangles.forEach { triangle ->
+                registerTriangle(triangle)
+            }
+            spatialIndexDirty = false
         }
-        spatialIndexDirty = false
     }
 
     private fun ensureSpatialBounds() {
@@ -2318,12 +2321,12 @@ class DraftFaceStore(
     private fun registerTriangle(triangle: Triangle) {
         val min = triangleMin(triangle)
         val max = triangleMax(triangle)
-        spatialIndex.upsertAabb(min, max, triangle.id)
+        spatialIndex.upsertAabb(min, max, triangle)
         expandSpatialBounds(min, max)
     }
 
     private fun unregisterTriangle(triangle: Triangle) {
-        spatialIndex.removeByKey(triangle.id)
+        spatialIndex.remove(triangle)
         spatialBoundsDirty = true
         hasSpatialBounds = false
     }

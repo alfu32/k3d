@@ -93,6 +93,7 @@ import com.github.alfu32.sketch.InputModifiers
 import com.github.alfu32.sketch.K3DVersion
 import com.badlogic.gdx.Graphics
 import com.github.alfu32.sketch.plugin.PluginHost
+import com.github.alfu32.sketch.perf.PerfStats
 import com.github.alfu32.sketch.export.IfcExporter
 import com.github.alfu32.sketch.export.MeshIo
 import com.github.alfu32.sketch.tools.CircleTool
@@ -2988,7 +2989,9 @@ class Main @JvmOverloads constructor(
         collectFeedbackWorldLines()
         var rebuiltInstancesThisFrame = false
         if (instanceGeometryDirty) {
-            scene.recomputeAllInstanceGeometryFromPrototypes()
+            PerfStats.measure("main.recomputeAllInstanceGeometryFromPrototypes") {
+                scene.recomputeAllInstanceGeometryFromPrototypes()
+            }
             instanceGeometryDirty = false
             faceMeshDirty = true
             rebuiltInstancesThisFrame = true
@@ -3001,7 +3004,9 @@ class Main @JvmOverloads constructor(
             computeFaceMeshVisualStamp()
         }
         if (!rebuiltInstancesThisFrame && (faceMeshDirty || currentFaceMeshStamp != faceMeshVisualStamp)) {
-            updateFaceMesh()
+            PerfStats.measure("main.updateFaceMesh") {
+                updateFaceMesh()
+            }
             faceMeshVisualStamp = currentFaceMeshStamp
             faceMeshDirty = false
             shadowPassDirty = true

@@ -1,6 +1,7 @@
 package com.github.alfu32.sketch.model
 
 import com.badlogic.gdx.math.Vector3
+import com.github.alfu32.sketch.perf.PerfStats
 import java.util.UUID
 
 class DraftLineStore {
@@ -22,7 +23,7 @@ class DraftLineStore {
     private val epsilon = 1e-3f
     private val epsilonSq = epsilon * epsilon
     private val segmentsById = linkedMapOf<String, Segment>()
-    private var spatialIndex = SpatialHash3D<String>(SPATIAL_HASH_CELL_SIZE) { it }
+    private var spatialIndex = SpatialHash3D(SPATIAL_HASH_CELL_SIZE, { it: Segment -> it.id }, "segments")
     private var spatialIndexDirty = true
     private var spatialBoundsDirty = true
     private val spatialBoundsMin = Vector3()
@@ -497,12 +498,12 @@ class DraftLineStore {
                 kotlin.math.max(start.y, end.y),
                 kotlin.math.max(start.z, end.z)
             )
-        ).mapNotNull { id -> segmentsById[id] }
+        )
     }
 
     private fun segmentsIntersectingQuery(min: Vector3, max: Vector3): List<Segment> {
         ensureSpatialIndex()
-        return if (hasSpatialBounds) spatialIndex.queryAabb(min, max).mapNotNull { id -> segmentsById[id] } else emptyList()
+        return if (hasSpatialBounds) spatialIndex.queryAabb(min, max) else emptyList()
     }
 
     private fun segmentAabbIntersects(segment: Segment, min: Vector3, max: Vector3): Boolean {
@@ -754,13 +755,15 @@ class DraftLineStore {
         if (!spatialIndexDirty) {
             return
         }
-        spatialIndex.clear()
-        spatialBoundsDirty = false
-        hasSpatialBounds = false
-        segments.forEach { segment ->
-            registerSegment(segment)
+        PerfStats.measure("model.lines.ensureSpatialIndex") {
+            spatialIndex.clear()
+            spatialBoundsDirty = false
+            hasSpatialBounds = false
+            segments.forEach { segment ->
+                registerSegment(segment)
+            }
+            spatialIndexDirty = false
         }
-        spatialIndexDirty = false
     }
 
     private fun ensureSpatialBounds() {
@@ -777,12 +780,12 @@ class DraftLineStore {
     private fun registerSegment(segment: Segment) {
         val min = segmentMin(segment)
         val max = segmentMax(segment)
-        spatialIndex.upsertAabb(min, max, segment.id)
+        spatialIndex.upsertAabb(min, max, segment)
         expandSpatialBounds(min, max)
     }
 
     private fun unregisterSegment(segment: Segment) {
-        spatialIndex.removeByKey(segment.id)
+        spatialIndex.remove(segment)
         spatialBoundsDirty = true
         hasSpatialBounds = false
     }
