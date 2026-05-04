@@ -249,12 +249,13 @@ class DraftLineStore {
             selected.clear()
         }
         var count = 0
-        segmentsIntersectingQuery(min, max).forEach { segment ->
+        forEachSegmentCandidateInAabb(min, max) { segment ->
             if (segmentIntersectsAabb(segment.start, segment.end, min, max)) {
                 if (selected.add(segment)) {
                     count++
                 }
             }
+            true
         }
         return count
     }
@@ -288,14 +289,15 @@ class DraftLineStore {
     ): Hit? {
         var best: Hit? = null
         val dir = Vector3(ray.direction).nor()
-        rayCandidates(ray).forEach { segment ->
-            val hit = closestRaySegment(ray.origin, dir, segment) ?: return@forEach
+        forEachSegmentCandidateForRay(ray) { segment ->
+            val hit = closestRaySegment(ray.origin, dir, segment) ?: return@forEachSegmentCandidateForRay true
             val screenDist = screenDistance(camera, hit.point, screenX, screenY)
             if (screenDist <= maxPixels) {
                 if (best == null || hit.t < best!!.t) {
                     best = hit
                 }
             }
+            true
         }
         return best
     }
@@ -446,19 +448,22 @@ class DraftLineStore {
     private fun snapToExistingEndpoint(point: Vector3, include: (Segment) -> Boolean = { true }): Vector3? {
         val min = Vector3(point.x - epsilon, point.y - epsilon, point.z - epsilon)
         val max = Vector3(point.x + epsilon, point.y + epsilon, point.z + epsilon)
-        val candidates = segmentsIntersectingQuery(min, max)
-        candidates.forEach { segment ->
+        var snapped: Vector3? = null
+        forEachSegmentCandidateInAabb(min, max) { segment ->
             if (!include(segment)) {
-                return@forEach
+                return@forEachSegmentCandidateInAabb true
             }
             if (segment.start.dst2(point) <= epsilonSq) {
-                return Vector3(segment.start)
+                snapped = Vector3(segment.start)
+                return@forEachSegmentCandidateInAabb false
             }
             if (segment.end.dst2(point) <= epsilonSq) {
-                return Vector3(segment.end)
+                snapped = Vector3(segment.end)
+                return@forEachSegmentCandidateInAabb false
             }
+            true
         }
-        return null
+        return snapped
     }
 
     private fun dedupePoints(points: List<Vector3>): List<Vector3> {
@@ -532,9 +537,48 @@ class DraftLineStore {
         )
     }
 
+    private fun forEachSegmentCandidateForRay(
+        ray: com.badlogic.gdx.math.collision.Ray,
+        visitor: (Segment) -> Boolean
+    ): Int {
+        ensureSpatialIndex()
+        if (!hasSpatialBounds) {
+            return 0
+        }
+        val range = SpatialHash3D.rayAabbRange(ray.origin, ray.direction, spatialBoundsMin, spatialBoundsMax, epsilon)
+            ?: return 0
+        val start = Vector3(ray.origin).mulAdd(ray.direction, range[0])
+        val end = Vector3(ray.origin).mulAdd(ray.direction, range[1])
+        return spatialIndex.forEachAabb(
+            Vector3(
+                kotlin.math.min(start.x, end.x),
+                kotlin.math.min(start.y, end.y),
+                kotlin.math.min(start.z, end.z)
+            ),
+            Vector3(
+                kotlin.math.max(start.x, end.x),
+                kotlin.math.max(start.y, end.y),
+                kotlin.math.max(start.z, end.z)
+            ),
+            visitor
+        )
+    }
+
     private fun segmentsIntersectingQuery(min: Vector3, max: Vector3): List<Segment> {
         ensureSpatialIndex()
         return if (hasSpatialBounds) spatialIndex.queryAabb(min, max) else emptyList()
+    }
+
+    private fun forEachSegmentCandidateInAabb(
+        min: Vector3,
+        max: Vector3,
+        visitor: (Segment) -> Boolean
+    ): Int {
+        ensureSpatialIndex()
+        if (!hasSpatialBounds) {
+            return 0
+        }
+        return spatialIndex.forEachAabb(min, max, visitor)
     }
 
     private fun segmentAabbIntersects(segment: Segment, min: Vector3, max: Vector3): Boolean {

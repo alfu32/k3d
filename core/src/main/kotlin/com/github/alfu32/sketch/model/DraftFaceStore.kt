@@ -378,23 +378,25 @@ class DraftFaceStore(
             selected.clear()
         }
         var count = 0
-        trianglesIntersectingQuery(min, max).forEach { tri ->
+        forEachTriangleCandidateInAabb(min, max) { tri ->
             if (triangleIntersectsAabb(tri, min, max)) {
                 if (selected.add(tri)) {
                     count++
                 }
             }
+            true
         }
         return count
     }
 
     fun pickTriangle(ray: com.badlogic.gdx.math.collision.Ray): Hit? {
         var best: Hit? = null
-        rayCandidates(ray).forEach { tri ->
-            val hit = intersectRayTriangle(ray, tri) ?: return@forEach
+        forEachTriangleCandidateForRay(ray) { tri ->
+            val hit = intersectRayTriangle(ray, tri) ?: return@forEachTriangleCandidateForRay true
             if (best == null || hit.t < best!!.t) {
                 best = hit
             }
+            true
         }
         return best
     }
@@ -404,14 +406,15 @@ class DraftFaceStore(
         predicate: (Triangle) -> Boolean
     ): Hit? {
         var best: Hit? = null
-        rayCandidates(ray).forEach { tri ->
+        forEachTriangleCandidateForRay(ray) { tri ->
             if (!predicate(tri)) {
-                return@forEach
+                return@forEachTriangleCandidateForRay true
             }
-            val hit = intersectRayTriangle(ray, tri) ?: return@forEach
+            val hit = intersectRayTriangle(ray, tri) ?: return@forEachTriangleCandidateForRay true
             if (best == null || hit.t < best!!.t) {
                 best = hit
             }
+            true
         }
         return best
     }
@@ -2311,9 +2314,48 @@ class DraftFaceStore(
         )
     }
 
+    private fun forEachTriangleCandidateForRay(
+        ray: com.badlogic.gdx.math.collision.Ray,
+        visitor: (Triangle) -> Boolean
+    ): Int {
+        ensureSpatialIndex()
+        if (!hasSpatialBounds) {
+            return 0
+        }
+        val range = SpatialHash3D.rayAabbRange(ray.origin, ray.direction, spatialBoundsMin, spatialBoundsMax, epsilon)
+            ?: return 0
+        val start = Vector3(ray.origin).mulAdd(ray.direction, range[0])
+        val end = Vector3(ray.origin).mulAdd(ray.direction, range[1])
+        return spatialIndex.forEachAabb(
+            Vector3(
+                kotlin.math.min(start.x, end.x),
+                kotlin.math.min(start.y, end.y),
+                kotlin.math.min(start.z, end.z)
+            ),
+            Vector3(
+                kotlin.math.max(start.x, end.x),
+                kotlin.math.max(start.y, end.y),
+                kotlin.math.max(start.z, end.z)
+            ),
+            visitor
+        )
+    }
+
     private fun trianglesIntersectingQuery(min: Vector3, max: Vector3): List<Triangle> {
         ensureSpatialIndex()
         return if (hasSpatialBounds) spatialIndex.queryAabb(min, max) else emptyList()
+    }
+
+    private fun forEachTriangleCandidateInAabb(
+        min: Vector3,
+        max: Vector3,
+        visitor: (Triangle) -> Boolean
+    ): Int {
+        ensureSpatialIndex()
+        if (!hasSpatialBounds) {
+            return 0
+        }
+        return spatialIndex.forEachAabb(min, max, visitor)
     }
 
     private fun invalidateSpatialIndex() {

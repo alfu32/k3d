@@ -72,8 +72,20 @@ class SpatialHash3D<T>(
         if (cellsByHash.isEmpty()) {
             return emptyList()
         }
+        val result = ArrayList<T>()
+        forEachAabb(min, max) { item ->
+            result.add(item)
+            true
+        }
+        return result
+    }
+
+    fun forEachAabb(min: Vector3, max: Vector3, visitor: (T) -> Boolean): Int {
+        if (cellsByHash.isEmpty()) {
+            return 0
+        }
         return PerfStats.measure("spatial.$debugName.queryAabb") {
-            val result = ArrayList<T>()
+            var count = 0
             val stamp = nextQueryStamp()
             val minX = min(min.x, max.x)
             val minY = min(min.y, max.y)
@@ -93,13 +105,16 @@ class SpatialHash3D<T>(
                         val bucket = findBucket(cellsByHash[cellHash(x, y, z)], x, y, z) ?: continue
                         bucket.items.forEach { (key, item) ->
                             if (seenStamps.put(key, stamp) != stamp) {
-                                result.add(item)
+                                count++
+                                if (!visitor(item)) {
+                                    return@measure count
+                                }
                             }
                         }
                     }
                 }
             }
-            result
+            count
         }
     }
 
