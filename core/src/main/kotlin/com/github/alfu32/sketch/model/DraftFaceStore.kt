@@ -47,6 +47,7 @@ class DraftFaceStore(
     private val spatialBoundsMin = Vector3()
     private val spatialBoundsMax = Vector3()
     private var hasSpatialBounds = false
+    private var contentVersion = 0L
 
     fun setChangeListener(listener: () -> Unit) {
         onChange = listener
@@ -105,6 +106,8 @@ class DraftFaceStore(
 
     fun getTriangles(): List<Triangle> = triangles
 
+    fun contentVersion(): Long = contentVersion
+
     fun triangleById(id: String): Triangle? = trianglesById[id]
 
     fun deepCopy(): DraftFaceStore {
@@ -125,6 +128,7 @@ class DraftFaceStore(
         clone.spatialIndexDirty = true
         clone.spatialBoundsDirty = true
         clone.hasSpatialBounds = false
+        clone.contentVersion = contentVersion
         return clone
     }
 
@@ -2245,6 +2249,7 @@ class DraftFaceStore(
             rebuildTriangleLookup()
             invalidateSpatialIndex()
         }
+        contentVersion++
         markVisualChanged()
         if (!suppressChange) {
             onChange?.invoke()
@@ -2257,6 +2262,7 @@ class DraftFaceStore(
     }
 
     fun notifyBulkLoadComplete() {
+        contentVersion++
         markVisualChanged()
         if (!suppressChange) {
             onChange?.invoke()

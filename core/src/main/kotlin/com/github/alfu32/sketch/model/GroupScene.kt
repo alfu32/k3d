@@ -159,6 +159,7 @@ class GroupScene(
 
         val children: MutableList<GroupNode> = mutableListOf()
         var parent: GroupNode? = null
+        var runtimeGeometrySourceStamp: Long = Long.MIN_VALUE
         val lineStore: DraftLineStore
             get() = if (editPrototypeMode) {
                 prototype.lineStore
@@ -482,6 +483,7 @@ class GroupScene(
     private val groupSpatialBoundsMin = Vector3()
     private val groupSpatialBoundsMax = Vector3()
     private var hasGroupSpatialBounds = false
+    private val prototypeRuntimeSourceStamps = mutableMapOf<String, Long>()
 
     init {
         configureRootLineStoreAutoProcessingFilters()
@@ -642,6 +644,7 @@ class GroupScene(
             return false
         }
         prototypeInstances.remove(id)
+        prototypeRuntimeSourceStamps.remove(id)
         return prototypes.remove(id) != null
     }
 
@@ -1176,6 +1179,137 @@ class GroupScene(
         }
         prototype.prototypeVertexIds.clear()
         prototype.prototypeVertexIds.putAll(next)
+    }
+
+    private fun mixStamp(seed: Long, value: Long): Long = seed * 31L + value
+
+    private fun intStamp(value: Int): Long = value.toLong() and 0xffff_ffffL
+
+    private fun boolStamp(value: Boolean): Long = if (value) 1L else 0L
+
+    private fun stringStamp(value: String): Long = intStamp(value.hashCode())
+
+    private fun floatStamp(value: Float): Long = intStamp(java.lang.Float.floatToIntBits(value))
+
+    private fun colorStamp(color: Color): Long {
+        var stamp = 17L
+        stamp = mixStamp(stamp, floatStamp(color.r))
+        stamp = mixStamp(stamp, floatStamp(color.g))
+        stamp = mixStamp(stamp, floatStamp(color.b))
+        stamp = mixStamp(stamp, floatStamp(color.a))
+        return stamp
+    }
+
+    private fun vectorStamp(vector: Vector3): Long {
+        var stamp = 17L
+        stamp = mixStamp(stamp, floatStamp(vector.x))
+        stamp = mixStamp(stamp, floatStamp(vector.y))
+        stamp = mixStamp(stamp, floatStamp(vector.z))
+        return stamp
+    }
+
+    private fun segmentRefStamp(ref: HotspotStore.SegmentRef): Long {
+        var stamp = 17L
+        stamp = mixStamp(stamp, stringStamp(ref.id))
+        stamp = mixStamp(stamp, intStamp(ref.a.x))
+        stamp = mixStamp(stamp, intStamp(ref.a.y))
+        stamp = mixStamp(stamp, intStamp(ref.a.z))
+        stamp = mixStamp(stamp, intStamp(ref.b.x))
+        stamp = mixStamp(stamp, intStamp(ref.b.y))
+        stamp = mixStamp(stamp, intStamp(ref.b.z))
+        return stamp
+    }
+
+    private fun triangleRefStamp(ref: HotspotStore.TriangleRef): Long {
+        var stamp = 17L
+        stamp = mixStamp(stamp, stringStamp(ref.id))
+        stamp = mixStamp(stamp, intStamp(ref.a.x))
+        stamp = mixStamp(stamp, intStamp(ref.a.y))
+        stamp = mixStamp(stamp, intStamp(ref.a.z))
+        stamp = mixStamp(stamp, intStamp(ref.b.x))
+        stamp = mixStamp(stamp, intStamp(ref.b.y))
+        stamp = mixStamp(stamp, intStamp(ref.b.z))
+        stamp = mixStamp(stamp, intStamp(ref.c.x))
+        stamp = mixStamp(stamp, intStamp(ref.c.y))
+        stamp = mixStamp(stamp, intStamp(ref.c.z))
+        return stamp
+    }
+
+    private fun prototypeRuntimeGeometryStamp(prototype: ObjectPrototype): Long {
+        var stamp = 17L
+        stamp = mixStamp(stamp, intStamp(prototype.kind.ordinal))
+        stamp = mixStamp(stamp, prototype.lineStore.contentVersion())
+        stamp = mixStamp(stamp, prototype.faceStore.contentVersion())
+        prototype.dimensionStore.getDimensions().forEach { dimension ->
+            stamp = mixStamp(stamp, stringStamp(dimension.id))
+            stamp = mixStamp(stamp, vectorStamp(dimension.start))
+            stamp = mixStamp(stamp, vectorStamp(dimension.end))
+            stamp = mixStamp(stamp, vectorStamp(dimension.offset))
+        }
+        prototype.textStore.getTexts().forEach { text ->
+            stamp = mixStamp(stamp, stringStamp(text.id))
+            stamp = mixStamp(stamp, vectorStamp(text.position))
+            stamp = mixStamp(stamp, stringStamp(text.text))
+            stamp = mixStamp(stamp, floatStamp(text.size))
+            stamp = mixStamp(stamp, vectorStamp(text.normal))
+            stamp = mixStamp(stamp, vectorStamp(text.axisU))
+            stamp = mixStamp(stamp, boolStamp(text.screenText))
+            stamp = mixStamp(stamp, intStamp(text.kind.ordinal))
+            stamp = mixStamp(stamp, floatStamp(text.tracking))
+            stamp = mixStamp(stamp, floatStamp(text.lineSpacing))
+            stamp = mixStamp(stamp, stringStamp(text.glyphSourcePath))
+        }
+        prototype.hotspotStore.allHotspots().forEach { hotspot ->
+            stamp = mixStamp(stamp, stringStamp(hotspot.id))
+            stamp = mixStamp(stamp, vectorStamp(hotspot.position))
+            stamp = mixStamp(stamp, intStamp(hotspot.operation.ordinal))
+            stamp = mixStamp(stamp, hotspot.referencePosition?.let(::vectorStamp) ?: 0L)
+            hotspot.attachedHotspotIds.forEach { attachedId ->
+                stamp = mixStamp(stamp, stringStamp(attachedId))
+            }
+            hotspot.attachedVertexIds.forEach { attachedVertexId ->
+                stamp = mixStamp(stamp, stringStamp(attachedVertexId))
+            }
+            hotspot.attachedSegments.forEach { ref ->
+                stamp = mixStamp(stamp, segmentRefStamp(ref))
+            }
+            hotspot.attachedTriangles.forEach { ref ->
+                stamp = mixStamp(stamp, triangleRefStamp(ref))
+            }
+        }
+        return stamp
+    }
+
+    private fun groupRuntimeOverrideStamp(group: GroupNode): Long {
+        var stamp = 17L
+        group.hotspotPositionOverrides.forEach { (hotspotId, position) ->
+            stamp = mixStamp(stamp, stringStamp(hotspotId))
+            stamp = mixStamp(stamp, vectorStamp(position))
+        }
+        group.hotspotAttachedSegmentOverrides.forEach { (hotspotId, refs) ->
+            stamp = mixStamp(stamp, stringStamp(hotspotId))
+            refs.forEach { ref ->
+                stamp = mixStamp(stamp, segmentRefStamp(ref))
+            }
+        }
+        group.hotspotAttachedTriangleOverrides.forEach { (hotspotId, refs) ->
+            stamp = mixStamp(stamp, stringStamp(hotspotId))
+            refs.forEach { ref ->
+                stamp = mixStamp(stamp, triangleRefStamp(ref))
+            }
+        }
+        return stamp
+    }
+
+    private fun ensurePrototypeRuntimeVertexIdsCurrent(
+        prototype: ObjectPrototype,
+        sourceStamp: Long = prototypeRuntimeGeometryStamp(prototype)
+    ) {
+        if (prototypeRuntimeSourceStamps[prototype.id] == sourceStamp) {
+            return
+        }
+        refreshPrototypeVertexIds(prototype)
+        prototypeRuntimeSourceStamps[prototype.id] = sourceStamp
     }
 
     private fun vertexIdForPrototypePoint(prototype: ObjectPrototype, point: Vector3): String? {
@@ -1824,12 +1958,25 @@ class GroupScene(
         }
     }
 
-    private fun recomputeInstanceGeometryFromPrototype(group: GroupNode) {
+    private fun recomputeInstanceGeometryFromPrototype(
+        group: GroupNode,
+        prototypeSourceStamp: Long = prototypeRuntimeGeometryStamp(group.prototype)
+    ) {
         if (group === root || group.editPrototypeMode) {
             group.runtimeHotspotPositions.clear()
+            group.runtimeGeometrySourceStamp = Long.MIN_VALUE
             return
         }
-        refreshPrototypeVertexIds(group.prototype)
+        val sourceStamp = mixStamp(prototypeSourceStamp, groupRuntimeOverrideStamp(group))
+        if (group.runtimeGeometrySourceStamp == sourceStamp &&
+            group.lineStoreOverride != null &&
+            group.faceStoreOverride != null &&
+            group.dimensionStoreOverride != null &&
+            group.textStoreOverride != null
+        ) {
+            return
+        }
+        ensurePrototypeRuntimeVertexIdsCurrent(group.prototype, prototypeSourceStamp)
         val selectedSegmentIds = group.lineStoreOverride?.getSelected()?.map { segment -> segment.id }?.toSet().orEmpty()
         val selectedFaceIds = group.faceStoreOverride?.getSelected()?.map { triangle -> triangle.id }?.toSet().orEmpty()
 
@@ -1857,8 +2004,6 @@ class GroupScene(
                 vertexIdByHandle = vertexIdByHandle
             )
         }
-        lineStore.notifyExternalChange()
-        faceStore.notifyExternalChange()
 
         if (selectedSegmentIds.isNotEmpty()) {
             selectedSegmentIds.forEach { segmentId ->
@@ -1875,14 +2020,22 @@ class GroupScene(
         group.faceStoreOverride = faceStore
         group.dimensionStoreOverride = dimensionStore
         group.textStoreOverride = textStore
+        group.runtimeGeometrySourceStamp = sourceStamp
     }
 
     fun recomputeAllInstanceGeometryFromPrototypes() {
+        val prototypeStamps = linkedMapOf<String, Long>()
         prototypes.values.forEach { prototype ->
-            refreshPrototypeVertexIds(prototype)
+            val sourceStamp = prototypeRuntimeGeometryStamp(prototype)
+            prototypeStamps[prototype.id] = sourceStamp
+            ensurePrototypeRuntimeVertexIdsCurrent(prototype, sourceStamp)
         }
+        prototypeRuntimeSourceStamps.keys.retainAll(prototypes.keys)
         walkGroups(root) { group ->
-            recomputeInstanceGeometryFromPrototype(group)
+            recomputeInstanceGeometryFromPrototype(
+                group,
+                prototypeStamps[group.prototype.id] ?: prototypeRuntimeGeometryStamp(group.prototype)
+            )
         }
     }
 
@@ -8916,6 +9069,7 @@ class GroupScene(
         root.faceStoreOverride = null
         root.dimensionStoreOverride = null
         root.textStoreOverride = null
+        root.runtimeGeometrySourceStamp = Long.MIN_VALUE
         root.hotspotPositionOverrides.clear()
         root.runtimeHotspotPositions.clear()
         root.hotspotAttachedSegmentOverrides.clear()
@@ -8946,6 +9100,7 @@ class GroupScene(
         activeGroup = root
         activeGroup.editPrototypeMode = false
         prototypeInstances.clear()
+        prototypeRuntimeSourceStamps.clear()
         prototypes.keys.filter { it != rootPrototype.id }.forEach { prototypes.remove(it) }
         registerPrototype(rootPrototype)
         registerInstance(root)

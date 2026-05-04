@@ -2977,10 +2977,19 @@ class Main @JvmOverloads constructor(
             shadowPassDirty = true
         }
         syncGroupFaceBundles()
-        visibleRenderableGroupIds = emptySet()
+        val visibleRenderableGroups = PerfStats.measure("main.collectVisibleRenderableGroups") {
+            collectRenderableFaceGroups(activeCamera, updateVisibleIds = true)
+        }
         updateShadowCameraFromModelBounds()
+        val shadowRenderableGroups = if (shadowPassDirty) {
+            PerfStats.measure("main.collectShadowRenderableGroups") {
+                collectRenderableFaceGroups(shadowLight.camera, updateVisibleIds = false)
+            }
+        } else {
+            emptyList()
+        }
         if (shadowPassDirty) {
-            renderShadowPass()
+            renderShadowPass(shadowRenderableGroups)
             shadowPassDirty = false
         }
 
@@ -3007,7 +3016,7 @@ class Main @JvmOverloads constructor(
         modelBatch.begin(activeCamera)
         modelBatch.render(faceBackRenderable, environment)
         modelBatch.render(faceFrontRenderable, environment)
-        scene.walkGroups(scene.root) { group ->
+        visibleRenderableGroups.forEach { group ->
             val bundle = ensureGroupFaceBundle(group)
             modelBatch.render(bundle.backRenderable, environment)
             modelBatch.render(bundle.frontRenderable, environment)
@@ -12063,6 +12072,32 @@ class Main @JvmOverloads constructor(
         }
     }
 
+    private fun collectRenderableFaceGroups(
+        camera: Camera,
+        updateVisibleIds: Boolean
+    ): List<GroupScene.GroupNode> {
+        val candidates = scene.queryGroupsByFrustum(camera, includeRoot = false)
+        if (candidates.isEmpty()) {
+            if (updateVisibleIds) {
+                visibleRenderableGroupIds = emptySet()
+            }
+            return emptyList()
+        }
+        val visibleIds = if (updateVisibleIds) linkedSetOf<String>() else null
+        val renderable = ArrayList<GroupScene.GroupNode>(candidates.size)
+        candidates.forEach { group ->
+            if (!shouldIncludeGroupTriangle(group) || group.faceStore.getTriangles().isEmpty()) {
+                return@forEach
+            }
+            renderable.add(group)
+            visibleIds?.add(group.id)
+        }
+        if (updateVisibleIds) {
+            visibleRenderableGroupIds = visibleIds ?: emptySet()
+        }
+        return renderable
+    }
+
     private fun ensureGroupFaceBundle(group: GroupScene.GroupNode): FaceMeshBundle {
         val stamp = computeGroupFaceMeshVisualStamp(group)
         val existing = groupFaceBundles[group.id]
@@ -12304,13 +12339,13 @@ class Main @JvmOverloads constructor(
         ).apply { setVertices(vertices) }
     }
 
-    private fun renderShadowPass() {
+    private fun renderShadowPass(renderableGroups: List<GroupScene.GroupNode>) {
         val shadowCenter = if (shadowModelBoundsValid) shadowModelBoundsCenter else Vector3.Zero
         shadowLight.begin(shadowCenter, shadowLight.direction)
         shadowBatch.begin(shadowLight.camera)
         shadowBatch.render(faceFrontRenderable)
         shadowBatch.render(faceBackRenderable)
-        scene.walkGroups(scene.root) { group ->
+        renderableGroups.forEach { group ->
             val bundle = ensureGroupFaceBundle(group)
             shadowBatch.render(bundle.frontRenderable)
             shadowBatch.render(bundle.backRenderable)

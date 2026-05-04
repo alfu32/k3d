@@ -31,6 +31,7 @@ class DraftLineStore {
     private var hasSpatialBounds = false
     private var cleanupPending = false
     private var cleanupDueAtMs = 0L
+    private var contentVersion = 0L
 
     fun setChangeListener(listener: () -> Unit) {
         onChange = listener
@@ -76,6 +77,8 @@ class DraftLineStore {
 
     fun getSegments(): List<Segment> = segments
 
+    fun contentVersion(): Long = contentVersion
+
     fun segmentById(id: String): Segment? = segmentsById[id]
 
     fun deepCopy(): DraftLineStore {
@@ -94,6 +97,7 @@ class DraftLineStore {
         clone.spatialIndexDirty = true
         clone.spatialBoundsDirty = true
         clone.hasSpatialBounds = false
+        clone.contentVersion = contentVersion
         return clone
     }
 
@@ -483,6 +487,7 @@ class DraftLineStore {
             rebuildSegmentLookup()
             invalidateSpatialIndex()
         }
+        contentVersion++
         if (!suppressChange) {
             onChange?.invoke()
         }
@@ -494,6 +499,7 @@ class DraftLineStore {
     }
 
     fun notifyBulkLoadComplete() {
+        contentVersion++
         if (!suppressChange) {
             onChange?.invoke()
         }
