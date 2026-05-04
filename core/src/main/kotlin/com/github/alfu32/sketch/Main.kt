@@ -270,6 +270,7 @@ class Main @JvmOverloads constructor(
     private val textTransform = Matrix4()
     private val textTransformBackup = Matrix4()
     private lateinit var faceMesh: Mesh
+    private var rootFaceMeshBuffer = FloatArray(0)
     private lateinit var groundMesh: Mesh
     private lateinit var modelBatch: ModelBatch
     private lateinit var shadowBatch: ModelBatch
@@ -283,6 +284,7 @@ class Main @JvmOverloads constructor(
     private lateinit var faceBackRenderable: MeshRenderableProvider
     private lateinit var groundRenderable: MeshRenderableProvider
     private val groupFaceBundles = linkedMapOf<String, FaceMeshBundle>()
+    private val emptyVertexBuffer = FloatArray(0)
     private val selectedFaceColor = Color(1f, 0f, 0f, 0.3f)
     private val selectedLineColor = Color(1f, 0f, 0f, 1f)
     private val selectedLineOverlayPointColor = Color(0.12f, 0.32f, 0.95f, 0.95f)
@@ -11928,40 +11930,67 @@ class Main @JvmOverloads constructor(
     }
 
     private fun updateFaceMesh() {
-        updateGroundPlaneFromSceneBounds(scene.root.worldBounds())
-        val triangles = mutableListOf<TriangleWorld>()
+        val sceneBounds = scene.root.worldBounds()
+        updateGroundPlaneFromSceneBounds(sceneBounds)
         syncGroupFaceBundles()
-        scene.root.faceStore.getTriangles().forEach { tri ->
-            if (!shouldIncludeRootTriangle(tri)) {
-                return@forEach
-            }
-            triangles.add(
-                TriangleWorld(
-                Vector3(tri.a),
-                Vector3(tri.b),
-                Vector3(tri.c),
-                scene.root.faceStore.colorFor(tri),
-                scene.root.faceStore.isSelected(tri)
-                )
-            )
-        }
-        scene.collectActivePrototypeWorldTriangles { a, b, c, _ ->
-            triangles.add(TriangleWorld(a, b, c, prototypeGuideFaceColor, selected = false))
-        }
-        updateMeshVertices(
+        rootFaceMeshBuffer = updateMeshVertices(
             targetMesh = faceMesh,
             onMeshRecreated = { newMesh ->
                 faceMesh = newMesh
                 faceFrontRenderable = MeshRenderableProvider(faceMesh, faceFrontMaterial, GL20.GL_TRIANGLES)
                 faceBackRenderable = MeshRenderableProvider(faceMesh, faceBackMaterial, GL20.GL_TRIANGLES)
             },
-            triangles = triangles
+            vertexBuffer = rootFaceMeshBuffer,
+            vertexCount = rootFaceMeshVertexCount(),
+            fillVertices = { vertices ->
+                var idx = 0
+                scene.root.faceStore.getTriangles().forEach { tri ->
+                    if (!shouldIncludeRootTriangle(tri)) {
+                        return@forEach
+                    }
+                    val color = if (scene.root.faceStore.isSelected(tri)) {
+                        selectedFaceColor
+                    } else {
+                        scene.root.faceStore.colorFor(tri)
+                    }
+                    idx = writeTriangleVertices(
+                        buffer = vertices,
+                        start = idx,
+                        ax = tri.a.x,
+                        ay = tri.a.y,
+                        az = tri.a.z,
+                        bx = tri.b.x,
+                        by = tri.b.y,
+                        bz = tri.b.z,
+                        cx = tri.c.x,
+                        cy = tri.c.y,
+                        cz = tri.c.z,
+                        color = color
+                    )
+                }
+                scene.collectActivePrototypeWorldTriangles { a, b, c, _ ->
+                    idx = writeTriangleVertices(
+                        buffer = vertices,
+                        start = idx,
+                        ax = a.x,
+                        ay = a.y,
+                        az = a.z,
+                        bx = b.x,
+                        by = b.y,
+                        bz = b.z,
+                        cx = c.x,
+                        cy = c.y,
+                        cz = c.z,
+                        color = prototypeGuideFaceColor
+                    )
+                }
+                idx
+            }
         )
 
-        val shadowBounds = scene.root.worldBounds()
-        if (shadowBounds != null) {
-            shadowBounds.getCenter(shadowBoundsCenterTmp)
-            shadowBounds.getDimensions(shadowBoundsDimensionsTmp)
+        if (sceneBounds != null) {
+            sceneBounds.getCenter(shadowBoundsCenterTmp)
+            sceneBounds.getDimensions(shadowBoundsDimensionsTmp)
             shadowModelBoundsCenter.set(shadowBoundsCenterTmp)
             shadowModelBoundsRadius = (shadowBoundsDimensionsTmp.len() * 0.5f).coerceAtLeast(minimumShadowBoundsRadius)
             shadowModelBoundsValid = true
@@ -11970,6 +11999,22 @@ class Main @JvmOverloads constructor(
             shadowModelBoundsRadius = minimumShadowBoundsRadius
             shadowModelBoundsValid = false
         }
+    }
+
+    private fun rootFaceMeshVertexCount(): Int {
+        var triangleCount = 0
+        scene.root.faceStore.getTriangles().forEach { tri ->
+            if (shouldIncludeRootTriangle(tri)) {
+                triangleCount++
+            }
+        }
+        if (scene.isEditing()) {
+            val activeGroup = scene.activeGroup()
+            if (!activeGroup.editPrototypeMode && activeGroup.hasGeometryOverrides()) {
+                triangleCount += activeGroup.prototype.faceStore.getTriangles().size
+            }
+        }
+        return triangleCount * 3
     }
 
     private fun shouldIncludeGroupTriangle(group: GroupScene.GroupNode): Boolean {
@@ -12025,27 +12070,41 @@ class Main @JvmOverloads constructor(
             return existing
         }
         val bundle = existing ?: createFaceMeshBundle()
-        val triangles = if (shouldIncludeGroupTriangle(group)) {
-            group.faceStore.getTriangles().map { tri ->
-                TriangleWorld(
-                    group.toWorld(tri.a),
-                    group.toWorld(tri.b),
-                    group.toWorld(tri.c),
-                    group.faceStore.colorFor(tri),
-                    group.faceStore.isSelected(tri)
-                )
-            }
-        } else {
-            emptyList()
-        }
-        updateMeshVertices(
+        val includeGroup = shouldIncludeGroupTriangle(group)
+        bundle.vertexScratch = updateMeshVertices(
             targetMesh = bundle.mesh,
             onMeshRecreated = { newMesh ->
                 bundle.mesh = newMesh
                 bundle.frontRenderable = MeshRenderableProvider(newMesh, faceFrontMaterial, GL20.GL_TRIANGLES)
                 bundle.backRenderable = MeshRenderableProvider(newMesh, faceBackMaterial, GL20.GL_TRIANGLES)
             },
-            triangles = triangles
+            vertexBuffer = bundle.vertexScratch,
+            vertexCount = if (includeGroup) group.faceStore.getTriangles().size * 3 else 0,
+            fillVertices = { vertices ->
+                if (!includeGroup) {
+                    0
+                } else {
+                    var idx = 0
+                    val matrix = group.worldMatrix().`val`
+                    group.faceStore.getTriangles().forEach { tri ->
+                        val color = if (group.faceStore.isSelected(tri)) {
+                            selectedFaceColor
+                        } else {
+                            group.faceStore.colorFor(tri)
+                        }
+                        idx = writeTriangleVerticesTransformed(
+                            buffer = vertices,
+                            start = idx,
+                            matrix = matrix,
+                            a = tri.a,
+                            b = tri.b,
+                            c = tri.c,
+                            color = color
+                        )
+                    }
+                    idx
+                }
+            }
         )
         bundle.visualStamp = stamp
         groupFaceBundles[group.id] = bundle
@@ -12068,25 +12127,17 @@ class Main @JvmOverloads constructor(
     private fun updateMeshVertices(
         targetMesh: Mesh,
         onMeshRecreated: (Mesh) -> Unit,
-        triangles: List<TriangleWorld>
-    ) {
-        val vertexCount = triangles.size * 3
+        vertexBuffer: FloatArray,
+        vertexCount: Int,
+        fillVertices: (FloatArray) -> Int
+    ): FloatArray {
         if (vertexCount == 0) {
-            targetMesh.setVertices(FloatArray(0))
-            return
+            targetMesh.setVertices(emptyVertexBuffer)
+            return vertexBuffer
         }
-        val vertices = FloatArray(vertexCount * 10)
-        var idx = 0
-        triangles.forEach { tri ->
-            val a = tri.a
-            val b = tri.b
-            val c = tri.c
-            val color = if (tri.selected) selectedFaceColor else tri.color
-            val normal = Vector3(b).sub(a).crs(Vector3(c).sub(a)).nor()
-            idx = writeVertex(vertices, idx, a, normal, color)
-            idx = writeVertex(vertices, idx, b, normal, color)
-            idx = writeVertex(vertices, idx, c, normal, color)
-        }
+        val requiredFloats = vertexCount * 10
+        val vertices = ensureVertexBufferCapacity(vertexBuffer, requiredFloats)
+        val floatCount = fillVertices(vertices)
         if (targetMesh.maxVertices < vertexCount) {
             targetMesh.dispose()
             val newMesh = Mesh(false, vertexCount, 0,
@@ -12094,48 +12145,116 @@ class Main @JvmOverloads constructor(
                 VertexAttribute(VertexAttributes.Usage.Normal, 3, "a_normal"),
                 VertexAttribute(VertexAttributes.Usage.ColorUnpacked, 4, "a_color")
             )
-            newMesh.setVertices(vertices)
+            newMesh.setVertices(vertices, 0, floatCount)
             onMeshRecreated(newMesh)
-            return
+            return vertices
         }
-        targetMesh.setVertices(vertices)
+        targetMesh.setVertices(vertices, 0, floatCount)
+        return vertices
     }
 
-    private data class FaceMeshBundle(
-        var mesh: Mesh,
-        var frontRenderable: MeshRenderableProvider,
-        var backRenderable: MeshRenderableProvider,
-        var visualStamp: Long = Long.MIN_VALUE
-    )
+    private fun ensureVertexBufferCapacity(buffer: FloatArray, requiredFloats: Int): FloatArray {
+        if (buffer.size >= requiredFloats) {
+            return buffer
+        }
+        return FloatArray(requiredFloats)
+    }
 
-    private data class TriangleWorld(
-        val a: Vector3,
-        val b: Vector3,
-        val c: Vector3,
-        val color: Color,
-        val selected: Boolean
-    )
-
-    private fun writeVertex(
+    private fun writeTriangleVerticesTransformed(
         buffer: FloatArray,
         start: Int,
-        pos: Vector3,
-        normal: Vector3,
+        matrix: FloatArray,
+        a: Vector3,
+        b: Vector3,
+        c: Vector3,
+        color: Color
+    ): Int {
+        val ax = a.x * matrix[Matrix4.M00] + a.y * matrix[Matrix4.M01] + a.z * matrix[Matrix4.M02] + matrix[Matrix4.M03]
+        val ay = a.x * matrix[Matrix4.M10] + a.y * matrix[Matrix4.M11] + a.z * matrix[Matrix4.M12] + matrix[Matrix4.M13]
+        val az = a.x * matrix[Matrix4.M20] + a.y * matrix[Matrix4.M21] + a.z * matrix[Matrix4.M22] + matrix[Matrix4.M23]
+        val bx = b.x * matrix[Matrix4.M00] + b.y * matrix[Matrix4.M01] + b.z * matrix[Matrix4.M02] + matrix[Matrix4.M03]
+        val by = b.x * matrix[Matrix4.M10] + b.y * matrix[Matrix4.M11] + b.z * matrix[Matrix4.M12] + matrix[Matrix4.M13]
+        val bz = b.x * matrix[Matrix4.M20] + b.y * matrix[Matrix4.M21] + b.z * matrix[Matrix4.M22] + matrix[Matrix4.M23]
+        val cx = c.x * matrix[Matrix4.M00] + c.y * matrix[Matrix4.M01] + c.z * matrix[Matrix4.M02] + matrix[Matrix4.M03]
+        val cy = c.x * matrix[Matrix4.M10] + c.y * matrix[Matrix4.M11] + c.z * matrix[Matrix4.M12] + matrix[Matrix4.M13]
+        val cz = c.x * matrix[Matrix4.M20] + c.y * matrix[Matrix4.M21] + c.z * matrix[Matrix4.M22] + matrix[Matrix4.M23]
+        return writeTriangleVertices(buffer, start, ax, ay, az, bx, by, bz, cx, cy, cz, color)
+    }
+
+    private fun writeTriangleVertices(
+        buffer: FloatArray,
+        start: Int,
+        ax: Float,
+        ay: Float,
+        az: Float,
+        bx: Float,
+        by: Float,
+        bz: Float,
+        cx: Float,
+        cy: Float,
+        cz: Float,
+        color: Color
+    ): Int {
+        val ux = bx - ax
+        val uy = by - ay
+        val uz = bz - az
+        val vx = cx - ax
+        val vy = cy - ay
+        val vz = cz - az
+        var nx = uy * vz - uz * vy
+        var ny = uz * vx - ux * vz
+        var nz = ux * vy - uy * vx
+        val len = kotlin.math.sqrt(nx * nx + ny * ny + nz * nz)
+        if (len > 1e-8f) {
+            val invLen = 1f / len
+            nx *= invLen
+            ny *= invLen
+            nz *= invLen
+        } else {
+            nx = 0f
+            ny = 1f
+            nz = 0f
+        }
+
+        var i = start
+        i = writeVertexRaw(buffer, i, ax, ay, az, nx, ny, nz, color)
+        i = writeVertexRaw(buffer, i, bx, by, bz, nx, ny, nz, color)
+        i = writeVertexRaw(buffer, i, cx, cy, cz, nx, ny, nz, color)
+        return i
+    }
+
+    private fun writeVertexRaw(
+        buffer: FloatArray,
+        start: Int,
+        px: Float,
+        py: Float,
+        pz: Float,
+        nx: Float,
+        ny: Float,
+        nz: Float,
         color: Color
     ): Int {
         var i = start
-        buffer[i++] = pos.x
-        buffer[i++] = pos.y
-        buffer[i++] = pos.z
-        buffer[i++] = normal.x
-        buffer[i++] = normal.y
-        buffer[i++] = normal.z
+        buffer[i++] = px
+        buffer[i++] = py
+        buffer[i++] = pz
+        buffer[i++] = nx
+        buffer[i++] = ny
+        buffer[i++] = nz
         buffer[i++] = color.r
         buffer[i++] = color.g
         buffer[i++] = color.b
         buffer[i++] = color.a
         return i
     }
+
+    private data class FaceMeshBundle(
+        var mesh: Mesh,
+        var frontRenderable: MeshRenderableProvider,
+        var backRenderable: MeshRenderableProvider,
+        var visualStamp: Long = Long.MIN_VALUE,
+        var vertexScratch: FloatArray = FloatArray(0)
+    )
 
     private fun updateGroundPlaneFromSceneBounds(bounds: com.badlogic.gdx.math.collision.BoundingBox?) {
         val targetCenter = Vector3()
