@@ -7698,8 +7698,8 @@ class Main @JvmOverloads constructor(
             dto.applyTo(prototype, scene.defaultFaceColor)
             prototype.externalReferenceEnabled = true
             prototype.externalReferencePath = externalPath
-            prototype.lineStore.notifyExternalChange()
-            prototype.faceStore.notifyExternalChange()
+            prototype.lineStore.notifyBulkLoadComplete()
+            prototype.faceStore.notifyBulkLoadComplete()
             prototype.dimensionStore.notifyExternalChange()
             loaded++
         }

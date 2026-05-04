@@ -493,6 +493,12 @@ class DraftLineStore {
         notifyChange()
     }
 
+    fun notifyBulkLoadComplete() {
+        if (!suppressChange) {
+            onChange?.invoke()
+        }
+    }
+
     fun rayCandidates(ray: com.badlogic.gdx.math.collision.Ray): List<Segment> = segmentCandidatesForRay(ray)
 
     fun aabbCandidates(min: Vector3, max: Vector3): List<Segment> = segmentsIntersectingQuery(min, max)

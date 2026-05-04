@@ -356,6 +356,7 @@ object ModelPersistence {
             private var dimensionIndex = 0
             private var textIndex = 0
             private var finalizedGeometry = false
+            private var geometryChanged = false
 
             fun step(deadlineNs: Long): Boolean {
                 if (!prepared) {
@@ -370,18 +371,18 @@ object ModelPersistence {
                         prototype.lineStore.withChangeSuppressed {
                             while (segmentIndex < dto.segments.size && System.nanoTime() < deadlineNs) {
                                 val segment = dto.segments[segmentIndex++]
-                                prototype.lineStore.addSegment(
+                                prototype.lineStore.appendSegmentRaw(
                                     segment.start.toVector3(),
                                     segment.end.toVector3(),
-                                    autoCleanup = false,
                                     id = segment.id.ifBlank { java.util.UUID.randomUUID().toString() }
                                 )
                                 completedWork += 1
                                 changedLineOrFace = true
+                                geometryChanged = true
                             }
                             while (faceIndex < dto.faces.size && System.nanoTime() < deadlineNs) {
                                 val face = dto.faces[faceIndex++]
-                                prototype.faceStore.addTriangle(
+                                prototype.faceStore.appendTriangleRaw(
                                     face.a.toVector3(),
                                     face.b.toVector3(),
                                     face.c.toVector3(),
@@ -390,12 +391,11 @@ object ModelPersistence {
                                 )
                                 completedWork += 1
                                 changedLineOrFace = true
+                                geometryChanged = true
                             }
                         }
                     }
                     if (changedLineOrFace) {
-                        prototype.lineStore.notifyExternalChange()
-                        prototype.faceStore.notifyExternalChange()
                         updateProgress()
                     }
                 }
@@ -433,6 +433,10 @@ object ModelPersistence {
                     textIndex >= dto.texts.size &&
                     System.nanoTime() < deadlineNs
                 ) {
+                    if (geometryChanged) {
+                        prototype.lineStore.notifyBulkLoadComplete()
+                        prototype.faceStore.notifyBulkLoadComplete()
+                    }
                     dto.finalizePrototypeAfterIncrementalLoad(prototype)
                     finalizedGeometry = true
                     completedWork += 1
@@ -454,6 +458,7 @@ object ModelPersistence {
             private var dimensionIndex = 0
             private var textIndex = 0
             private var childrenQueued = false
+            private var geometryChanged = false
 
             fun step(deadlineNs: Long): Boolean {
                 if (!prepared) {
@@ -516,18 +521,18 @@ object ModelPersistence {
                         lineOverride.withChangeSuppressed {
                             while (segmentIndex < dto.overrideSegments.size && System.nanoTime() < deadlineNs) {
                                 val segment = dto.overrideSegments[segmentIndex++]
-                                lineOverride.addSegment(
+                                lineOverride.appendSegmentRaw(
                                     segment.start.toVector3(),
                                     segment.end.toVector3(),
-                                    autoCleanup = false,
                                     id = segment.id.ifBlank { java.util.UUID.randomUUID().toString() }
                                 )
                                 completedWork += 1
                                 changedLineOrFace = true
+                                geometryChanged = true
                             }
                             while (faceIndex < dto.overrideFaces.size && System.nanoTime() < deadlineNs) {
                                 val face = dto.overrideFaces[faceIndex++]
-                                faceOverride.addTriangle(
+                                faceOverride.appendTriangleRaw(
                                     face.a.toVector3(),
                                     face.b.toVector3(),
                                     face.c.toVector3(),
@@ -536,12 +541,11 @@ object ModelPersistence {
                                 )
                                 completedWork += 1
                                 changedLineOrFace = true
+                                geometryChanged = true
                             }
                         }
                     }
                     if (changedLineOrFace) {
-                        lineOverride.notifyExternalChange()
-                        faceOverride.notifyExternalChange()
                         updateProgress()
                     }
                 }
@@ -580,6 +584,10 @@ object ModelPersistence {
                     dimensionIndex >= dto.overrideDimensions.size &&
                     textIndex >= dto.overrideTexts.size
                 ) {
+                    if (geometryChanged && lineOverride != null && faceOverride != null) {
+                        lineOverride.notifyBulkLoadComplete()
+                        faceOverride.notifyBulkLoadComplete()
+                    }
                     dto.children.forEach { child ->
                         instanceTasks.addLast(InstanceTask(child, currentGroup))
                     }
@@ -599,6 +607,7 @@ object ModelPersistence {
             private var segmentIndex = 0
             private var faceIndex = 0
             private var childrenQueued = false
+            private var geometryChanged = false
 
             fun step(deadlineNs: Long): Boolean {
                 if (!prepared) {
@@ -635,18 +644,18 @@ object ModelPersistence {
                         currentGroup.lineStore.withChangeSuppressed {
                             while (segmentIndex < dto.segments.size && System.nanoTime() < deadlineNs) {
                                 val segment = dto.segments[segmentIndex++]
-                                currentGroup.lineStore.addSegment(
+                                currentGroup.lineStore.appendSegmentRaw(
                                     segment.start.toVector3(),
                                     segment.end.toVector3(),
-                                    autoCleanup = false,
                                     id = segment.id.ifBlank { java.util.UUID.randomUUID().toString() }
                                 )
                                 completedWork += 1
                                 changed = true
+                                geometryChanged = true
                             }
                             while (faceIndex < dto.faces.size && System.nanoTime() < deadlineNs) {
                                 val face = dto.faces[faceIndex++]
-                                currentGroup.faceStore.addTriangle(
+                                currentGroup.faceStore.appendTriangleRaw(
                                     face.a.toVector3(),
                                     face.b.toVector3(),
                                     face.c.toVector3(),
@@ -655,16 +664,19 @@ object ModelPersistence {
                                 )
                                 completedWork += 1
                                 changed = true
+                                geometryChanged = true
                             }
                         }
                     }
                     if (changed) {
-                        currentGroup.lineStore.notifyExternalChange()
-                        currentGroup.faceStore.notifyExternalChange()
                         updateProgress()
                     }
                 }
                 if (!childrenQueued && segmentIndex >= dto.segments.size && faceIndex >= dto.faces.size) {
+                    if (geometryChanged) {
+                        currentGroup.lineStore.notifyBulkLoadComplete()
+                        currentGroup.faceStore.notifyBulkLoadComplete()
+                    }
                     dto.children.forEach { child ->
                         legacyTasks.addLast(LegacyGroupTask(child, currentGroup))
                     }
@@ -987,15 +999,14 @@ object ModelPersistence {
 
         private fun applyGeometry(prototype: GroupScene.ObjectPrototype, defaultColor: Color? = null) {
             segments.forEach { segment ->
-                prototype.lineStore.addSegment(
+                prototype.lineStore.appendSegmentRaw(
                     segment.start.toVector3(),
                     segment.end.toVector3(),
-                    autoCleanup = false,
                     id = segment.id.ifBlank { java.util.UUID.randomUUID().toString() }
                 )
             }
             faces.forEach { face ->
-                prototype.faceStore.addTriangle(
+                prototype.faceStore.appendTriangleRaw(
                     face.a.toVector3(),
                     face.b.toVector3(),
                     face.c.toVector3(),
@@ -1859,16 +1870,15 @@ object ModelPersistence {
             ) {
                 val lineOverride = DraftLineStore()
                 overrideSegments.forEach { segment ->
-                    lineOverride.addSegment(
+                    lineOverride.appendSegmentRaw(
                         segment.start.toVector3(),
                         segment.end.toVector3(),
-                        autoCleanup = false,
                         id = segment.id.ifBlank { java.util.UUID.randomUUID().toString() }
                     )
                 }
                 val faceOverride = DraftFaceStore(defaultColor)
                 overrideFaces.forEach { face ->
-                    faceOverride.addTriangle(
+                    faceOverride.appendTriangleRaw(
                         face.a.toVector3(),
                         face.b.toVector3(),
                         face.c.toVector3(),

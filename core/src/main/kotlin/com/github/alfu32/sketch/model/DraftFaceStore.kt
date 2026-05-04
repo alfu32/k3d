@@ -138,9 +138,7 @@ class DraftFaceStore(
         val triangle = Triangle(Vector3(a), Vector3(b), Vector3(c))
         triangle.id = id
         triangles.add(triangle)
-        trianglesById[triangle.id] = triangle
-        colors[triangle] = com.badlogic.gdx.graphics.Color(color)
-        invalidateSpatialIndex()
+        insertTriangleRecord(triangle, color)
         return triangle
     }
 
@@ -2258,6 +2256,13 @@ class DraftFaceStore(
         notifyChange()
     }
 
+    fun notifyBulkLoadComplete() {
+        markVisualChanged()
+        if (!suppressChange) {
+            onChange?.invoke()
+        }
+    }
+
     fun visualVersion(): Long = visualVersion
 
     fun rayCandidates(ray: com.badlogic.gdx.math.collision.Ray): List<Triangle> = triangleCandidatesForRay(ray)
@@ -2408,6 +2413,20 @@ class DraftFaceStore(
         spatialIndex.remove(triangle)
         spatialBoundsDirty = true
         hasSpatialBounds = false
+    }
+
+    private fun insertTriangleRecord(
+        triangle: Triangle,
+        color: com.badlogic.gdx.graphics.Color = defaultColor
+    ) {
+        trianglesById[triangle.id] = triangle
+        colors[triangle] = com.badlogic.gdx.graphics.Color(color)
+        if (spatialIndexDirty) {
+            spatialBoundsDirty = true
+            hasSpatialBounds = false
+            return
+        }
+        registerTriangle(triangle)
     }
 
     private fun expandSpatialBounds(min: Vector3, max: Vector3) {
