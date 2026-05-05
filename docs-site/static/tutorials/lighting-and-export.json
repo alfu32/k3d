@@ -1,0 +1,37 @@
+{
+  "id": "lighting-and-export",
+  "title": "Lighting and Export",
+  "level": "beginner",
+  "estimatedMinutes": 5,
+  "initialScene": "empty",
+  "steps": [
+    {
+      "id": "open-lighting",
+      "title": "Open lighting controls",
+      "body": "Open the Lighting panel and inspect directional, ambient, specular, and shadow controls.",
+      "actions": [{ "type": "command", "commandId": "view.lighting", "pendingDiscovery": true }],
+      "success": [{ "type": "manual", "prompt": "Lighting controls are visible or the command is unavailable in this build." }]
+    },
+    {
+      "id": "adjust-light",
+      "title": "Adjust scene readability",
+      "body": "Use modest lighting changes to make face orientation and shadows clearer. Avoid dramatic settings in technical docs.",
+      "actions": [{ "type": "none", "description": "Manual UI adjustment." }],
+      "success": [{ "type": "manual", "prompt": "The viewport remains readable." }]
+    },
+    {
+      "id": "capture-path",
+      "title": "Learn the capture path",
+      "body": "For docs authoring, use local MCP to discover screenshot or render-buffer commands before capture.",
+      "actions": [
+        {
+          "type": "command",
+          "commandId": "export.screenshot",
+          "description": "Known from current docs, but authoring scripts must discover capture commands at runtime.",
+          "pendingDiscovery": true
+        }
+      ],
+      "success": [{ "type": "manual", "prompt": "You know that generated screenshots belong in `/images/generated/` with manifest records." }]
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "id": "draw-a-box",
+  "title": "Draw a Box",
+  "level": "beginner",
+  "estimatedMinutes": 6,
+  "initialScene": "empty",
+  "steps": [
+    {
+      "id": "draw-base",
+      "title": "Draw the base face",
+      "body": "Use Rectangle to create a simple base face on the ground plane. Keep the shape small and centered.",
+      "actions": [{ "type": "command", "commandId": "tool.builtin.rectangle", "pendingDiscovery": true }],
+      "success": [{ "type": "manual", "prompt": "A planar base face exists." }]
+    },
+    {
+      "id": "activate-push-pull",
+      "title": "Activate Push/Pull",
+      "body": "Choose Push/Pull from the modification tools. Pick the face and move upward along its normal.",
+      "actions": [{ "type": "command", "commandId": "tool.builtin.push_pull", "pendingDiscovery": true }],
+      "success": [{ "type": "command-active", "commandId": "tool.builtin.push_pull" }]
+    },
+    {
+      "id": "commit-height",
+      "title": "Commit the height",
+      "body": "Click or enter a numeric distance to finish the extrusion. The result should read as a simple box.",
+      "actions": [{ "type": "none", "description": "Manual modeling step until pointer playback is wired." }],
+      "success": [{ "type": "scene-state", "expression": "faceCount > baseFaceCount", "description": "Future automated check for new side/top faces." }]
+    },
+    {
+      "id": "inspect-box",
+      "title": "Inspect the box",
+      "body": "Orbit around the box and verify that the top and side faces are visible.",
+      "actions": [{ "type": "camera", "preset": "orbit-overview", "description": "Use orbit overview when the webcomponent camera API is available." }],
+      "success": [{ "type": "manual", "prompt": "The model reads as a simple extruded solid." }]
+    }
+  ]
+}

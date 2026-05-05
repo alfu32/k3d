@@ -1,36 +1,48 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
-- `core/`: Main Kotlin/libGDX game logic. Source lives in `core/src/main/kotlin/` (e.g., `com.github.alfu32.sketch.Main`).
-- `lwjgl3/`: Desktop launcher and packaging. Entry point is `com.github.alfu32.sketch.lwjgl3.Lwjgl3Launcher`.
-- `assets/`: Shared runtime assets. `assets/assets.txt` is generated for libGDX asset listing.
-- `gradle/`, `gradlew`, `gradlew.bat`: Gradle wrapper and configuration.
-- Specs: `SPEC.md` and `SPEC.ARCH.md` describe product/architecture goals.
+## Project Summary
+- Octodraw is a Kotlin/libGDX direct 3D sketching and modeling project, historically hosted as `alfu32/k3d`.
+- Main targets are JVM desktop via LWJGL3, Android, and TeaVM/WebGL web/webcomponent builds.
+- Core application code lives in `core/`, desktop launcher and packaging in `lwjgl3/`, Android in `android/`, and web runtime/webcomponent tasks in `web/`.
 
-## Build, Test, and Development Commands
-- `./gradlew build`: Compile all modules (Java/Kotlin target 21) and package artifacts.
-- `./gradlew :lwjgl3:run`: Run the desktop app using LWJGL3.
-- `./gradlew :lwjgl3:jar`: Build a runnable fat JAR for all platforms.
-- `./gradlew :lwjgl3:jarMac` / `:jarLinux` / `:jarWin`: Build OS-specific JARs.
-- `./gradlew generateAssetList`: Regenerate `assets/assets.txt` (also runs automatically via `processResources`).
+## Docs Site
+- The new GitHub Pages documentation app lives in `docs-site/`.
+- Use SvelteKit, Svelte 4, TypeScript, mdsvex, and `@sveltejs/adapter-static`.
+- Do not replace the docs site with Vue, VitePress, Nuxt, Docusaurus, React, or another framework.
+- The production base path is `/k3d`; use `$app/paths` for base-sensitive app links and static assets.
+- Markdown pages must be able to embed Svelte components through mdsvex.
 
-## Coding Style & Naming Conventions
-- Kotlin-first codebase; keep Java/Kotlin source compatible with JDK 21.
-- Indentation: 4 spaces; encoding: UTF-8 (configured for Java compile).
-- Packages follow `com.github.alfu32.sketch.*`.
-- Types: `UpperCamelCase`, functions/properties: `lowerCamelCase`, constants: `UPPER_SNAKE_CASE`.
-- No formatter/linter is wired; use IntelliJ Kotlin defaults and keep files tidy.
+## Existing Docs
+- Preserve the existing `docs/` folder unless a task explicitly says to migrate or edit a specific file.
+- Treat existing docs as source material, not as automatically current truth.
+- When behavior is uncertain, inspect source and docs first; do not invent command IDs or workflows.
 
-## Testing Guidelines
-- No test sources are present yet. If you add tests, use `core/src/test/kotlin/` and name files `*Test.kt`.
-- Prefer JUnit 5 if introducing a framework; wire it in Gradle and document how to run it.
+## Build and Verification
+- Use Gradle for Kotlin, desktop, Android, and webcomponent builds.
+- Use Node scripts only inside `docs-site/`.
+- Practical checks for docs changes:
+  - `cd docs-site && npm run validate:tutorials`
+  - `cd docs-site && npm run check`
+  - `cd docs-site && npm run build`
+- Practical webcomponent check:
+  - `./gradlew :web:prepareWebComponentBundle`
 
-## Commit & Pull Request Guidelines
-- Git history is not available in this workspace, so no commit convention can be inferred.
-- Suggested convention: short imperative subject (optionally Conventional Commits), e.g., `feat: add face selection`.
-- PRs should include: purpose/summary, how to run or reproduce (`./gradlew :lwjgl3:run`), and screenshots/GIFs for UI changes.
-- When behavior changes, update relevant specs in `SPEC.md` or `SPEC.ARCH.md`.
+## Webcomponent
+- The existing Gradle task `:web:prepareWebComponentBundle` writes to `web/build/dist/webcomponent`.
+- GitHub Pages deployment copies that bundle into `docs-site/static/webcomponent`.
+- Browser tutorials use the embedded webcomponent and must not depend on the desktop MCP server.
 
-## Configuration & Packaging Notes
-- Assets are loaded from `assets/` and bundled into the LWJGL3 runtime; keep asset paths stable.
-- Native packaging uses the `construo` plugin in `lwjgl3/build.gradle`; review target settings before release builds.
+## MCP and Automation
+- MCP is local automation and validation infrastructure, and also a documentation-authoring tool.
+- Use MCP to check status, discover commands, execute deterministic setup commands, run console scripts, move the camera, validate documented commands, and generate screenshots when available.
+- Prefer render-buffer or screenshot commands discovered through `/scene/listCommands`; if that returns an empty command list, retry `/scene/commands`. Do not assume screenshot/capture command IDs.
+- If window or browser screenshot fallback is used, record it clearly in `docs-site/static/images/generated/manifest.json`.
+- CI validates static docs and tutorial JSON; CI must not require a live MCP server.
+
+## Release Links
+- Avoid stale hardcoded release artifact links.
+- Link to GitHub Releases or the latest release route unless current release metadata is generated.
+
+## Coding Style
+- Kotlin source uses 4-space indentation and packages under `com.github.alfu32.sketch.*`.
+- Keep docs-site changes scoped and avoid unnecessary Gradle configuration changes.

@@ -1,0 +1,58 @@
+{
+  "id": "getting-started",
+  "title": "Getting Started",
+  "level": "beginner",
+  "estimatedMinutes": 5,
+  "initialScene": "empty",
+  "steps": [
+    {
+      "id": "open-editor",
+      "title": "Open the embedded editor",
+      "body": "Wait for the Octodraw webcomponent to load. If the runtime bundle is not present in local development, the page should show a clear loading failure instead of crashing.",
+      "actions": [{ "type": "none", "description": "No command is required for this orientation step." }],
+      "success": [{ "type": "manual", "prompt": "The viewport or a clear webcomponent load message is visible." }]
+    },
+    {
+      "id": "orbit-view",
+      "title": "Use orbit view",
+      "body": "Use right mouse drag to orbit the scene and the mouse wheel to zoom. Keep the Y-up workspace in mind.",
+      "actions": [
+        {
+          "type": "command",
+          "commandId": "view.camera.orbit",
+          "description": "Known from current docs, but tutorial execution should still verify it through command discovery.",
+          "pendingDiscovery": true
+        }
+      ],
+      "success": [{ "type": "manual", "prompt": "You can change the camera view without changing the model." }]
+    },
+    {
+      "id": "select-rectangle",
+      "title": "Prepare the rectangle tool",
+      "body": "Activate the rectangle tool from the toolbar or command palette. Draw a small rectangle on the ground plane.",
+      "actions": [
+        {
+          "type": "command",
+          "commandId": "tool.builtin.rectangle",
+          "description": "Pending command discovery for the current build before automated execution.",
+          "pendingDiscovery": true
+        }
+      ],
+      "success": [{ "type": "manual", "prompt": "A rectangular face or rectangle draft is visible." }]
+    },
+    {
+      "id": "inspect-selection",
+      "title": "Inspect selection feedback",
+      "body": "Switch to Select and click the rectangle face or edge. Watch for selection highlighting and panel counts.",
+      "actions": [
+        {
+          "type": "command",
+          "commandId": "tool.builtin.select",
+          "description": "Pending command discovery for automated tutorial playback.",
+          "pendingDiscovery": true
+        }
+      ],
+      "success": [{ "type": "selection", "target": { "kind": "entity", "selector": "selected-face-or-edge" }, "description": "Manual check until webcomponent state integration is wired." }]
+    }
+  ]
+}

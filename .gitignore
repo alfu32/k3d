@@ -136,6 +136,10 @@ www-test/
 /server/dist/
 /shared/dist/
 
+/docs-site/node_modules/
+/docs-site/.svelte-kit/
+/docs-site/build/
+
 /nbdist/
 /android/nbdist/
 /core/nbdist/

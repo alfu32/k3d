@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "images": [],
+  "lastMcpProbe": {
+    "generatedAt": "2026-05-05T18:24:46.192Z",
+    "baseUrl": "http://127.0.0.1:8765",
+    "status": {
+      "success": true,
+      "running": true,
+      "port": 8765,
+      "message": "MCP HTTP server running on port 8765."
+    },
+    "commandEndpoint": "/scene/listCommands",
+    "commandCount": 84,
+    "likelyCaptureCommands": [
+      {
+        "id": "edit.reset_scene_for_capture",
+        "name": "Edit> Reset Scene For Capture",
+        "description": "Reset scene and set perspective Y-up overview camera for screenshot automation",
+        "tags": [
+          "reset",
+          "scene",
+          "capture",
+          "screenshot",
+          "perspective"
+        ]
+      },
+      {
+        "id": "export.screenshot",
+        "name": "Export> Screenshot",
+        "description": "Save a screenshot named after the current file with timestamp",
+        "tags": [
+          "export",
+          "screenshot",
+          "printscreen",
+          "png"
+        ]
+      },
+      {
+        "id": "view.capture_ui_minimal",
+        "name": "View> Capture UI Minimal",
+        "description": "Hide floating panels and palette for cleaner screenshots",
+        "tags": [
+          "capture",
+          "screenshot",
+          "ui",
+          "panels"
+        ]
+      },
+      {
+        "id": "view.capture_ui_restore",
+        "name": "View> Capture UI Restore",
+        "description": "Restore normal floating panel behavior after capture mode",
+        "tags": [
+          "capture",
+          "screenshot",
+          "ui",
+          "panels"
+        ]
+      }
+    ]
+  },
+  "notes": "This script intentionally discovers capture commands at runtime. Wire the actual capture call after confirming the command result shape for the current build."
+}

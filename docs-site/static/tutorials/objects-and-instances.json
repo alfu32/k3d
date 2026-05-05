@@ -1,0 +1,37 @@
+{
+  "id": "objects-and-instances",
+  "title": "Objects and Instances",
+  "level": "beginner",
+  "estimatedMinutes": 7,
+  "initialScene": "empty",
+  "steps": [
+    {
+      "id": "make-geometry",
+      "title": "Make simple geometry",
+      "body": "Draw a small face or box that can become an object prototype.",
+      "actions": [{ "type": "command", "commandId": "tool.builtin.rectangle", "pendingDiscovery": true }],
+      "success": [{ "type": "manual", "prompt": "There is geometry to group." }]
+    },
+    {
+      "id": "select-geometry",
+      "title": "Select the geometry",
+      "body": "Switch to Select and choose the geometry. The Selection panel should show counts.",
+      "actions": [{ "type": "command", "commandId": "tool.builtin.select", "pendingDiscovery": true }],
+      "success": [{ "type": "selection", "target": { "kind": "entity", "selector": "selected-geometry" }, "description": "Manual until state API is wired." }]
+    },
+    {
+      "id": "group-object",
+      "title": "Create an object",
+      "body": "Use `Ctrl+G` or the group command to create an object prototype from the selection.",
+      "actions": [{ "type": "command", "commandId": "edit.group", "pendingDiscovery": true }],
+      "success": [{ "type": "manual", "prompt": "The object appears in the Objects panel or is selected as a group." }]
+    },
+    {
+      "id": "edit-context",
+      "title": "Understand edit context",
+      "body": "Double-click the object when you intend to edit its definition. Exit object edit before continuing top-level modeling.",
+      "actions": [{ "type": "none", "description": "Context entry is currently a user interaction step." }],
+      "success": [{ "type": "manual", "prompt": "You can tell whether you are editing the object or the top-level model." }]
+    }
+  ]
+}

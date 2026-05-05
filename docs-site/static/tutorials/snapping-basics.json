@@ -1,0 +1,44 @@
+{
+  "id": "snapping-basics",
+  "title": "Snapping Basics",
+  "level": "beginner",
+  "estimatedMinutes": 5,
+  "initialScene": "empty",
+  "steps": [
+    {
+      "id": "draw-line",
+      "title": "Draw a reference line",
+      "body": "Use the Line tool to create a visible edge on the ground plane.",
+      "actions": [{ "type": "command", "commandId": "tool.builtin.line", "pendingDiscovery": true }],
+      "success": [{ "type": "manual", "prompt": "A line segment exists." }]
+    },
+    {
+      "id": "find-endpoint",
+      "title": "Find endpoint snapping",
+      "body": "Move the cursor near an end of the segment and watch for endpoint feedback.",
+      "actions": [{ "type": "highlight", "target": { "kind": "entity", "selector": "line-endpoint", "label": "Endpoint" } }],
+      "success": [{ "type": "manual", "prompt": "Endpoint snap feedback appears." }]
+    },
+    {
+      "id": "find-midpoint",
+      "title": "Find midpoint snapping",
+      "body": "Move near the middle of the segment and identify midpoint feedback.",
+      "actions": [{ "type": "highlight", "target": { "kind": "entity", "selector": "line-midpoint", "label": "Midpoint" } }],
+      "success": [{ "type": "manual", "prompt": "Midpoint snap feedback appears." }]
+    },
+    {
+      "id": "place-guide",
+      "title": "Place a guide",
+      "body": "Use `G` for a grid guide or `T` for an axis guide at the current snap point.",
+      "actions": [
+        {
+          "type": "command",
+          "commandId": "view.grid_guide",
+          "description": "Guide command should be verified with `/scene/listCommands` for automation.",
+          "pendingDiscovery": true
+        }
+      ],
+      "success": [{ "type": "manual", "prompt": "A guide is visible or the command is documented as unavailable in this build." }]
+    }
+  ]
+}

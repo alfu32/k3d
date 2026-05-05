@@ -1,0 +1,37 @@
+{
+  "id": "push-pull-house",
+  "title": "Push/Pull House",
+  "level": "beginner",
+  "estimatedMinutes": 8,
+  "initialScene": "empty",
+  "steps": [
+    {
+      "id": "base-rectangle",
+      "title": "Create a base rectangle",
+      "body": "Draw a rectangular building footprint. This is a massing exercise, not a full architecture tool workflow.",
+      "actions": [{ "type": "command", "commandId": "tool.builtin.rectangle", "pendingDiscovery": true }],
+      "success": [{ "type": "manual", "prompt": "A footprint face is visible." }]
+    },
+    {
+      "id": "push-wall-mass",
+      "title": "Push the wall mass",
+      "body": "Use Push/Pull to extrude the footprint into a low box.",
+      "actions": [{ "type": "command", "commandId": "tool.builtin.push_pull", "pendingDiscovery": true }],
+      "success": [{ "type": "manual", "prompt": "The footprint has height." }]
+    },
+    {
+      "id": "roof-guide",
+      "title": "Sketch a roof guide",
+      "body": "Use Line or Construction Line to sketch a ridge guide. Exact ridge automation is pending command and pointer validation.",
+      "actions": [{ "type": "command", "commandId": "tool.builtin.line", "pendingDiscovery": true }],
+      "success": [{ "type": "manual", "prompt": "A roof guide line or draft is visible." }]
+    },
+    {
+      "id": "inspect-massing",
+      "title": "Inspect the massing",
+      "body": "Orbit around the result and confirm the model reads as a simple house form.",
+      "actions": [{ "type": "camera", "preset": "orbit-overview" }],
+      "success": [{ "type": "manual", "prompt": "The house massing is readable from perspective view." }]
+    }
+  ]
+}
