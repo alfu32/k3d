@@ -18,6 +18,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v5
 
@@ -32,16 +33,61 @@ jobs:
           cache: npm
           cache-dependency-path: docs-site/package-lock.json
 
+      - name: Install docs dependencies
+        working-directory: docs-site
+        run: npm ci
+
       - name: Build Octodraw webcomponent
-        run: ./gradlew :web:clean :web:prepareWebComponentBundle --rerun-tasks --stacktrace
+        run: ./gradlew :web:clean :web:prepareWebComponentBundle --rerun-tasks --stacktrace --info
+
+      - name: Inspect web build outputs
+        if: always()
+        run: |
+          echo "Repository root:"
+          pwd
+
+          echo ""
+          echo "web/build/dist:"
+          find web/build/dist -maxdepth 4 -type f -print | sort || true
+
+          echo ""
+          echo "web/build/dist/webcomponent:"
+          find web/build/dist/webcomponent -maxdepth 4 -type f -print | sort || true
+
+          echo ""
+          echo "dist:"
+          find dist -maxdepth 3 -type f -print | sort || true
+
+      - name: Upload web build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build-diagnostics
+          path: |
+            web/build/dist/**
+            web/build/reports/**
+            web/build/tmp/**
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Verify webcomponent bundle
+        run: |
+          test -d web/build/dist/webcomponent
+
+          test -f web/build/dist/webcomponent/octodraw-element.js
+          test -f web/build/dist/webcomponent/octodraw-runtime.js
+          test -f web/build/dist/webcomponent/assets/assets.txt
+
+          if [ ! -f web/build/dist/webcomponent/scripts/gdx.wasm.js ]; then
+            echo "Missing scripts/gdx.wasm.js"
+            echo "Available files under scripts:"
+            find web/build/dist/webcomponent/scripts -maxdepth 3 -type f -print || true
+            exit 1
+          fi
 
       - name: Copy webcomponent bundle
         working-directory: docs-site
         run: npm run sync:webcomponent
-
-      - name: Install docs dependencies
-        working-directory: docs-site
-        run: npm ci
 
       - name: Validate tutorial JSON
         working-directory: docs-site
@@ -67,6 +113,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
+
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
