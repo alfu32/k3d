@@ -33,7 +33,7 @@ jobs:
           cache-dependency-path: docs-site/package-lock.json
 
       - name: Build Octodraw webcomponent
-        run: ./gradlew :web:prepareWebComponentBundle
+        run: ./gradlew :web:clean :web:prepareWebComponentBundle --rerun-tasks --stacktrace
 
       - name: Copy webcomponent bundle
         working-directory: docs-site
