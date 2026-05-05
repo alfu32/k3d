@@ -454,6 +454,7 @@ class SketchUiOverlay(
         "builtin_toolbar_construction_points",
         "builtin_toolbar_construction_entities",
         "builtin_toolbar_modification",
+        "builtin_toolbar_modification_2",
         "builtin_toolbar_architecture",
         "builtin_toolbar_hvac",
         "builtin_toolbar_voxel",
