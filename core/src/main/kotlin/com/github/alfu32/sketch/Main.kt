@@ -113,6 +113,8 @@ import com.github.alfu32.sketch.tools.MeshIntersectionTool
 import com.github.alfu32.sketch.tools.FaceOutlineTool
 import com.github.alfu32.sketch.tools.GuidePlacementTool
 import com.github.alfu32.sketch.tools.CopyMultipleTool
+import com.github.alfu32.sketch.tools.EqualizedHelicalArrayTool
+import com.github.alfu32.sketch.tools.EqualizedRotationalArrayTool
 import com.github.alfu32.sketch.tools.HelicalArrayTool
 import com.github.alfu32.sketch.tools.PlanarTranslateMultipleTool
 import com.github.alfu32.sketch.tools.VolumetricTranslateMultipleTool
@@ -892,6 +894,8 @@ class Main @JvmOverloads constructor(
                 HelicoidalRotateMultipleTool(scene),
                 RotationalArrayTool(scene),
                 HelicalArrayTool(scene),
+                EqualizedRotationalArrayTool(scene),
+                EqualizedHelicalArrayTool(scene),
                 PaintTool(scene, { activeCamera }) { statusModel.paintColor.cpy() },
                 objectPlaceTool
             ),
@@ -1615,6 +1619,8 @@ class Main @JvmOverloads constructor(
             ToolId.HELICOIDAL_ROTATE_MULTIPLE,
             ToolId.ROTATIONAL_ARRAY,
             ToolId.HELICAL_ARRAY,
+            ToolId.ROTATIONAL_ARRAY_EQUALIZED,
+            ToolId.HELICAL_ARRAY_EQUALIZED,
             ToolId.PAINT
             ).forEach { toolId ->
                 pluginHost.getCommandPalette().registerCommand(

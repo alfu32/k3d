@@ -51,7 +51,9 @@ class ToolInputProcessor(
         ToolId.PLANAR_ROTATE_MULTIPLE,
         ToolId.HELICOIDAL_ROTATE_MULTIPLE,
         ToolId.ROTATIONAL_ARRAY,
-        ToolId.HELICAL_ARRAY
+        ToolId.HELICAL_ARRAY,
+        ToolId.ROTATIONAL_ARRAY_EQUALIZED,
+        ToolId.HELICAL_ARRAY_EQUALIZED
     )
 
     private fun ctrlPressed(): Boolean {

@@ -1485,7 +1485,9 @@ class SketchUiOverlay(
         val modification2Tools = listOf(
             ToolId.ROTATE_2,
             ToolId.ROTATIONAL_ARRAY,
-            ToolId.HELICAL_ARRAY
+            ToolId.HELICAL_ARRAY,
+            ToolId.ROTATIONAL_ARRAY_EQUALIZED,
+            ToolId.HELICAL_ARRAY_EQUALIZED
         )
         val voxelTools = listOf(
             ToolId.VOXEL,
@@ -6676,6 +6678,8 @@ class SketchUiOverlay(
             ToolId.HELICOIDAL_ROTATE_MULTIPLE -> "multiple-copy-helicoidal-rotate"
             ToolId.ROTATIONAL_ARRAY -> "multiple-copy-planar-rotate"
             ToolId.HELICAL_ARRAY -> "multiple-copy-helicoidal-rotate"
+            ToolId.ROTATIONAL_ARRAY_EQUALIZED -> "multiple-copy-planar-rotate"
+            ToolId.HELICAL_ARRAY_EQUALIZED -> "multiple-copy-helicoidal-rotate"
             ToolId.PAINT -> "paint"
             ToolId.OBJECT_PLACE -> "select"
             ToolId.PLUGIN -> "plugins"
@@ -6730,6 +6734,8 @@ class SketchUiOverlay(
             ToolId.HELICOIDAL_ROTATE_MULTIPLE -> Color(0.65f, 0.75f, 0.95f, 1f)
             ToolId.ROTATIONAL_ARRAY -> Color(0.75f, 0.65f, 0.95f, 1f)
             ToolId.HELICAL_ARRAY -> Color(0.65f, 0.75f, 0.95f, 1f)
+            ToolId.ROTATIONAL_ARRAY_EQUALIZED -> Color(0.82f, 0.68f, 0.95f, 1f)
+            ToolId.HELICAL_ARRAY_EQUALIZED -> Color(0.68f, 0.82f, 0.95f, 1f)
             ToolId.PAINT -> Color(0.95f, 0.95f, 0.45f, 1f)
             ToolId.OBJECT_PLACE -> Color(0.85f, 0.85f, 0.85f, 1f)
             ToolId.PLUGIN -> Color(0.75f, 0.85f, 0.95f, 1f)

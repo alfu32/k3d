@@ -49,6 +49,8 @@ enum class ToolId(val displayName: String) {
     HELICOIDAL_ROTATE_MULTIPLE("Helicoidal Rotate Multiple"),
     ROTATIONAL_ARRAY("Rotational Array"),
     HELICAL_ARRAY("Helical Array"),
+    ROTATIONAL_ARRAY_EQUALIZED("Rotational Array Even"),
+    HELICAL_ARRAY_EQUALIZED("Helical Array Even"),
     PAINT("Paint"),
     OBJECT_PLACE("Object"),
     PLUGIN("Plugin")

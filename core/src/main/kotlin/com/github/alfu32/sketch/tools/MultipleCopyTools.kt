@@ -55,6 +55,7 @@ private data class MultipleCopySelectionAccumulator(
 private const val MAX_MULTIPLE_COPY_STEPS = 2048
 private const val MAX_MULTIPLE_COPY_PREVIEW_STEPS = 10_000
 private const val MULTIPLE_COPY_EPS = 1e-5f
+private const val FULL_CIRCLE_REQUEST_EPS_DEG = 1f
 
 private fun snapshotMultipleCopySelection(
     scene: GroupScene,
@@ -584,6 +585,156 @@ private fun buildTransformStatus(label: String, total: MultipleCopyCounts): Stri
         append(" texts ").append(total.texts)
         append(" groups ").append(total.groups)
     }
+}
+
+private data class EqualizedCircularLayout(
+    val stepAngle: Float,
+    val positionCount: Int,
+    val capped: Boolean
+)
+
+private fun collectSelectedWorldPoints(
+    scene: GroupScene,
+    group: GroupScene.GroupNode
+): List<Vector3> {
+    val points = ArrayList<Vector3>()
+    group.faceStore.getSelected().forEach { triangle ->
+        points += group.toWorld(triangle.a)
+        points += group.toWorld(triangle.b)
+        points += group.toWorld(triangle.c)
+    }
+    group.lineStore.getSelected().forEach { segment ->
+        points += group.toWorld(segment.start)
+        points += group.toWorld(segment.end)
+    }
+    group.dimensionStore.getSelected().forEach { dimension ->
+        points += group.toWorld(dimension.start)
+        points += group.toWorld(dimension.end)
+        points += group.toWorld(dimension.offset)
+    }
+    group.textStore.getSelected().forEach { text ->
+        points += group.toWorld(text.position)
+    }
+    scene.selectedGroups().forEach { selectedGroup ->
+        selectedGroup.orientedBoundsCorners()?.forEach { corner ->
+            points += Vector3(corner)
+        }
+    }
+    scene.selectedArchitectureBounds(group)?.let { bounds ->
+        boundingCorners(bounds).forEach { corner -> points += Vector3(corner) }
+    }
+    scene.selectedHvacBounds(group)?.let { bounds ->
+        boundingCorners(bounds).forEach { corner -> points += Vector3(corner) }
+    }
+    if (scene.isVoxelGroup(group)) {
+        val selectedVoxels = scene.selectedVoxels(group).toList()
+        if (selectedVoxels.isNotEmpty()) {
+            var minX = Int.MAX_VALUE
+            var minY = Int.MAX_VALUE
+            var minZ = Int.MAX_VALUE
+            var maxX = Int.MIN_VALUE
+            var maxY = Int.MIN_VALUE
+            var maxZ = Int.MIN_VALUE
+            selectedVoxels.forEach { key ->
+                minX = kotlin.math.min(minX, key.x)
+                minY = kotlin.math.min(minY, key.y)
+                minZ = kotlin.math.min(minZ, key.z)
+                maxX = kotlin.math.max(maxX, key.x + 1)
+                maxY = kotlin.math.max(maxY, key.y + 1)
+                maxZ = kotlin.math.max(maxZ, key.z + 1)
+            }
+            arrayOf(
+                Vector3(minX.toFloat(), minY.toFloat(), minZ.toFloat()),
+                Vector3(minX.toFloat(), minY.toFloat(), maxZ.toFloat()),
+                Vector3(minX.toFloat(), maxY.toFloat(), minZ.toFloat()),
+                Vector3(minX.toFloat(), maxY.toFloat(), maxZ.toFloat()),
+                Vector3(maxX.toFloat(), minY.toFloat(), minZ.toFloat()),
+                Vector3(maxX.toFloat(), minY.toFloat(), maxZ.toFloat()),
+                Vector3(maxX.toFloat(), maxY.toFloat(), minZ.toFloat()),
+                Vector3(maxX.toFloat(), maxY.toFloat(), maxZ.toFloat())
+            ).forEach { corner ->
+                points += group.toWorld(corner)
+            }
+        }
+    }
+    return points
+}
+
+private fun projectedSelectionSpanWorld(
+    scene: GroupScene,
+    group: GroupScene.GroupNode,
+    directionWorld: Vector3
+): Float {
+    if (directionWorld.len2() <= MULTIPLE_COPY_EPS) {
+        return 0f
+    }
+    val direction = Vector3(directionWorld).nor()
+    val points = collectSelectedWorldPoints(scene, group)
+    if (points.isEmpty()) {
+        return 0f
+    }
+    var minProjection = Float.POSITIVE_INFINITY
+    var maxProjection = Float.NEGATIVE_INFINITY
+    points.forEach { point ->
+        val projection = direction.dot(point)
+        minProjection = kotlin.math.min(minProjection, projection)
+        maxProjection = kotlin.math.max(maxProjection, projection)
+    }
+    return maxProjection - minProjection
+}
+
+private fun resolveEqualizedCircularLayout(
+    scene: GroupScene,
+    group: GroupScene.GroupNode,
+    centerWorld: Vector3,
+    referenceWorld: Vector3,
+    axisWorld: Vector3,
+    fallbackStepAngle: Float
+): EqualizedCircularLayout? {
+    if (abs(fallbackStepAngle) <= 1e-4f) {
+        return null
+    }
+    val refProjected = projectOntoPlane(Vector3(referenceWorld).sub(centerWorld), axisWorld)
+    val radius = refProjected.len()
+    if (radius <= MULTIPLE_COPY_EPS) {
+        return null
+    }
+    val tangent = Vector3(axisWorld).crs(refProjected)
+    if (tangent.len2() <= MULTIPLE_COPY_EPS) {
+        return null
+    }
+    tangent.nor()
+    val span = projectedSelectionSpanWorld(scene, group, tangent)
+    val fallbackPositions = (360f / abs(fallbackStepAngle)).roundToInt().coerceAtLeast(2)
+    val rawPositionCount = if (span <= MULTIPLE_COPY_EPS) {
+        fallbackPositions
+    } else {
+        val ratio = (span / (2f * radius)).coerceIn(0f, 1f)
+        if (ratio <= MULTIPLE_COPY_EPS) {
+            fallbackPositions
+        } else {
+            (MathUtils.PI / MathUtils.asin(ratio)).roundToInt().coerceAtLeast(2)
+        }
+    }
+    val capped = rawPositionCount > MAX_MULTIPLE_COPY_STEPS
+    val positionCount = rawPositionCount.coerceAtMost(MAX_MULTIPLE_COPY_STEPS)
+    val direction = if (fallbackStepAngle >= 0f) 1f else -1f
+    return EqualizedCircularLayout(
+        stepAngle = 360f * direction / positionCount.toFloat(),
+        positionCount = positionCount,
+        capped = capped
+    )
+}
+
+private fun buildEqualizedMultipleCopyStatus(
+    label: String,
+    copies: Int,
+    capped: Boolean,
+    total: MultipleCopyCounts,
+    positionCount: Int?
+): String {
+    val base = buildMultipleCopyStatus(label, copies, capped, total)
+    return if (positionCount == null) base else "$base | positions $positionCount"
 }
 
 private fun applyRotationalCopyStep(
@@ -1801,6 +1952,541 @@ class HelicalArrayTool(
     }
 
     private fun resolveHelicalCopies(
+        refProjected: Vector3,
+        endProjected: Vector3,
+        stepAngle: Float,
+        stepLiftWorld: Float,
+        startHeight: Float,
+        endHeight: Float
+    ): Int? {
+        val direction = if (stepAngle >= 0f) 1f else -1f
+        val rawSweep = signedAngleDeg(refProjected, endProjected, Vector3(0f, 1f, 0f))
+        if (abs(stepLiftWorld) <= 1e-4f) {
+            var sweep = normalizeSignedSweep(rawSweep, direction)
+            if (abs(sweep) <= 1e-4f) {
+                sweep = 360f * direction
+            }
+            if (sweep * direction <= 0f) {
+                return null
+            }
+            var copies = floor(abs(sweep) / abs(stepAngle)).toInt()
+            if (abs(abs(sweep) - 360f) <= 1e-3f && copies > 1) {
+                copies -= 1
+            }
+            return if (copies > 0) copies else null
+        }
+        val heightEstimate = (endHeight - startHeight) / stepLiftWorld
+        if (heightEstimate <= 0f) {
+            return null
+        }
+        val approximateSweep = abs(stepAngle * heightEstimate)
+        val maxTurns = (floor(approximateSweep / 360f).toInt() + 8).coerceAtMost(MAX_MULTIPLE_COPY_STEPS)
+        var bestCopies = 0
+        var bestScore = Float.POSITIVE_INFINITY
+        for (turns in 0..maxTurns) {
+            var candidateSweep = rawSweep + 360f * direction * turns.toFloat()
+            if (candidateSweep * direction <= 0f) {
+                candidateSweep += 360f * direction
+            }
+            if (candidateSweep * direction <= 0f) {
+                continue
+            }
+            val candidateCopiesFloat = candidateSweep / stepAngle
+            if (candidateCopiesFloat <= 0f) {
+                continue
+            }
+            val candidateCopies = candidateCopiesFloat.roundToInt().coerceAtLeast(1)
+            val score = abs(candidateCopies.toFloat() - heightEstimate) +
+                abs(candidateCopiesFloat - candidateCopies.toFloat()) * 0.25f
+            if (score < bestScore) {
+                bestScore = score
+                bestCopies = candidateCopies
+            }
+        }
+        if (bestCopies <= 0) {
+            bestCopies = heightEstimate.roundToInt().coerceAtLeast(1)
+        }
+        return bestCopies
+    }
+
+    private fun clearTransient() {
+        center = null
+        reference = null
+        increment = null
+        hasHover = false
+    }
+}
+
+class EqualizedRotationalArrayTool(
+    private val scene: GroupScene
+) : Tool {
+    override val id: ToolId = ToolId.ROTATIONAL_ARRAY_EQUALIZED
+    override val message: String = "Pick rotation center (c)."
+
+    private var center: Vector3? = null
+    private var reference: Vector3? = null
+    private var increment: Vector3? = null
+    private val hover = Vector3()
+    private var hasHover = false
+
+    override fun onEnter(status: StatusModel) {
+        status.message = "Pick rotation center (c)."
+    }
+
+    override fun onExit(status: StatusModel) {
+        clearTransient()
+        super.onExit(status)
+    }
+
+    override fun onCancel(status: StatusModel) {
+        clearTransient()
+        status.message = "Canceled."
+    }
+
+    override fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
+        if (valid && world != null) {
+            hover.set(world)
+            hasHover = true
+        } else {
+            hasHover = false
+        }
+    }
+
+    override fun onPointerDown(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean, button: Int): Boolean {
+        if (button != Input.Buttons.LEFT || !valid || world == null) {
+            return false
+        }
+        if (center == null) {
+            center = Vector3(world)
+            status.message = "Pick first reference point (a)."
+            return true
+        }
+        if (reference == null) {
+            reference = Vector3(world)
+            status.message = "Pick increment point (b)."
+            return true
+        }
+        if (increment == null) {
+            increment = Vector3(world)
+            status.message = "Pick full or partial sweep point (d)."
+            return true
+        }
+
+        val c = center ?: return false
+        val a = reference ?: return false
+        val b = increment ?: return false
+        val d = Vector3(world)
+        val ref = Vector3(a).sub(c)
+        val inc = Vector3(b).sub(c)
+        val end = Vector3(d).sub(c)
+        if (ref.len2() <= MULTIPLE_COPY_EPS || inc.len2() <= MULTIPLE_COPY_EPS || end.len2() <= MULTIPLE_COPY_EPS) {
+            clearTransient()
+            status.message = "Rotational array even canceled: vectors are too short."
+            return true
+        }
+        val axisWorld = Vector3(ref).crs(inc)
+        if (axisWorld.len2() <= MULTIPLE_COPY_EPS) {
+            clearTransient()
+            status.message = "Rotational array even canceled: c/a/b are collinear."
+            return true
+        }
+        axisWorld.nor()
+        val refProjected = projectOntoPlane(ref, axisWorld)
+        val incProjected = projectOntoPlane(inc, axisWorld)
+        val endProjected = projectOntoPlane(end, axisWorld)
+        if (refProjected.len2() <= MULTIPLE_COPY_EPS ||
+            incProjected.len2() <= MULTIPLE_COPY_EPS ||
+            endProjected.len2() <= MULTIPLE_COPY_EPS
+        ) {
+            clearTransient()
+            status.message = "Rotational array even canceled: projected vectors are too short."
+            return true
+        }
+        val rawStepAngle = signedAngleDeg(refProjected, incProjected, axisWorld)
+        if (abs(rawStepAngle) <= 1e-4f) {
+            clearTransient()
+            status.message = "Rotational array even canceled: angular increment is zero."
+            return true
+        }
+        val rawSweep = signedAngleDeg(refProjected, endProjected, axisWorld)
+        val fullCircleRequested = abs(rawSweep) <= FULL_CIRCLE_REQUEST_EPS_DEG
+        val group = scene.activeGroup()
+        val layout = if (fullCircleRequested) {
+            resolveEqualizedCircularLayout(scene, group, c, a, axisWorld, rawStepAngle)
+        } else {
+            null
+        }
+        val stepAngle = layout?.stepAngle ?: rawStepAngle
+        val direction = if (stepAngle >= 0f) 1f else -1f
+        var sweep = if (layout != null) {
+            360f * direction
+        } else {
+            normalizeSignedSweep(rawSweep, direction)
+        }
+        if (layout == null && sweep * direction <= 0f) {
+            clearTransient()
+            status.message = "Rotational array even canceled: sweep direction differs from increment."
+            return true
+        }
+        var copies = if (layout != null) {
+            layout.positionCount - 1
+        } else {
+            floor(abs(sweep) / abs(stepAngle)).toInt()
+        }
+        if (copies <= 0) {
+            clearTransient()
+            status.message = "Rotational array even: no effective copies."
+            return true
+        }
+        var capped = layout?.capped == true
+        if (copies > MAX_MULTIPLE_COPY_STEPS) {
+            copies = MAX_MULTIPLE_COPY_STEPS
+            capped = true
+        }
+        val total = MultipleCopyCounts()
+        repeat(copies) {
+            val stepCounts = applyRotationalCopyStep(
+                scene = scene,
+                group = group,
+                centerWorld = c,
+                axisWorld = axisWorld,
+                degrees = stepAngle,
+                liftWorld = 0f
+            )
+            mergeCounts(total, stepCounts)
+        }
+        status.message = buildEqualizedMultipleCopyStatus(
+            label = "Rotational array even",
+            copies = copies,
+            capped = capped,
+            total = total,
+            positionCount = layout?.positionCount
+        )
+        clearTransient()
+        return true
+    }
+
+    override fun render(renderer: ShapeRenderer) {
+        val c = center ?: return
+        renderer.color = ToolFeedbackColors.PRIMARY
+        drawCross(renderer, c, 0.18f)
+        reference?.let { a ->
+            renderer.color = ToolFeedbackColors.SECONDARY
+            drawCross(renderer, a, 0.18f)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            renderer.line(c.x, c.y, c.z, a.x, a.y, a.z)
+        }
+        increment?.let { b ->
+            renderer.color = ToolFeedbackColors.SECONDARY
+            drawCross(renderer, b, 0.18f)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            renderer.line(c.x, c.y, c.z, b.x, b.y, b.z)
+        }
+        if (!hasHover) {
+            return
+        }
+        renderer.color = ToolFeedbackColors.SECONDARY
+        drawCross(renderer, hover, 0.18f)
+        renderer.color = ToolFeedbackColors.TERTIARY
+        renderer.line(c.x, c.y, c.z, hover.x, hover.y, hover.z)
+
+        val a = reference ?: return
+        val b = increment ?: return
+        val ref = Vector3(a).sub(c)
+        val inc = Vector3(b).sub(c)
+        val end = Vector3(hover).sub(c)
+        if (ref.len2() <= MULTIPLE_COPY_EPS || inc.len2() <= MULTIPLE_COPY_EPS || end.len2() <= MULTIPLE_COPY_EPS) {
+            return
+        }
+        val axisWorld = Vector3(ref).crs(inc)
+        if (axisWorld.len2() <= MULTIPLE_COPY_EPS) {
+            return
+        }
+        axisWorld.nor()
+        val refProjected = projectOntoPlane(ref, axisWorld)
+        val incProjected = projectOntoPlane(inc, axisWorld)
+        val endProjected = projectOntoPlane(end, axisWorld)
+        if (refProjected.len2() <= MULTIPLE_COPY_EPS ||
+            incProjected.len2() <= MULTIPLE_COPY_EPS ||
+            endProjected.len2() <= MULTIPLE_COPY_EPS
+        ) {
+            return
+        }
+        val rawStepAngle = signedAngleDeg(refProjected, incProjected, axisWorld)
+        if (abs(rawStepAngle) <= 1e-4f) {
+            return
+        }
+        val rawSweep = signedAngleDeg(refProjected, endProjected, axisWorld)
+        val layout = if (abs(rawSweep) <= FULL_CIRCLE_REQUEST_EPS_DEG) {
+            resolveEqualizedCircularLayout(scene, scene.activeGroup(), c, a, axisWorld, rawStepAngle)
+        } else {
+            null
+        }
+        val stepAngle = layout?.stepAngle ?: rawStepAngle
+        val previewCopies = if (layout != null) {
+            layout.positionCount - 1
+        } else {
+            val direction = if (stepAngle >= 0f) 1f else -1f
+            val sweep = normalizeSignedSweep(rawSweep, direction)
+            if (sweep * direction <= 0f) return
+            floor(abs(sweep) / abs(stepAngle)).toInt()
+        }.coerceAtMost(MAX_MULTIPLE_COPY_PREVIEW_STEPS)
+        if (previewCopies <= 0) {
+            return
+        }
+        renderRotationalPreview(
+            scene = scene,
+            group = scene.activeGroup(),
+            renderer = renderer,
+            previewCopies = previewCopies,
+            centerWorld = c,
+            axisWorld = axisWorld,
+            degreesPerStep = stepAngle,
+            liftWorldPerStep = 0f
+        )
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        val c = center ?: return null
+        if (!hasHover) {
+            return null
+        }
+        return ToolMeasurement(Vector3(c), Vector3(hover))
+    }
+
+    private fun clearTransient() {
+        center = null
+        reference = null
+        increment = null
+        hasHover = false
+    }
+}
+
+class EqualizedHelicalArrayTool(
+    private val scene: GroupScene
+) : Tool {
+    override val id: ToolId = ToolId.HELICAL_ARRAY_EQUALIZED
+    override val message: String = "Pick rotation center (c)."
+
+    private var center: Vector3? = null
+    private var reference: Vector3? = null
+    private var increment: Vector3? = null
+    private val hover = Vector3()
+    private var hasHover = false
+
+    override fun onEnter(status: StatusModel) {
+        status.message = "Pick rotation center (c)."
+    }
+
+    override fun onExit(status: StatusModel) {
+        clearTransient()
+        super.onExit(status)
+    }
+
+    override fun onCancel(status: StatusModel) {
+        clearTransient()
+        status.message = "Canceled."
+    }
+
+    override fun onPointerMoved(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean) {
+        if (valid && world != null) {
+            hover.set(world)
+            hasHover = true
+        } else {
+            hasHover = false
+        }
+    }
+
+    override fun onPointerDown(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean, button: Int): Boolean {
+        if (button != Input.Buttons.LEFT || !valid || world == null) {
+            return false
+        }
+        if (center == null) {
+            center = Vector3(world)
+            status.message = "Pick first reference point (a)."
+            return true
+        }
+        if (reference == null) {
+            reference = Vector3(world)
+            status.message = "Pick helical unit point (b)."
+            return true
+        }
+        if (increment == null) {
+            increment = Vector3(world)
+            status.message = "Pick final point (d)."
+            return true
+        }
+
+        val plan = resolvePlan(Vector3(world))
+        if (plan == null) {
+            clearTransient()
+            status.message = "Helical array even canceled: invalid helical definition."
+            return true
+        }
+        val group = scene.activeGroup()
+        val total = MultipleCopyCounts()
+        repeat(plan.copies) {
+            val stepCounts = applyRotationalCopyStep(
+                scene = scene,
+                group = group,
+                centerWorld = plan.centerWorld,
+                axisWorld = plan.axisWorld,
+                degrees = plan.stepAngle,
+                liftWorld = plan.stepLiftWorld
+            )
+            mergeCounts(total, stepCounts)
+        }
+        status.message = buildEqualizedMultipleCopyStatus(
+            label = "Helical array even",
+            copies = plan.copies,
+            capped = plan.capped,
+            total = total,
+            positionCount = plan.positionCount
+        )
+        clearTransient()
+        return true
+    }
+
+    override fun render(renderer: ShapeRenderer) {
+        val c = center ?: return
+        renderer.color = ToolFeedbackColors.PRIMARY
+        drawCross(renderer, c, 0.18f)
+        reference?.let { a ->
+            renderer.color = ToolFeedbackColors.SECONDARY
+            drawCross(renderer, a, 0.18f)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            renderer.line(c.x, c.y, c.z, a.x, a.y, a.z)
+        }
+        increment?.let { b ->
+            renderer.color = ToolFeedbackColors.SECONDARY
+            drawCross(renderer, b, 0.18f)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            renderer.line(c.x, c.y, c.z, b.x, b.y, b.z)
+        }
+        if (hasHover) {
+            renderer.color = ToolFeedbackColors.SECONDARY
+            drawCross(renderer, hover, 0.18f)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            renderer.line(c.x, c.y, c.z, hover.x, hover.y, hover.z)
+            val plan = resolvePlan(hover) ?: return
+            renderRotationalPreview(
+                scene = scene,
+                group = scene.activeGroup(),
+                renderer = renderer,
+                previewCopies = plan.copies.coerceAtMost(MAX_MULTIPLE_COPY_PREVIEW_STEPS),
+                centerWorld = plan.centerWorld,
+                axisWorld = plan.axisWorld,
+                degreesPerStep = plan.stepAngle,
+                liftWorldPerStep = plan.stepLiftWorld
+            )
+        }
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        val c = center ?: return null
+        if (!hasHover) {
+            return null
+        }
+        return ToolMeasurement(Vector3(c), Vector3(hover))
+    }
+
+    private data class HelicalPlan(
+        val centerWorld: Vector3,
+        val axisWorld: Vector3,
+        val stepAngle: Float,
+        val stepLiftWorld: Float,
+        val copies: Int,
+        val capped: Boolean,
+        val positionCount: Int?
+    )
+
+    private fun resolvePlan(finalPoint: Vector3): HelicalPlan? {
+        val c = center ?: return null
+        val a = reference ?: return null
+        val b = increment ?: return null
+        val upAxis = Vector3(0f, 1f, 0f)
+        val ref = Vector3(a).sub(c)
+        val unit = Vector3(b).sub(c)
+        val end = Vector3(finalPoint).sub(c)
+        val refProjected = projectOntoPlane(ref, upAxis)
+        val unitProjected = projectOntoPlane(unit, upAxis)
+        val endProjected = projectOntoPlane(end, upAxis)
+        if (refProjected.len2() <= MULTIPLE_COPY_EPS ||
+            unitProjected.len2() <= MULTIPLE_COPY_EPS ||
+            endProjected.len2() <= MULTIPLE_COPY_EPS
+        ) {
+            return null
+        }
+        val rawStepAngle = signedAngleDeg(refProjected, unitProjected, upAxis)
+        if (abs(rawStepAngle) <= 1e-4f) {
+            return null
+        }
+        val rawSweep = signedAngleDeg(refProjected, endProjected, upAxis)
+        val stepLiftWorld = b.y - a.y
+        val layout = if (abs(rawSweep) <= FULL_CIRCLE_REQUEST_EPS_DEG) {
+            resolveEqualizedCircularLayout(scene, scene.activeGroup(), c, a, upAxis, rawStepAngle)
+        } else {
+            null
+        }
+        if (layout != null) {
+            var copies = if (abs(stepLiftWorld) <= 1e-4f) {
+                layout.positionCount - 1
+            } else {
+                val heightEstimate = (finalPoint.y - a.y) / stepLiftWorld
+                if (heightEstimate <= 0f) {
+                    return null
+                }
+                val turns = max(1, (heightEstimate / layout.positionCount.toFloat()).roundToInt())
+                turns * layout.positionCount
+            }
+            var capped = layout.capped
+            if (copies > MAX_MULTIPLE_COPY_STEPS) {
+                copies = MAX_MULTIPLE_COPY_STEPS
+                capped = true
+            }
+            if (copies <= 0) {
+                return null
+            }
+            return HelicalPlan(
+                centerWorld = Vector3(c),
+                axisWorld = upAxis,
+                stepAngle = layout.stepAngle,
+                stepLiftWorld = stepLiftWorld,
+                copies = copies,
+                capped = capped,
+                positionCount = layout.positionCount
+            )
+        }
+
+        val copies = resolveStandardHelicalCopies(
+            refProjected = refProjected,
+            endProjected = endProjected,
+            stepAngle = rawStepAngle,
+            stepLiftWorld = stepLiftWorld,
+            startHeight = a.y,
+            endHeight = finalPoint.y
+        ) ?: return null
+        var resolvedCopies = copies
+        var capped = false
+        if (resolvedCopies > MAX_MULTIPLE_COPY_STEPS) {
+            resolvedCopies = MAX_MULTIPLE_COPY_STEPS
+            capped = true
+        }
+        if (resolvedCopies <= 0) {
+            return null
+        }
+        return HelicalPlan(
+            centerWorld = Vector3(c),
+            axisWorld = upAxis,
+            stepAngle = rawStepAngle,
+            stepLiftWorld = stepLiftWorld,
+            copies = resolvedCopies,
+            capped = capped,
+            positionCount = null
+        )
+    }
+
+    private fun resolveStandardHelicalCopies(
         refProjected: Vector3,
         endProjected: Vector3,
         stepAngle: Float,
