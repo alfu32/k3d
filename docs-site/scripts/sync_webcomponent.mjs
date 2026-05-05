@@ -15,7 +15,31 @@ async function exists(filePath) {
     return false;
   }
 }
+async function listFiles(root) {
+    if (!(await exists(root))) {
+        return [];
+    }
 
+    const result = [];
+
+    async function walk(directory) {
+        const entries = await readdir(directory, { withFileTypes: true });
+
+        for (const entry of entries) {
+            const absolutePath = path.join(directory, entry.name);
+            const relativePath = path.relative(root, absolutePath);
+
+            if (entry.isDirectory()) {
+                await walk(absolutePath);
+            } else {
+                result.push(relativePath.replaceAll(path.sep, '/'));
+            }
+        }
+    }
+
+    await walk(root);
+    return result.sort();
+}
 async function main() {
   const requiredFiles = [
     'octodraw-element.js',
@@ -30,16 +54,22 @@ async function main() {
     }
   }
 
-  if (missingFiles.length > 0) {
-    throw new Error(
-      [
-        `Octodraw webcomponent bundle at ${source} is incomplete.`,
-        `Missing: ${missingFiles.join(', ')}`,
-        'Build it first from the repository root:',
-        './gradlew :web:prepareWebComponentBundle'
-      ].join('\n')
-    );
-  }
+    if (missingFiles.length > 0) {
+        const availableFiles = await listFiles(source);
+
+        throw new Error(
+            [
+                `Octodraw webcomponent bundle at ${source} is incomplete.`,
+                `Missing: ${missingFiles.join(', ')}`,
+                '',
+                'Available files:',
+                ...availableFiles.map((file) => `- ${file}`),
+                '',
+                'Build it first from the repository root:',
+                './gradlew :web:prepareWebComponentBundle'
+            ].join('\n')
+        );
+    }
 
   await rm(target, { recursive: true, force: true });
   await mkdir(target, { recursive: true });
