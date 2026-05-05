@@ -1,3 +1,7 @@
+<script>
+  import CommandReferenceTable from '$lib/components/CommandReferenceTable.svelte';
+</script>
+
 # Commands Reference
 
 Octodraw commands are registered in the command palette and exposed to local MCP automation. The command palette UI is opened with `Ctrl+Shift+P`; local automation lists commands through `/scene/listCommands`.
@@ -32,6 +36,8 @@ Current source and docs show these patterns:
 5. Compare generated command docs against hand-authored explanations.
 6. Keep generated snapshots separate from explanation text so stale output can be refreshed.
 
-## Status
+## Generated Catalog
 
-This is an initial hand-authored reference. Exact command catalogs should be regenerated from MCP before release-quality command tables are published.
+The table below is generated from the local MCP command catalog and kept separate from the prose in `src/lib/data/generated/command_catalog.json`.
+
+<CommandReferenceTable />

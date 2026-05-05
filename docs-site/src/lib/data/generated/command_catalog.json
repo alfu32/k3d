@@ -1,0 +1,1057 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-05T21:25:01.473Z",
+  "source": {
+    "baseUrl": "http://127.0.0.1:8765",
+    "endpoint": "/scene/listCommands",
+    "status": {
+      "success": true,
+      "running": true,
+      "port": 8765,
+      "message": "MCP HTTP server running on port 8765."
+    }
+  },
+  "commandCount": 84,
+  "categories": [
+    {
+      "category": "Edit",
+      "count": 7
+    },
+    {
+      "category": "Export",
+      "count": 6
+    },
+    {
+      "category": "Import",
+      "count": 1
+    },
+    {
+      "category": "Tools",
+      "count": 45
+    },
+    {
+      "category": "View",
+      "count": 25
+    }
+  ],
+  "commands": [
+    {
+      "id": "edit.cut_rect_hole",
+      "name": "Edit> Cut Rect Hole",
+      "category": "Edit",
+      "description": "Cut a rectangular hole from selected faces using selected polyline",
+      "icon": "edit",
+      "priority": 1,
+      "tags": [
+        "cut",
+        "hole",
+        "rect"
+      ]
+    },
+    {
+      "id": "edit.group",
+      "name": "Edit> Group",
+      "category": "Edit",
+      "description": "Create object prototype from selection",
+      "icon": "edit",
+      "priority": 1,
+      "tags": [
+        "group",
+        "object"
+      ]
+    },
+    {
+      "id": "edit.new_architecture_group",
+      "name": "Edit> Architecture: Wall Tool",
+      "category": "Edit",
+      "description": "Activate architecture modeling in the model root",
+      "icon": "edit",
+      "priority": 1,
+      "tags": [
+        "architecture",
+        "wall",
+        "slab",
+        "stair"
+      ]
+    },
+    {
+      "id": "edit.new_voxel_group",
+      "name": "Edit> New Voxel Group",
+      "category": "Edit",
+      "description": "Create a voxel group and enter edit mode",
+      "icon": "edit",
+      "priority": 1,
+      "tags": [
+        "voxel",
+        "group",
+        "minecraft"
+      ]
+    },
+    {
+      "id": "edit.reset_scene_for_capture",
+      "name": "Edit> Reset Scene For Capture",
+      "category": "Edit",
+      "description": "Reset scene and set perspective Y-up overview camera for screenshot automation",
+      "icon": "edit",
+      "priority": 1,
+      "tags": [
+        "reset",
+        "scene",
+        "capture",
+        "screenshot",
+        "perspective"
+      ]
+    },
+    {
+      "id": "edit.ungroup",
+      "name": "Edit> Ungroup",
+      "category": "Edit",
+      "description": "Ungroup selected objects",
+      "icon": "edit",
+      "priority": 1,
+      "tags": [
+        "ungroup",
+        "object"
+      ]
+    },
+    {
+      "id": "edit.voxelize_faces",
+      "name": "Edit> Voxelize Faces",
+      "category": "Edit",
+      "description": "Voxelize selected faces into the active voxel model",
+      "icon": "edit",
+      "priority": 1,
+      "tags": [
+        "voxel",
+        "faces",
+        "convert"
+      ]
+    },
+    {
+      "id": "export.ifc_model",
+      "name": "Export> IFC (Model)",
+      "category": "Export",
+      "description": "Export model geometry as IFC",
+      "icon": "export",
+      "priority": 1,
+      "tags": [
+        "export",
+        "ifc",
+        "model"
+      ]
+    },
+    {
+      "id": "export.mesh",
+      "name": "Export> Mesh (OBJ/STL/FBX/glTF/DAE/DXF/3MF/AMF/IFC)",
+      "category": "Export",
+      "description": "Export mesh geometry in selected format",
+      "icon": "export",
+      "priority": 1,
+      "tags": [
+        "export",
+        "mesh",
+        "obj",
+        "stl",
+        "fbx",
+        "gltf",
+        "glb",
+        "dae",
+        "dxf",
+        "3mf",
+        "amf",
+        "ifc"
+      ]
+    },
+    {
+      "id": "export.screenshot",
+      "name": "Export> Screenshot",
+      "category": "Export",
+      "description": "Save a screenshot named after the current file with timestamp",
+      "icon": "export",
+      "priority": 1,
+      "tags": [
+        "export",
+        "screenshot",
+        "printscreen",
+        "png"
+      ]
+    },
+    {
+      "id": "export.svg_view",
+      "name": "Export> SVG (View)",
+      "category": "Export",
+      "description": "Export current view as SVG",
+      "icon": "export",
+      "priority": 1,
+      "tags": [
+        "export",
+        "svg",
+        "view"
+      ]
+    },
+    {
+      "id": "exporters.export.obj",
+      "name": "Export> OBJ",
+      "category": "Export",
+      "description": "Export model as OBJ",
+      "icon": "export",
+      "priority": 1,
+      "tags": [
+        "export> obj"
+      ]
+    },
+    {
+      "id": "exporters.export.stl",
+      "name": "Export> STL(ASCII)",
+      "category": "Export",
+      "description": "Export model as STL (ASCII)",
+      "icon": "export",
+      "priority": 1,
+      "tags": [
+        "export> stl(ascii)"
+      ]
+    },
+    {
+      "id": "import.mesh",
+      "name": "Import> Mesh (OBJ/STL/FBX/glTF/DAE/DXF/3MF/AMF/IFC)",
+      "category": "Import",
+      "description": "Import mesh geometry and place as object",
+      "icon": "import",
+      "priority": 1,
+      "tags": [
+        "import",
+        "mesh",
+        "obj",
+        "stl",
+        "fbx",
+        "gltf",
+        "glb",
+        "dae",
+        "dxf",
+        "3mf",
+        "amf",
+        "ifc"
+      ]
+    },
+    {
+      "id": "tool.builtin.arch_add_hole",
+      "name": "Tool> Add Hole",
+      "category": "Tools",
+      "description": "Activate Add Hole tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "add hole"
+      ]
+    },
+    {
+      "id": "tool.builtin.arch_door_frame",
+      "name": "Tool> Door Frame",
+      "category": "Tools",
+      "description": "Activate Door Frame tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "door frame"
+      ]
+    },
+    {
+      "id": "tool.builtin.arch_slab",
+      "name": "Tool> Slab",
+      "category": "Tools",
+      "description": "Activate Slab tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "slab"
+      ]
+    },
+    {
+      "id": "tool.builtin.arch_stair",
+      "name": "Tool> Stair",
+      "category": "Tools",
+      "description": "Activate Stair tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "stair"
+      ]
+    },
+    {
+      "id": "tool.builtin.arch_wall",
+      "name": "Tool> Wall",
+      "category": "Tools",
+      "description": "Activate Wall tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "wall"
+      ]
+    },
+    {
+      "id": "tool.builtin.arch_window_frame",
+      "name": "Tool> Window Frame",
+      "category": "Tools",
+      "description": "Activate Window Frame tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "window frame"
+      ]
+    },
+    {
+      "id": "tool.builtin.circle",
+      "name": "Tool> Circle",
+      "category": "Tools",
+      "description": "Activate Circle tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "circle"
+      ]
+    },
+    {
+      "id": "tool.builtin.construction_line",
+      "name": "Tool> Construction Line",
+      "category": "Tools",
+      "description": "Activate Construction Line tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "construction line"
+      ]
+    },
+    {
+      "id": "tool.builtin.copy_multiple",
+      "name": "Tool> Copy Multiple",
+      "category": "Tools",
+      "description": "Activate Copy Multiple tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "copy multiple"
+      ]
+    },
+    {
+      "id": "tool.builtin.cut_holes",
+      "name": "Tool> Cut Holes",
+      "category": "Tools",
+      "description": "Activate Cut Holes tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "cut holes"
+      ]
+    },
+    {
+      "id": "tool.builtin.cut_holes_2",
+      "name": "Tool> Cut Holes 2",
+      "category": "Tools",
+      "description": "Activate Cut Holes 2 tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "cut holes 2"
+      ]
+    },
+    {
+      "id": "tool.builtin.cut_out_3",
+      "name": "Tool> Cutout",
+      "category": "Tools",
+      "description": "Activate Cutout tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "cutout"
+      ]
+    },
+    {
+      "id": "tool.builtin.extrude_swipe",
+      "name": "Tool> Extrude Swipe",
+      "category": "Tools",
+      "description": "Activate Extrude Swipe tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "extrude swipe"
+      ]
+    },
+    {
+      "id": "tool.builtin.face_outline",
+      "name": "Tool> Face Outline",
+      "category": "Tools",
+      "description": "Activate Face Outline tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "face outline"
+      ]
+    },
+    {
+      "id": "tool.builtin.helical_array",
+      "name": "Tool> Helical Array",
+      "category": "Tools",
+      "description": "Activate Helical Array tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "helical array"
+      ]
+    },
+    {
+      "id": "tool.builtin.helical_array_equalized",
+      "name": "Tool> Helical Array Even",
+      "category": "Tools",
+      "description": "Activate Helical Array Even tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "helical array even"
+      ]
+    },
+    {
+      "id": "tool.builtin.helicoidal_rotate_multiple",
+      "name": "Tool> Helicoidal Rotate Multiple",
+      "category": "Tools",
+      "description": "Activate Helicoidal Rotate Multiple tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "helicoidal rotate multiple"
+      ]
+    },
+    {
+      "id": "tool.builtin.line",
+      "name": "Tool> Line",
+      "category": "Tools",
+      "description": "Activate Line tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "line"
+      ]
+    },
+    {
+      "id": "tool.builtin.line_offset",
+      "name": "Tool> Line Offset",
+      "category": "Tools",
+      "description": "Activate Line Offset tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "line offset"
+      ]
+    },
+    {
+      "id": "tool.builtin.linear_dimension",
+      "name": "Tool> Linear Dimension",
+      "category": "Tools",
+      "description": "Activate Linear Dimension tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "linear dimension"
+      ]
+    },
+    {
+      "id": "tool.builtin.mesh_intersection",
+      "name": "Tool> Mesh Intersection",
+      "category": "Tools",
+      "description": "Activate Mesh Intersection tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "mesh intersection"
+      ]
+    },
+    {
+      "id": "tool.builtin.move",
+      "name": "Tool> Move",
+      "category": "Tools",
+      "description": "Activate Move tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "move"
+      ]
+    },
+    {
+      "id": "tool.builtin.paint",
+      "name": "Tool> Paint",
+      "category": "Tools",
+      "description": "Activate Paint tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "paint"
+      ]
+    },
+    {
+      "id": "tool.builtin.planar_rotate_multiple",
+      "name": "Tool> Planar Rotate Multiple",
+      "category": "Tools",
+      "description": "Activate Planar Rotate Multiple tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "planar rotate multiple"
+      ]
+    },
+    {
+      "id": "tool.builtin.planar_translate_multiple",
+      "name": "Tool> Planar Translate Multiple",
+      "category": "Tools",
+      "description": "Activate Planar Translate Multiple tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "planar translate multiple"
+      ]
+    },
+    {
+      "id": "tool.builtin.plane_section",
+      "name": "Tool> Plane Section",
+      "category": "Tools",
+      "description": "Activate Plane Section tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "plane section"
+      ]
+    },
+    {
+      "id": "tool.builtin.push_pull",
+      "name": "Tool> Push/Pull",
+      "category": "Tools",
+      "description": "Activate Push/Pull tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "push/pull"
+      ]
+    },
+    {
+      "id": "tool.builtin.quad",
+      "name": "Tool> Quad",
+      "category": "Tools",
+      "description": "Activate Quad tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "quad"
+      ]
+    },
+    {
+      "id": "tool.builtin.rectangle",
+      "name": "Tool> Rectangle",
+      "category": "Tools",
+      "description": "Activate Rectangle tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "rectangle"
+      ]
+    },
+    {
+      "id": "tool.builtin.rotate",
+      "name": "Tool> Rotate",
+      "category": "Tools",
+      "description": "Activate Rotate tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "rotate"
+      ]
+    },
+    {
+      "id": "tool.builtin.rotate_2",
+      "name": "Tool> Rotate 2",
+      "category": "Tools",
+      "description": "Activate Rotate 2 tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "rotate 2"
+      ]
+    },
+    {
+      "id": "tool.builtin.rotate_stretch",
+      "name": "Tool> Rotate Stretch",
+      "category": "Tools",
+      "description": "Activate Rotate Stretch tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "rotate stretch"
+      ]
+    },
+    {
+      "id": "tool.builtin.rotational_array",
+      "name": "Tool> Rotational Array",
+      "category": "Tools",
+      "description": "Activate Rotational Array tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "rotational array"
+      ]
+    },
+    {
+      "id": "tool.builtin.rotational_array_equalized",
+      "name": "Tool> Rotational Array Even",
+      "category": "Tools",
+      "description": "Activate Rotational Array Even tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "rotational array even"
+      ]
+    },
+    {
+      "id": "tool.builtin.scale",
+      "name": "Tool> Scale",
+      "category": "Tools",
+      "description": "Activate Scale tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "scale"
+      ]
+    },
+    {
+      "id": "tool.builtin.select",
+      "name": "Tool> Select",
+      "category": "Tools",
+      "description": "Activate Select tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "select"
+      ]
+    },
+    {
+      "id": "tool.builtin.stretch",
+      "name": "Tool> Stretch",
+      "category": "Tools",
+      "description": "Activate Stretch tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "stretch"
+      ]
+    },
+    {
+      "id": "tool.builtin.surface_rectangle",
+      "name": "Tool> Surface Rect",
+      "category": "Tools",
+      "description": "Activate Surface Rect tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "surface rect"
+      ]
+    },
+    {
+      "id": "tool.builtin.text",
+      "name": "Tool> Text",
+      "category": "Tools",
+      "description": "Activate Text tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "text"
+      ]
+    },
+    {
+      "id": "tool.builtin.vector_text",
+      "name": "Tool> Vector Text",
+      "category": "Tools",
+      "description": "Activate Vector Text tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "vector text"
+      ]
+    },
+    {
+      "id": "tool.builtin.volumetric_translate_multiple",
+      "name": "Tool> Volumetric Translate Multiple",
+      "category": "Tools",
+      "description": "Activate Volumetric Translate Multiple tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "volumetric translate multiple"
+      ]
+    },
+    {
+      "id": "tool.builtin.voxel",
+      "name": "Tool> Voxel",
+      "category": "Tools",
+      "description": "Activate Voxel tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "voxel"
+      ]
+    },
+    {
+      "id": "tool.builtin.voxel_frame",
+      "name": "Tool> Voxel Frame",
+      "category": "Tools",
+      "description": "Activate Voxel Frame tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "voxel frame"
+      ]
+    },
+    {
+      "id": "tool.builtin.voxel_volume",
+      "name": "Tool> Voxel Volume",
+      "category": "Tools",
+      "description": "Activate Voxel Volume tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "voxel volume"
+      ]
+    },
+    {
+      "id": "tool.vector_text",
+      "name": "Tool> Vector Text",
+      "category": "Tools",
+      "description": "Activate vector text tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "vector",
+        "text",
+        "glyph"
+      ]
+    },
+    {
+      "id": "view.architecture_settings",
+      "name": "View> Architecture Settings",
+      "category": "View",
+      "description": "Show architecture settings panel",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "architecture",
+        "settings",
+        "panel"
+      ]
+    },
+    {
+      "id": "view.axis_guide",
+      "name": "View> Add Axis Guide",
+      "category": "View",
+      "description": "Add axis helper at cursor snap",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "axis",
+        "guide"
+      ]
+    },
+    {
+      "id": "view.camera.orbit",
+      "name": "View> Camera Orbit",
+      "category": "View",
+      "description": "Switch to perspective orbit camera",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "camera",
+        "orbit",
+        "perspective"
+      ]
+    },
+    {
+      "id": "view.camera.orthographic",
+      "name": "View> Camera Orthographic",
+      "category": "View",
+      "description": "Switch to orthographic camera",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "camera",
+        "orthographic"
+      ]
+    },
+    {
+      "id": "view.camera.walkthrough",
+      "name": "View> Camera Walkthrough",
+      "category": "View",
+      "description": "Switch to perspective walkthrough camera",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "camera",
+        "walkthrough",
+        "perspective"
+      ]
+    },
+    {
+      "id": "view.capture_ui_minimal",
+      "name": "View> Capture UI Minimal",
+      "category": "View",
+      "description": "Hide floating panels and palette for cleaner screenshots",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "capture",
+        "screenshot",
+        "ui",
+        "panels"
+      ]
+    },
+    {
+      "id": "view.capture_ui_restore",
+      "name": "View> Capture UI Restore",
+      "category": "View",
+      "description": "Restore normal floating panel behavior after capture mode",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "capture",
+        "screenshot",
+        "ui",
+        "panels"
+      ]
+    },
+    {
+      "id": "view.grid_guide",
+      "name": "View> Add Grid Guide",
+      "category": "View",
+      "description": "Add grid helper at cursor snap",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "grid",
+        "guide"
+      ]
+    },
+    {
+      "id": "view.help_about",
+      "name": "View> Help / About",
+      "category": "View",
+      "description": "Show help and platform notes panel",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "help",
+        "about",
+        "android",
+        "input"
+      ]
+    },
+    {
+      "id": "view.hotspot_settings",
+      "name": "View> Hotspot Settings",
+      "category": "View",
+      "description": "Show hotspot settings panel",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "hotspot",
+        "settings",
+        "panel"
+      ]
+    },
+    {
+      "id": "view.hvac_settings",
+      "name": "View> HVAC Settings",
+      "category": "View",
+      "description": "Show HVAC settings panel",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "hvac",
+        "settings",
+        "panel"
+      ]
+    },
+    {
+      "id": "view.lighting",
+      "name": "View> Lighting",
+      "category": "View",
+      "description": "Show lighting panel",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "lighting",
+        "panel"
+      ]
+    },
+    {
+      "id": "view.model_settings",
+      "name": "View> Model Settings",
+      "category": "View",
+      "description": "Show model settings panel",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "model",
+        "settings",
+        "panel"
+      ]
+    },
+    {
+      "id": "view.object_info",
+      "name": "View> Object Info",
+      "category": "View",
+      "description": "Show object info panel",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "object",
+        "info",
+        "panel"
+      ]
+    },
+    {
+      "id": "view.objects",
+      "name": "View> Objects",
+      "category": "View",
+      "description": "Toggle object prototypes panel",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "objects",
+        "panel",
+        "prototypes"
+      ]
+    },
+    {
+      "id": "view.ortho.back",
+      "name": "View> Ortho Back",
+      "category": "View",
+      "description": "Switch to orthographic back view",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "camera",
+        "orthographic",
+        "back"
+      ]
+    },
+    {
+      "id": "view.ortho.bottom",
+      "name": "View> Ortho Bottom",
+      "category": "View",
+      "description": "Switch to orthographic bottom view",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "camera",
+        "orthographic",
+        "bottom"
+      ]
+    },
+    {
+      "id": "view.ortho.front",
+      "name": "View> Ortho Front",
+      "category": "View",
+      "description": "Switch to orthographic front view",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "camera",
+        "orthographic",
+        "front"
+      ]
+    },
+    {
+      "id": "view.ortho.left",
+      "name": "View> Ortho Left",
+      "category": "View",
+      "description": "Switch to orthographic left view",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "camera",
+        "orthographic",
+        "left"
+      ]
+    },
+    {
+      "id": "view.ortho.right",
+      "name": "View> Ortho Right",
+      "category": "View",
+      "description": "Switch to orthographic right view",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "camera",
+        "orthographic",
+        "right"
+      ]
+    },
+    {
+      "id": "view.ortho.top",
+      "name": "View> Ortho Top",
+      "category": "View",
+      "description": "Switch to orthographic top view",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "camera",
+        "orthographic",
+        "top"
+      ]
+    },
+    {
+      "id": "view.plugin_manager",
+      "name": "View> Plugin Manager",
+      "category": "View",
+      "description": "Show plugin manager panel",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "plugins",
+        "panel"
+      ]
+    },
+    {
+      "id": "view.polyline_settings",
+      "name": "View> Polyline Settings",
+      "category": "View",
+      "description": "Show polyline settings panel",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "polyline",
+        "settings",
+        "panel"
+      ]
+    },
+    {
+      "id": "view.selection",
+      "name": "View> Selection",
+      "category": "View",
+      "description": "Show selection panel",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "selection",
+        "panel"
+      ]
+    },
+    {
+      "id": "view.vector_text_settings",
+      "name": "View> Vector Text Settings",
+      "category": "View",
+      "description": "Show vector text settings panel",
+      "icon": "view",
+      "priority": 1,
+      "tags": [
+        "vector",
+        "text",
+        "settings",
+        "panel"
+      ]
+    }
+  ]
+}

@@ -1,9 +1,13 @@
 <script lang="ts">
   import type { TutorialAction } from '$lib/tutorial/tutorial_schema';
+  import type { CommandResult } from '$lib/tutorial/tutorial_runtime';
 
   export let actions: TutorialAction[] = [];
+  export let runAction: ((action: TutorialAction) => Promise<CommandResult>) | undefined = undefined;
 
-  let lastMessage = 'Command execution is stubbed until the webcomponent tutorial API is wired.';
+  let lastMessage = 'Step actions execute against the browser webcomponent when supported.';
+  let runningIndex = -1;
+  let lastSuccess: boolean | null = null;
 
   function labelFor(action: TutorialAction): string {
     if (action.type === 'command') {
@@ -24,8 +28,25 @@
     return 'No action';
   }
 
-  function runStub(action: TutorialAction) {
-    lastMessage = `Prepared ${action.type} action. Runtime execution is pending webcomponent API integration.`;
+  async function run(action: TutorialAction, index: number) {
+    if (!runAction) {
+      lastSuccess = false;
+      lastMessage = 'No tutorial runtime is attached.';
+      return;
+    }
+    runningIndex = index;
+    lastSuccess = null;
+    lastMessage = `Running ${action.type} action...`;
+    try {
+      const result = await runAction(action);
+      lastSuccess = result.success;
+      lastMessage = result.message ?? (result.success ? 'Action completed.' : 'Action failed.');
+    } catch (error) {
+      lastSuccess = false;
+      lastMessage = error instanceof Error ? error.message : String(error);
+    } finally {
+      runningIndex = -1;
+    }
   }
 </script>
 
@@ -35,7 +56,7 @@
     <p>No step action is defined.</p>
   {:else}
     <ul>
-      {#each actions as action}
+      {#each actions as action, index}
         <li>
           <div>
             <strong>{action.type}</strong>
@@ -44,12 +65,14 @@
               <small>{action.description}</small>
             {/if}
           </div>
-          <button type="button" on:click={() => runStub(action)}>Queue</button>
+          <button type="button" on:click={() => run(action, index)} disabled={runningIndex !== -1}>
+            {runningIndex === index ? 'Running' : 'Run'}
+          </button>
         </li>
       {/each}
     </ul>
   {/if}
-  <p class="status">{lastMessage}</p>
+  <p class:success={lastSuccess === true} class:failure={lastSuccess === false} class="status">{lastMessage}</p>
 </section>
 
 <style>
@@ -100,5 +123,18 @@
     border-radius: 6px;
     background: var(--panel-soft);
     cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: wait;
+    opacity: 0.7;
+  }
+
+  .success {
+    color: #17613a;
+  }
+
+  .failure {
+    color: #a13535;
   }
 </style>

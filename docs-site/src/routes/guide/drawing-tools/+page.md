@@ -1,6 +1,16 @@
+<script>
+  import ScreenshotFigure from '$lib/components/ScreenshotFigure.svelte';
+</script>
+
 # Drawing Tools
 
 Drawing tools create edges, faces, dimensions, text, and specialized construction geometry. The current source lists built-in tool IDs in `ToolId.kt`; command palette entries are generated as `tool.builtin.<tool-id-lowercase>` when available.
+
+<ScreenshotFigure
+  src="/images/generated/getting-started-rectangle-face.png"
+  alt="Octodraw viewport with a generated rectangular face on the grid"
+  caption="A rectangle face generated through MCP for documentation. The manifest records the exact command and console steps."
+/>
 
 ## Core Construction Tools
 

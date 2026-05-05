@@ -47,6 +47,11 @@
   }
 
   function ensureEmbedState(host) {
+    if (runtimeState.host && runtimeState.host !== host && !runtimeState.host.isConnected) {
+      runtimeState.host = null;
+      runtimeState.hostId = null;
+      runtimeState.canvasId = null;
+    }
     if (runtimeState.host && runtimeState.host !== host) {
       throw new Error('Only one <octodraw-editor> instance is supported per page in the current runtime.');
     }
@@ -297,6 +302,21 @@
       if (this._syncEmbedLayout) {
         window.removeEventListener('resize', this._syncEmbedLayout);
       }
+      if (runtimeState.host === this) {
+        runtimeState.host = null;
+        runtimeState.hostId = null;
+        runtimeState.canvasId = null;
+        runtimeState.pendingResolvers.forEach((pending) => {
+          pending.reject(new Error('<octodraw-editor> was disconnected before the command completed.'));
+        });
+        runtimeState.pendingResolvers.clear();
+        const nextState = window.__octodrawEmbedState || {};
+        nextState.hostId = null;
+        nextState.canvasId = null;
+        nextState.commandQueue = [];
+        window.__octodrawEmbedState = nextState;
+      }
+      this._connected = false;
     }
 
     get value() {

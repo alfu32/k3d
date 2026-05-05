@@ -10,6 +10,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "validate:tutorials": "node scripts/validate_tutorial_json.mjs",
     "capture:examples": "node scripts/mcp_capture_examples.mjs",
+    "generate:commands": "node scripts/generate_command_reference.mjs",
     "sync:webcomponent": "node scripts/sync_webcomponent.mjs",
     "prepare": "svelte-kit sync"
   },

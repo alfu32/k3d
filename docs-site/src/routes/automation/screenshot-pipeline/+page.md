@@ -61,6 +61,8 @@ Use a command such as reset-for-capture only after discovery confirms it exists.
 
 Prefer a render-buffer or screenshot command discovered from `/scene/listCommands`. Render-buffer capture is cleaner than operating-system screenshots because it avoids window chrome and desktop scaling.
 
+The current discovered desktop command is `export.screenshot`. It reads the libGDX framebuffer and writes a PNG next to the active model file. `view.capture_ui_minimal` is attempted before capture when present; in the current app it hides floating panels but does not hide every toolbar, so generated images may still show the left toolbar stack until the app exposes a stronger clean-canvas capture mode.
+
 ## 6. Fall Back Clearly
 
 If render-buffer capture is unavailable or fails, a normal window or browser screenshot is allowed. Record the fallback source as `window-screenshot` or `browser-screenshot` in the manifest notes.
@@ -101,3 +103,5 @@ npm run capture:examples -- --base-url http://127.0.0.1:8765
 ```
 
 This script updates the manifest with MCP probe information and lists likely capture commands. It intentionally does not invent fixed command IDs.
+
+The script uses human-paced waits between MCP operations so the render thread can settle before capture. Defaults are roughly 1000 ms after normal commands and console scripts, 1200 ms after scene reset, and 1600 ms immediately before screenshot capture. If captures look stale or the app becomes unstable, restart the app before rerunning and increase the delay environment variables documented in `docs-site/scripts/README.md`.

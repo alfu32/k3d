@@ -1,6 +1,16 @@
+<script>
+  import ScreenshotFigure from '$lib/components/ScreenshotFigure.svelte';
+</script>
+
 # Objects and Instances
 
 Objects isolate geometry and make repeated modeling workflows easier. The current docs describe grouping selected geometry into an object prototype and placing instances from the Objects panel or object placement tool.
+
+<ScreenshotFigure
+  src="/images/generated/objects-instance-editing.png"
+  alt="Octodraw viewport with repeated generated solids prepared for object workflow documentation"
+  caption="Object workflow illustration generated through MCP. Command references should still be validated before release docs."
+/>
 
 ## Common Actions
 

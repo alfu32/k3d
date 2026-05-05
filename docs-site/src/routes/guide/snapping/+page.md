@@ -1,6 +1,16 @@
+<script>
+  import ScreenshotFigure from '$lib/components/ScreenshotFigure.svelte';
+</script>
+
 # Snapping and Guides
 
 Snapping is central to Octodraw's direct modeling workflow. It helps align new geometry with existing model features and the grid.
+
+<ScreenshotFigure
+  src="/images/generated/snapping-midpoint-example.png"
+  alt="Octodraw viewport with a generated line and midpoint marker geometry"
+  caption="A line example generated for endpoint and midpoint snapping documentation."
+/>
 
 ## Snap Targets
 

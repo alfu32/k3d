@@ -1,3 +1,7 @@
+<script>
+  import CommandReferenceTable from '$lib/components/CommandReferenceTable.svelte';
+</script>
+
 # Tools Reference
 
 Built-in tools are defined in the Kotlin source as `ToolId` values and exposed through toolbar UI, keyboard cycles, command palette entries, and MCP command execution when registered.
@@ -17,3 +21,9 @@ Architecture tools include wall, slab, stair, hole, window frame, and door frame
 ## Command Naming
 
 Current docs describe built-in tool activation as `tool.builtin.<id>`, where `<id>` is the lower-case tool ID such as `rectangle` or `push_pull`. Automation must still call `/scene/listCommands` first.
+
+## Generated Tool Commands
+
+This table is generated from the local MCP command catalog. It should be refreshed before publishing release-quality tool references.
+
+<CommandReferenceTable category="Tools" />

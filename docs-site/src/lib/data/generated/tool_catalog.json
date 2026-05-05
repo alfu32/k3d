@@ -1,0 +1,514 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-05T21:25:01.473Z",
+  "source": {
+    "baseUrl": "http://127.0.0.1:8765",
+    "endpoint": "/scene/listCommands",
+    "status": {
+      "success": true,
+      "running": true,
+      "port": 8765,
+      "message": "MCP HTTP server running on port 8765."
+    }
+  },
+  "toolCount": 45,
+  "tools": [
+    {
+      "id": "tool.builtin.arch_add_hole",
+      "name": "Tool> Add Hole",
+      "category": "Tools",
+      "description": "Activate Add Hole tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "add hole"
+      ]
+    },
+    {
+      "id": "tool.builtin.arch_door_frame",
+      "name": "Tool> Door Frame",
+      "category": "Tools",
+      "description": "Activate Door Frame tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "door frame"
+      ]
+    },
+    {
+      "id": "tool.builtin.arch_slab",
+      "name": "Tool> Slab",
+      "category": "Tools",
+      "description": "Activate Slab tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "slab"
+      ]
+    },
+    {
+      "id": "tool.builtin.arch_stair",
+      "name": "Tool> Stair",
+      "category": "Tools",
+      "description": "Activate Stair tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "stair"
+      ]
+    },
+    {
+      "id": "tool.builtin.arch_wall",
+      "name": "Tool> Wall",
+      "category": "Tools",
+      "description": "Activate Wall tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "wall"
+      ]
+    },
+    {
+      "id": "tool.builtin.arch_window_frame",
+      "name": "Tool> Window Frame",
+      "category": "Tools",
+      "description": "Activate Window Frame tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "window frame"
+      ]
+    },
+    {
+      "id": "tool.builtin.circle",
+      "name": "Tool> Circle",
+      "category": "Tools",
+      "description": "Activate Circle tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "circle"
+      ]
+    },
+    {
+      "id": "tool.builtin.construction_line",
+      "name": "Tool> Construction Line",
+      "category": "Tools",
+      "description": "Activate Construction Line tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "construction line"
+      ]
+    },
+    {
+      "id": "tool.builtin.copy_multiple",
+      "name": "Tool> Copy Multiple",
+      "category": "Tools",
+      "description": "Activate Copy Multiple tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "copy multiple"
+      ]
+    },
+    {
+      "id": "tool.builtin.cut_holes",
+      "name": "Tool> Cut Holes",
+      "category": "Tools",
+      "description": "Activate Cut Holes tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "cut holes"
+      ]
+    },
+    {
+      "id": "tool.builtin.cut_holes_2",
+      "name": "Tool> Cut Holes 2",
+      "category": "Tools",
+      "description": "Activate Cut Holes 2 tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "cut holes 2"
+      ]
+    },
+    {
+      "id": "tool.builtin.cut_out_3",
+      "name": "Tool> Cutout",
+      "category": "Tools",
+      "description": "Activate Cutout tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "cutout"
+      ]
+    },
+    {
+      "id": "tool.builtin.extrude_swipe",
+      "name": "Tool> Extrude Swipe",
+      "category": "Tools",
+      "description": "Activate Extrude Swipe tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "extrude swipe"
+      ]
+    },
+    {
+      "id": "tool.builtin.face_outline",
+      "name": "Tool> Face Outline",
+      "category": "Tools",
+      "description": "Activate Face Outline tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "face outline"
+      ]
+    },
+    {
+      "id": "tool.builtin.helical_array",
+      "name": "Tool> Helical Array",
+      "category": "Tools",
+      "description": "Activate Helical Array tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "helical array"
+      ]
+    },
+    {
+      "id": "tool.builtin.helical_array_equalized",
+      "name": "Tool> Helical Array Even",
+      "category": "Tools",
+      "description": "Activate Helical Array Even tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "helical array even"
+      ]
+    },
+    {
+      "id": "tool.builtin.helicoidal_rotate_multiple",
+      "name": "Tool> Helicoidal Rotate Multiple",
+      "category": "Tools",
+      "description": "Activate Helicoidal Rotate Multiple tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "helicoidal rotate multiple"
+      ]
+    },
+    {
+      "id": "tool.builtin.line",
+      "name": "Tool> Line",
+      "category": "Tools",
+      "description": "Activate Line tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "line"
+      ]
+    },
+    {
+      "id": "tool.builtin.line_offset",
+      "name": "Tool> Line Offset",
+      "category": "Tools",
+      "description": "Activate Line Offset tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "line offset"
+      ]
+    },
+    {
+      "id": "tool.builtin.linear_dimension",
+      "name": "Tool> Linear Dimension",
+      "category": "Tools",
+      "description": "Activate Linear Dimension tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "linear dimension"
+      ]
+    },
+    {
+      "id": "tool.builtin.mesh_intersection",
+      "name": "Tool> Mesh Intersection",
+      "category": "Tools",
+      "description": "Activate Mesh Intersection tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "mesh intersection"
+      ]
+    },
+    {
+      "id": "tool.builtin.move",
+      "name": "Tool> Move",
+      "category": "Tools",
+      "description": "Activate Move tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "move"
+      ]
+    },
+    {
+      "id": "tool.builtin.paint",
+      "name": "Tool> Paint",
+      "category": "Tools",
+      "description": "Activate Paint tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "paint"
+      ]
+    },
+    {
+      "id": "tool.builtin.planar_rotate_multiple",
+      "name": "Tool> Planar Rotate Multiple",
+      "category": "Tools",
+      "description": "Activate Planar Rotate Multiple tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "planar rotate multiple"
+      ]
+    },
+    {
+      "id": "tool.builtin.planar_translate_multiple",
+      "name": "Tool> Planar Translate Multiple",
+      "category": "Tools",
+      "description": "Activate Planar Translate Multiple tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "planar translate multiple"
+      ]
+    },
+    {
+      "id": "tool.builtin.plane_section",
+      "name": "Tool> Plane Section",
+      "category": "Tools",
+      "description": "Activate Plane Section tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "plane section"
+      ]
+    },
+    {
+      "id": "tool.builtin.push_pull",
+      "name": "Tool> Push/Pull",
+      "category": "Tools",
+      "description": "Activate Push/Pull tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "push/pull"
+      ]
+    },
+    {
+      "id": "tool.builtin.quad",
+      "name": "Tool> Quad",
+      "category": "Tools",
+      "description": "Activate Quad tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "quad"
+      ]
+    },
+    {
+      "id": "tool.builtin.rectangle",
+      "name": "Tool> Rectangle",
+      "category": "Tools",
+      "description": "Activate Rectangle tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "rectangle"
+      ]
+    },
+    {
+      "id": "tool.builtin.rotate",
+      "name": "Tool> Rotate",
+      "category": "Tools",
+      "description": "Activate Rotate tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "rotate"
+      ]
+    },
+    {
+      "id": "tool.builtin.rotate_2",
+      "name": "Tool> Rotate 2",
+      "category": "Tools",
+      "description": "Activate Rotate 2 tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "rotate 2"
+      ]
+    },
+    {
+      "id": "tool.builtin.rotate_stretch",
+      "name": "Tool> Rotate Stretch",
+      "category": "Tools",
+      "description": "Activate Rotate Stretch tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "rotate stretch"
+      ]
+    },
+    {
+      "id": "tool.builtin.rotational_array",
+      "name": "Tool> Rotational Array",
+      "category": "Tools",
+      "description": "Activate Rotational Array tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "rotational array"
+      ]
+    },
+    {
+      "id": "tool.builtin.rotational_array_equalized",
+      "name": "Tool> Rotational Array Even",
+      "category": "Tools",
+      "description": "Activate Rotational Array Even tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "rotational array even"
+      ]
+    },
+    {
+      "id": "tool.builtin.scale",
+      "name": "Tool> Scale",
+      "category": "Tools",
+      "description": "Activate Scale tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "scale"
+      ]
+    },
+    {
+      "id": "tool.builtin.select",
+      "name": "Tool> Select",
+      "category": "Tools",
+      "description": "Activate Select tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "select"
+      ]
+    },
+    {
+      "id": "tool.builtin.stretch",
+      "name": "Tool> Stretch",
+      "category": "Tools",
+      "description": "Activate Stretch tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "stretch"
+      ]
+    },
+    {
+      "id": "tool.builtin.surface_rectangle",
+      "name": "Tool> Surface Rect",
+      "category": "Tools",
+      "description": "Activate Surface Rect tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "surface rect"
+      ]
+    },
+    {
+      "id": "tool.builtin.text",
+      "name": "Tool> Text",
+      "category": "Tools",
+      "description": "Activate Text tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "text"
+      ]
+    },
+    {
+      "id": "tool.builtin.vector_text",
+      "name": "Tool> Vector Text",
+      "category": "Tools",
+      "description": "Activate Vector Text tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "vector text"
+      ]
+    },
+    {
+      "id": "tool.builtin.volumetric_translate_multiple",
+      "name": "Tool> Volumetric Translate Multiple",
+      "category": "Tools",
+      "description": "Activate Volumetric Translate Multiple tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "volumetric translate multiple"
+      ]
+    },
+    {
+      "id": "tool.builtin.voxel",
+      "name": "Tool> Voxel",
+      "category": "Tools",
+      "description": "Activate Voxel tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "voxel"
+      ]
+    },
+    {
+      "id": "tool.builtin.voxel_frame",
+      "name": "Tool> Voxel Frame",
+      "category": "Tools",
+      "description": "Activate Voxel Frame tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "voxel frame"
+      ]
+    },
+    {
+      "id": "tool.builtin.voxel_volume",
+      "name": "Tool> Voxel Volume",
+      "category": "Tools",
+      "description": "Activate Voxel Volume tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "voxel volume"
+      ]
+    },
+    {
+      "id": "tool.vector_text",
+      "name": "Tool> Vector Text",
+      "category": "Tools",
+      "description": "Activate vector text tool",
+      "icon": "tool",
+      "priority": 1,
+      "tags": [
+        "vector",
+        "text",
+        "glyph"
+      ]
+    }
+  ]
+}

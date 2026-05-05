@@ -1,4 +1,4 @@
-import { cp, mkdir, readdir, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -17,17 +17,31 @@ async function exists(filePath) {
 }
 
 async function main() {
-  const elementScript = path.join(source, 'octodraw-element.js');
-  if (!(await exists(elementScript))) {
+  const requiredFiles = [
+    'octodraw-element.js',
+    'octodraw-runtime.js',
+    'scripts/gdx.wasm.js',
+    'assets/assets.txt'
+  ];
+  const missingFiles = [];
+  for (const file of requiredFiles) {
+    if (!(await exists(path.join(source, file)))) {
+      missingFiles.push(file);
+    }
+  }
+
+  if (missingFiles.length > 0) {
     throw new Error(
       [
-        `Octodraw webcomponent bundle was not found at ${source}.`,
+        `Octodraw webcomponent bundle at ${source} is incomplete.`,
+        `Missing: ${missingFiles.join(', ')}`,
         'Build it first from the repository root:',
         './gradlew :web:prepareWebComponentBundle'
       ].join('\n')
     );
   }
 
+  await rm(target, { recursive: true, force: true });
   await mkdir(target, { recursive: true });
 
   const entries = await readdir(source, { withFileTypes: true });

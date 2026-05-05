@@ -11,8 +11,15 @@ The webcomponent is the public browser tutorial runtime. Its contract must remai
 
 ## Current State
 
-The current `web/component/README.md` documents `<octodraw-editor>` with model, selection, camera, tool, pointer, command, playback, and UI methods. The tutorial-facing API in the reference section is the intended stable wrapper over that lower-level surface.
+The current `web/component/README.md` documents `<octodraw-editor>` with model, selection, camera, tool, pointer, command, playback, and UI methods. The docs site now treats that as the live browser surface and adapts tutorial JSON onto it:
+
+- `tool.builtin.<id>` maps to `selectTool(<ID>)`.
+- Camera presets map to `setCamera({ mode, position, target })`.
+- Scene loading maps to `setModel()`.
+- Selection checks use `getSelection()` when available.
+- Browser screenshot capture uses the embedded canvas; release-quality docs screenshots still come from MCP render-buffer capture.
+- Groovy scripts, desktop command discovery, command palette panel operations, and filesystem exports remain MCP-only.
 
 ## Future Work
 
-Wire `TutorialRunner.svelte` to the stable webcomponent tutorial methods, then use the same tutorial JSON for public lessons and local validation where practical.
+Broaden the browser wrapper only when the real webcomponent exposes the needed command. Do not make tutorials depend on internal canvas children, random runtime globals, or desktop MCP endpoints.

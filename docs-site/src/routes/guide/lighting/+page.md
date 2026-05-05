@@ -1,6 +1,16 @@
+<script>
+  import ScreenshotFigure from '$lib/components/ScreenshotFigure.svelte';
+</script>
+
 # Lighting
 
 Octodraw includes a real-time lighting panel with directional, ambient, specular, and shadow controls. Lighting settings are persisted with model files.
+
+<ScreenshotFigure
+  src="/images/generated/lighting-scene-example.png"
+  alt="Octodraw viewport with a generated solid and lighting panel context"
+  caption="Lighting documentation capture generated from the running desktop app through MCP."
+/>
 
 ## Lighting Controls
 

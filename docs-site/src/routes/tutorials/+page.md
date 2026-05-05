@@ -24,4 +24,4 @@ Tutorials are JSON-driven lessons displayed by `TutorialRunner.svelte` and paire
 
 ## Implementation Status
 
-The runner fetches tutorial JSON client-side and stubs command execution safely until the browser tutorial-facing webcomponent API is finalized. Local MCP scripts should validate command IDs before generated references are published.
+The runner executes tutorial actions against the browser webcomponent when the current `<octodraw-editor>` API exposes the needed operation. Tool selection, camera presets, model reset/load, browser canvas capture, and simple highlight actions are wired. Desktop-only commands and Groovy scripts stay explicitly unavailable in public tutorials and should be validated through local MCP instead.

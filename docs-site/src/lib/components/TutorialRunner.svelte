@@ -3,7 +3,8 @@
   import CommandPanel from './CommandPanel.svelte';
   import OctodrawEmbed from './OctodrawEmbed.svelte';
   import TutorialStepList from './TutorialStepList.svelte';
-  import type { Tutorial, TutorialStep } from '$lib/tutorial/tutorial_schema';
+  import type { Tutorial, TutorialAction, TutorialStep } from '$lib/tutorial/tutorial_schema';
+  import { createTutorialRuntime, type CommandResult, type OctodrawTutorialHost } from '$lib/tutorial/tutorial_runtime';
   import { createTutorialStore } from '$lib/tutorial/tutorial_store';
 
   export let tutorialUrl: string;
@@ -14,6 +15,7 @@
   let currentIndex = 0;
   let loading = true;
   let error = '';
+  let embed: Partial<OctodrawTutorialHost> | null = null;
 
   $: currentStep = tutorial?.steps[currentIndex] as TutorialStep | undefined;
 
@@ -23,6 +25,14 @@
     }
     currentIndex = Math.min(Math.max(index, 0), tutorial.steps.length - 1);
     store.setCurrentStep(currentIndex);
+  }
+
+  async function runTutorialAction(action: TutorialAction): Promise<CommandResult> {
+    if (!embed) {
+      return { success: false, message: 'The Octodraw webcomponent is not mounted yet.' };
+    }
+    const runtime = createTutorialRuntime(embed);
+    return runtime.executeAction(action);
   }
 
   onMount(async () => {
@@ -49,7 +59,7 @@
     </aside>
 
     <div class="stage">
-      <OctodrawEmbed tutorial={tutorial.id} initialScene={tutorial.initialScene} {height} />
+      <OctodrawEmbed bind:this={embed} tutorial={tutorial.id} initialScene={tutorial.initialScene} {height} />
       <div class="step-body">
         <p class="step-count">Step {currentIndex + 1} of {tutorial.steps.length}</p>
         <h2>{currentStep.title}</h2>
@@ -71,7 +81,7 @@
         </div>
       </div>
 
-      <CommandPanel actions={currentStep.actions ?? []} />
+      <CommandPanel actions={currentStep.actions ?? []} runAction={runTutorialAction} />
     </div>
   </section>
 {/if}
