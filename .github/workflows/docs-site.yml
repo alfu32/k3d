@@ -36,9 +36,8 @@ jobs:
         run: ./gradlew :web:prepareWebComponentBundle
 
       - name: Copy webcomponent bundle
-        run: |
-          rm -rf docs-site/static/webcomponent/*
-          cp -R web/build/dist/webcomponent/. docs-site/static/webcomponent/
+        working-directory: docs-site
+        run: npm run sync:webcomponent
 
       - name: Install docs dependencies
         working-directory: docs-site

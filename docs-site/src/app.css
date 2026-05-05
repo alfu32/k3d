@@ -142,39 +142,39 @@ a:focus-visible {
   max-width: 880px;
 }
 
-.content :global(h1) {
+.content h1 {
   margin: 0 0 1rem;
   line-height: 1.12;
   font-size: clamp(2rem, 7vw, 4.5rem);
   letter-spacing: 0;
 }
 
-.content :global(h2) {
+.content h2 {
   margin: 2.2rem 0 0.8rem;
   font-size: 1.55rem;
   line-height: 1.25;
   letter-spacing: 0;
 }
 
-.content :global(h3) {
+.content h3 {
   margin: 1.5rem 0 0.55rem;
   font-size: 1.15rem;
   letter-spacing: 0;
 }
 
-.content :global(p),
-.content :global(li) {
+.content p,
+.content li {
   color: #27313e;
 }
 
-.content :global(blockquote) {
+.content blockquote {
   margin: 1rem 0;
   padding: 0.7rem 1rem;
   border-left: 4px solid var(--accent);
   background: var(--panel);
 }
 
-.content :global(code) {
+.content code {
   border-radius: 4px;
   padding: 0.12rem 0.28rem;
   background: var(--code-bg);
@@ -183,7 +183,7 @@ a:focus-visible {
   font-size: 0.92em;
 }
 
-.content :global(pre) {
+.content pre {
   overflow: auto;
   padding: 1rem;
   border: 1px solid var(--border);
@@ -192,26 +192,26 @@ a:focus-visible {
   color: #e8edf3;
 }
 
-.content :global(pre code) {
+.content pre code {
   padding: 0;
   background: transparent;
   color: inherit;
 }
 
-.content :global(.lead) {
+.content .lead {
   max-width: 740px;
   color: #354254;
   font-size: 1.14rem;
 }
 
-.content :global(.card-grid) {
+.content .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 0.9rem;
   margin: 1rem 0;
 }
 
-.content :global(.doc-card) {
+.content .doc-card {
   display: block;
   min-height: 100%;
   padding: 1rem;
@@ -221,12 +221,12 @@ a:focus-visible {
   color: var(--text);
 }
 
-.content :global(.doc-card strong) {
+.content .doc-card strong {
   display: block;
   margin-bottom: 0.35rem;
 }
 
-.content :global(.status-note) {
+.content .status-note {
   padding: 0.85rem 1rem;
   border: 1px solid var(--border);
   border-radius: 8px;

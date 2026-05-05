@@ -1,6 +1,6 @@
 <script lang="ts">
   import { base } from '$app/paths';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
 
   export let tutorial: string | undefined = undefined;
   export let height = '560px';
@@ -42,8 +42,15 @@
         await editorElement.setModel(initialModel(), `${tutorial ?? 'tutorial'}.octd`);
       }
     } catch (error) {
+      failed = true;
       message = error instanceof Error ? error.message : String(error);
     }
+  }
+
+  function handleRuntimeError(event: Event) {
+    const detail = (event as CustomEvent<{ message?: string }>).detail;
+    failed = true;
+    message = detail?.message || 'Octodraw webcomponent runtime reported an error.';
   }
 
   function loadScript(): Promise<void> {
@@ -55,8 +62,18 @@
     }
     const existing = document.getElementById(scriptId) as HTMLScriptElement | null;
     if (existing) {
+      if (existing.dataset.loaded === 'true') {
+        return Promise.resolve();
+      }
       return new Promise((resolve, reject) => {
-        existing.addEventListener('load', () => resolve(), { once: true });
+        existing.addEventListener(
+          'load',
+          () => {
+            existing.dataset.loaded = 'true';
+            resolve();
+          },
+          { once: true }
+        );
         existing.addEventListener('error', () => reject(new Error('Failed to load existing Octodraw script.')), {
           once: true
         });
@@ -67,7 +84,10 @@
       script.id = scriptId;
       script.src = scriptUrl();
       script.async = true;
-      script.onload = () => resolve();
+      script.onload = () => {
+        script.dataset.loaded = 'true';
+        resolve();
+      };
       script.onerror = () => reject(new Error(`Failed to load ${script.src}`));
       document.head.appendChild(script);
     });
@@ -79,6 +99,7 @@
       await loadScript();
       loaded = true;
       message = 'Octodraw webcomponent loaded.';
+      await tick();
       await applyInitialState();
     } catch (error) {
       failed = true;
@@ -88,21 +109,24 @@
 </script>
 
 <div class="embed" style={`--embed-height: ${height};`}>
-  {#if mounted && loaded}
+  {#if failed}
+    <div class="embed-message failed" role="alert">
+      {message}
+      <span>The deployment workflow copies the Gradle webcomponent bundle into this folder.</span>
+    </div>
+  {:else if mounted && loaded}
     <svelte:element
       this="octodraw-editor"
       bind:this={editorElement}
+      on:error={handleRuntimeError}
       data-tutorial={tutorial}
       data-initial-scene={initialScene}
       toolbars-visible="true"
       panels-visible="true"
     />
   {:else}
-    <div class:failed class="embed-message" role={failed ? 'alert' : 'status'}>
+    <div class="embed-message" role="status">
       {message}
-      {#if failed}
-        <span>The deployment workflow copies the Gradle webcomponent bundle into this folder.</span>
-      {/if}
     </div>
   {/if}
 </div>

@@ -1,6 +1,15 @@
+<script>
+  import { base } from '$app/paths';
+  import TutorialRunner from '$lib/components/TutorialRunner.svelte';
+</script>
+
 # Tutorials
 
 Tutorials are JSON-driven lessons displayed by `TutorialRunner.svelte` and paired with the embedded Octodraw webcomponent. Public tutorials must work without the desktop MCP server. MCP remains a local authoring and validation tool for screenshots, command discovery, and generated references.
+
+## Live Preview
+
+<TutorialRunner tutorialUrl={`${base}/tutorials/getting-started.json`} height="520px" />
 
 ## Lessons
 

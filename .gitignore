@@ -139,6 +139,8 @@ www-test/
 /docs-site/node_modules/
 /docs-site/.svelte-kit/
 /docs-site/build/
+/docs-site/static/webcomponent/*
+!/docs-site/static/webcomponent/.gitkeep
 
 /nbdist/
 /android/nbdist/
