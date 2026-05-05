@@ -1,10 +1,12 @@
 name: Docs Site
 
 on:
-  push:
-    branches:
-      - work
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example 5.2.4 or v5.2.4"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -19,8 +21,34 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag }}
+          fetch-depth: 0
+
+      - name: Resolve release number
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_tag="${{ github.event.inputs.tag }}"
+          release_number="${release_tag#v}"
+
+          if [[ -z "${release_number}" ]]; then
+            echo "Release tag input is empty"
+            exit 1
+          fi
+
+          echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
+          echo "release_number=${release_number}" >> "$GITHUB_OUTPUT"
+
+          echo "Release tag: ${release_tag}"
+          echo "Release number: ${release_number}"
 
       - uses: actions/setup-java@v5
         with:
@@ -37,55 +65,14 @@ jobs:
         working-directory: docs-site
         run: npm ci
 
-      - name: Print CI environment
-        run: |
-          echo "Java:"
-          java -version
-
-          echo ""
-          echo "Node:"
-          node --version
-
-          echo ""
-          echo "npm:"
-          npm --version
-
-          echo ""
-          echo "Gradle:"
-          ./gradlew --version
-
-          echo ""
-          echo "Kernel:"
-          uname -a
-
-          echo ""
-          echo "Disk:"
-          df -h
-
-          echo ""
-          echo "Memory:"
-          free -h
-
-          echo ""
-          echo "Working directory:"
-          pwd
-
       - name: Build Octodraw webcomponent
-        run: ./gradlew :web:clean :web:prepareWebComponentBundle --rerun-tasks --stacktrace --info
+        run: ./gradlew :web:clean :web:prepareWebComponentBundle -PreleaseNumber=${{ steps.release.outputs.release_number }} --rerun-tasks --stacktrace --info
 
       - name: Inspect web build outputs
         if: always()
         run: |
           echo "web/build/dist:"
           find web/build/dist -maxdepth 6 -type f -print | sort || true
-
-          echo ""
-          echo "web/build/tmp:"
-          find web/build/tmp -maxdepth 6 -type f -print | sort || true
-
-          echo ""
-          echo "web/build/reports:"
-          find web/build/reports -maxdepth 6 -type f -print | sort || true
 
       - name: Upload web build diagnostics
         if: always()
