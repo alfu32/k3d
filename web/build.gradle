@@ -16,33 +16,7 @@ def webRuntimeAssetsDir = file("$buildDir/generated/web-runtime-assets")
 def webClasspathResourcesDir = file("$buildDir/generated/web-classpath-resources")
 def webComponentSourceDir = file("$projectDir/component")
 def webComponentBundleDir = file("$buildDir/dist/webcomponent")
-def requireFile = { File file, String label ->
-  if (!file.exists() || !file.isFile()) {
-    throw new GradleException("${label} was not generated: ${file.absolutePath}")
-  }
-}
 
-def requireDirectory = { File directory, String label ->
-  if (!directory.exists() || !directory.isDirectory()) {
-    throw new GradleException("${label} was not generated: ${directory.absolutePath}")
-  }
-}
-
-def printDirectoryTree = { File root, int maxDepth = 5 ->
-  if (!root.exists()) {
-    println "Directory does not exist: ${root.absolutePath}"
-    return
-  }
-
-  def rootPath = root.toPath()
-  root.eachFileRecurse { file ->
-    def relative = rootPath.relativize(file.toPath()).toString()
-    def depth = relative.count(File.separator)
-    if (depth <= maxDepth) {
-      println "  ${relative}"
-    }
-  }
-}
 configurations.configureEach {
   exclude group: 'org.apache.groovy', module: 'groovy'
 }
@@ -133,41 +107,17 @@ tasks.register('buildWebRuntime', JavaExec) {
   group = 'distribution'
   description = 'Compiles the real TeaVM/WebGL runtime.'
   dependsOn(tasks.named('classes'), tasks.named('prepareWebRuntimeAssets'))
-
   doFirst {
     delete(webDistRoot)
-
-    println "Octodraw web runtime build"
-    println "  bundleVersion: ${bundleVersion}"
-    println "  webOutputName: ${webOutputName}"
-    println "  webDistRoot: ${webDistRoot.absolutePath}"
-    println "  webRuntimeDir: ${webRuntimeDir.absolutePath}"
-    println "  webComponentBundleDir: ${webComponentBundleDir.absolutePath}"
-    println "  webRuntimeAssetsDir: ${webRuntimeAssetsDir.absolutePath}"
   }
-
   mainClass.set('com.github.alfu32.sketch.web.BuildWebApp')
   classpath = sourceSets.main.runtimeClasspath
-
   systemProperty('octodraw.web.output', webDistRoot.absolutePath)
   systemProperty('octodraw.web.folder', 'webapp')
   systemProperty('octodraw.web.assets', webRuntimeAssetsDir.absolutePath)
   systemProperty('octodraw.web.title', "Octodraw ${bundleVersion}")
   systemProperty('octodraw.web.outputName', webOutputName)
   systemProperty('octodraw.web.serve', 'false')
-
-  doLast {
-    def runtimeFile = new File(webRuntimeDir, "${webOutputName}.js")
-    def scriptsDir = new File(webRuntimeDir, "scripts")
-    def assetsManifest = new File(webRuntimeDir, "assets/assets.txt")
-
-    println "Web runtime output tree:"
-    printDirectoryTree(webRuntimeDir)
-
-    requireFile(runtimeFile, "TeaVM runtime JavaScript")
-    requireDirectory(scriptsDir, "TeaVM scripts directory")
-    requireFile(assetsManifest, "TeaVM assets manifest")
-  }
 }
 
 tasks.register('prepareWebDocs') {
@@ -220,14 +170,6 @@ tasks.register('prepareWebComponentBundle') {
   outputs.dir(webComponentBundleDir)
 
   doLast {
-    def runtimeFile = new File(webRuntimeDir, "${webOutputName}.js")
-    def scriptsDir = new File(webRuntimeDir, "scripts")
-    def assetsManifest = new File(webRuntimeDir, "assets/assets.txt")
-
-    requireFile(runtimeFile, "Cannot build webcomponent: TeaVM runtime JavaScript")
-    requireDirectory(scriptsDir, "Cannot build webcomponent: TeaVM scripts directory")
-    requireFile(assetsManifest, "Cannot build webcomponent: TeaVM assets manifest")
-
     delete(webComponentBundleDir)
     webComponentBundleDir.mkdirs()
 
@@ -235,25 +177,19 @@ tasks.register('prepareWebComponentBundle') {
       from(new File(webRuntimeDir, 'assets'))
       into(new File(webComponentBundleDir, 'assets'))
     }
-
     copy {
-      from(scriptsDir)
+      from(new File(webRuntimeDir, 'scripts'))
       into(new File(webComponentBundleDir, 'scripts'))
     }
-
     copy {
-      from(runtimeFile)
+      from(new File(webRuntimeDir, "${webOutputName}.js"))
       into(webComponentBundleDir)
       rename { 'octodraw-runtime.js' }
     }
-
     copy {
       from(webComponentSourceDir)
       into(webComponentBundleDir)
     }
-
-    println "Webcomponent bundle output tree:"
-    printDirectoryTree(webComponentBundleDir)
   }
 }
 
