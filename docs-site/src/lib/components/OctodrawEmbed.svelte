@@ -33,107 +33,22 @@
   let highlightMessage = '';
 
   const scriptId = 'octodraw-webcomponent-script';
-  const EMPTY_SCENE_MODEL = JSON.stringify({
-    version: 17,
-    segments: [],
-    faces: [],
-    prototypes: [
-      {
-        id: 'root',
-        name: 'Root',
-        definitionOrigin: {},
-        definitionAxisU: { x: 1 },
-        definitionAxisV: { y: 1 },
-        definitionAxisW: { z: 1 },
-        gluedToSurface: false,
-        kind: 'MESH',
-        externalReferenceEnabled: false,
-        externalReferencePath: '',
-        voxelColor: { r: 0.8, g: 0.8, b: 0.8 },
-        voxels: [],
-        architectureWalls: [],
-        architectureSlabs: [],
-        architectureStairs: [],
-        architectureFrames: [],
-        hvacPlumbingRuns: [],
-        hvacVentilationDucts: [],
-        hotspots: [],
-        prototypeVertices: [],
-        segments: [],
-        faces: [],
-        dimensions: [],
-        texts: []
-      }
-    ],
-    rootInstance: {
-      id: 'root',
-      prototypeId: 'root',
-      instanceOrigin: {},
-      instanceAxisU: { x: 1 },
-      instanceAxisV: { y: 1 },
-      instanceAxisW: { z: 1 },
-      hotspotPositions: [],
-      hotspotSegmentAttachments: [],
-      hotspotTriangleAttachments: [],
-      overrideSegments: [],
-      overrideFaces: [],
-      overrideDimensions: [],
-      overrideTexts: [],
-      children: []
-    },
-    cameraState: {
-      position: { x: 6, y: 6, z: 6 },
-      direction: { x: -0.57735026, y: -0.57735026, z: -0.57735026 },
-      up: { x: -0.40824834, y: 0.8164967, z: -0.40824834 },
-      target: {},
-      near: 0.1,
-      far: 500,
-      fieldOfView: 67
-    },
-    lightingState: {
-      shadowLightValue: 0.59,
-      shadowLightAlpha: 0.5,
-      directionalLightValue: 0.73,
-      directionalLightAlpha: 1,
-      ambientLightValue: 0.59,
-      ambientLightAlpha: 1,
-      specularLightValue: 0.2,
-      specularLightAlpha: 0.95
-    },
-    shadowState: {
-      shadowBias: 2500,
-      shadowNormalBias: 5620,
-      pcfMode: 1,
-      dither: false,
-      useCsm: true
-    },
-    modelUnit: {},
-    snapEpsilon: 12,
-    gridSpacing: 1,
-    circleSegments: 24,
-    undoHistory: {
-      maxEntries: 20,
-      index: 0,
-      entries: []
-    }
-  });
-
   function scriptUrl(): string {
     return `${base}/webcomponent/octodraw-element.js`;
   }
 
   function initialModel(): string {
-    if (initialScene === 'empty') {
-      return EMPTY_SCENE_MODEL;
-    }
-    return initialScene;
+    return initialScene === 'empty' ? '' : initialScene;
   }
 
   async function applyInitialState() {
     if (!editorElement) {
       return;
     }
-    editorElement.value = initialModel();
+    const model = initialModel();
+    if (model) {
+      editorElement.value = model;
+    }
     try {
       await editorElement.whenReady?.();
       await editorElement.setUi?.({ toolbarsVisible: true, panelsVisible: true });
@@ -207,7 +122,9 @@
   }
 
   export async function resetScene(): Promise<void> {
-    await loadModel(EMPTY_SCENE_MODEL);
+    if (initialScene !== 'empty') {
+      await loadModel(initialScene);
+    }
   }
 
   export async function runCommand(commandId: string): Promise<CommandResult> {

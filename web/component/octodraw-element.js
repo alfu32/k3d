@@ -75,10 +75,6 @@
 
   function syncEmbedLayout(host) {
     ensureEmbedState(host);
-    if (runtimeState.host !== host || !runtimeState.started || !window.dispatchEvent) {
-      return;
-    }
-    window.dispatchEvent(new Event('resize'));
   }
 
   function dispatchComponentEvent(target, type, detail) {
