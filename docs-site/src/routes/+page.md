@@ -1,10 +1,18 @@
 <script>
   import DownloadMatrix from '$lib/components/DownloadMatrix.svelte';
+  import OctodrawEmbed from '$lib/components/OctodrawEmbed.svelte';
+  import ScreenshotFigure from '$lib/components/ScreenshotFigure.svelte';
 </script>
 
 # Octodraw
 
 Octodraw is a lightweight direct 3D sketching and modeling project built with Kotlin and libGDX. It is useful for fast spatial sketching, planar face modeling, object/instance workflows, and automation experiments, not as a finished commercial CAD replacement.
+
+<ScreenshotFigure
+  src="/images/generated/modify-a-box-workflow.png"
+  alt="Octodraw tutorial capture showing the application UI with the box modification workflow"
+  caption="A real capture from the running desktop app. The docs site keeps screenshots in the normal page flow instead of as a fixed hero layer."
+/>
 
 The project currently targets JVM desktop through LWJGL3, Android, and a TeaVM/WebGL web runtime that can be packaged as an embeddable webcomponent.
 
@@ -23,6 +31,12 @@ Power users and agents can work through the Groovy console, plugin API, command 
 ## Interactive Tutorials
 
 The new tutorial pages load JSON tutorial definitions and embed the Octodraw webcomponent bundle produced by the existing Gradle web build. The first version uses safe stubs for tutorial command execution while the public tutorial-facing webcomponent contract is stabilized.
+
+## Live Webcomponent
+
+The site embeds the same browser editor that powers the tutorial pages. It is part of the page content, so it follows normal document flow and remains usable at desktop widths.
+
+<OctodrawEmbed tutorial="home-preview" initialScene="empty" height="768px" />
 
 ## Start Here
 

@@ -12,6 +12,7 @@
   let layoutReady = false;
   let loaded = false;
   let failed = false;
+  let showRefreshHint = true;
   let message = 'Loading Octodraw webcomponent...';
   let embedShell: HTMLDivElement | null = null;
   type EditorElement = HTMLElement & {
@@ -235,6 +236,18 @@
     message = detail?.message || 'Octodraw webcomponent runtime reported an error.';
   }
 
+  function dismissRefreshHint(event: MouseEvent) {
+    event.preventDefault();
+    showRefreshHint = false;
+  }
+
+  function refreshPage(event: MouseEvent) {
+    event.preventDefault();
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
+  }
+
   function loadScript(): Promise<void> {
     if (typeof window === 'undefined' || typeof document === 'undefined') {
       return Promise.resolve();
@@ -322,7 +335,12 @@
       {message}
     </div>
   {/if}
-  <p class="refresh-note">If the editor stays black after page navigation, refresh the page once.</p>
+  {#if showRefreshHint}
+    <p class="refresh-note">
+      If the editor stays black after page navigation, <a href={base || '/'} on:click={refreshPage}>refresh</a> the page once.
+      <a href={base || '/'} on:click={dismissRefreshHint}>Dismiss</a>
+    </p>
+  {/if}
 </div>
 
 <style>
@@ -393,5 +411,12 @@
     color: #d9e2ec;
     font-size: 0.78rem;
     pointer-events: none;
+  }
+
+  .refresh-note a {
+    margin-left: 0.35rem;
+    pointer-events: auto;
+    color: #ffffff;
+    text-decoration: underline;
   }
 </style>
