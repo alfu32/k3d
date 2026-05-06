@@ -75,6 +75,24 @@
 
   function syncEmbedLayout(host) {
     ensureEmbedState(host);
+    if (!window.__octodrawEmbedState) {
+      return;
+    }
+    const rect = typeof host.getBoundingClientRect === 'function'
+      ? host.getBoundingClientRect()
+      : { width: host.clientWidth || 0, height: host.clientHeight || 0 };
+    const hostWidth = Math.max(0, Math.round(rect.width || host.clientWidth || 0));
+    const hostHeight = Math.max(0, Math.round(rect.height || host.clientHeight || 0));
+    window.__octodrawEmbedState.padHorizontal = Math.max(0, (window.innerWidth || hostWidth) - hostWidth);
+    window.__octodrawEmbedState.padVertical = Math.max(0, (window.innerHeight || hostHeight) - hostHeight);
+    window.__octodrawEmbedState.hostWidth = hostWidth;
+    window.__octodrawEmbedState.hostHeight = hostHeight;
+    window.__octodrawEmbedState.hostLeft = Math.max(0, Math.round(rect.left || 0));
+    window.__octodrawEmbedState.hostTop = Math.max(0, Math.round(rect.top || 0));
+    if (runtimeState.host !== host || !runtimeState.started || !window.dispatchEvent) {
+      return;
+    }
+    window.dispatchEvent(new Event('resize'));
   }
 
   function dispatchComponentEvent(target, type, detail) {
@@ -250,9 +268,13 @@
       }
       this._connected = true;
       this.style.display = this.style.display || 'block';
+      this.style.width = this.style.width || '100%';
+      this.style.maxWidth = this.style.maxWidth || '100%';
+      this.style.minWidth = this.style.minWidth || '0';
       if (!this.style.minHeight) {
         this.style.minHeight = '480px';
       }
+      this.style.boxSizing = this.style.boxSizing || 'border-box';
       this._toolbarsVisible = this.getAttribute('toolbars-visible') !== 'false';
       this._panelsVisible = this.getAttribute('panels-visible') !== 'false';
       this._initialFileName = this.getAttribute('file-name') || this._initialFileName;
@@ -277,7 +299,6 @@
       if (this._resizeObserver) {
         this._resizeObserver.observe(this);
       }
-      window.addEventListener('resize', this._syncEmbedLayout);
       this.addEventListener('ready', this._onReady);
       this.addEventListener('change', this._onChange);
       this._syncEmbedLayout();
@@ -294,9 +315,6 @@
       if (this._resizeObserver) {
         this._resizeObserver.disconnect();
         this._resizeObserver = null;
-      }
-      if (this._syncEmbedLayout) {
-        window.removeEventListener('resize', this._syncEmbedLayout);
       }
       if (runtimeState.host === this) {
         runtimeState.host = null;

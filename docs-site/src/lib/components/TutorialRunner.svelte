@@ -92,6 +92,7 @@
     grid-template-columns: 240px minmax(0, 1fr);
     gap: 1rem;
     margin: 1.2rem 0;
+    min-width: 0;
   }
 
   .steps,
@@ -100,11 +101,13 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--panel);
+    min-width: 0;
   }
 
   .stage {
     display: grid;
     gap: 1rem;
+    min-width: 0;
   }
 
   .meta,

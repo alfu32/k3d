@@ -9,9 +9,11 @@
   export let initialScene = 'empty';
 
   let mounted = false;
+  let layoutReady = false;
   let loaded = false;
   let failed = false;
   let message = 'Loading Octodraw webcomponent...';
+  let embedShell: HTMLDivElement | null = null;
   type EditorElement = HTMLElement & {
     value?: string;
     getModel?: () => Promise<string>;
@@ -39,6 +41,19 @@
 
   function initialModel(): string {
     return initialScene === 'empty' ? '' : initialScene;
+  }
+
+  async function settleLayout(): Promise<void> {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    for (let index = 0; index < 3; index += 1) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }
+    const rect = embedShell?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      await new Promise<void>((resolve) => setTimeout(() => resolve(), 16));
+    }
   }
 
   async function applyInitialState() {
@@ -256,6 +271,8 @@
   onMount(async () => {
     mounted = true;
     try {
+      await settleLayout();
+      layoutReady = true;
       await loadScript();
       loaded = true;
       message = 'Octodraw webcomponent loaded.';
@@ -268,13 +285,13 @@
   });
 </script>
 
-<div class="embed" style={`--embed-height: ${height};`}>
+<div class="embed" bind:this={embedShell} style={`--embed-height: ${height};`}>
   {#if failed}
     <div class="embed-message failed" role="alert">
       {message}
       <span>The deployment workflow copies the Gradle webcomponent bundle into this folder.</span>
     </div>
-  {:else if mounted && loaded}
+  {:else if mounted && layoutReady && loaded}
     <svelte:element
       this="octodraw-editor"
       bind:this={editorElement}
@@ -297,6 +314,8 @@
 <style>
   .embed {
     position: relative;
+    width: 100%;
+    min-width: 0;
     min-height: var(--embed-height);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -306,6 +325,9 @@
 
   octodraw-editor {
     display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
     min-height: var(--embed-height);
     height: var(--embed-height);
   }
