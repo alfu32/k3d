@@ -5,7 +5,7 @@
   import type { CommandResult, ConsoleResult } from '$lib/tutorial/tutorial_runtime';
 
   export let tutorial: string | undefined = undefined;
-  export let height = '560px';
+  export let height = '768px';
   export let initialScene = 'empty';
 
   let mounted = false;

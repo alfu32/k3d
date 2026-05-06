@@ -1,5 +1,6 @@
 <script>
   import { base } from '$app/paths';
+  import ToolbarIconGuide from '$lib/components/ToolbarIconGuide.svelte';
   import TutorialRunner from '$lib/components/TutorialRunner.svelte';
 </script>
 
@@ -24,6 +25,24 @@ Tutorials are JSON-driven lessons displayed by `TutorialRunner.svelte` and paire
   <a class="doc-card" href="./objects-and-instances/"><strong>Objects and Instances</strong>Create reusable geometry and reason about edit context.</a>
   <a class="doc-card" href="./lighting-and-export/"><strong>Lighting and Export</strong>Set view lighting and learn the screenshot/export path.</a>
 </div>
+
+## Common Buttons
+
+<ToolbarIconGuide
+  title="Button names used in the first tutorials"
+  items={[
+    { name: 'select', label: 'Select', hint: 'Start here when the lesson says to select geometry.' },
+    { name: 'move', label: 'Move', hint: 'Use this for translation-based edits.' },
+    { name: 'rotate', label: 'Rotate', hint: 'Use this for rotation edits and rotate-copy flows.' },
+    { name: 'stretch', label: 'Stretch', hint: 'Use this when the lesson asks for segment or edge stretching.' },
+    { name: 'multiple-copy-translate', label: 'Copy', hint: 'Use for linear copy workflows.' },
+    { name: 'multiple-copy-translate-planar', label: 'Planar Array', hint: 'Use for 2D repeated layouts.' },
+    { name: 'multiple-copy-translate-volumetric', label: 'Volumetric Array', hint: 'Use for 3D repeated layouts.' },
+    { name: 'multiple-copy-planar-rotate', label: 'Rotational Array', hint: 'Use for circular copy patterns.' },
+    { name: 'multiple-copy-helicoidal-rotate', label: 'Helical Array', hint: 'Use for spiral copy patterns.' },
+    { name: 'file_save', label: 'Save', hint: 'Use when the lesson asks you to keep the model.' }
+  ]}
+/>
 
 ## Implementation Status
 

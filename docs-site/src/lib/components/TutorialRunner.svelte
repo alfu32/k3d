@@ -8,7 +8,7 @@
   import { createTutorialStore } from '$lib/tutorial/tutorial_store';
 
   export let tutorialUrl: string;
-  export let height = '520px';
+  export let height = '768px';
 
   const store = createTutorialStore();
   let tutorial: Tutorial | null = null;
