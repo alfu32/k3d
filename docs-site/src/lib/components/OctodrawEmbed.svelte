@@ -285,7 +285,13 @@
   });
 </script>
 
-<div class="embed" bind:this={embedShell} style={`--embed-height: ${height};`}>
+<div
+  class="embed"
+  bind:this={embedShell}
+  style={`--embed-height: ${height};`}
+  on:wheel|preventDefault
+  on:touchmove|preventDefault
+>
   {#if failed}
     <div class="embed-message failed" role="alert">
       {message}
@@ -321,6 +327,7 @@
     border-radius: 8px;
     overflow: hidden;
     background: #111820;
+    overscroll-behavior: contain;
   }
 
   octodraw-editor {
@@ -330,6 +337,7 @@
     max-width: 100%;
     min-height: var(--embed-height);
     height: var(--embed-height);
+    overscroll-behavior: contain;
   }
 
   .embed-message {
