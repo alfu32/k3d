@@ -65,12 +65,14 @@ jobs:
         working-directory: docs-site
         run: npm ci
 
-      - name: Build Octodraw webcomponent
-        run: ./gradlew :web:clean :web:prepareWebComponentBundle -PreleaseNumber=${{ steps.release.outputs.release_number }} --rerun-tasks --stacktrace --info
+      - name: Build Octodraw webcomponent zip
+        run: ./gradlew :web:clean :web:bundleWebComponentZip -PreleaseNumber="${{ steps.release.outputs.release_number }}" --rerun-tasks --stacktrace --info
 
       - name: Inspect web build outputs
         if: always()
         run: |
+          echo "dist:"
+          find dist -maxdepth 2 -type f -print | sort || true
           echo "web/build/dist:"
           find web/build/dist -maxdepth 6 -type f -print | sort || true
 
@@ -80,22 +82,46 @@ jobs:
         with:
           name: web-build-diagnostics
           path: |
+            dist/*.zip
             web/build/dist/**
             web/build/tmp/**
             web/build/reports/**
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Verify webcomponent bundle
+      - name: Extract webcomponent zip
+        id: webcomponent
+        shell: bash
         run: |
-          test -f web/build/dist/webcomponent/octodraw-element.js
-          test -f web/build/dist/webcomponent/octodraw-runtime.js
-          test -d web/build/dist/webcomponent/scripts
-          test -f web/build/dist/webcomponent/assets/assets.txt
+          set -euo pipefail
+
+          zip_path="dist/octodraw-${{ steps.release.outputs.release_number }}-webcomponent.zip"
+          if [[ ! -f "${zip_path}" ]]; then
+            echo "Expected webcomponent zip not found: ${zip_path}"
+            echo "Available dist files:"
+            find dist -maxdepth 2 -type f -print | sort || true
+            exit 1
+          fi
+
+          extract_dir="${RUNNER_TEMP}/octodraw-webcomponent"
+          rm -rf "${extract_dir}"
+          mkdir -p "${extract_dir}"
+          unzip -q "${zip_path}" -d "${extract_dir}"
+
+          echo "Extracted webcomponent zip:"
+          find "${extract_dir}" -maxdepth 6 -type f -print | sort
+          echo "dir=${extract_dir}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify extracted webcomponent bundle
+        run: |
+          test -f "${{ steps.webcomponent.outputs.dir }}/octodraw-element.js"
+          test -f "${{ steps.webcomponent.outputs.dir }}/octodraw-runtime.js"
+          test -f "${{ steps.webcomponent.outputs.dir }}/scripts/gdx.wasm.js"
+          test -f "${{ steps.webcomponent.outputs.dir }}/assets/assets.txt"
 
       - name: Copy webcomponent bundle
         working-directory: docs-site
-        run: npm run sync:webcomponent
+        run: npm run sync:webcomponent -- "${{ steps.webcomponent.outputs.dir }}"
 
       - name: Validate tutorial JSON
         working-directory: docs-site

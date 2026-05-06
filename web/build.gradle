@@ -17,6 +17,15 @@ def webClasspathResourcesDir = file("$buildDir/generated/web-classpath-resources
 def webComponentSourceDir = file("$projectDir/component")
 def webComponentBundleDir = file("$buildDir/dist/webcomponent")
 
+def requireFiles = { File root, List<String> relativePaths, String label ->
+  def missing = relativePaths.findAll { relativePath ->
+    !new File(root, relativePath).exists()
+  }
+  if (!missing.isEmpty()) {
+    throw new GradleException("${label} is incomplete at ${root.absolutePath}. Missing: ${missing.join(', ')}")
+  }
+}
+
 configurations.configureEach {
   exclude group: 'org.apache.groovy', module: 'groovy'
 }
@@ -118,6 +127,13 @@ tasks.register('buildWebRuntime', JavaExec) {
   systemProperty('octodraw.web.title', "Octodraw ${bundleVersion}")
   systemProperty('octodraw.web.outputName', webOutputName)
   systemProperty('octodraw.web.serve', 'false')
+  doLast {
+    requireFiles(
+      webRuntimeDir,
+      ["${webOutputName}.js", 'scripts/gdx.wasm.js', 'assets/assets.txt'],
+      'Octodraw web runtime'
+    )
+  }
 }
 
 tasks.register('prepareWebDocs') {
@@ -190,6 +206,11 @@ tasks.register('prepareWebComponentBundle') {
       from(webComponentSourceDir)
       into(webComponentBundleDir)
     }
+    requireFiles(
+      webComponentBundleDir,
+      ['octodraw-element.js', 'octodraw-runtime.js', 'scripts/gdx.wasm.js', 'assets/assets.txt'],
+      'Octodraw webcomponent bundle'
+    )
   }
 }
 
