@@ -14,7 +14,7 @@ Octodraw is a Kotlin + libGDX direct 3D sketching and modeling project. It focus
 
 The current docs site lives in [`docs-site/`](docs-site/) and is the preferred place for user guidance, tutorials, reference material, and automation notes.
 
-![Screenshot placeholder: Main UI](docs/images/img_1.png)
+![Screenshot placeholder: Main UI](docs-site/static/images/generated/modify-a-box-workflow.png)
 
 ## Highlights
 
@@ -28,7 +28,7 @@ The current docs site lives in [`docs-site/`](docs-site/) and is the preferred p
 - Real-time lighting and shadow controls.
 - Groovy dev console and plugin system.
 
-![Screenshot placeholder: Selection + tools](docs/images/img_2.png)
+![Screenshot placeholder: Selection + tools](docs-site/static/images/generated/objects-instance-editing.png)
 
 ## Core Tools
 
@@ -108,25 +108,14 @@ Web artifacts are written to `dist/` as:
 
 ## Documentation
 
-- User manual: [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md)
-- Shortcuts: [`SHORTCUTS.md`](SHORTCUTS.md)
-- Plugin development: [`docs/PLUGIN_DEVELOPMENT.md`](docs/PLUGIN_DEVELOPMENT.md)
-- Android store description text: [`docs/specification/ANDROID_STORE_DESCRIPTION.md`](docs/specification/ANDROID_STORE_DESCRIPTION.md)
-- Specs: [`docs/specification/`](docs/specification/)
-- Roadmap: [`docs/specification/ROADMAP.md`](docs/specification/ROADMAP.md)
-- Docs site: [`docs-site/`](docs-site/)
-
-## Release Notes
-
-- 3.1.0: [`docs/specification/RELEASE_NOTES-3.1.0.md`](docs/specification/RELEASE_NOTES-3.1.0.md)
-- 2.9.0: [`docs/specification/RELEASE_NOTES-2.9.0.md`](docs/specification/RELEASE_NOTES-2.9.0.md)
-- 2.7.5: [`docs/specification/RELEASE_NOTES-2.7.5.md`](docs/specification/RELEASE_NOTES-2.7.5.md)
-- 1.7.10: [`docs/specification/RELEASE_NOTES-1.7.10.md`](docs/specification/RELEASE_NOTES-1.7.10.md)
-- 1.7.9: [`docs/specification/RELEASE_NOTES-1.7.9.md`](docs/specification/RELEASE_NOTES-1.7.9.md)
-- 1.7.8: [`docs/specification/RELEASE_NOTES-1.7.8.md`](docs/specification/RELEASE_NOTES-1.7.8.md)
-- 1.7.3: [`docs/specification/RELEASE_NOTES-1.7.3.md`](docs/specification/RELEASE_NOTES-1.7.3.md)
-- 1.7.1: [`docs/specification/RELEASE_NOTES-1.7.1.md`](docs/specification/RELEASE_NOTES-1.7.1.md)
-- 1.4.3: [`docs/specification/RELEASE_NOTES-1.4.3.md`](docs/specification/RELEASE_NOTES-1.4.3.md)
+- Main docs: [alfu32.github.io/k3d/](https://alfu32.github.io/k3d/)
+- Tutorials: [alfu32.github.io/k3d/tutorials/](https://alfu32.github.io/k3d/tutorials/)
+- Guide: [alfu32.github.io/k3d/guide/](https://alfu32.github.io/k3d/guide/)
+- Reference: [alfu32.github.io/k3d/reference/](https://alfu32.github.io/k3d/reference/)
+- Automation: [alfu32.github.io/k3d/automation/](https://alfu32.github.io/k3d/automation/)
+- Specification: [alfu32.github.io/k3d/specification/](https://alfu32.github.io/k3d/specification/)
+- Local source docs: [`docs/`](docs/)
+- Docs site source: [`docs-site/`](docs-site/)
 
 ## Status
 
