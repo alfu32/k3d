@@ -1,0 +1,106 @@
+{
+  "id": "modify-a-box",
+  "title": "Modify a Box",
+  "level": "beginner",
+  "estimatedMinutes": 9,
+  "initialScene": "empty",
+  "steps": [
+    {
+      "id": "build-seed-box",
+      "title": "Create the seed box",
+      "body": "Draw a rectangle on the ground plane and use Push/Pull to turn it into a compact box near the origin.",
+      "notes": "You can reuse the Draw a Box tutorial first if you want a slower introduction.",
+      "actions": [
+        { "type": "command", "commandId": "tool.builtin.rectangle", "description": "Draw the base face." },
+        { "type": "command", "commandId": "tool.builtin.push_pull", "description": "Extrude the face into a solid." }
+      ],
+      "success": [
+        { "type": "manual", "prompt": "A simple closed box exists." }
+      ]
+    },
+    {
+      "id": "select-the-box",
+      "title": "Select the box deliberately",
+      "body": "Return to Select and make sure the intended box is the active selection before modifying it.",
+      "notes": "If selection feels ambiguous, orbit slightly and click the top or a side face again.",
+      "actions": [
+        { "type": "command", "commandId": "tool.builtin.select", "description": "Return to selection mode." }
+      ],
+      "success": [
+        { "type": "manual", "prompt": "The box is selected and ready for editing." }
+      ]
+    },
+    {
+      "id": "move-the-box",
+      "title": "Move the selection",
+      "body": "Activate Move, pick a reference point on the box, then place it at a nearby destination.",
+      "actions": [
+        { "type": "command", "commandId": "tool.builtin.move", "description": "Activate Move." }
+      ],
+      "success": [
+        { "type": "command-active", "commandId": "tool.builtin.move" },
+        { "type": "manual", "prompt": "The box has been translated once." }
+      ]
+    },
+    {
+      "id": "copy-the-box",
+      "title": "Move a copy",
+      "body": "Stay in Move, hold `Ctrl` to toggle copy mode, and place a duplicate beside the original.",
+      "notes": "Copy mode is tool-driven, not a separate command. The original should remain in place.",
+      "actions": [
+        { "type": "command", "commandId": "tool.builtin.move", "description": "Use Move again with copy mode enabled by `Ctrl`." }
+      ],
+      "success": [
+        { "type": "manual", "prompt": "There are now two boxes instead of one." }
+      ]
+    },
+    {
+      "id": "rotate-the-box",
+      "title": "Rotate one selection",
+      "body": "Activate Rotate, pick the pivot, and turn the selected box to a clearly different angle.",
+      "actions": [
+        { "type": "command", "commandId": "tool.builtin.rotate", "description": "Activate Rotate." }
+      ],
+      "success": [
+        { "type": "command-active", "commandId": "tool.builtin.rotate" },
+        { "type": "manual", "prompt": "One selected box has changed orientation." }
+      ]
+    },
+    {
+      "id": "rotate-a-copy",
+      "title": "Rotate a copy from the same tool",
+      "body": "Use Rotate again with `Ctrl` copy mode to duplicate and rotate from the same pivot logic.",
+      "notes": "This is the fastest way to understand that Rotate already supports copied transforms without switching to a different tool.",
+      "actions": [
+        { "type": "command", "commandId": "tool.builtin.rotate", "description": "Use Rotate again and toggle copy mode with `Ctrl`." }
+      ],
+      "success": [
+        { "type": "manual", "prompt": "A rotated copy exists in addition to the earlier boxes." }
+      ]
+    },
+    {
+      "id": "prepare-stretch-selection",
+      "title": "Select the side you want to stretch",
+      "body": "Return to Select and pick the side by selecting its boundary segments or the face-adjacent edge set you want to drag.",
+      "notes": "The point of this step is to isolate only the part of the box that should move during Stretch.",
+      "actions": [
+        { "type": "command", "commandId": "tool.builtin.select", "description": "Prepare a partial selection for Stretch." }
+      ],
+      "success": [
+        { "type": "manual", "prompt": "A side-defining subset of the box is selected." }
+      ]
+    },
+    {
+      "id": "stretch-the-side",
+      "title": "Stretch one side",
+      "body": "Activate Stretch and pull the selected side outward so the box becomes asymmetrical.",
+      "actions": [
+        { "type": "command", "commandId": "tool.builtin.stretch", "description": "Activate Stretch." }
+      ],
+      "success": [
+        { "type": "command-active", "commandId": "tool.builtin.stretch" },
+        { "type": "manual", "prompt": "Only the chosen side moves while the rest of the shape stays coherent." }
+      ]
+    }
+  ]
+}

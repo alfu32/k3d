@@ -1,0 +1,70 @@
+{
+  "id": "translate-arrays",
+  "title": "Translate Arrays",
+  "level": "intermediate",
+  "estimatedMinutes": 8,
+  "initialScene": "empty",
+  "steps": [
+    {
+      "id": "make-seed-box",
+      "title": "Build a small seed box",
+      "body": "Create a compact box that is easy to duplicate many times without cluttering the scene.",
+      "actions": [
+        { "type": "command", "commandId": "tool.builtin.rectangle", "description": "Draw the base face." },
+        { "type": "command", "commandId": "tool.builtin.push_pull", "description": "Extrude a small box." }
+      ],
+      "success": [
+        { "type": "manual", "prompt": "A small seed box exists and is selected or easy to reselect." }
+      ]
+    },
+    {
+      "id": "linear-array",
+      "title": "Run a linear copy",
+      "body": "Use Copy Multiple to measure one direction and fill it with repeated copies.",
+      "notes": "This is the straight-line array tool and is the closest match to a classic linear array command.",
+      "actions": [
+        { "type": "command", "commandId": "tool.builtin.copy_multiple", "description": "Activate the linear multiple-copy tool." }
+      ],
+      "success": [
+        { "type": "command-active", "commandId": "tool.builtin.copy_multiple" },
+        { "type": "manual", "prompt": "You can see a row of repeated boxes." }
+      ]
+    },
+    {
+      "id": "inspect-row-spacing",
+      "title": "Check spacing and count",
+      "body": "Orbit slightly and confirm that the copies read as a measured row rather than stacked duplicates on top of each other.",
+      "actions": [
+        { "type": "camera", "preset": "orbit-overview", "description": "Use an orbit overview if available." }
+      ],
+      "success": [
+        { "type": "manual", "prompt": "The row spacing is readable." }
+      ]
+    },
+    {
+      "id": "planar-array",
+      "title": "Expand to a planar grid",
+      "body": "Switch to Planar Translate Multiple and define the second translation direction so the row becomes a 2D field.",
+      "actions": [
+        { "type": "command", "commandId": "tool.builtin.planar_translate_multiple", "description": "Activate the planar translation array tool." }
+      ],
+      "success": [
+        { "type": "command-active", "commandId": "tool.builtin.planar_translate_multiple" },
+        { "type": "manual", "prompt": "The repeated boxes now occupy a grid on a plane." }
+      ]
+    },
+    {
+      "id": "volumetric-array",
+      "title": "Fill a volume",
+      "body": "Switch to Volumetric Translate Multiple and define a third extent so the copies occupy a box-like volume.",
+      "notes": "This is useful when testing shelving, pallets, block-outs, or voxel-like massing.",
+      "actions": [
+        { "type": "command", "commandId": "tool.builtin.volumetric_translate_multiple", "description": "Activate the volumetric translation array tool." }
+      ],
+      "success": [
+        { "type": "command-active", "commandId": "tool.builtin.volumetric_translate_multiple" },
+        { "type": "manual", "prompt": "The seed box has been repeated into a 3D block of copies." }
+      ]
+    }
+  ]
+}

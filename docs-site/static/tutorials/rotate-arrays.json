@@ -1,0 +1,69 @@
+{
+  "id": "rotate-arrays",
+  "title": "Rotate Arrays",
+  "level": "intermediate",
+  "estimatedMinutes": 8,
+  "initialScene": "empty",
+  "steps": [
+    {
+      "id": "make-seed-box",
+      "title": "Create one seed box",
+      "body": "Build one small box that will act as the repeated element for both rotational workflows.",
+      "actions": [
+        { "type": "command", "commandId": "tool.builtin.rectangle", "description": "Draw the base face." },
+        { "type": "command", "commandId": "tool.builtin.push_pull", "description": "Extrude the seed box." }
+      ],
+      "success": [
+        { "type": "manual", "prompt": "A compact box exists and is ready for array operations." }
+      ]
+    },
+    {
+      "id": "place-rotation-center",
+      "title": "Think about the center first",
+      "body": "Before launching an array tool, decide where the center, reference arm, and sweep direction should live. These tools depend on pick order.",
+      "actions": [
+        { "type": "camera", "preset": "orbit-overview", "description": "Use an overview camera while planning the center." }
+      ],
+      "success": [
+        { "type": "manual", "prompt": "You know where the rotation center and sweep should be." }
+      ]
+    },
+    {
+      "id": "rotational-array",
+      "title": "Build a rotational array",
+      "body": "Activate Rotational Array and place copies around a shared center point to form an arc or ring.",
+      "actions": [
+        { "type": "command", "commandId": "tool.builtin.rotational_array", "description": "Activate Rotational Array." }
+      ],
+      "success": [
+        { "type": "command-active", "commandId": "tool.builtin.rotational_array" },
+        { "type": "manual", "prompt": "The seed box has been copied around a center." }
+      ]
+    },
+    {
+      "id": "inspect-rotation-result",
+      "title": "Check increment and sweep",
+      "body": "Look for whether the angular increment and the final sweep point agree. If the result is empty or odd, redo the picks with a clearer span.",
+      "notes": "This mirrors the runtime messages used by the tool when increment or sweep become invalid.",
+      "actions": [
+        { "type": "none", "description": "Manual inspection step." }
+      ],
+      "success": [
+        { "type": "manual", "prompt": "The rotational copies read as an intentional arc or circle." }
+      ]
+    },
+    {
+      "id": "helical-array",
+      "title": "Switch to a helical array",
+      "body": "Activate Helical Array and define the rising sweep so each copy advances in angle and height.",
+      "notes": "This is the right tool when the pattern should climb like a spiral stair, thread, or tower study.",
+      "actions": [
+        { "type": "command", "commandId": "tool.builtin.helical_array", "description": "Activate Helical Array." }
+      ],
+      "success": [
+        { "type": "command-active", "commandId": "tool.builtin.helical_array" },
+        { "type": "manual", "prompt": "The copies rise while rotating around the center." }
+      ]
+    }
+  ]
+}

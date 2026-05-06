@@ -67,6 +67,8 @@ The current discovered desktop command is `export.screenshot`. It reads the libG
 
 If render-buffer capture is unavailable or fails, a normal window or browser screenshot is allowed. Record the fallback source as `window-screenshot` or `browser-screenshot` in the manifest notes.
 
+When the framebuffer PNG omits useful context such as the ground plane, prefer an application-area capture that includes the viewport plus the intended toolbars and panels, but crop out the operating-system title bar. That avoids exposing local file paths or usernames while keeping the documentation visually honest.
+
 ## 7. Store Images and Manifest Records
 
 Use stable filenames:
