@@ -27,7 +27,56 @@ Then open `http://127.0.0.1:8000/demo.html`.
 <octodraw-editor id="editor"></octodraw-editor>
 <script>
   const editor = document.getElementById('editor')
-  editor.value = '{"version":15}'
+  editor.value = JSON.stringify({
+    prototypes: [
+      {
+        id: 'root',
+        name: 'Root',
+        definitionOrigin: {},
+        definitionAxisU: { x: 1 },
+        definitionAxisV: { y: 1 },
+        definitionAxisW: { z: 1 }
+      }
+    ],
+    rootInstance: {
+      id: 'root',
+      prototypeId: 'root',
+      instanceOrigin: {},
+      instanceAxisU: { x: 1 },
+      instanceAxisV: { y: 1 },
+      instanceAxisW: { z: 1 }
+    },
+    cameraState: {
+      position: { x: 6, y: 6, z: 6 },
+      direction: { x: -0.57735026, y: -0.57735026, z: -0.57735026 },
+      up: { x: -0.40824834, y: 0.8164967, z: -0.40824834 },
+      target: {},
+      near: 0.1,
+      far: 500,
+      fieldOfView: 67
+    },
+    lightingState: {
+      shadowLightValue: 0.59,
+      shadowLightAlpha: 0.5,
+      directionalLightValue: 0.73,
+      directionalLightAlpha: 1,
+      ambientLightValue: 0.59,
+      ambientLightAlpha: 1,
+      specularLightValue: 0.2,
+      specularLightAlpha: 0.95
+    },
+    shadowState: {
+      shadowBias: 2500,
+      shadowNormalBias: 5620,
+      pcfMode: 1,
+      dither: false,
+      useCsm: true
+    },
+    modelUnit: {},
+    snapEpsilon: 12,
+    gridSpacing: 1,
+    circleSegments: 24
+  })
   editor.addEventListener('ready', async () => {
     await editor.setUi({ toolbarsVisible: true, panelsVisible: true })
   })
@@ -36,6 +85,8 @@ Then open `http://127.0.0.1:8000/demo.html`.
   })
 </script>
 ```
+
+Do not seed the editor with a version-only payload such as `{"version":15}`. The current loader treats missing root axes as zero vectors, which can leave the scene graph with a non-invertible root transform.
 
 ## Current API
 

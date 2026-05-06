@@ -51,6 +51,8 @@ interface OctodrawTutorialElement extends HTMLElement {
 
 Current browser support maps `tool.builtin.<id>` actions to `selectTool()`, camera actions to `setCamera()`, load-scene actions to `setModel()`, and browser canvas capture to `HTMLCanvasElement.toBlob()`. Desktop-only actions such as Groovy console scripts, command palette panel commands, and local file-system screenshots must be executed through MCP instead.
 
+When the browser wrapper needs an empty scene, it should load a full valid snapshot with root prototype axes, root instance axes, camera state, lighting state, and grid settings. A version-only payload such as `{"version":15}` is not sufficient for the current loader and can leave the root transform singular.
+
 ## Browser Tutorials Versus Desktop MCP
 
 Browser tutorials on GitHub Pages use the embedded webcomponent and must not require the desktop MCP server. MCP is separate: it is for local automation, screenshot generation, verification, command discovery, and agent workflows.
