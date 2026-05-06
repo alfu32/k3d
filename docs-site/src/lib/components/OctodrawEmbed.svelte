@@ -28,6 +28,7 @@
     exec?: (command: string, payload?: Record<string, unknown>) => Promise<object>;
     play?: (steps: Record<string, unknown>[]) => Promise<object>;
     setUi?: (options: { toolbarsVisible?: boolean; panelsVisible?: boolean }) => Promise<object>;
+    resize?: () => void;
     whenReady?: () => Promise<void>;
   };
 
@@ -67,6 +68,11 @@
     try {
       await editorElement.whenReady?.();
       await editorElement.setUi?.({ toolbarsVisible: true, panelsVisible: true });
+      await tick();
+      editorElement.resize?.();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('resize'));
+      }
     } catch (error) {
       failed = true;
       message = error instanceof Error ? error.message : String(error);
@@ -86,6 +92,7 @@
       throw new Error('Octodraw editor element is not mounted yet.');
     }
     await editorElement.whenReady?.();
+    editorElement.resize?.();
     return editorElement;
   }
 
@@ -315,6 +322,7 @@
       {message}
     </div>
   {/if}
+  <p class="refresh-note">If the editor stays black after page navigation, refresh the page once.</p>
 </div>
 
 <style>
@@ -372,5 +380,18 @@
     background: rgba(15, 23, 32, 0.86);
     color: white;
     font-size: 0.9rem;
+  }
+
+  .refresh-note {
+    position: absolute;
+    right: 0.75rem;
+    bottom: 0.5rem;
+    margin: 0;
+    padding: 0.2rem 0.45rem;
+    border-radius: 999px;
+    background: rgba(17, 24, 32, 0.82);
+    color: #d9e2ec;
+    font-size: 0.78rem;
+    pointer-events: none;
   }
 </style>

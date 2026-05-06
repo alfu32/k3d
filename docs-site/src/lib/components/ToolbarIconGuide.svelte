@@ -78,10 +78,10 @@
     return iconMap[item.name];
   }
 
-  function iconViewBox(entry: IconEntry): string {
+  function iconCropStyle(entry: IconEntry): string {
     const width = entry.endX - entry.startX + 1;
     const height = entry.endY - entry.startY + 1;
-    return `${entry.startX} ${entry.startY} ${width} ${height}`;
+    return `--icon-x: ${entry.startX}px; --icon-y: ${entry.startY}px; --icon-w: ${width}px; --icon-h: ${height}px;`;
   }
 
   function iconLabel(item: ToolbarIconGuideItem): string {
@@ -110,9 +110,7 @@
         <article class="tile">
           <div class="icon" aria-hidden="true">
             {#if entry}
-              <svg viewBox={iconViewBox(entry)} preserveAspectRatio="none">
-                <image href={sheetSrc} width="256" height="288" preserveAspectRatio="none" />
-              </svg>
+              <div class="sprite" style={`${iconCropStyle(entry)} background-image: url(${sheetSrc});`} />
             {:else}
               <div class="missing">{item.name}</div>
             {/if}
@@ -177,10 +175,12 @@
     background: white;
   }
 
-  .icon svg {
-    display: block;
-    width: 100%;
-    height: 64px;
+  .sprite {
+    width: var(--icon-w);
+    height: var(--icon-h);
+    background-repeat: no-repeat;
+    background-size: 256px 288px;
+    background-position: calc(var(--icon-x) * -1) calc(var(--icon-y) * -1);
     image-rendering: pixelated;
   }
 
