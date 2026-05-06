@@ -27,7 +27,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.inputs.tag }}
           fetch-depth: 0
 
       - name: Resolve release number
@@ -65,8 +64,11 @@ jobs:
         working-directory: docs-site
         run: npm ci
 
-      - name: Build Octodraw webcomponent zip
-        run: ./gradlew :web:clean :web:bundleWebComponentZip -PreleaseNumber="${{ steps.release.outputs.release_number }}" --rerun-tasks --stacktrace --info
+      - name: Clean web build
+        run: ./gradlew :web:clean --stacktrace
+
+      - name: Build Octodraw web bundles
+        run: ./gradlew :web:bundleWeb :web:bundleWebComponentZip -PreleaseNumber="${{ steps.release.outputs.release_number }}" --stacktrace --info
 
       - name: Inspect web build outputs
         if: always()

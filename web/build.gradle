@@ -12,6 +12,8 @@ def bundleVersion = (project.findProperty("releaseNumber") ?: project.version).t
 def webOutputName = "octodraw-${bundleVersion}".replaceAll(/[^A-Za-z0-9._-]/, "-")
 def webDistRoot = file("$buildDir/dist")
 def webRuntimeDir = file("$webDistRoot/webapp")
+def webRuntimeDocsDir = file("$webRuntimeDir/docs")
+def webRuntimeReadmeFile = file("$webRuntimeDir/README.md")
 def webRuntimeAssetsDir = file("$buildDir/generated/web-runtime-assets")
 def webClasspathResourcesDir = file("$buildDir/generated/web-classpath-resources")
 def webComponentSourceDir = file("$projectDir/component")
@@ -143,13 +145,13 @@ tasks.register('prepareWebDocs') {
 
   inputs.dir(rootProject.file('docs'))
   inputs.file(rootProject.file('README.md'))
-  inputs.file(rootProject.file('assets/appicon.png'))
-  outputs.dir(webRuntimeDir)
+  outputs.dir(webRuntimeDocsDir)
+  outputs.file(webRuntimeReadmeFile)
 
   doLast {
     copy {
       from(rootProject.file('docs'))
-      into(new File(webRuntimeDir, 'docs'))
+      into(webRuntimeDocsDir)
       include('**/*.md')
       include('**/*.txt')
       exclude('downloads/**')
@@ -159,10 +161,6 @@ tasks.register('prepareWebDocs') {
     copy {
       from(rootProject.file('README.md'))
       into(webRuntimeDir)
-    }
-    copy {
-      from(rootProject.file('assets/appicon.png'))
-      into(new File(webRuntimeDir, 'assets'))
     }
   }
 }
@@ -180,8 +178,11 @@ tasks.register('bundleWebZip', Zip) {
 tasks.register('prepareWebComponentBundle') {
   group = 'distribution'
   description = 'Builds the embeddable Octodraw web component bundle.'
-  dependsOn(tasks.named('prepareWebDocs'))
+  dependsOn(tasks.named('buildWebRuntime'))
 
+  inputs.file(new File(webRuntimeDir, "${webOutputName}.js"))
+  inputs.dir(new File(webRuntimeDir, 'assets'))
+  inputs.dir(new File(webRuntimeDir, 'scripts'))
   inputs.dir(webComponentSourceDir)
   outputs.dir(webComponentBundleDir)
 
