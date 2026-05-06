@@ -17,6 +17,7 @@ Objects isolate geometry and make repeated modeling workflows easier. The curren
 - `Ctrl+G`: group selected geometry.
 - `Ctrl+Shift+G`: ungroup selection.
 - `Ctrl+O`: create object prototype from selection.
+- Actions toolbar: `Create Object`, `Edit Selected Object`, and `Close Object` are available as single-click controls for touch-friendly workflows.
 - Double-click group or instance: enter object edit mode.
 
 ## Instance Editing

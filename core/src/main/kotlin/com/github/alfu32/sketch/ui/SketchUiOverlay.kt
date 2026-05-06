@@ -82,6 +82,7 @@ class SketchUiOverlay(
     private val groupNameChanged: (String) -> Unit,
     private val groupGlueChanged: (Boolean) -> Unit,
     private val groupEditModeAction: () -> Unit,
+    private val groupCloseEditModeAction: () -> Boolean,
     private val objectCreateFromSelectionAction: () -> Unit,
     private val objectPrototypeProvider: () -> List<ObjectPrototypeInfo>,
     private val objectPrototypePlace: (String) -> Unit,
@@ -1826,6 +1827,14 @@ class SketchUiOverlay(
             groupEditModeAction()
         }
 
+        val closeObjectButton = createActionButton(
+            label = "Close Object",
+            icon = iconFor("undo", createActionIconDrawable(Color(0.8f, 0.82f, 0.92f, 1f))),
+            tutorialActionId = "ui.action.close_selected_object"
+        ) {
+            groupCloseEditModeAction()
+        }
+
         val createObjectButton = createActionButton(
             label = "Create Object",
             icon = iconFor("object_create", createActionIconDrawable(Color(0.65f, 0.85f, 0.95f, 1f))),
@@ -1872,6 +1881,7 @@ class SketchUiOverlay(
             colorButton,
             deleteButton,
             editObjectButton,
+            closeObjectButton,
             createObjectButton,
             flipButton,
             lightingButton,
