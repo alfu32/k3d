@@ -28,6 +28,9 @@ Then open `http://127.0.0.1:8000/demo.html`.
 <script>
   const editor = document.getElementById('editor')
   editor.value = JSON.stringify({
+    version: 17,
+    segments: [],
+    faces: [],
     prototypes: [
       {
         id: 'root',
@@ -35,7 +38,25 @@ Then open `http://127.0.0.1:8000/demo.html`.
         definitionOrigin: {},
         definitionAxisU: { x: 1 },
         definitionAxisV: { y: 1 },
-        definitionAxisW: { z: 1 }
+        definitionAxisW: { z: 1 },
+        gluedToSurface: false,
+        kind: 'MESH',
+        externalReferenceEnabled: false,
+        externalReferencePath: '',
+        voxelColor: { r: 0.8, g: 0.8, b: 0.8 },
+        voxels: [],
+        architectureWalls: [],
+        architectureSlabs: [],
+        architectureStairs: [],
+        architectureFrames: [],
+        hvacPlumbingRuns: [],
+        hvacVentilationDucts: [],
+        hotspots: [],
+        prototypeVertices: [],
+        segments: [],
+        faces: [],
+        dimensions: [],
+        texts: []
       }
     ],
     rootInstance: {
@@ -44,7 +65,15 @@ Then open `http://127.0.0.1:8000/demo.html`.
       instanceOrigin: {},
       instanceAxisU: { x: 1 },
       instanceAxisV: { y: 1 },
-      instanceAxisW: { z: 1 }
+      instanceAxisW: { z: 1 },
+      hotspotPositions: [],
+      hotspotSegmentAttachments: [],
+      hotspotTriangleAttachments: [],
+      overrideSegments: [],
+      overrideFaces: [],
+      overrideDimensions: [],
+      overrideTexts: [],
+      children: []
     },
     cameraState: {
       position: { x: 6, y: 6, z: 6 },
@@ -75,7 +104,12 @@ Then open `http://127.0.0.1:8000/demo.html`.
     modelUnit: {},
     snapEpsilon: 12,
     gridSpacing: 1,
-    circleSegments: 24
+    circleSegments: 24,
+    undoHistory: {
+      maxEntries: 20,
+      index: 0,
+      entries: []
+    }
   })
   editor.addEventListener('ready', async () => {
     await editor.setUi({ toolbarsVisible: true, panelsVisible: true })

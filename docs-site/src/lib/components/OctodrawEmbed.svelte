@@ -34,6 +34,9 @@
 
   const scriptId = 'octodraw-webcomponent-script';
   const EMPTY_SCENE_MODEL = JSON.stringify({
+    version: 17,
+    segments: [],
+    faces: [],
     prototypes: [
       {
         id: 'root',
@@ -42,7 +45,24 @@
         definitionAxisU: { x: 1 },
         definitionAxisV: { y: 1 },
         definitionAxisW: { z: 1 },
-        voxelColor: { r: 0.8, g: 0.8, b: 0.8 }
+        gluedToSurface: false,
+        kind: 'MESH',
+        externalReferenceEnabled: false,
+        externalReferencePath: '',
+        voxelColor: { r: 0.8, g: 0.8, b: 0.8 },
+        voxels: [],
+        architectureWalls: [],
+        architectureSlabs: [],
+        architectureStairs: [],
+        architectureFrames: [],
+        hvacPlumbingRuns: [],
+        hvacVentilationDucts: [],
+        hotspots: [],
+        prototypeVertices: [],
+        segments: [],
+        faces: [],
+        dimensions: [],
+        texts: []
       }
     ],
     rootInstance: {
@@ -51,7 +71,15 @@
       instanceOrigin: {},
       instanceAxisU: { x: 1 },
       instanceAxisV: { y: 1 },
-      instanceAxisW: { z: 1 }
+      instanceAxisW: { z: 1 },
+      hotspotPositions: [],
+      hotspotSegmentAttachments: [],
+      hotspotTriangleAttachments: [],
+      overrideSegments: [],
+      overrideFaces: [],
+      overrideDimensions: [],
+      overrideTexts: [],
+      children: []
     },
     cameraState: {
       position: { x: 6, y: 6, z: 6 },
@@ -82,7 +110,12 @@
     modelUnit: {},
     snapEpsilon: 12,
     gridSpacing: 1,
-    circleSegments: 24
+    circleSegments: 24,
+    undoHistory: {
+      maxEntries: 20,
+      index: 0,
+      entries: []
+    }
   });
 
   function scriptUrl(): string {
