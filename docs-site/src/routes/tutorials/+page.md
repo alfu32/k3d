@@ -9,7 +9,7 @@ Tutorials are JSON-driven lessons displayed by `TutorialRunner.svelte` and paire
 
 ## Live Preview
 
-<TutorialRunner tutorialUrl={`${base}/tutorials/getting-started.json`} height="520px" />
+<TutorialRunner tutorialUrl={`${base}/tutorials/getting-started.json`} height="768px" />
 
 ## Lessons
 

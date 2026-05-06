@@ -93,6 +93,8 @@
     gap: 1rem;
     margin: 1.2rem 0;
     min-width: 0;
+    width: 100%;
+    overflow-x: auto;
   }
 
   .steps,
@@ -108,6 +110,8 @@
     display: grid;
     gap: 1rem;
     min-width: 0;
+    width: 100%;
+    min-width: 1024px;
   }
 
   .meta,

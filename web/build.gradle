@@ -207,6 +207,33 @@ tasks.register('prepareWebComponentBundle') {
       from(webComponentSourceDir)
       into(webComponentBundleDir)
     }
+    def runtimeFile = new File(webComponentBundleDir, 'octodraw-runtime.js')
+    def runtimeText = runtimeFile.getText('UTF-8')
+    def patchedText = runtimeText
+      .replace(
+        '''    while ($elem !== null) {
+        $left = $left + $elem.offsetLeft;
+        $elem = $curr.offsetParent;
+    }''',
+        '''    while ($elem !== null) {
+        $left = $left + $elem.offsetLeft;
+        $elem = $elem.offsetParent;
+    }'''
+      )
+      .replace(
+        '''    while ($elem !== null) {
+        $top = $top + $elem.offsetTop;
+        $elem = $curr.offsetParent;
+    }''',
+        '''    while ($elem !== null) {
+        $top = $top + $elem.offsetTop;
+        $elem = $elem.offsetParent;
+    }'''
+      )
+    if (patchedText == runtimeText) {
+      throw new GradleException('Failed to patch webcomponent coordinate mapping in octodraw-runtime.js')
+    }
+    runtimeFile.setText(patchedText, 'UTF-8')
     requireFiles(
       webComponentBundleDir,
       ['octodraw-element.js', 'octodraw-runtime.js', 'scripts/gdx.wasm.js', 'assets/assets.txt'],
