@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
   import CommandPanel from './CommandPanel.svelte';
   import OctodrawEmbed from './OctodrawEmbed.svelte';
   import TutorialStepList from './TutorialStepList.svelte';
@@ -16,6 +16,7 @@
   let loading = true;
   let error = '';
   let embed: Partial<OctodrawTutorialHost> | null = null;
+  let loadToken = 0;
 
   $: currentStep = tutorial?.steps[currentIndex] as TutorialStep | undefined;
 
@@ -35,56 +36,82 @@
     return runtime.executeAction(action);
   }
 
-  onMount(async () => {
+  async function loadTutorial(url: string) {
+    const token = ++loadToken;
+    loading = true;
+    error = '';
+    tutorial = null;
+    currentIndex = 0;
+    embed = null;
+    store.setCurrentStep(0);
+
     try {
-      tutorial = await store.load(tutorialUrl);
+      const nextTutorial = await store.load(url);
+      if (token !== loadToken) {
+        return;
+      }
+      tutorial = nextTutorial;
       currentIndex = 0;
+      store.setCurrentStep(0);
     } catch (err) {
+      if (token !== loadToken) {
+        return;
+      }
       error = err instanceof Error ? err.message : String(err);
     } finally {
-      loading = false;
+      if (token === loadToken) {
+        loading = false;
+      }
     }
-  });
+  }
+
+  $: if (browser && tutorialUrl) {
+    void loadTutorial(tutorialUrl);
+  }
 </script>
 
-{#if loading}
-  <p class="status-note">Loading tutorial...</p>
-{:else if error}
-  <p class="status-note" role="alert">Tutorial failed to load: {error}</p>
-{:else if tutorial && currentStep}
-  <section class="runner">
-    <aside class="steps">
-      <p class="meta">{tutorial.level} · {tutorial.estimatedMinutes} min</p>
-      <TutorialStepList steps={tutorial.steps} {currentIndex} on:select={(event) => selectStep(event.detail)} />
-    </aside>
+{#key tutorialUrl}
+  {#if loading}
+    <p class="status-note">Loading tutorial...</p>
+  {:else if error}
+    <p class="status-note" role="alert">Tutorial failed to load: {error}</p>
+  {:else if tutorial && currentStep}
+    <section class="runner">
+      <aside class="steps">
+        <p class="meta">{tutorial.level} · {tutorial.estimatedMinutes} min</p>
+        <TutorialStepList steps={tutorial.steps} {currentIndex} on:select={(event) => selectStep(event.detail)} />
+      </aside>
 
-    <div class="stage">
-      <OctodrawEmbed bind:this={embed} tutorial={tutorial.id} initialScene={tutorial.initialScene} {height} />
-      <div class="step-body">
-        <p class="step-count">Step {currentIndex + 1} of {tutorial.steps.length}</p>
-        <h2>{currentStep.title}</h2>
-        <p>{currentStep.body}</p>
-        {#if currentStep.notes}
-          <p class="notes">{currentStep.notes}</p>
-        {/if}
-        <div class="controls">
-          <button type="button" on:click={() => selectStep(currentIndex - 1)} disabled={currentIndex === 0}>
-            Previous
-          </button>
-          <button
-            type="button"
-            on:click={() => selectStep(currentIndex + 1)}
-            disabled={currentIndex === tutorial.steps.length - 1}
-          >
-            Next
-          </button>
+      <div class="stage">
+        {#key `${tutorial.id}:${tutorial.initialScene}:${height}`}
+          <OctodrawEmbed bind:this={embed} tutorial={tutorial.id} initialScene={tutorial.initialScene} {height} />
+        {/key}
+        <div class="step-body">
+          <p class="step-count">Step {currentIndex + 1} of {tutorial.steps.length}</p>
+          <h2>{currentStep.title}</h2>
+          <p>{currentStep.body}</p>
+          {#if currentStep.notes}
+            <p class="notes">{currentStep.notes}</p>
+          {/if}
+          <div class="controls">
+            <button type="button" on:click={() => selectStep(currentIndex - 1)} disabled={currentIndex === 0}>
+              Previous
+            </button>
+            <button
+              type="button"
+              on:click={() => selectStep(currentIndex + 1)}
+              disabled={currentIndex === tutorial.steps.length - 1}
+            >
+              Next
+            </button>
+          </div>
         </div>
-      </div>
 
-      <CommandPanel actions={currentStep.actions ?? []} runAction={runTutorialAction} />
-    </div>
-  </section>
-{/if}
+        <CommandPanel actions={currentStep.actions ?? []} runAction={runTutorialAction} />
+      </div>
+    </section>
+  {/if}
+{/key}
 
 <style>
   .runner {
