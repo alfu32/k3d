@@ -73,6 +73,7 @@ export const navGroups: NavGroup[] = [
     href: '/automation/',
     items: [
       { label: 'Codex Workflow', href: '/automation/codex-workflow/' },
+      { label: 'Codex Interoperability', href: '/automation/codex-interoperability/' },
       { label: 'MCP Contract', href: '/automation/mcp-contract/' },
       { label: 'Screenshot Pipeline', href: '/automation/screenshot-pipeline/' },
       { label: 'Doc Generation', href: '/automation/doc-generation/' },

@@ -2404,6 +2404,55 @@ class Main @JvmOverloads constructor(
                 "count" to commands.size,
                 "commands" to commands
             ),
+            "agentGuidance" to linkedMapOf(
+                "modelingDesignWorkflow" to linkedMapOf(
+                    "summary" to "Use MCP to create real Octodraw geometry, inspect it in the running app, iterate from screenshots, and keep assemblies editable as semantic objects.",
+                    "prompt" to """
+                        You are controlling Octodraw through its local MCP server.
+
+                        First inspect the MCP contract and command catalog. Confirm /mcp/status, discover commands through /scene/listCommands and fall back to /scene/commands if needed. Prefer discovered command IDs over assumptions.
+
+                        Interpret the reference drawing or design request in model units. State the scale conversion before modeling. If dimensions are incomplete, make conservative approximations and record them.
+
+                        Model in semantic components. Do not place all generated triangles into one anonymous active group when the design has recognizable parts. Create named object prototypes for components such as housing frame, cover plate, boss, ribs, mounting foot, terminal housing, reference guide, or other functional pieces. Give each object an eloquent functional name so a user can edit or replace it from the Objects panel.
+
+                        Use the running Octodraw app as the source of truth. Use MCP console scripts for deterministic generated geometry when appropriate, pointer events for tool workflows when useful, and commands for camera, panels, selection, capture, and reset. Keep 800-1600 ms pauses between state-changing operations and before screenshots.
+
+                        After each meaningful modeling pass, capture or inspect the view. Prefer the app screenshot/render-buffer command discovered at runtime. If that is unavailable, use a documented window or browser screenshot fallback. Do not manually create fake screenshots.
+
+                        Evaluate the image against the request. Adjust proportions, camera, and component breakdown, then capture again. Stop only when the model is actually present in Octodraw and the result has been visually checked.
+
+                        When saving generated assets, record the MCP source, commands used, script used, timestamp, scale assumptions, and known limitations.
+                    """.trimIndent(),
+                    "requiredChecks" to listOf(
+                        "GET /mcp/status",
+                        "GET /scene/listCommands, then GET /scene/commands if the primary list is empty",
+                        "GET /scene/console?cmd=:list when Groovy bindings are uncertain",
+                        "Discover screenshot/render-buffer commands before capture"
+                    ),
+                    "modelingRules" to listOf(
+                        "State scale conversion before modeling.",
+                        "Prefer semantic object prototypes over one flat mesh when the requested design has components.",
+                        "Use functional object names such as 'Central shaft hub boss with 8 mm through bore' instead of 'part1' or 'ring'.",
+                        "Use the running app as source of truth; capture and inspect before claiming success.",
+                        "Keep 800-1600 ms pauses between reset, command, pointer, console, and capture operations.",
+                        "Do not invent command IDs; discover them from the current build."
+                    ),
+                    "componentObjectStrategy" to listOf(
+                        "Build each component into its own triangle/segment list.",
+                        "Create object prototypes with scene.createImportedPrototype(name, triangles, segments, includeTriangleEdges).",
+                        "Place component instances with scene.createInstanceAtWorld(prototype, scene.activeGroup(), originWorld).",
+                        "Name objects by function and critical dimension where helpful.",
+                        "Keep reference guides as separately named non-printing/reference objects when they are useful for later correction."
+                    ),
+                    "captureStrategy" to listOf(
+                        "Prefer discovered app screenshot or render-buffer commands such as export.screenshot.",
+                        "Use window/browser screenshots only as a documented fallback.",
+                        "Keep UI visible when it helps validate real app state, but avoid exposing title bars or private filesystem paths.",
+                        "Record generated image metadata: source, timestamp, app target, commands used, script used, and notes."
+                    )
+                )
+            ),
             "businessUseCases" to listOf(
                 linkedMapOf(
                     "id" to "coding_agent_plugin_development",

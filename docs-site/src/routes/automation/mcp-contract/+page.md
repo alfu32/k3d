@@ -31,6 +31,19 @@ http://127.0.0.1:8765
 
 Reset state, verify commands, run deterministic scene setup, capture output, and record every generated artifact. If both command discovery endpoints return an empty catalog, do not proceed with command-specific docs generation.
 
+## Modeling And Design Agents
+
+The contract includes `agentGuidance.modelingDesignWorkflow`. Read it before using MCP for design work. The key points are:
+
+- model in real Octodraw, not in a separate renderer,
+- state unit conversion and dimensional assumptions,
+- split assemblies into named object prototypes,
+- use functional component names,
+- pause between MCP actions,
+- capture, inspect, and adjust before reporting success.
+
+For the full procedure, see [Codex Interoperability](../codex-interoperability/).
+
 ## Public Tutorial Boundary
 
 MCP is local automation. Public tutorials use the webcomponent and must not require the desktop app or MCP server.

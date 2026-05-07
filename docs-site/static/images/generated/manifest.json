@@ -2,6 +2,20 @@
   "schemaVersion": 1,
   "images": [
     {
+      "id": "electromotor-housing-98mm-1u-5mm",
+      "file": "/images/generated/electromotor-housing-98mm-1u-5mm.png",
+      "source": "mcp-render-buffer",
+      "generatedAt": "2026-05-07T23:20:09.074Z",
+      "appTarget": "desktop",
+      "commandsUsed": [
+        "edit.reset_scene_for_capture",
+        "view.camera.orbit",
+        "export.screenshot"
+      ],
+      "scriptUsed": "docs-site/scripts/capture_motor_housing.mjs",
+      "notes": "Housing modeled from the supplied axial-flux electrostatic motor drawing. Scale: 1 unit = 5 mm; outer diameter 98 mm = 19.6 units; nominal housing thickness 15 mm = 3 units. The scene is emitted as separate named object prototypes: structural outer housing frame, front cover plate and retaining lip, rear cover plate and retaining lip, central shaft hub boss with 8 mm bore, top stiffening ribs, three mounting feet on the 84 mm PCD, side electrical terminal housing, and non-printing reference guides."
+    },
+    {
       "id": "getting-started-rectangle-face",
       "file": "/images/generated/getting-started-rectangle-face.png",
       "source": "mcp-render-buffer",

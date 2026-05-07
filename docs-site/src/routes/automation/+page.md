@@ -6,6 +6,7 @@ MCP is both documentation subject matter and a documentation production interfac
 
 <div class="card-grid">
   <a class="doc-card" href="./codex-workflow/"><strong>Codex Workflow</strong>Small tasks, inspect before editing, verify before reporting.</a>
+  <a class="doc-card" href="./codex-interoperability/"><strong>Codex Interoperability</strong>How agents should use MCP for modeling, inspection, screenshots, and iterative correction.</a>
   <a class="doc-card" href="./mcp-contract/"><strong>MCP Contract</strong>HTTP endpoints, JSON-RPC tools, and reliable-agent rules.</a>
   <a class="doc-card" href="./screenshot-pipeline/"><strong>Screenshot Pipeline</strong>Generate real images through MCP render-buffer capture or documented fallbacks.</a>
   <a class="doc-card" href="./doc-generation/"><strong>Doc Generation</strong>Separate generated references from hand-authored explanations.</a>
