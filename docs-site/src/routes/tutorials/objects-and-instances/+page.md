@@ -15,6 +15,7 @@ Learn the current object workflow: group selected geometry, place instances, and
     { name: 'object_create', label: 'Create Object', hint: 'Turn selected geometry into a reusable object.' },
     { name: 'edit_object', label: 'Edit Object', hint: 'Enter the object definition for editing.' },
     { name: 'undo', label: 'Close Object', hint: 'Leave object edit mode when you are done.' },
+    { name: 'cleanup', label: 'Explode Object', hint: 'Break the current object back into editable geometry.' },
     { name: 'move', label: 'Move', hint: 'Place the object instance in the scene.' },
     { name: 'file_save', label: 'Save', hint: 'Keep the object and instance changes.' }
   ]}

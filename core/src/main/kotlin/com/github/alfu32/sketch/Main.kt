@@ -1003,6 +1003,7 @@ class Main @JvmOverloads constructor(
             ::updateGroupGlue,
             ::enterSelectedObjectEditMode,
             ::exitGroupEditMode,
+            ::ungroupSelection,
             ::objectPrototypeSelection,
             ::objectPrototypeInfo,
             ::startObjectPlacement,

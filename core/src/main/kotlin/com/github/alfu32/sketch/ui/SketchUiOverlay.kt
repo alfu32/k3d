@@ -83,6 +83,7 @@ class SketchUiOverlay(
     private val groupGlueChanged: (Boolean) -> Unit,
     private val groupEditModeAction: () -> Unit,
     private val groupCloseEditModeAction: () -> Boolean,
+    private val ungroupSelectionAction: () -> Unit,
     private val objectCreateFromSelectionAction: () -> Unit,
     private val objectPrototypeProvider: () -> List<ObjectPrototypeInfo>,
     private val objectPrototypePlace: (String) -> Unit,
@@ -1835,6 +1836,14 @@ class SketchUiOverlay(
             groupCloseEditModeAction()
         }
 
+        val explodeObjectButton = createActionButton(
+            label = "Explode Object",
+            icon = iconFor("cleanup", createActionIconDrawable(Color(0.55f, 0.85f, 0.65f, 1f))),
+            tutorialActionId = "ui.action.explode_selected_object"
+        ) {
+            ungroupSelectionAction()
+        }
+
         val createObjectButton = createActionButton(
             label = "Create Object",
             icon = iconFor("object_create", createActionIconDrawable(Color(0.65f, 0.85f, 0.95f, 1f))),
@@ -1882,6 +1891,7 @@ class SketchUiOverlay(
             deleteButton,
             editObjectButton,
             closeObjectButton,
+            explodeObjectButton,
             createObjectButton,
             flipButton,
             lightingButton,
