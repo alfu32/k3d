@@ -439,7 +439,7 @@ class SketchUiOverlay(
     private var toolbarsVisible = true
     private val uiPrefs by lazy { Gdx.app.getPreferences("k3d-ui-layout") }
     private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
-    private val toolbarLayoutVersion = 12
+    private val toolbarLayoutVersion = 13
     private val inToolOperatorsToolbarId = "builtin_toolbar_in_tool_operators"
     private val toolbarsVisibleKey = "toolbars.visible"
     private val uiToolbarButtonSizeKey = "ui_toolbar_button_size_px"
@@ -459,6 +459,7 @@ class SketchUiOverlay(
         "builtin_toolbar_modification_2",
         "builtin_toolbar_architecture",
         "builtin_toolbar_hvac",
+        "builtin_toolbar_mech",
         "builtin_toolbar_voxel",
         "builtin_toolbar_actions",
         "builtin_toolbar_camera",
@@ -1842,7 +1843,7 @@ class SketchUiOverlay(
 
         val closeObjectButton = createActionButton(
             label = "Close Object",
-            icon = iconFor("undo", createActionIconDrawable(Color(0.8f, 0.82f, 0.92f, 1f))),
+            icon = iconFor("object_exit", createActionIconDrawable(Color(0.8f, 0.82f, 0.92f, 1f))),
             tutorialActionId = "ui.action.close_selected_object"
         ) {
             groupCloseEditModeAction()
@@ -1850,7 +1851,7 @@ class SketchUiOverlay(
 
         val explodeObjectButton = createActionButton(
             label = "Explode Object",
-            icon = iconFor("cleanup", createActionIconDrawable(Color(0.55f, 0.85f, 0.65f, 1f))),
+            icon = iconFor("object_explode", createActionIconDrawable(Color(0.55f, 0.85f, 0.65f, 1f))),
             tutorialActionId = "ui.action.explode_selected_object"
         ) {
             ungroupSelectionAction()
@@ -6681,8 +6682,8 @@ class SketchUiOverlay(
             ToolId.ARCH_DOOR_FRAME -> "arch_door"
             ToolId.HVAC_PLUMBING -> "hvac_plumbing"
             ToolId.HVAC_VENTILATION -> "hvac_ventilation"
-            ToolId.MECH_SCREW -> "multiple-copy-helicoidal-rotate"
-            ToolId.MECH_CIRCULAR_HOLE -> "arch_hole"
+            ToolId.MECH_SCREW -> "mech_screw_surface"
+            ToolId.MECH_CIRCULAR_HOLE -> "mech_round_hole"
             ToolId.FACE_OUTLINE -> "face_outline"
             ToolId.MESH -> "mesh"
             ToolId.LINE_OFFSET -> "offset"
