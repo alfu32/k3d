@@ -129,6 +129,8 @@ import com.github.alfu32.sketch.tools.HvacVentilationTool
 import com.github.alfu32.sketch.tools.LinearDimensionTool
 import com.github.alfu32.sketch.tools.LineOffsetTool
 import com.github.alfu32.sketch.tools.LineTool
+import com.github.alfu32.sketch.tools.MechCircularHoleTool
+import com.github.alfu32.sketch.tools.MechScrewTool
 import com.github.alfu32.sketch.tools.MeshTool
 import com.github.alfu32.sketch.tools.MoveTool
 import com.github.alfu32.sketch.tools.ObjectPlaceTool
@@ -859,6 +861,8 @@ class Main @JvmOverloads constructor(
                 ArchitectureDoorFrameTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
                 HvacPlumbingTool(scene, hvacSettings) { toolController.setTool(ToolId.SELECT) },
                 HvacVentilationTool(scene, hvacSettings) { toolController.setTool(ToolId.SELECT) },
+                MechScrewTool(scene) { circleSegments },
+                MechCircularHoleTool(scene) { circleSegments },
                 FaceOutlineTool(scene),
                 MeshTool(scene) { toolController.setTool(ToolId.SELECT) },
                 LineOffsetTool(scene),
@@ -1592,6 +1596,8 @@ class Main @JvmOverloads constructor(
             ToolId.ARCH_ADD_HOLE,
             ToolId.ARCH_WINDOW_FRAME,
             ToolId.ARCH_DOOR_FRAME,
+            ToolId.MECH_SCREW,
+            ToolId.MECH_CIRCULAR_HOLE,
             ToolId.RECTANGLE,
             ToolId.SURFACE_RECTANGLE,
             ToolId.QUAD,

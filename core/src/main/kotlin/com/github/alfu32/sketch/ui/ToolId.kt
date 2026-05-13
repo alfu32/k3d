@@ -19,6 +19,8 @@ enum class ToolId(val displayName: String) {
     ARCH_DOOR_FRAME("Door Frame"),
     HVAC_PLUMBING("HVAC Plumbing"),
     HVAC_VENTILATION("HVAC Ventilation"),
+    MECH_SCREW("Screw"),
+    MECH_CIRCULAR_HOLE("Circular Hole"),
     FACE_OUTLINE("Face Outline"),
     MESH("Mesh"),
     LINE_OFFSET("Line Offset"),

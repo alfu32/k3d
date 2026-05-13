@@ -1509,6 +1509,10 @@ class SketchUiOverlay(
             ToolId.HVAC_PLUMBING,
             ToolId.HVAC_VENTILATION
         )
+        val mechTools = listOf(
+            ToolId.MECH_SCREW,
+            ToolId.MECH_CIRCULAR_HOLE
+        )
 
         val pointConstruction = buildToolsToolbarWindow(
             title = "Point Construction",
@@ -1567,6 +1571,12 @@ class SketchUiOverlay(
             toolIds = hvacTools,
             group = toolGroup
         )
+        val mech = buildToolsToolbarWindow(
+            title = "Mech",
+            toolbarId = "builtin_toolbar_mech",
+            toolIds = mechTools,
+            group = toolGroup
+        )
         val actions = buildActionsToolbarWindow(
             title = "Actions",
             toolbarId = "builtin_toolbar_actions"
@@ -1592,6 +1602,7 @@ class SketchUiOverlay(
         builtInToolbars["builtin_toolbar_modification_2"] = modification2
         builtInToolbars["builtin_toolbar_architecture"] = architecture
         builtInToolbars["builtin_toolbar_hvac"] = hvac
+        builtInToolbars["builtin_toolbar_mech"] = mech
         builtInToolbars["builtin_toolbar_voxel"] = voxel
         builtInToolbars["builtin_toolbar_actions"] = actions
         builtInToolbars["builtin_toolbar_camera"] = camera
@@ -1608,6 +1619,7 @@ class SketchUiOverlay(
             modification2,
             architecture,
             hvac,
+            mech,
             voxel,
             actions,
             camera,
@@ -6669,6 +6681,8 @@ class SketchUiOverlay(
             ToolId.ARCH_DOOR_FRAME -> "arch_door"
             ToolId.HVAC_PLUMBING -> "hvac_plumbing"
             ToolId.HVAC_VENTILATION -> "hvac_ventilation"
+            ToolId.MECH_SCREW -> "multiple-copy-helicoidal-rotate"
+            ToolId.MECH_CIRCULAR_HOLE -> "arch_hole"
             ToolId.FACE_OUTLINE -> "face_outline"
             ToolId.MESH -> "mesh"
             ToolId.LINE_OFFSET -> "offset"
@@ -6725,6 +6739,8 @@ class SketchUiOverlay(
             ToolId.ARCH_DOOR_FRAME -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.HVAC_PLUMBING -> Color(0.55f, 0.8f, 0.95f, 1f)
             ToolId.HVAC_VENTILATION -> Color(0.82f, 0.82f, 0.82f, 1f)
+            ToolId.MECH_SCREW -> Color(0.9f, 0.7f, 0.45f, 1f)
+            ToolId.MECH_CIRCULAR_HOLE -> Color(0.55f, 0.95f, 0.45f, 1f)
             ToolId.FACE_OUTLINE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.MESH -> Color(0.55f, 0.85f, 0.95f, 1f)
             ToolId.LINE_OFFSET -> Color(0.35f, 0.75f, 0.95f, 1f)
