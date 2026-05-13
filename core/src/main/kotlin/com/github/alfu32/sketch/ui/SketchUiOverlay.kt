@@ -1470,7 +1470,8 @@ class SketchUiOverlay(
             ToolId.PUSH_PULL,
             ToolId.EXTRUDE_SWIPE,
             ToolId.PLANE_SECTION,
-            ToolId.MESH_INTERSECTION
+            ToolId.MESH_INTERSECTION,
+            ToolId.CUT_WITH_PLANE
         )
         val modificationTools = listOf(
             ToolId.SELECT,
@@ -6695,6 +6696,7 @@ class SketchUiOverlay(
             ToolId.EXTRUDE_SWIPE -> "swipe_surface"
             ToolId.PLANE_SECTION -> "plane_section"
             ToolId.MESH_INTERSECTION -> "mesh_intersection"
+            ToolId.CUT_WITH_PLANE -> "plane_section"
             ToolId.RECTANGLE -> "rectangle"
             ToolId.SURFACE_RECTANGLE -> "surface_rect"
             ToolId.QUAD -> "quad"
@@ -6754,6 +6756,7 @@ class SketchUiOverlay(
             ToolId.EXTRUDE_SWIPE -> Color(0.4f, 0.85f, 0.95f, 1f)
             ToolId.PLANE_SECTION -> Color(0.75f, 0.6f, 0.95f, 1f)
             ToolId.MESH_INTERSECTION -> Color(0.55f, 0.8f, 0.95f, 1f)
+            ToolId.CUT_WITH_PLANE -> Color(0.95f, 0.65f, 0.9f, 1f)
             ToolId.RECTANGLE -> Color(0.35f, 0.75f, 0.95f, 1f)
             ToolId.SURFACE_RECTANGLE -> Color(0.35f, 0.85f, 0.65f, 1f)
             ToolId.QUAD -> Color(0.55f, 0.85f, 0.95f, 1f)

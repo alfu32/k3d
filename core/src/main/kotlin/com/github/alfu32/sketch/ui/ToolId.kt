@@ -31,6 +31,7 @@ enum class ToolId(val displayName: String) {
     EXTRUDE_SWIPE("Extrude Swipe"),
     PLANE_SECTION("Plane Section"),
     MESH_INTERSECTION("Mesh Intersection"),
+    CUT_WITH_PLANE("Cut With Plane"),
     RECTANGLE("Rectangle"),
     SURFACE_RECTANGLE("Surface Rect"),
     QUAD("Quad"),
