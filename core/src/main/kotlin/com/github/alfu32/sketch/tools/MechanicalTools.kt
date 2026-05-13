@@ -11,6 +11,7 @@ import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
 import com.github.alfu32.sketch.ui.ToolMeasurement
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.sqrt
 
 class MechScrewTool(
@@ -22,6 +23,7 @@ class MechScrewTool(
 
     private val sourceSegments = mutableListOf<SourceSegment>()
     private var centerWorld: Vector3? = null
+    private var moduleHeightWorld: Vector3? = null
     private val hover = Vector3()
     private var hasHover = false
 
@@ -64,13 +66,18 @@ class MechScrewTool(
                 return true
             }
             centerWorld = Vector3(world)
-            status.message = "Click screw height point."
+            status.message = "Click one-revolution height point."
+            return true
+        }
+        if (moduleHeightWorld == null) {
+            moduleHeightWorld = Vector3(world)
+            status.message = "Click total screw length point."
             return true
         }
 
         val center = centerWorld ?: return false
-        val height = Vector3(world)
-        val result = commitScrew(center, height)
+        val moduleHeight = moduleHeightWorld ?: return false
+        val result = commitScrew(center, moduleHeight, Vector3(world))
         clearTransient()
         status.message = if (result) {
             "Created screw from ${sourceSegments.size} selected profile line(s)."
@@ -93,13 +100,24 @@ class MechScrewTool(
     override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
         val center = centerWorld ?: return emptyList()
         if (!hasHover) return emptyList()
-        return listOf(center to Vector3(hover))
+        val moduleHeight = moduleHeightWorld
+        return if (moduleHeight == null) {
+            listOf(center to Vector3(hover))
+        } else {
+            listOf(center to moduleHeight, center to Vector3(hover))
+        }
     }
 
     override fun render(renderer: ShapeRenderer) {
         val center = centerWorld ?: return
         renderer.color = ToolFeedbackColors.PRIMARY
         drawCross(renderer, center, 0.18f)
+        moduleHeightWorld?.let { moduleHeight ->
+            renderer.color = ToolFeedbackColors.SECONDARY
+            drawCross(renderer, moduleHeight, 0.18f)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            renderer.line(center.x, center.y, center.z, moduleHeight.x, moduleHeight.y, moduleHeight.z)
+        }
         if (hasHover) {
             renderer.color = ToolFeedbackColors.SECONDARY
             drawCross(renderer, hover, 0.18f)
@@ -108,34 +126,41 @@ class MechScrewTool(
         }
     }
 
-    private fun commitScrew(centerWorld: Vector3, heightWorld: Vector3): Boolean {
+    private fun commitScrew(centerWorld: Vector3, moduleHeightWorld: Vector3, totalLengthWorld: Vector3): Boolean {
         val group = scene.activeGroup()
         val center = group.toLocal(centerWorld)
-        val height = group.toLocal(heightWorld)
-        val axis = Vector3(height).sub(center)
-        if (axis.len2() <= EPSILON_SQ) {
+        val moduleHeight = group.toLocal(moduleHeightWorld)
+        val totalLengthPoint = group.toLocal(totalLengthWorld)
+        val moduleAxis = Vector3(moduleHeight).sub(center)
+        if (moduleAxis.len2() <= EPSILON_SQ) {
             return false
         }
-        val axisUnit = Vector3(axis).nor()
+        val axisUnit = Vector3(moduleAxis).nor()
+        val moduleLength = moduleAxis.len()
+        val requestedLength = Vector3(totalLengthPoint).sub(center).dot(axisUnit)
+        if (requestedLength <= EPSILON) {
+            return false
+        }
+        val totalTurns = (requestedLength / moduleLength).coerceAtLeast(1f)
         val steps = circleSegments()
+        val totalSteps = maxOf(steps, ceil(steps * totalTurns).toInt())
         val faceColor = Color(scene.defaultFaceColor)
         val capColor = Color(0.86f, 0.88f, 0.9f, 1f)
 
         group.faceStore.withChangeSuppressed {
             group.lineStore.withChangeSuppressed {
-                group.lineStore.addSegment(center, height, autoCleanup = false)
+                val totalAxis = Vector3(moduleAxis).scl(totalTurns)
+                group.lineStore.addSegment(center, Vector3(center).add(totalAxis), autoCleanup = false)
                 sourceSegments.forEach { source ->
-                    val startSamples = ArrayList<Vector3>(steps + 1)
-                    val endSamples = ArrayList<Vector3>(steps + 1)
-                    for (i in 0..steps) {
-                        val t = i.toFloat() / steps.toFloat()
+                    val startSamples = ArrayList<Vector3>(totalSteps + 1)
+                    val endSamples = ArrayList<Vector3>(totalSteps + 1)
+                    for (i in 0..totalSteps) {
+                        val t = totalTurns * (i.toFloat() / totalSteps.toFloat())
                         val angle = MathUtils.PI2 * t
-                        startSamples += screwPoint(source.start, center, axis, axisUnit, angle, t)
-                        endSamples += screwPoint(source.end, center, axis, axisUnit, angle, t)
+                        startSamples += screwPoint(source.start, center, moduleAxis, axisUnit, angle, t)
+                        endSamples += screwPoint(source.end, center, moduleAxis, axisUnit, angle, t)
                     }
-                    group.faceStore.addTriangle(center, endSamples.first(), startSamples.first(), capColor)
-                    group.faceStore.addTriangle(height, startSamples.last(), endSamples.last(), capColor)
-                    for (i in 0 until steps) {
+                    for (i in 0 until totalSteps) {
                         val a0 = startSamples[i]
                         val b0 = endSamples[i]
                         val a1 = startSamples[i + 1]
@@ -147,6 +172,17 @@ class MechScrewTool(
                         group.lineStore.addSegment(b0, b1, autoCleanup = false)
                     }
                     group.lineStore.addSegment(startSamples.last(), endSamples.last(), autoCleanup = false)
+                }
+                if (totalTurns >= 2f) {
+                    addAxialEndCaps(
+                        group = group,
+                        center = center,
+                        moduleAxis = moduleAxis,
+                        axisUnit = axisUnit,
+                        totalTurns = totalTurns,
+                        segments = steps,
+                        color = capColor
+                    )
                 }
             }
         }
@@ -183,13 +219,157 @@ class MechScrewTool(
 
     private fun clearTransient() {
         centerWorld = null
+        moduleHeightWorld = null
         hasHover = false
     }
 
     private fun circleSegments(): Int {
         return segmentsProvider().coerceIn(3, 256)
     }
+
+    private fun addAxialEndCaps(
+        group: GroupScene.GroupNode,
+        center: Vector3,
+        moduleAxis: Vector3,
+        axisUnit: Vector3,
+        totalTurns: Float,
+        segments: Int,
+        color: Color
+    ) {
+        val boundaries = profileBoundaryRings(center, axisUnit)
+        if (boundaries == null) {
+            return
+        }
+        addRevolvedCap(
+            group = group,
+            capCenter = Vector3(center).mulAdd(axisUnit, boundaries.minAxial),
+            axisUnit = axisUnit,
+            rings = boundaries.minRadials,
+            phase = 0f,
+            segments = segments,
+            color = color,
+            reverse = true
+        )
+        addRevolvedCap(
+            group = group,
+            capCenter = Vector3(center)
+                .mulAdd(moduleAxis, totalTurns)
+                .mulAdd(axisUnit, boundaries.maxAxial),
+            axisUnit = axisUnit,
+            rings = boundaries.maxRadials,
+            phase = MathUtils.PI2 * totalTurns,
+            segments = segments,
+            color = color,
+            reverse = false
+        )
+    }
+
+    private fun profileBoundaryRings(center: Vector3, axisUnit: Vector3): ProfileBoundaries? {
+        val points = sourceSegments.flatMap { listOf(it.start, it.end) }
+        if (points.isEmpty()) {
+            return null
+        }
+        val axialValues = points.map { Vector3(it).sub(center).dot(axisUnit) }
+        val minAxial = axialValues.minOrNull() ?: return null
+        val maxAxial = axialValues.maxOrNull() ?: return null
+        val minRadials = boundaryRadials(points, center, axisUnit, minAxial)
+        val maxRadials = boundaryRadials(points, center, axisUnit, maxAxial)
+        if (minRadials.isEmpty() || maxRadials.isEmpty()) {
+            return null
+        }
+        return ProfileBoundaries(minAxial, maxAxial, minRadials, maxRadials)
+    }
+
+    private fun boundaryRadials(
+        points: List<Vector3>,
+        center: Vector3,
+        axisUnit: Vector3,
+        targetAxial: Float
+    ): List<Vector3> {
+        val radials = points.mapNotNull { point ->
+            val relative = Vector3(point).sub(center)
+            val axial = relative.dot(axisUnit)
+            if (abs(axial - targetAxial) > 0.01f) {
+                null
+            } else {
+                Vector3(relative).mulAdd(axisUnit, -axial)
+            }
+        }.filter { it.len2() > EPSILON_SQ }
+            .sortedBy { it.len2() }
+
+        val unique = mutableListOf<Vector3>()
+        radials.forEach { radial ->
+            if (unique.none { it.dst2(radial) <= 0.0001f || abs(it.len2() - radial.len2()) <= 0.0001f }) {
+                unique += radial
+            }
+        }
+        return unique
+    }
+
+    private fun addRevolvedCap(
+        group: GroupScene.GroupNode,
+        capCenter: Vector3,
+        axisUnit: Vector3,
+        rings: List<Vector3>,
+        phase: Float,
+        segments: Int,
+        color: Color,
+        reverse: Boolean
+    ) {
+        val ringPoints = rings.map { radial ->
+            List(segments) { i ->
+                val angle = phase + MathUtils.PI2 * (i.toFloat() / segments.toFloat())
+                Vector3(capCenter).add(rotateAroundAxis(radial, axisUnit, angle))
+            }
+        }
+        if (ringPoints.isEmpty()) {
+            return
+        }
+        for (i in 0 until segments) {
+            val next = (i + 1) % segments
+            if (ringPoints.size == 1) {
+                val a = ringPoints[0][i]
+                val b = ringPoints[0][next]
+                addCapTriangle(group, capCenter, a, b, color, reverse)
+                group.lineStore.addSegment(a, b, autoCleanup = false)
+            } else {
+                for (r in 0 until ringPoints.lastIndex) {
+                    val innerA = ringPoints[r][i]
+                    val innerB = ringPoints[r][next]
+                    val outerA = ringPoints[r + 1][i]
+                    val outerB = ringPoints[r + 1][next]
+                    addCapTriangle(group, innerA, outerA, outerB, color, reverse)
+                    addCapTriangle(group, innerA, outerB, innerB, color, reverse)
+                    group.lineStore.addSegment(innerA, innerB, autoCleanup = false)
+                    group.lineStore.addSegment(outerA, outerB, autoCleanup = false)
+                    group.lineStore.addSegment(innerA, outerA, autoCleanup = false)
+                }
+            }
+        }
+    }
+
+    private fun addCapTriangle(
+        group: GroupScene.GroupNode,
+        a: Vector3,
+        b: Vector3,
+        c: Vector3,
+        color: Color,
+        reverse: Boolean
+    ) {
+        if (reverse) {
+            group.faceStore.addTriangle(a, c, b, color)
+        } else {
+            group.faceStore.addTriangle(a, b, c, color)
+        }
+    }
 }
+
+private data class ProfileBoundaries(
+    val minAxial: Float,
+    val maxAxial: Float,
+    val minRadials: List<Vector3>,
+    val maxRadials: List<Vector3>
+)
 
 abstract class BaseMechWasherTool(
     private val scene: GroupScene,
