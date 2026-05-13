@@ -118,7 +118,7 @@ class MechScrewTool(
         val axisUnit = Vector3(axis).nor()
         val steps = circleSegments()
         val faceColor = Color(scene.defaultFaceColor)
-        val capColor = Color(0.86f, 0.88f, 0.9f, 1f)
+        val endModuleColor = Color(0.86f, 0.88f, 0.9f, 1f)
 
         group.faceStore.withChangeSuppressed {
             group.lineStore.withChangeSuppressed {
@@ -132,8 +132,6 @@ class MechScrewTool(
                         startSamples += screwPoint(source.start, center, axis, axisUnit, angle, t)
                         endSamples += screwPoint(source.end, center, axis, axisUnit, angle, t)
                     }
-                    group.faceStore.addTriangle(center, endSamples.first(), startSamples.first(), capColor)
-                    group.faceStore.addTriangle(height, startSamples.last(), endSamples.last(), capColor)
                     for (i in 0 until steps) {
                         val a0 = startSamples[i]
                         val b0 = endSamples[i]
@@ -146,12 +144,70 @@ class MechScrewTool(
                         group.lineStore.addSegment(b0, b1, autoCleanup = false)
                     }
                     group.lineStore.addSegment(startSamples.last(), endSamples.last(), autoCleanup = false)
+                    addEndHalfModule(
+                        group = group,
+                        source = source,
+                        center = center,
+                        axis = axis,
+                        axisUnit = axisUnit,
+                        startAngle = -MathUtils.PI,
+                        endAngle = 0f,
+                        lift = 0f,
+                        steps = maxOf(1, steps / 2),
+                        color = endModuleColor
+                    )
+                    addEndHalfModule(
+                        group = group,
+                        source = source,
+                        center = center,
+                        axis = axis,
+                        axisUnit = axisUnit,
+                        startAngle = MathUtils.PI2,
+                        endAngle = MathUtils.PI2 + MathUtils.PI,
+                        lift = 1f,
+                        steps = maxOf(1, steps / 2),
+                        color = endModuleColor
+                    )
                 }
             }
         }
         group.faceStore.notifyExternalChange()
         group.lineStore.notifyExternalChange()
         return true
+    }
+
+    private fun addEndHalfModule(
+        group: GroupScene.GroupNode,
+        source: SourceSegment,
+        center: Vector3,
+        axis: Vector3,
+        axisUnit: Vector3,
+        startAngle: Float,
+        endAngle: Float,
+        lift: Float,
+        steps: Int,
+        color: Color
+    ) {
+        val startSamples = ArrayList<Vector3>(steps + 1)
+        val endSamples = ArrayList<Vector3>(steps + 1)
+        for (i in 0..steps) {
+            val t = i.toFloat() / steps.toFloat()
+            val angle = MathUtils.lerp(startAngle, endAngle, t)
+            startSamples += screwPoint(source.start, center, axis, axisUnit, angle, lift)
+            endSamples += screwPoint(source.end, center, axis, axisUnit, angle, lift)
+        }
+        for (i in 0 until steps) {
+            val a0 = startSamples[i]
+            val b0 = endSamples[i]
+            val a1 = startSamples[i + 1]
+            val b1 = endSamples[i + 1]
+            group.faceStore.addTriangle(a0, b0, b1, color)
+            group.faceStore.addTriangle(a0, b1, a1, color)
+            group.lineStore.addSegment(a0, b0, autoCleanup = false)
+            group.lineStore.addSegment(a0, a1, autoCleanup = false)
+            group.lineStore.addSegment(b0, b1, autoCleanup = false)
+        }
+        group.lineStore.addSegment(startSamples.last(), endSamples.last(), autoCleanup = false)
     }
 
     private fun screwPoint(
