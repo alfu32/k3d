@@ -21,6 +21,7 @@ enum class ToolId(val displayName: String) {
     HVAC_VENTILATION("HVAC Ventilation"),
     MECH_SCREW("Screw"),
     MECH_CIRCULAR_HOLE("Circular Hole"),
+    MECH_ROUND_WASHER("Round Washer"),
     FACE_OUTLINE("Face Outline"),
     MESH("Mesh"),
     LINE_OFFSET("Line Offset"),

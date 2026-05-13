@@ -10,6 +10,7 @@ import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
 import com.github.alfu32.sketch.ui.ToolMeasurement
+import kotlin.math.abs
 import kotlin.math.sqrt
 
 class MechScrewTool(
@@ -246,20 +247,25 @@ class MechScrewTool(
     }
 }
 
-class MechCircularHoleTool(
+abstract class BaseMechWasherTool(
     private val scene: GroupScene,
     private val segmentsProvider: () -> Int
 ) : Tool {
-    override val id: ToolId = ToolId.MECH_CIRCULAR_HOLE
-    override val message: String = "Click circular hole center."
+    protected abstract val toolLabel: String
+    protected abstract val outerKindLabel: String
+    protected abstract fun outerPoints(center: Vector3, basis: PlaneBasis, outerRadius: Float, segments: Int): List<Vector3>
+
+    override val message: String
+        get() = "Click $toolLabel center."
 
     private var centerWorld: Vector3? = null
     private var basis: PlaneBasis? = null
+    private var innerRadius: Float? = null
     private val hover = Vector3()
     private var hasHover = false
 
     override fun onEnter(status: StatusModel) {
-        status.message = "Click circular hole center."
+        status.message = message
     }
 
     override fun onExit(status: StatusModel) {
@@ -288,22 +294,35 @@ class MechCircularHoleTool(
         if (centerWorld == null) {
             centerWorld = Vector3(world)
             basis = planeBasisFromNormal(normal ?: Vector3(0f, 1f, 0f))
-            status.message = "Click circular hole radius point."
+            status.message = "Click inner radius point."
             return true
         }
 
         val center = centerWorld ?: return false
         val currentBasis = basis ?: planeBasisFromNormal(Vector3(0f, 1f, 0f))
-        val radius = radiusOnPlane(center, world, currentBasis)
-        if (radius <= EPSILON) {
-            status.message = "Circular hole canceled: radius is too small."
+        if (innerRadius == null) {
+            val radius = radiusOnPlane(center, world, currentBasis)
+            if (radius <= EPSILON) {
+                status.message = "$toolLabel canceled: inner radius is too small."
+                clearTransient()
+                return true
+            }
+            innerRadius = radius
+            status.message = "Click outer $outerKindLabel radius point."
+            return true
+        }
+
+        val inner = innerRadius ?: return false
+        val outer = radiusOnPlane(center, world, currentBasis)
+        if (outer <= inner + EPSILON) {
+            status.message = "$toolLabel canceled: outer radius must be larger than inner radius."
             clearTransient()
             return true
         }
-        commitCircularHole(center, currentBasis, radius)
-        val sides = circleSegments()
+        commitWasher(center, currentBasis, inner, outer)
+        val sides = washerSegments()
         clearTransient()
-        status.message = "Created circular hole module with $sides sides."
+        status.message = "Created $toolLabel with $sides inner sides."
         return true
     }
 
@@ -321,15 +340,23 @@ class MechCircularHoleTool(
         val center = centerWorld ?: return emptyList()
         val currentBasis = basis ?: return emptyList()
         if (!hasHover) return emptyList()
-        val radius = radiusOnPlane(center, hover, currentBasis)
-        if (radius <= EPSILON) return emptyList()
-        val inner = ringPoints(center, currentBasis, radius, circleSegments())
-        val outer = ringPoints(center, currentBasis, radius * OUTER_RADIUS_FACTOR, circleSegments())
+        val previewInner = innerRadius ?: radiusOnPlane(center, hover, currentBasis)
+        if (previewInner <= EPSILON) return emptyList()
+        val previewOuter = if (innerRadius == null) {
+            previewInner
+        } else {
+            radiusOnPlane(center, hover, currentBasis).coerceAtLeast(previewInner + EPSILON)
+        }
+        val segments = washerSegments()
+        val inner = ringPoints(center, currentBasis, previewInner, segments)
         val lines = mutableListOf<Pair<Vector3, Vector3>>()
         appendPathFeedbackLines(lines, inner, close = true)
-        appendPathFeedbackLines(lines, outer, close = true)
-        for (i in inner.indices) {
-            lines += inner[i] to outer[i]
+        if (innerRadius != null) {
+            val outer = outerPoints(center, currentBasis, previewOuter, segments)
+            appendPathFeedbackLines(lines, outer, close = true)
+            for (i in inner.indices) {
+                lines += inner[i] to outer[i]
+            }
         }
         return lines
     }
@@ -340,25 +367,27 @@ class MechCircularHoleTool(
         renderer.color = ToolFeedbackColors.PRIMARY
         drawCross(renderer, center, 0.18f)
         if (hasHover) {
-            val radius = radiusOnPlane(center, hover, currentBasis)
-            if (radius > EPSILON) {
+            val previewInner = innerRadius ?: radiusOnPlane(center, hover, currentBasis)
+            if (previewInner > EPSILON) {
                 renderer.color = ToolFeedbackColors.SECONDARY
-                drawRing(renderer, center, currentBasis, radius, circleSegments())
-                renderer.color = ToolFeedbackColors.TERTIARY
-                drawRing(renderer, center, currentBasis, radius * OUTER_RADIUS_FACTOR, circleSegments())
+                drawPath(renderer, ringPoints(center, currentBasis, previewInner, washerSegments()))
+                if (innerRadius != null) {
+                    val previewOuter = radiusOnPlane(center, hover, currentBasis).coerceAtLeast(previewInner + EPSILON)
+                    renderer.color = ToolFeedbackColors.TERTIARY
+                    drawPath(renderer, outerPoints(center, currentBasis, previewOuter, washerSegments()))
+                }
             }
         }
     }
 
-    private fun commitCircularHole(center: Vector3, basis: PlaneBasis, radius: Float) {
+    private fun commitWasher(center: Vector3, basis: PlaneBasis, innerRadius: Float, outerRadius: Float) {
         val group = scene.activeGroup()
-        val segments = circleSegments()
-        val innerWorld = ringPoints(center, basis, radius, segments)
-        val outerWorld = ringPoints(center, basis, radius * OUTER_RADIUS_FACTOR, segments)
+        val segments = washerSegments()
+        val innerWorld = ringPoints(center, basis, innerRadius, segments)
+        val outerWorld = outerPoints(center, basis, outerRadius, segments)
         val inner = innerWorld.map(group::toLocal)
         val outer = outerWorld.map(group::toLocal)
-        val green = Color(0.52f, 0.95f, 0.38f, 1f)
-        val white = Color(0.96f, 0.96f, 0.92f, 1f)
+        val faceColor = Color(scene.defaultFaceColor)
 
         group.faceStore.withChangeSuppressed {
             group.lineStore.withChangeSuppressed {
@@ -368,8 +397,8 @@ class MechCircularHoleTool(
                     val innerB = inner[next]
                     val outerA = outer[i]
                     val outerB = outer[next]
-                    group.faceStore.addTriangle(outerA, innerA, innerB, green)
-                    group.faceStore.addTriangle(outerA, innerB, outerB, white)
+                    group.faceStore.addTriangle(outerA, innerA, innerB, faceColor)
+                    group.faceStore.addTriangle(outerA, innerB, outerB, faceColor)
                     group.lineStore.addSegment(innerA, innerB, autoCleanup = false)
                     group.lineStore.addSegment(outerA, outerB, autoCleanup = false)
                     group.lineStore.addSegment(innerA, outerA, autoCleanup = false)
@@ -387,28 +416,10 @@ class MechCircularHoleTool(
         return sqrt(u * u + v * v)
     }
 
-    private fun ringPoints(center: Vector3, basis: PlaneBasis, radius: Float, segments: Int): List<Vector3> {
-        val points = ArrayList<Vector3>(segments)
-        for (i in 0 until segments) {
-            val angle = MathUtils.PI2 * (i.toFloat() / segments)
-            points += Vector3(center)
-                .mulAdd(basis.axisU, MathUtils.cos(angle) * radius)
-                .mulAdd(basis.axisV, MathUtils.sin(angle) * radius)
-        }
-        return points
-    }
-
-    private fun drawRing(
-        renderer: ShapeRenderer,
-        center: Vector3,
-        basis: PlaneBasis,
-        radius: Float,
-        segments: Int
-    ) {
-        val points = ringPoints(center, basis, radius, segments)
-        for (i in 0 until segments) {
+    private fun drawPath(renderer: ShapeRenderer, points: List<Vector3>) {
+        for (i in points.indices) {
             val a = points[i]
-            val b = points[(i + 1) % segments]
+            val b = points[(i + 1) % points.size]
             renderer.line(a.x, a.y, a.z, b.x, b.y, b.z)
         }
     }
@@ -416,11 +427,49 @@ class MechCircularHoleTool(
     private fun clearTransient() {
         centerWorld = null
         basis = null
+        innerRadius = null
         hasHover = false
     }
 
-    private fun circleSegments(): Int {
-        return segmentsProvider().coerceIn(3, 256)
+    private fun washerSegments(): Int {
+        val segments = segmentsProvider().coerceIn(8, 256)
+        return if (segments % 8 == 0) segments else segments + (8 - segments % 8)
+    }
+}
+
+class MechCircularHoleTool(
+    scene: GroupScene,
+    segmentsProvider: () -> Int
+) : BaseMechWasherTool(scene, segmentsProvider) {
+    override val id: ToolId = ToolId.MECH_CIRCULAR_HOLE
+    override val toolLabel: String = "circular hole patch"
+    override val outerKindLabel: String = "square"
+
+    override fun outerPoints(center: Vector3, basis: PlaneBasis, outerRadius: Float, segments: Int): List<Vector3> {
+        val points = ArrayList<Vector3>(segments)
+        for (i in 0 until segments) {
+            val angle = MathUtils.PI2 * (i.toFloat() / segments)
+            val cos = MathUtils.cos(angle)
+            val sin = MathUtils.sin(angle)
+            val scale = outerRadius / maxOf(abs(cos), abs(sin)).coerceAtLeast(0.0001f)
+            points += Vector3(center)
+                .mulAdd(basis.axisU, cos * scale)
+                .mulAdd(basis.axisV, sin * scale)
+        }
+        return points
+    }
+}
+
+class MechRoundWasherTool(
+    scene: GroupScene,
+    segmentsProvider: () -> Int
+) : BaseMechWasherTool(scene, segmentsProvider) {
+    override val id: ToolId = ToolId.MECH_ROUND_WASHER
+    override val toolLabel: String = "round washer"
+    override val outerKindLabel: String = "outer"
+
+    override fun outerPoints(center: Vector3, basis: PlaneBasis, outerRadius: Float, segments: Int): List<Vector3> {
+        return ringPoints(center, basis, outerRadius, segments)
     }
 }
 
@@ -428,7 +477,17 @@ private data class SourceSegment(val start: Vector3, val end: Vector3)
 
 private const val EPSILON = 0.001f
 private const val EPSILON_SQ = EPSILON * EPSILON
-private const val OUTER_RADIUS_FACTOR = 1.75f
+
+private fun ringPoints(center: Vector3, basis: PlaneBasis, radius: Float, segments: Int): List<Vector3> {
+    val points = ArrayList<Vector3>(segments)
+    for (i in 0 until segments) {
+        val angle = MathUtils.PI2 * (i.toFloat() / segments)
+        points += Vector3(center)
+            .mulAdd(basis.axisU, MathUtils.cos(angle) * radius)
+            .mulAdd(basis.axisV, MathUtils.sin(angle) * radius)
+    }
+    return points
+}
 
 private fun rotateAroundAxis(vector: Vector3, axisUnit: Vector3, angleRad: Float): Vector3 {
     val cos = MathUtils.cos(angleRad)

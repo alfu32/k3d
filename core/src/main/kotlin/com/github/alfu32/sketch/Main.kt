@@ -130,6 +130,7 @@ import com.github.alfu32.sketch.tools.LinearDimensionTool
 import com.github.alfu32.sketch.tools.LineOffsetTool
 import com.github.alfu32.sketch.tools.LineTool
 import com.github.alfu32.sketch.tools.MechCircularHoleTool
+import com.github.alfu32.sketch.tools.MechRoundWasherTool
 import com.github.alfu32.sketch.tools.MechScrewTool
 import com.github.alfu32.sketch.tools.MeshTool
 import com.github.alfu32.sketch.tools.MoveTool
@@ -863,6 +864,7 @@ class Main @JvmOverloads constructor(
                 HvacVentilationTool(scene, hvacSettings) { toolController.setTool(ToolId.SELECT) },
                 MechScrewTool(scene) { circleSegments },
                 MechCircularHoleTool(scene) { circleSegments },
+                MechRoundWasherTool(scene) { circleSegments },
                 FaceOutlineTool(scene),
                 MeshTool(scene) { toolController.setTool(ToolId.SELECT) },
                 LineOffsetTool(scene),
@@ -1598,6 +1600,7 @@ class Main @JvmOverloads constructor(
             ToolId.ARCH_DOOR_FRAME,
             ToolId.MECH_SCREW,
             ToolId.MECH_CIRCULAR_HOLE,
+            ToolId.MECH_ROUND_WASHER,
             ToolId.RECTANGLE,
             ToolId.SURFACE_RECTANGLE,
             ToolId.QUAD,
