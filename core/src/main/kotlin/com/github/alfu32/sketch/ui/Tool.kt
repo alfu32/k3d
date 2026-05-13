@@ -69,7 +69,8 @@ object ToolOperatorPresets {
             ToolId.ARCH_STAIR,
             ToolId.ARCH_ADD_HOLE,
             ToolId.ARCH_DOOR_FRAME,
-            ToolId.PLANE_SECTION -> listOf(finish(), cancel())
+            ToolId.PLANE_SECTION,
+            ToolId.CUT_WITH_PLANE -> listOf(finish(), cancel())
 
             ToolId.HVAC_PLUMBING -> listOf(finish(), undoPoint(), cancel())
 

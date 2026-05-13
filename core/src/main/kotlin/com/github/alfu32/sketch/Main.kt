@@ -101,6 +101,7 @@ import com.github.alfu32.sketch.tools.ConstructionLineTool
 import com.github.alfu32.sketch.tools.CutHolesTool
 import com.github.alfu32.sketch.tools.CutHolesTool2
 import com.github.alfu32.sketch.tools.CutOut3Tool
+import com.github.alfu32.sketch.tools.CutWithPlaneTool
 import com.github.alfu32.sketch.tools.ArchitectureAddHoleTool
 import com.github.alfu32.sketch.tools.ArchitectureDoorFrameTool
 import com.github.alfu32.sketch.tools.ArchitectureSettings
@@ -874,6 +875,7 @@ class Main @JvmOverloads constructor(
                 ExtrudeSwipeTool(scene, polylineSettings) { toolController.setTool(ToolId.SELECT) },
                 PlaneSectionTool(scene) { toolController.setTool(ToolId.SELECT) },
                 MeshIntersectionTool(scene) { toolController.setTool(ToolId.SELECT) },
+                CutWithPlaneTool(scene),
                 RectangleTool(scene),
                 SurfaceRectangleTool(scene),
                 QuadTool(scene),
@@ -1613,6 +1615,7 @@ class Main @JvmOverloads constructor(
             ToolId.EXTRUDE_SWIPE,
             ToolId.PLANE_SECTION,
             ToolId.MESH_INTERSECTION,
+            ToolId.CUT_WITH_PLANE,
             ToolId.LINEAR_DIMENSION,
             ToolId.TEXT,
             ToolId.VECTOR_TEXT,
