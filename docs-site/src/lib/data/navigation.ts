@@ -14,6 +14,7 @@ export const topNavigation: NavItem[] = [
   { label: 'Home', href: '/' },
   { label: 'Guide', href: '/guide/' },
   { label: 'Tutorials', href: '/tutorials/' },
+  { label: 'Playground', href: '/playground/' },
   { label: 'Reference', href: '/reference/' },
   { label: 'Automation', href: '/automation/' },
   { label: 'Specification', href: '/specification/' },

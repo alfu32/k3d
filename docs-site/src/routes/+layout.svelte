@@ -11,6 +11,7 @@
   $: activeGroup = navGroups.find((group) =>
     currentPath === group.href || currentPath.startsWith(group.href)
   );
+  $: isPlayground = currentPath === '/playground/' || currentPath.startsWith('/playground/');
 
   function hrefFor(href: string): string {
     return href === '/' ? `${base}/` : `${base}${href}`;
@@ -54,7 +55,7 @@
   </nav>
 </header>
 
-<div class="site-shell" class:with-sidebar={activeGroup}>
+<div class="site-shell" class:with-sidebar={activeGroup} class:playground-shell={isPlayground}>
   {#if activeGroup}
     <aside class="sidebar" aria-label={`${activeGroup.title} navigation`}>
       <a class="sidebar-title" href={hrefFor(activeGroup.href)}>{activeGroup.title}</a>
@@ -77,9 +78,11 @@
   </main>
 </div>
 
-<footer class="site-footer">
-  <p>
-    Octodraw is a Kotlin/libGDX direct modeling project. Documentation source is in
-    <a href="https://github.com/alfu32/k3d">alfu32/k3d</a>.
-  </p>
-</footer>
+{#if !isPlayground}
+  <footer class="site-footer">
+    <p>
+      Octodraw is a Kotlin/libGDX direct modeling project. Documentation source is in
+      <a href="https://github.com/alfu32/k3d">alfu32/k3d</a>.
+    </p>
+  </footer>
+{/if}

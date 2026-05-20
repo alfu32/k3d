@@ -1,6 +1,6 @@
 <script lang="ts">
   import { base } from '$app/paths';
-  import { onMount, tick } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import type { TutorialTarget } from '$lib/tutorial/tutorial_schema';
   import type { CommandResult, ConsoleResult } from '$lib/tutorial/tutorial_runtime';
 
@@ -35,6 +35,7 @@
 
   let editorElement: EditorElement;
   let highlightMessage = '';
+  let resizeObserver: ResizeObserver | null = null;
 
   const scriptId = 'octodraw-webcomponent-script';
   function scriptUrl(): string {
@@ -78,6 +79,14 @@
       failed = true;
       message = error instanceof Error ? error.message : String(error);
     }
+  }
+
+  function requestEditorResize() {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    editorElement?.resize?.();
+    window.dispatchEvent(new Event('resize'));
   }
 
   async function currentEditor(): Promise<EditorElement> {
@@ -298,10 +307,19 @@
       message = 'Octodraw webcomponent loaded.';
       await tick();
       await applyInitialState();
+      if (typeof ResizeObserver !== 'undefined' && embedShell) {
+        resizeObserver = new ResizeObserver(() => requestEditorResize());
+        resizeObserver.observe(embedShell);
+      }
     } catch (error) {
       failed = true;
       message = error instanceof Error ? error.message : String(error);
     }
+  });
+
+  onDestroy(() => {
+    resizeObserver?.disconnect();
+    resizeObserver = null;
   });
 </script>
 
@@ -347,6 +365,7 @@
   .embed {
     position: relative;
     width: 100%;
+    height: var(--embed-height);
     min-width: 0;
     min-height: var(--embed-height);
     border: 1px solid var(--border);
