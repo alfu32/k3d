@@ -11,6 +11,7 @@ import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
 import com.github.alfu32.sketch.ui.ToolMeasurement
+import com.github.alfu32.sketch.ui.ToolMeasurementLabel
 
 class RotateTool(
     private val scene: GroupScene
@@ -212,9 +213,50 @@ class RotateTool(
         if (!hasHover) {
             return null
         }
+        val extras = rotationAngleLabels()
         return ToolMeasurement(
             startWorld = Vector3(center),
-            endWorld = Vector3(hover)
+            endWorld = Vector3(hover),
+            extraLabels = extras
+        )
+    }
+
+    override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
+        val c = centerWorld ?: return emptyList()
+        val out = mutableListOf<Pair<Vector3, Vector3>>()
+        val axis = axisDirWorld
+        val ref = referenceWorld
+        val axisLen = when {
+            ref != null -> Vector3(ref).sub(c).len()
+            hasHover -> Vector3(hover).sub(c).len()
+            else -> 1f
+        }.coerceAtLeast(0.5f)
+        if (axis != null) {
+            out += Vector3(c) to Vector3(c).mulAdd(axis, axisLen)
+        }
+        if (ref != null) {
+            out += Vector3(c) to Vector3(ref)
+        }
+        if (hasHover) {
+            out += Vector3(c) to Vector3(hover)
+        }
+        return out
+    }
+
+    private fun rotationAngleLabels(): List<ToolMeasurementLabel> {
+        val group = scene.activeGroup()
+        val cLocal = centerLocal ?: return emptyList()
+        val axisLocal = axisDirLocal ?: return emptyList()
+        val ref = referenceWorld ?: return emptyList()
+        val v1 = Vector3(group.toLocal(ref)).sub(cLocal)
+        val v2 = Vector3(group.toLocal(hover)).sub(cLocal)
+        if (v1.len2() <= 1e-6f || v2.len2() <= 1e-6f) {
+            return emptyList()
+        }
+        val angle = MathUtils.atan2(axisLocal.dot(Vector3(v1).crs(v2)), v1.dot(v2))
+        return listOf(
+            ToolMeasurementLabel("Angle", text = String.format(java.util.Locale.US, "%.3f deg", angle * MathUtils.radiansToDegrees)),
+            ToolMeasurementLabel("Radians", text = String.format(java.util.Locale.US, "%.4f rad", angle))
         )
     }
 

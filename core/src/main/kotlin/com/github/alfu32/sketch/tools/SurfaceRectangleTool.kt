@@ -8,6 +8,8 @@ import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
+import com.github.alfu32.sketch.ui.ToolMeasurement
+import com.github.alfu32.sketch.ui.ToolMeasurementLabel
 
 class SurfaceRectangleTool(
     private val scene: GroupScene
@@ -79,6 +81,28 @@ class SurfaceRectangleTool(
 
     override fun anchorWorld(): Vector3? {
         return anchorWorld
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        val start = anchorWorld ?: return null
+        val u = axisUWorld ?: return null
+        val v = axisVWorld ?: return null
+        if (!hasHover) {
+            return null
+        }
+        val delta = Vector3(hover).sub(start)
+        val width = kotlin.math.abs(delta.dot(u))
+        val height = kotlin.math.abs(delta.dot(v))
+        return ToolMeasurement(
+            startWorld = Vector3(start),
+            endWorld = Vector3(hover),
+            extraLabels = listOf(
+                ToolMeasurementLabel("Width", width),
+                ToolMeasurementLabel("Height", height),
+                ToolMeasurementLabel("Area", width * height, unitPower = 2),
+                ToolMeasurementLabel("Perimeter", 2f * (width + height))
+            )
+        )
     }
 
     override fun render(renderer: ShapeRenderer) {

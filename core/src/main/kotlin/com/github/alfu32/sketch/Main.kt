@@ -7165,6 +7165,16 @@ class Main @JvmOverloads constructor(
             1f,
             Color(0.15f, 0.15f, 0.15f, 0.95f)
         )
+        measurement.extraLabels.forEachIndexed { index, label ->
+            drawRotatedTextScaled(
+                formatToolMeasurementLabel(label),
+                midX + nx * sideOffsetPx,
+                midY + ny * sideOffsetPx - textFont.lineHeight * (index + 1),
+                angleDeg,
+                1f,
+                Color(0.15f, 0.15f, 0.15f, 0.95f)
+            )
+        }
     }
 
     private fun drawWorldTextModel(
@@ -7433,6 +7443,33 @@ class Main @JvmOverloads constructor(
             .trimEnd('0')
             .trimEnd('.')
         return if (unitName.isBlank()) formatted else "$formatted $unitName"
+    }
+
+    private fun formatToolMeasurementLabel(label: com.github.alfu32.sketch.ui.ToolMeasurementLabel): String {
+        val text = label.text
+        if (text != null) {
+            return if (label.label.isBlank()) text else "${label.label}: $text"
+        }
+        val rawValue = label.value ?: return label.label
+        val scaled = when (label.unitPower) {
+            0 -> rawValue
+            1 -> rawValue * modelUnit.size
+            2 -> rawValue * modelUnit.size * modelUnit.size
+            3 -> rawValue * modelUnit.size * modelUnit.size * modelUnit.size
+            else -> rawValue * Math.pow(modelUnit.size.toDouble(), label.unitPower.toDouble()).toFloat()
+        }
+        val formatted = String.format(java.util.Locale.US, "%.3f", scaled)
+            .trimEnd('0')
+            .trimEnd('.')
+        val unitSuffix = when {
+            label.unitPower == 0 || modelUnit.name.isBlank() -> ""
+            label.unitPower == 1 -> " ${modelUnit.name}"
+            label.unitPower == 2 -> " ${modelUnit.name}^2"
+            label.unitPower == 3 -> " ${modelUnit.name}^3"
+            else -> " ${modelUnit.name}^${label.unitPower}"
+        }
+        val valueText = "$formatted$unitSuffix"
+        return if (label.label.isBlank()) valueText else "${label.label}: $valueText"
     }
 
     private fun formatRelativeVector(delta: Vector3, unitName: String): String {

@@ -8,6 +8,8 @@ import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
+import com.github.alfu32.sketch.ui.ToolMeasurement
+import com.github.alfu32.sketch.ui.ToolMeasurementLabel
 
 class RectangleTool(
     private val scene: GroupScene
@@ -75,6 +77,22 @@ class RectangleTool(
 
     override fun anchorWorld(): Vector3? {
         return anchorWorld
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        val start = anchorWorld ?: return null
+        if (!hasHover) {
+            return null
+        }
+        val currentBasis = chooseRectangleBasis(start, hover, pickNormalWorld ?: Vector3(0f, 1f, 0f))
+        val delta = Vector3(hover).sub(start)
+        val width = kotlin.math.abs(delta.dot(currentBasis.axisU))
+        val height = kotlin.math.abs(delta.dot(currentBasis.axisV))
+        return ToolMeasurement(
+            startWorld = Vector3(start),
+            endWorld = Vector3(hover),
+            extraLabels = rectangleMeasurementLabels(width, height)
+        )
     }
 
     override fun render(renderer: ShapeRenderer) {
@@ -167,5 +185,14 @@ class RectangleTool(
 
     private fun facingNormal(normal: Vector3, reference: Vector3): Vector3 {
         return if (normal.dot(reference) < 0f) Vector3(normal).scl(-1f) else Vector3(normal)
+    }
+
+    private fun rectangleMeasurementLabels(width: Float, height: Float): List<ToolMeasurementLabel> {
+        return listOf(
+            ToolMeasurementLabel("Width", width),
+            ToolMeasurementLabel("Height", height),
+            ToolMeasurementLabel("Area", width * height, unitPower = 2),
+            ToolMeasurementLabel("Perimeter", 2f * (width + height))
+        )
     }
 }

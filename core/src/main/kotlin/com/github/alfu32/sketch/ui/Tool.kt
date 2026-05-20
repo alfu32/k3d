@@ -8,7 +8,15 @@ import com.github.alfu32.sketch.tools.ToolFeedbackColors
 data class ToolMeasurement(
     val startWorld: Vector3,
     val endWorld: Vector3,
-    val lineColor: com.badlogic.gdx.graphics.Color = ToolFeedbackColors.PRIMARY
+    val lineColor: com.badlogic.gdx.graphics.Color = ToolFeedbackColors.PRIMARY,
+    val extraLabels: List<ToolMeasurementLabel> = emptyList()
+)
+
+data class ToolMeasurementLabel(
+    val label: String,
+    val value: Float? = null,
+    val unitPower: Int = 1,
+    val text: String? = null
 )
 
 sealed class ToolOperatorAction {

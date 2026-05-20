@@ -8,6 +8,8 @@ import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
+import com.github.alfu32.sketch.ui.ToolMeasurement
+import com.github.alfu32.sketch.ui.ToolMeasurementLabel
 
 class QuadTool(
     private val scene: GroupScene
@@ -97,6 +99,32 @@ class QuadTool(
 
     override fun anchorWorld(): Vector3? {
         return originWorld
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        val a = originWorld ?: return null
+        if (!hasHover) {
+            return null
+        }
+        val b = pointBWorld
+        if (b == null) {
+            return ToolMeasurement(Vector3(a), Vector3(hover))
+        }
+        val sideU = Vector3(b).sub(a)
+        val sideV = Vector3(hover).sub(a)
+        val width = sideU.len()
+        val height = sideV.len()
+        val area = Vector3(sideU).crs(sideV).len()
+        return ToolMeasurement(
+            startWorld = Vector3(a),
+            endWorld = Vector3(hover),
+            extraLabels = listOf(
+                ToolMeasurementLabel("Width", width),
+                ToolMeasurementLabel("Height", height),
+                ToolMeasurementLabel("Area", area, unitPower = 2),
+                ToolMeasurementLabel("Perimeter", 2f * (width + height))
+            )
+        )
     }
 
     override fun render(renderer: ShapeRenderer) {

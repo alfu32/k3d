@@ -9,6 +9,8 @@ import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
+import com.github.alfu32.sketch.ui.ToolMeasurement
+import com.github.alfu32.sketch.ui.ToolMeasurementLabel
 
 class LineOffsetTool(
     private val scene: GroupScene
@@ -106,6 +108,23 @@ class LineOffsetTool(
         val start = referenceWorld ?: return
         renderer.color = ToolFeedbackColors.SECONDARY
         renderer.line(start.x, start.y, start.z, hover.x, hover.y, hover.z)
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        val start = referenceWorld ?: return null
+        if (!hasHover) {
+            return null
+        }
+        val group = scene.activeGroup()
+        val selected = group.lineStore.getSelected().toList()
+        val offset = selected.firstNotNullOfOrNull { segment ->
+            offsetForComponent(listOf(segment), listOf(segment.start, segment.end), Vector3(hover).sub(start))
+        }
+        return ToolMeasurement(
+            startWorld = Vector3(start),
+            endWorld = Vector3(hover),
+            extraLabels = offset?.let { listOf(ToolMeasurementLabel("Offset", it)) } ?: emptyList()
+        )
     }
 
     override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
@@ -254,21 +273,43 @@ class LineOffsetTool(
         isClosed: Boolean,
         deltaWorld: Vector3
     ): Pair<List<Vector3>, Float> {
-        val group = scene.activeGroup()
-        val deltaLocal = group.vectorToLocal(deltaWorld)
         val baseDir = firstDirection(component) ?: return Pair(emptyList(), 0f)
-        val planeNormal = Vector3(baseDir).crs(deltaLocal)
-        val plane = if (planeNormal.len2() > epsilonSq) {
-            planeNormal.nor()
-        } else {
-            fallbackPlaneNormal(baseDir)
-        }
-        val perp = Vector3(plane).crs(baseDir).nor()
-        val offset = deltaLocal.dot(perp)
+        val plane = componentPlaneNormal(points, baseDir)
+        val offset = offsetForComponent(component, points, deltaWorld) ?: return Pair(emptyList(), 0f)
         if (kotlin.math.abs(offset) <= 1e-6f) {
             return Pair(emptyList(), 0f)
         }
         return Pair(buildOffsetPath(points, offset, plane, isClosed), offset)
+    }
+
+    private fun offsetForComponent(
+        component: List<DraftLineStore.Segment>,
+        points: List<Vector3>,
+        deltaWorld: Vector3
+    ): Float? {
+        val group = scene.activeGroup()
+        val reference = referenceWorld ?: return null
+        val referenceLocal = group.toLocal(reference)
+        val deltaLocal = group.vectorToLocal(deltaWorld)
+        if (deltaLocal.len2() <= epsilonSq) {
+            return null
+        }
+        val baseDir = firstDirection(component) ?: return null
+        val plane = componentPlaneNormal(points, baseDir)
+        val segment = closestSegmentToPoint(component, referenceLocal) ?: return null
+        val segmentVector = Vector3(segment.start).sub(segment.end)
+        val inputVector = Vector3(referenceLocal).sub(Vector3(referenceLocal).add(deltaLocal))
+        val signCross = segmentVector.crs(inputVector)
+        val signed = signCross.dot(plane)
+        val sign = when {
+            signed > 1e-6f -> 1f
+            signed < -1e-6f -> -1f
+            else -> {
+                val perp = Vector3(plane).crs(baseDir).nor()
+                if (deltaLocal.dot(perp) >= 0f) 1f else -1f
+            }
+        }
+        return deltaLocal.len() * sign
     }
 
     private fun firstDirection(segments: List<DraftLineStore.Segment>): Vector3? {
@@ -290,6 +331,39 @@ class LineOffsetTool(
         val right = Vector3(1f, 0f, 0f)
         val alt = Vector3(dir).crs(right)
         return if (alt.len2() > epsilonSq) alt.nor() else Vector3(0f, 0f, 1f)
+    }
+
+    private fun componentPlaneNormal(points: List<Vector3>, fallbackDir: Vector3): Vector3 {
+        if (points.size >= 3) {
+            val origin = points.first()
+            for (i in 1 until points.lastIndex) {
+                val a = Vector3(points[i]).sub(origin)
+                val b = Vector3(points[i + 1]).sub(origin)
+                val normal = a.crs(b)
+                if (normal.len2() > epsilonSq) {
+                    return normal.nor()
+                }
+            }
+        }
+        return fallbackPlaneNormal(fallbackDir)
+    }
+
+    private fun closestSegmentToPoint(
+        segments: List<DraftLineStore.Segment>,
+        point: Vector3
+    ): DraftLineStore.Segment? {
+        return segments.minByOrNull { distanceToSegmentSquared(point, it.start, it.end) }
+    }
+
+    private fun distanceToSegmentSquared(point: Vector3, start: Vector3, end: Vector3): Float {
+        val ab = Vector3(end).sub(start)
+        val len2 = ab.len2()
+        if (len2 <= epsilonSq) {
+            return point.dst2(start)
+        }
+        val t = Vector3(point).sub(start).dot(ab) / len2
+        val closest = Vector3(start).mulAdd(ab, t.coerceIn(0f, 1f))
+        return point.dst2(closest)
     }
 
     private fun buildOffsetPath(base: List<Vector3>, offset: Float, planeNormal: Vector3, isClosed: Boolean): List<Vector3> {

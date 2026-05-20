@@ -9,6 +9,8 @@ import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
+import com.github.alfu32.sketch.ui.ToolMeasurement
+import com.github.alfu32.sketch.ui.ToolMeasurementLabel
 import kotlin.math.sqrt
 
 class CircleTool(
@@ -68,6 +70,25 @@ class CircleTool(
 
     override fun anchorWorld(): Vector3? {
         return centerWorld
+    }
+
+    override fun measurement(status: StatusModel): ToolMeasurement? {
+        val c = centerWorld ?: return null
+        val currentBasis = basis ?: return null
+        if (!hasHover) {
+            return null
+        }
+        val radius = radiusOnPlane(c, hover, currentBasis)
+        return ToolMeasurement(
+            startWorld = Vector3(c),
+            endWorld = Vector3(hover),
+            extraLabels = listOf(
+                ToolMeasurementLabel("Radius", radius),
+                ToolMeasurementLabel("Diameter", 2f * radius),
+                ToolMeasurementLabel("Perimeter", MathUtils.PI2 * radius),
+                ToolMeasurementLabel("Area", MathUtils.PI * radius * radius, unitPower = 2)
+            )
+        )
     }
 
     override fun render(renderer: ShapeRenderer) {

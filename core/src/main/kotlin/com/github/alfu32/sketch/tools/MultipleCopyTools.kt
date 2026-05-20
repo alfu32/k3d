@@ -14,6 +14,7 @@ import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
 import com.github.alfu32.sketch.ui.ToolId
 import com.github.alfu32.sketch.ui.ToolMeasurement
+import com.github.alfu32.sketch.ui.ToolMeasurementLabel
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.max
@@ -854,6 +855,41 @@ private fun axisCopyCount(step: Float, span: Float): Int {
     return floor(abs(ratio)).toInt()
 }
 
+private fun copyCountLabels(copies: Int, capped: Boolean = false): List<ToolMeasurementLabel> {
+    if (copies <= 0) {
+        return emptyList()
+    }
+    val countText = if (capped) "$copies+" else copies.toString()
+    return listOf(ToolMeasurementLabel("Copies", text = countText))
+}
+
+private fun linearCopyCount(reference: Vector3, measurePoint: Vector3, finalPoint: Vector3): Int {
+    val stepWorld = Vector3(measurePoint).sub(reference)
+    val stepLength = stepWorld.len()
+    if (stepLength <= MULTIPLE_COPY_EPS) {
+        return 0
+    }
+    val direction = Vector3(stepWorld).scl(1f / stepLength)
+    val spanProjected = Vector3(finalPoint).sub(reference).dot(direction)
+    if (spanProjected <= MULTIPLE_COPY_EPS) {
+        return 0
+    }
+    return floor(spanProjected / stepLength).toInt().coerceAtLeast(0)
+}
+
+private fun planarTranslateCopyCount(origin: Vector3, measure: Vector3, finalPoint: Vector3): Int {
+    val nx = axisCopyCount(measure.x - origin.x, finalPoint.x - origin.x)
+    val nz = axisCopyCount(measure.z - origin.z, finalPoint.z - origin.z)
+    return ((nx + 1) * (nz + 1) - 1).coerceAtLeast(0)
+}
+
+private fun volumetricTranslateCopyCount(origin: Vector3, measure: Vector3, finalPoint: Vector3): Int {
+    val nx = axisCopyCount(measure.x - origin.x, finalPoint.x - origin.x)
+    val ny = axisCopyCount(measure.y - origin.y, finalPoint.y - origin.y)
+    val nz = axisCopyCount(measure.z - origin.z, finalPoint.z - origin.z)
+    return ((nx + 1) * (ny + 1) * (nz + 1) - 1).coerceAtLeast(0)
+}
+
 private fun cappedCopyOffsets(
     offsetsWorld: List<Vector3>,
     group: GroupScene.GroupNode
@@ -1006,7 +1042,12 @@ class CopyMultipleTool(
         if (!hasHover) {
             return null
         }
-        return ToolMeasurement(Vector3(ref), Vector3(hover))
+        val copies = v?.let { linearCopyCount(ref, it, hover) } ?: 0
+        return ToolMeasurement(
+            startWorld = Vector3(ref),
+            endWorld = Vector3(hover),
+            extraLabels = copyCountLabels(copies, copies > MAX_MULTIPLE_COPY_STEPS)
+        )
     }
 
     private fun clearTransient() {
@@ -1157,7 +1198,12 @@ class PlanarTranslateMultipleTool(
         if (!hasHover) {
             return null
         }
-        return ToolMeasurement(Vector3(o), Vector3(hover))
+        val copies = measure?.let { planarTranslateCopyCount(o, it, hover) } ?: 0
+        return ToolMeasurement(
+            startWorld = Vector3(o),
+            endWorld = Vector3(hover),
+            extraLabels = copyCountLabels(copies.coerceAtMost(MAX_MULTIPLE_COPY_STEPS), copies > MAX_MULTIPLE_COPY_STEPS)
+        )
     }
 
     private fun clearTransient() {
@@ -1318,7 +1364,12 @@ class VolumetricTranslateMultipleTool(
         if (!hasHover) {
             return null
         }
-        return ToolMeasurement(Vector3(o), Vector3(hover))
+        val copies = measure?.let { volumetricTranslateCopyCount(o, it, hover) } ?: 0
+        return ToolMeasurement(
+            startWorld = Vector3(o),
+            endWorld = Vector3(hover),
+            extraLabels = copyCountLabels(copies.coerceAtMost(MAX_MULTIPLE_COPY_STEPS), copies > MAX_MULTIPLE_COPY_STEPS)
+        )
     }
 
     private fun clearTransient() {
@@ -1571,7 +1622,65 @@ abstract class BaseRotateMultipleTool(
         if (!hasHover) {
             return null
         }
-        return ToolMeasurement(Vector3(c), Vector3(hover))
+        val copies = resolveProspectiveCopies(hover)
+        return ToolMeasurement(
+            startWorld = Vector3(c),
+            endWorld = Vector3(hover),
+            extraLabels = copyCountLabels(
+                copies?.coerceAtMost(MAX_MULTIPLE_COPY_STEPS) ?: 0,
+                (copies ?: 0) > MAX_MULTIPLE_COPY_STEPS
+            )
+        )
+    }
+
+    private fun resolveProspectiveCopies(finalPoint: Vector3): Int? {
+        val c = center ?: return null
+        val u = reference ?: return null
+        val v = increment ?: return null
+        val ref = Vector3(u).sub(c)
+        val inc = Vector3(v).sub(c)
+        val end = Vector3(finalPoint).sub(c)
+        if (ref.len2() <= MULTIPLE_COPY_EPS || inc.len2() <= MULTIPLE_COPY_EPS || end.len2() <= MULTIPLE_COPY_EPS) {
+            return null
+        }
+        val normalAxis = Vector3(ref).crs(inc)
+        if (normalAxis.len2() <= MULTIPLE_COPY_EPS) {
+            return null
+        }
+        normalAxis.nor()
+        val refProjected = projectOntoPlane(ref, normalAxis)
+        val incProjected = projectOntoPlane(inc, normalAxis)
+        val endProjected = projectOntoPlane(end, normalAxis)
+        if (refProjected.len2() <= MULTIPLE_COPY_EPS ||
+            incProjected.len2() <= MULTIPLE_COPY_EPS ||
+            endProjected.len2() <= MULTIPLE_COPY_EPS
+        ) {
+            return null
+        }
+        val stepAngle = signedAngleDeg(refProjected, incProjected, normalAxis)
+        if (abs(stepAngle) <= 1e-4f) {
+            return null
+        }
+        val rawSweep = signedAngleDeg(refProjected, endProjected, normalAxis)
+        val direction = if (stepAngle >= 0f) 1f else -1f
+        var sweep = normalizeSignedSweep(rawSweep, direction)
+        if (abs(sweep) <= 1e-4f) {
+            sweep = 360f * direction
+        }
+        if (sweep * direction <= 0f) {
+            return null
+        }
+        var copies = floor(abs(sweep) / abs(stepAngle)).toInt()
+        val totalLiftWorld = if (helicoidal) {
+            end.dot(normalAxis) - ref.dot(normalAxis)
+        } else {
+            0f
+        }
+        val perStepLiftWorld = if (helicoidal && copies > 0) totalLiftWorld / copies.toFloat() else 0f
+        if (abs(abs(sweep) - 360f) <= 1e-3f && abs(perStepLiftWorld) <= 1e-6f && copies > 1) {
+            copies -= 1
+        }
+        return copies.coerceAtLeast(0)
     }
 
     private fun clearTransient() {
@@ -1761,7 +1870,10 @@ class Rotate2Tool(
         if (!hasHover) {
             return null
         }
-        return ToolMeasurement(Vector3(c), Vector3(hover))
+        return ToolMeasurement(
+            startWorld = Vector3(c),
+            endWorld = Vector3(hover)
+        )
     }
 
     private fun clearTransient() {
@@ -1890,7 +2002,57 @@ class HelicalArrayTool(
         if (!hasHover) {
             return null
         }
-        return ToolMeasurement(Vector3(c), Vector3(hover))
+        val plan = resolveHelicalPlan(hover)
+        return ToolMeasurement(
+            startWorld = Vector3(c),
+            endWorld = Vector3(hover),
+            extraLabels = copyCountLabels(plan?.copies ?: 0, plan?.capped == true)
+        )
+    }
+
+    private fun resolveProspectiveCopies(finalPoint: Vector3): Int? {
+        val c = center ?: return null
+        val a = reference ?: return null
+        val b = increment ?: return null
+        val ref = Vector3(a).sub(c)
+        val inc = Vector3(b).sub(c)
+        val end = Vector3(finalPoint).sub(c)
+        if (ref.len2() <= MULTIPLE_COPY_EPS || inc.len2() <= MULTIPLE_COPY_EPS || end.len2() <= MULTIPLE_COPY_EPS) {
+            return null
+        }
+        val axisWorld = Vector3(ref).crs(inc)
+        if (axisWorld.len2() <= MULTIPLE_COPY_EPS) {
+            return null
+        }
+        axisWorld.nor()
+        val refProjected = projectOntoPlane(ref, axisWorld)
+        val incProjected = projectOntoPlane(inc, axisWorld)
+        val endProjected = projectOntoPlane(end, axisWorld)
+        if (refProjected.len2() <= MULTIPLE_COPY_EPS ||
+            incProjected.len2() <= MULTIPLE_COPY_EPS ||
+            endProjected.len2() <= MULTIPLE_COPY_EPS
+        ) {
+            return null
+        }
+        val rawStepAngle = signedAngleDeg(refProjected, incProjected, axisWorld)
+        if (abs(rawStepAngle) <= 1e-4f) {
+            return null
+        }
+        val rawSweep = signedAngleDeg(refProjected, endProjected, axisWorld)
+        val layout = if (abs(rawSweep) <= FULL_CIRCLE_REQUEST_EPS_DEG) {
+            resolveEqualizedCircularLayout(scene, scene.activeGroup(), c, a, axisWorld, rawStepAngle)
+        } else {
+            null
+        }
+        val stepAngle = layout?.stepAngle ?: rawStepAngle
+        return if (layout != null) {
+            layout.positionCount - 1
+        } else {
+            val direction = if (stepAngle >= 0f) 1f else -1f
+            val sweep = normalizeSignedSweep(rawSweep, direction)
+            if (sweep * direction <= 0f) return null
+            floor(abs(sweep) / abs(stepAngle)).toInt()
+        }.coerceAtLeast(0)
     }
 
     private data class HelicalPlan(
@@ -2251,7 +2413,60 @@ class EqualizedRotationalArrayTool(
         if (!hasHover) {
             return null
         }
-        return ToolMeasurement(Vector3(c), Vector3(hover))
+        val copies = resolveEqualizedRotationalProspectiveCopies(hover)
+        return ToolMeasurement(
+            startWorld = Vector3(c),
+            endWorld = Vector3(hover),
+            extraLabels = copyCountLabels(
+                copies?.coerceAtMost(MAX_MULTIPLE_COPY_STEPS) ?: 0,
+                (copies ?: 0) > MAX_MULTIPLE_COPY_STEPS
+            )
+        )
+    }
+
+    private fun resolveEqualizedRotationalProspectiveCopies(finalPoint: Vector3): Int? {
+        val c = center ?: return null
+        val a = reference ?: return null
+        val b = increment ?: return null
+        val ref = Vector3(a).sub(c)
+        val inc = Vector3(b).sub(c)
+        val end = Vector3(finalPoint).sub(c)
+        if (ref.len2() <= MULTIPLE_COPY_EPS || inc.len2() <= MULTIPLE_COPY_EPS || end.len2() <= MULTIPLE_COPY_EPS) {
+            return null
+        }
+        val axisWorld = Vector3(ref).crs(inc)
+        if (axisWorld.len2() <= MULTIPLE_COPY_EPS) {
+            return null
+        }
+        axisWorld.nor()
+        val refProjected = projectOntoPlane(ref, axisWorld)
+        val incProjected = projectOntoPlane(inc, axisWorld)
+        val endProjected = projectOntoPlane(end, axisWorld)
+        if (refProjected.len2() <= MULTIPLE_COPY_EPS ||
+            incProjected.len2() <= MULTIPLE_COPY_EPS ||
+            endProjected.len2() <= MULTIPLE_COPY_EPS
+        ) {
+            return null
+        }
+        val rawStepAngle = signedAngleDeg(refProjected, incProjected, axisWorld)
+        if (abs(rawStepAngle) <= 1e-4f) {
+            return null
+        }
+        val rawSweep = signedAngleDeg(refProjected, endProjected, axisWorld)
+        val layout = if (abs(rawSweep) <= FULL_CIRCLE_REQUEST_EPS_DEG) {
+            resolveEqualizedCircularLayout(scene, scene.activeGroup(), c, a, axisWorld, rawStepAngle)
+        } else {
+            null
+        }
+        val stepAngle = layout?.stepAngle ?: rawStepAngle
+        return if (layout != null) {
+            layout.positionCount - 1
+        } else {
+            val direction = if (stepAngle >= 0f) 1f else -1f
+            val sweep = normalizeSignedSweep(rawSweep, direction)
+            if (sweep * direction <= 0f) return null
+            floor(abs(sweep) / abs(stepAngle)).toInt()
+        }.coerceAtLeast(0)
     }
 
     private fun clearTransient() {
@@ -2387,7 +2602,12 @@ class EqualizedHelicalArrayTool(
         if (!hasHover) {
             return null
         }
-        return ToolMeasurement(Vector3(c), Vector3(hover))
+        val plan = resolvePlan(hover)
+        return ToolMeasurement(
+            startWorld = Vector3(c),
+            endWorld = Vector3(hover),
+            extraLabels = copyCountLabels(plan?.copies ?: 0, plan?.capped == true)
+        )
     }
 
     private data class HelicalPlan(
