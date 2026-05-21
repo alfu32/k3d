@@ -1,8 +1,10 @@
 package com.github.alfu32.sketch.tools
 
 import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
 import com.github.alfu32.sketch.model.DraftFaceStore
+import com.github.alfu32.sketch.model.DraftLineStore
 import com.github.alfu32.sketch.model.GroupScene
 import com.github.alfu32.sketch.ui.StatusModel
 import com.github.alfu32.sketch.ui.Tool
@@ -20,6 +22,8 @@ class VolumeBooleanTool(
     override val message: String = "Select exactly 2 mesh object instances, then run ${id.displayName}."
 
     private val intersectionEpsilon = 1e-4f
+    private val cutEpsilon = 1e-3f
+    private val planeEpsilon = 1e-3f
     private val rayEpsilon = 1e-5f
     private val rayDirection = Vector3(0.8713f, 0.3571f, 0.3359f).nor()
 
@@ -129,10 +133,10 @@ class VolumeBooleanTool(
         }
         store.notifyExternalChange()
 
-        var cuts = 0
-        intersectionSegments.forEach { segment ->
-            cuts += store.cutBySegmentInPlane(group.toLocal(segment.start), group.toLocal(segment.end))
+        val localSegments = intersectionSegments.map { segment ->
+            CutSegment(group.toLocal(segment.start), group.toLocal(segment.end))
         }
+        val cuts = cutUntilConverged(store, localSegments)
         val prepared = store.getTriangles().map { triangle ->
             FaceItem(
                 group.toWorld(triangle.a),
@@ -142,6 +146,186 @@ class VolumeBooleanTool(
             )
         }
         return PreparedFaces(prepared, cuts)
+    }
+
+    private data class CutSegment(val start: Vector3, val end: Vector3)
+
+    private fun cutUntilConverged(
+        store: DraftFaceStore,
+        segments: List<CutSegment>
+    ): Int {
+        var totalCuts = 0
+        segments.forEach { segment ->
+            val skipped = mutableSetOf<String>()
+            var guard = 0
+            while (guard < 1000) {
+                guard++
+                val target = store.getTriangles().firstOrNull { triangle ->
+                    triangle.id !in skipped && segmentCutsTriangle(segment, triangle)
+                } ?: break
+                store.clearSelection()
+                store.addSelection(target)
+                val cut = store.cutSelectedByPolyline(
+                    points = listOf(segment.start, segment.end),
+                    segments = listOf(DraftLineStore.Segment(segment.start, segment.end))
+                )
+                if (cut <= 0) {
+                    skipped.add(target.id)
+                } else {
+                    totalCuts += cut
+                    skipped.clear()
+                }
+            }
+        }
+        store.clearSelection()
+        return totalCuts
+    }
+
+    private fun segmentCutsTriangle(
+        segment: CutSegment,
+        triangle: DraftFaceStore.Triangle
+    ): Boolean {
+        if (segment.start.dst2(segment.end) <= cutEpsilon * cutEpsilon) {
+            return false
+        }
+        val normal = Vector3(triangle.b).sub(triangle.a).crs(Vector3(triangle.c).sub(triangle.a))
+        if (normal.len2() <= cutEpsilon * cutEpsilon) {
+            return false
+        }
+        normal.nor()
+        val d = -normal.dot(triangle.a)
+        val ds = normal.dot(segment.start) + d
+        val de = normal.dot(segment.end) + d
+        if (abs(ds) > planeEpsilon || abs(de) > planeEpsilon) {
+            return false
+        }
+
+        val basis = planeBasisFromNormal(normal)
+        val origin = triangle.a
+        val a = to2d(triangle.a, origin, basis)
+        val b = to2d(triangle.b, origin, basis)
+        val c = to2d(triangle.c, origin, basis)
+        val s = to2d(segment.start, origin, basis)
+        val e = to2d(segment.end, origin, basis)
+        if (s.dst2(e) <= cutEpsilon * cutEpsilon) {
+            return false
+        }
+        if (segmentCollinearOverlap2d(s, e, a, b) ||
+            segmentCollinearOverlap2d(s, e, b, c) ||
+            segmentCollinearOverlap2d(s, e, c, a)
+        ) {
+            return false
+        }
+
+        val hits = mutableListOf<Vector2>()
+        if (pointInTriangle2d(s, a, b, c) || pointOnTriangleBoundary2d(s, a, b, c)) {
+            addUnique(hits, s)
+        }
+        if (pointInTriangle2d(e, a, b, c) || pointOnTriangleBoundary2d(e, a, b, c)) {
+            addUnique(hits, e)
+        }
+        addUnique(hits, segmentIntersection2d(s, e, a, b))
+        addUnique(hits, segmentIntersection2d(s, e, b, c))
+        addUnique(hits, segmentIntersection2d(s, e, c, a))
+        if (hits.size < 2) {
+            return false
+        }
+
+        val dir = Vector2(e).sub(s)
+        val len2 = dir.len2()
+        if (len2 <= cutEpsilon * cutEpsilon) {
+            return false
+        }
+        val sorted = hits.sortedBy { point -> Vector2(point).sub(s).dot(dir) / len2 }
+        val first = sorted.first()
+        val last = sorted.last()
+        if (first.dst2(last) <= cutEpsilon * cutEpsilon) {
+            return false
+        }
+        val mid = Vector2(first).add(last).scl(0.5f)
+        if (pointOnTriangleBoundary2d(mid, a, b, c)) {
+            return false
+        }
+        return pointInTriangle2d(mid, a, b, c)
+    }
+
+    private fun to2d(point: Vector3, origin: Vector3, basis: PlaneBasis): Vector2 {
+        val rel = Vector3(point).sub(origin)
+        return Vector2(rel.dot(basis.axisU), rel.dot(basis.axisV))
+    }
+
+    private fun addUnique(points: MutableList<Vector2>, point: Vector2?) {
+        if (point == null) {
+            return
+        }
+        if (points.none { it.dst2(point) <= cutEpsilon * cutEpsilon }) {
+            points.add(Vector2(point))
+        }
+    }
+
+    private fun pointInTriangle2d(p: Vector2, a: Vector2, b: Vector2, c: Vector2): Boolean {
+        val d1 = signedArea2(p, a, b)
+        val d2 = signedArea2(p, b, c)
+        val d3 = signedArea2(p, c, a)
+        val hasNeg = d1 < -cutEpsilon || d2 < -cutEpsilon || d3 < -cutEpsilon
+        val hasPos = d1 > cutEpsilon || d2 > cutEpsilon || d3 > cutEpsilon
+        return !(hasNeg && hasPos)
+    }
+
+    private fun pointOnTriangleBoundary2d(p: Vector2, a: Vector2, b: Vector2, c: Vector2): Boolean {
+        return pointOnSegment2d(p, a, b) || pointOnSegment2d(p, b, c) || pointOnSegment2d(p, c, a)
+    }
+
+    private fun pointOnSegment2d(p: Vector2, a: Vector2, b: Vector2): Boolean {
+        val ab = Vector2(b).sub(a)
+        val ap = Vector2(p).sub(a)
+        val cross = abs(ab.crs(ap))
+        if (cross > cutEpsilon) {
+            return false
+        }
+        val dot = ap.dot(ab)
+        if (dot < -cutEpsilon) {
+            return false
+        }
+        return dot <= ab.len2() + cutEpsilon
+    }
+
+    private fun segmentCollinearOverlap2d(a: Vector2, b: Vector2, c: Vector2, d: Vector2): Boolean {
+        val ab = Vector2(b).sub(a)
+        val ac = Vector2(c).sub(a)
+        val ad = Vector2(d).sub(a)
+        if (abs(ab.crs(ac)) > cutEpsilon || abs(ab.crs(ad)) > cutEpsilon) {
+            return false
+        }
+        val len2 = ab.len2()
+        if (len2 <= cutEpsilon * cutEpsilon) {
+            return false
+        }
+        val tc = ac.dot(ab) / len2
+        val td = ad.dot(ab) / len2
+        val minT = kotlin.math.min(tc, td)
+        val maxT = kotlin.math.max(tc, td)
+        return maxT >= -cutEpsilon && minT <= 1f + cutEpsilon
+    }
+
+    private fun segmentIntersection2d(a: Vector2, b: Vector2, c: Vector2, d: Vector2): Vector2? {
+        val r = Vector2(b).sub(a)
+        val s = Vector2(d).sub(c)
+        val denom = r.crs(s)
+        if (abs(denom) <= cutEpsilon) {
+            return null
+        }
+        val ca = Vector2(c).sub(a)
+        val t = ca.crs(s) / denom
+        val u = ca.crs(r) / denom
+        if (t < -cutEpsilon || t > 1f + cutEpsilon || u < -cutEpsilon || u > 1f + cutEpsilon) {
+            return null
+        }
+        return Vector2(a).mulAdd(r, t.coerceIn(0f, 1f))
+    }
+
+    private fun signedArea2(p: Vector2, a: Vector2, b: Vector2): Float {
+        return (p.x - b.x) * (a.y - b.y) - (a.x - b.x) * (p.y - b.y)
     }
 
     private fun buildResult(setA: List<FaceItem>, setB: List<FaceItem>): List<FaceItem> {

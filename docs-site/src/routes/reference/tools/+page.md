@@ -18,7 +18,7 @@ Select, Push/Pull, Move, Rotate, Scale, Stretch, Rotate Stretch, copy-array tool
 
 Solid Union, Solid Intersection, and Solid Subtraction operate on object instances, not arbitrary selected faces. Select exactly two mesh object instances in the same parent context, then run the boolean command.
 
-The tool first finds intersection segments between the two object face sets. It then runs the same face-cutting routine used by Mesh Intersection on both operands, in each object's local coordinate system, before any geometry is discarded. Only after this shared cut phase does it classify faces against the opposite object, remove the two selected objects, and write the result back as exploded mesh faces in the parent context. The result is left selected so it can be moved, grouped, painted, or corrected immediately.
+The tool first finds intersection segments between the two object face sets. It then iteratively applies the bounded cutout routine to both operands, in each object's local coordinate system, before any geometry is discarded. Segment/triangle pairs where the segment already rests on a triangle border are skipped so the cut phase converges. Only after this shared cut phase does it classify face fragments against the opposite object, remove the two selected objects, and write the result back as exploded mesh faces in the parent context. The result is left selected so it can be moved, grouped, painted, or corrected immediately.
 
 These tools are intended for mesh objects with coherent face normals and reasonably closed volumes. Open or inconsistent volumes may produce partial results; in that case, use Mesh Intersection or Cut With Plane to inspect and repair the operands before running the boolean again.
 
