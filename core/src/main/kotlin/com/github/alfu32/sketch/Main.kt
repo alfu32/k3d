@@ -139,6 +139,7 @@ import com.github.alfu32.sketch.tools.ObjectPlaceTool
 import com.github.alfu32.sketch.tools.PaintTool
 import com.github.alfu32.sketch.tools.PlaneSectionTool
 import com.github.alfu32.sketch.tools.PolylineSettings
+import com.github.alfu32.sketch.tools.PolylineMeshTool
 import com.github.alfu32.sketch.tools.PolylineToolInternal
 import com.github.alfu32.sketch.tools.DoubleLineToolInternal
 import com.github.alfu32.sketch.tools.PushPullTool
@@ -155,6 +156,7 @@ import com.github.alfu32.sketch.tools.EmbeddedVectorGlyphCatalog
 import com.github.alfu32.sketch.tools.VectorTextTool
 import com.github.alfu32.sketch.tools.VectorTextSettings
 import com.github.alfu32.sketch.tools.VectorGlyphCatalog
+import com.github.alfu32.sketch.tools.VolumeBooleanTool
 import com.github.alfu32.sketch.tools.VoxelFrameTool
 import com.github.alfu32.sketch.tools.VoxelTool
 import com.github.alfu32.sketch.tools.VoxelVolumeTool
@@ -297,6 +299,7 @@ class Main @JvmOverloads constructor(
     private val selectedFaceColor = Color(1f, 0f, 0f, 0.3f)
     private val selectedLineColor = Color(1f, 0f, 0f, 1f)
     private val selectedLineOverlayPointColor = Color(0.12f, 0.32f, 0.95f, 0.95f)
+    private val selectedLineMidpointColor = Color(0.1f, 0.85f, 0.25f, 0.95f)
     private val feedbackOverlayLineColor = Color(0.06f, 0.12f, 0.24f, 0.95f)
     private val architectureHoleGuideColor = Color(0.2f, 0.55f, 0.95f, 1f)
     private val architectureHoleHotspotColor = Color(0.2f, 0.55f, 0.95f, 1f)
@@ -869,6 +872,10 @@ class Main @JvmOverloads constructor(
                 MechCircularHoleTool(scene) { circleSegments },
                 MechRoundWasherTool(scene) { circleSegments },
                 FaceOutlineTool(scene),
+                PolylineMeshTool(scene) { toolController.setTool(ToolId.SELECT) },
+                VolumeBooleanTool(ToolId.SOLID_UNION, scene, VolumeBooleanTool.Operation.UNION) { toolController.setTool(ToolId.SELECT) },
+                VolumeBooleanTool(ToolId.SOLID_INTERSECTION, scene, VolumeBooleanTool.Operation.INTERSECTION) { toolController.setTool(ToolId.SELECT) },
+                VolumeBooleanTool(ToolId.SOLID_SUBTRACTION, scene, VolumeBooleanTool.Operation.SUBTRACTION) { toolController.setTool(ToolId.SELECT) },
                 MeshTool(scene) { toolController.setTool(ToolId.SELECT) },
                 LineOffsetTool(scene),
                 CutHolesTool(scene) { toolController.setTool(ToolId.SELECT) },
@@ -6847,11 +6854,42 @@ class Main @JvmOverloads constructor(
         screenSegments.forEach { seg ->
             shapeRenderer.color = selectedLineColor
             drawDashedRectLine2D(seg.ax, seg.ay, seg.bx, seg.by, width = 2f, dash = 5f, gap = 3f)
+            drawSegmentDirectionArrow2D(seg.ax, seg.ay, seg.bx, seg.by)
             shapeRenderer.color = selectedLineOverlayPointColor
             shapeRenderer.circle(seg.ax, seg.ay, 3.5f, 16)
             shapeRenderer.circle(seg.bx, seg.by, 3.5f, 16)
+            shapeRenderer.color = selectedLineMidpointColor
+            shapeRenderer.circle((seg.ax + seg.bx) * 0.5f, (seg.ay + seg.by) * 0.5f, 4.0f, 16)
         }
         shapeRenderer.end()
+    }
+
+    private fun drawSegmentDirectionArrow2D(x1: Float, y1: Float, x2: Float, y2: Float) {
+        val dx = x2 - x1
+        val dy = y2 - y1
+        val length = kotlin.math.sqrt(dx * dx + dy * dy)
+        if (length <= 8f) {
+            return
+        }
+        val nx = dx / length
+        val ny = dy / length
+        val tipX = (x1 + x2) * 0.5f
+        val tipY = (y1 + y2) * 0.5f
+        val tailX = tipX - nx * 18f
+        val tailY = tipY - ny * 18f
+        val baseX = tipX - nx * 8f
+        val baseY = tipY - ny * 8f
+        val px = -ny
+        val py = nx
+        shapeRenderer.rectLine(tailX, tailY, baseX, baseY, 2.5f)
+        shapeRenderer.triangle(
+            tipX,
+            tipY,
+            baseX + px * 5f,
+            baseY + py * 5f,
+            baseX - px * 5f,
+            baseY - py * 5f
+        )
     }
 
     private fun drawDashedRectLine2D(
@@ -7688,9 +7726,10 @@ class Main @JvmOverloads constructor(
 
     private fun flipSelectedFaces() {
         val flipped = activeFaceStore().flipSelected()
-        if (flipped > 0) {
-            statusModel.message = "Flipped faces: $flipped"
-            undoManager.commit("Flip Faces")
+        val flippedSegments = activeLineStore().flipSelected()
+        if (flipped + flippedSegments > 0) {
+            statusModel.message = "Flipped faces: $flipped | segments: $flippedSegments"
+            undoManager.commit("Flip")
             saveModel()
         }
     }

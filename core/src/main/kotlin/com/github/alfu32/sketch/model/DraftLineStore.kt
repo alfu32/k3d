@@ -145,6 +145,32 @@ class DraftLineStore {
         return before - segments.size
     }
 
+    fun flipSelected(): Int {
+        if (selected.isEmpty()) {
+            return 0
+        }
+        val oldSelected = selected.toSet()
+        val newSelected = mutableSetOf<Segment>()
+        val newSegments = mutableListOf<Segment>()
+        segments.forEach { segment ->
+            if (oldSelected.contains(segment)) {
+                val flipped = Segment(Vector3(segment.end), Vector3(segment.start))
+                flipped.id = segment.id
+                newSegments.add(flipped)
+                newSelected.add(flipped)
+            } else {
+                newSegments.add(segment)
+            }
+        }
+        segments.clear()
+        segments.addAll(newSegments)
+        rebuildSegmentLookup()
+        selected.clear()
+        selected.addAll(newSelected)
+        notifyChange()
+        return newSelected.size
+    }
+
     fun deleteSegments(items: Collection<Segment>): Int {
         if (items.isEmpty()) {
             return 0
