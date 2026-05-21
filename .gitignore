@@ -180,3 +180,4 @@ Thumbs.db
 /.secrets/
 *.snap
 /appimagetool-x86_64.AppImage
+.analytics

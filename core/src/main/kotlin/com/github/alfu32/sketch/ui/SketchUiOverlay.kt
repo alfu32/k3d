@@ -166,6 +166,7 @@ class SketchUiOverlay(
     private val feedbackLineWidthChanged: (Float) -> Unit,
     private val permanentGridVisibleChanged: (Boolean) -> Unit,
     private val permanentGridNormalChanged: (PermanentGridNormalAxis) -> Unit,
+    private val permanentGridHalfSizeChanged: (Int) -> Unit,
     private val inToolOperatorAction: (ToolOperatorAction) -> Unit,
     private val tutorialStateProvider: () -> TutorialUiState,
     private val tutorialStartRecording: () -> Unit,
@@ -449,6 +450,7 @@ class SketchUiOverlay(
     private val uiThickLineWidthKey = "ui_thick_line_width"
     private val uiPermanentGridVisibleKey = "ui_permanent_grid_visible"
     private val uiPermanentGridNormalKey = "ui_permanent_grid_normal_axis"
+    private val uiPermanentGridHalfSizeKey = "ui_permanent_grid_half_size"
     private val toolbarLayoutMargin = 4f
     private val toolbarLayoutGap = 4f
     private val orderedBuiltInToolbarIds = listOf(
@@ -473,6 +475,7 @@ class SketchUiOverlay(
     private var thickLineWidth = 3f
     private var permanentGridVisible = true
     private var permanentGridNormalAxis = PermanentGridNormalAxis.Y_UP
+    private var permanentGridHalfSize = 20
     private val uiBaseFontScales = IdentityHashMap<BitmapFont, Pair<Float, Float>>()
     private val toolbarDesiredVisibility = mutableMapOf<String, Boolean>()
     private val archDefaultWallThicknessKey = "arch_default_wall_thickness"
@@ -751,6 +754,7 @@ class SketchUiOverlay(
     private lateinit var uiToolbarAutoCollapseCheck: VisCheckBox
     private lateinit var uiPermanentGridVisibleCheck: VisCheckBox
     private lateinit var uiPermanentGridNormalSelect: VisSelectBox<PermanentGridNormalAxis>
+    private val uiPermanentGridHalfSizeField = AppTextField()
     private lateinit var uiNormalLineWidthSlider: VisSlider
     private lateinit var uiNormalLineWidthValueLabel: VisLabel
     private lateinit var uiThickLineWidthSlider: VisSlider
@@ -789,6 +793,7 @@ class SketchUiOverlay(
         feedbackLineWidthChanged(thickLineWidth)
         permanentGridVisibleChanged(permanentGridVisible)
         permanentGridNormalChanged(permanentGridNormalAxis)
+        permanentGridHalfSizeChanged(permanentGridHalfSize)
         iconDrawables.putAll(loadIconDrawables())
         migrateBuiltinToolbarPrefs()
         toolbarsVisible = uiPrefs.getBoolean(toolbarsVisibleKey, true)
@@ -2607,6 +2612,8 @@ class SketchUiOverlay(
             setItems(*PermanentGridNormalAxis.values())
         }
         content.add(uiPermanentGridNormalSelect).growX().row()
+        content.add(VisLabel("Permanent grid extent (steps from origin)")).left().padTop(4f).row()
+        content.add(uiPermanentGridHalfSizeField).growX().row()
         content.add(VisLabel("Normal line width")).left().padTop(4f).row()
         uiNormalLineWidthSlider = VisSlider(1f, 8f, 0.5f, false)
         uiNormalLineWidthValueLabel = VisLabel()
@@ -2677,6 +2684,19 @@ class SketchUiOverlay(
             override fun changed(event: ChangeEvent?, actor: Actor?) {
                 if (updatingUiSettingsFields) return
                 setPermanentGridNormalAxis(uiPermanentGridNormalSelect.selected)
+            }
+        })
+        uiPermanentGridHalfSizeField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                if (updatingUiSettingsFields) return
+                val sanitized = uiPermanentGridHalfSizeField.text.filter { it.isDigit() }
+                if (sanitized != uiPermanentGridHalfSizeField.text) {
+                    updatingUiSettingsFields = true
+                    uiPermanentGridHalfSizeField.text = sanitized
+                    updatingUiSettingsFields = false
+                }
+                val value = sanitized.toIntOrNull() ?: return
+                setPermanentGridHalfSize(value)
             }
         })
         uiNormalLineWidthSlider.addListener(object : ChangeListener() {
@@ -5439,6 +5459,7 @@ class SketchUiOverlay(
         permanentGridNormalAxis = PermanentGridNormalAxis.fromPrefValue(
             uiPrefs.getString(uiPermanentGridNormalKey, PermanentGridNormalAxis.Y_UP.prefValue)
         )
+        permanentGridHalfSize = uiPrefs.getInteger(uiPermanentGridHalfSizeKey, permanentGridHalfSize).coerceIn(1, 1000)
         toolbarIconSizePx = normalized
         toolbarButtonSize = normalized.toFloat()
     }
@@ -5469,6 +5490,10 @@ class SketchUiOverlay(
         uiToolbarAutoCollapseCheck.isChecked = toolbarAutoCollapse
         uiPermanentGridVisibleCheck.isChecked = permanentGridVisible
         uiPermanentGridNormalSelect.selected = permanentGridNormalAxis
+        val gridHalfSizeText = permanentGridHalfSize.toString()
+        if (gridHalfSizeText != uiPermanentGridHalfSizeField.text || !uiPermanentGridHalfSizeField.hasKeyboardFocus()) {
+            uiPermanentGridHalfSizeField.text = gridHalfSizeText
+        }
         uiNormalLineWidthSlider.value = normalLineWidth
         uiNormalLineWidthValueLabel.setText(String.format(Locale.US, "%.1f px", normalLineWidth))
         uiThickLineWidthSlider.value = thickLineWidth
@@ -5562,6 +5587,19 @@ class SketchUiOverlay(
         uiPrefs.putString(uiPermanentGridNormalKey, axis.prefValue)
         uiPrefs.flush()
         permanentGridNormalChanged(axis)
+        syncUiSettingsPanel()
+    }
+
+    private fun setPermanentGridHalfSize(halfSize: Int) {
+        val normalized = halfSize.coerceIn(1, 1000)
+        if (permanentGridHalfSize == normalized) {
+            syncUiSettingsPanel()
+            return
+        }
+        permanentGridHalfSize = normalized
+        uiPrefs.putInteger(uiPermanentGridHalfSizeKey, normalized)
+        uiPrefs.flush()
+        permanentGridHalfSizeChanged(normalized)
         syncUiSettingsPanel()
     }
 

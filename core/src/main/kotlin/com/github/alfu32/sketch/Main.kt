@@ -322,6 +322,7 @@ class Main @JvmOverloads constructor(
     private val feedbackLineWidthPrefKey = "ui.feedback_line_width"
     private val permanentGridVisiblePrefKey = "ui.permanent_grid_visible"
     private val permanentGridNormalPrefKey = "ui.permanent_grid_normal_axis"
+    private val permanentGridHalfSizePrefKey = "ui.permanent_grid_half_size"
     private lateinit var toolController: ToolController
     private lateinit var toolInput: ToolInputProcessor
     private lateinit var uiOverlay: SketchUiOverlay
@@ -344,7 +345,7 @@ class Main @JvmOverloads constructor(
     private var gridSpacing = 1f
     private var circleSegments = 24
     private var snapEpsilon = 12f
-    private val baseGridHalfSize = 20
+    private var permanentGridHalfSize = 20
     private val adaptiveGridCloudRadiusUnits = 7
     private var modelUnit = ModelUnit(1f, "unit")
     private lateinit var modelFile: java.io.File
@@ -748,6 +749,7 @@ class Main @JvmOverloads constructor(
         permanentGridNormalAxis = PermanentGridNormalAxis.fromPrefValue(
             runtimePrefs.getString(permanentGridNormalPrefKey, permanentGridNormalAxis.prefValue)
         )
+        permanentGridHalfSize = runtimePrefs.getInteger(permanentGridHalfSizePrefKey, permanentGridHalfSize).coerceIn(1, 1000)
         scene = GroupScene(Color(0.8f, 0.8f, 0.8f, 1f))
         vectorGlyphCatalog = loadVectorGlyphCatalog(vectorTextSettings.glyphSourcePath)
         modelCleanup = ModelCleanup(scene)
@@ -1094,6 +1096,7 @@ class Main @JvmOverloads constructor(
             ::updateFeedbackOverlayLineWidth,
             ::updatePermanentGridVisible,
             ::updatePermanentGridNormalAxis,
+            ::updatePermanentGridHalfSize,
             { action -> toolInput.performOperator(action) },
             ::tutorialUiState,
             ::startTutorialRecording,
@@ -3085,7 +3088,7 @@ class Main @JvmOverloads constructor(
         shapeRenderer.projectionMatrix = activeCamera.combined
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         if (permanentGridVisible) {
-            drawGrid(baseGridHalfSize, gridSpacing)
+            drawGrid(permanentGridHalfSize, gridSpacing)
         }
         drawAxes(2.5f)
         drawActiveGroupAxes(1.8f)
@@ -3528,7 +3531,7 @@ class Main @JvmOverloads constructor(
             return
         }
         snapNormal.nor()
-        val baseExtent = baseGridHalfSize * gridSpacing
+        val baseExtent = permanentGridHalfSize * gridSpacing
         val baseGridBasis = currentPermanentGridGuideBasis()
         val baseLocal = Vector3(snapCenter).sub(baseGridBasis.origin)
         val basePlaneAlignment = kotlin.math.abs(snapNormal.dot(baseGridBasis.axisW))
@@ -10467,6 +10470,13 @@ class Main @JvmOverloads constructor(
     private fun updatePermanentGridNormalAxis(axis: PermanentGridNormalAxis) {
         permanentGridNormalAxis = axis
         runtimePrefs.putString(permanentGridNormalPrefKey, permanentGridNormalAxis.prefValue)
+        runtimePrefs.flush()
+    }
+
+    private fun updatePermanentGridHalfSize(halfSize: Int) {
+        permanentGridHalfSize = halfSize.coerceIn(1, 1000)
+        adaptiveGridCloudState = null
+        runtimePrefs.putInteger(permanentGridHalfSizePrefKey, permanentGridHalfSize)
         runtimePrefs.flush()
     }
 
