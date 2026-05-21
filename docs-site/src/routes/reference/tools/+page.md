@@ -14,6 +14,14 @@ Line, Construction Line, Polyline, Double Line, Rectangle, Surface Rectangle, Qu
 
 Select, Push/Pull, Move, Rotate, Scale, Stretch, Rotate Stretch, copy-array tools, and Paint cover the direct modeling loop.
 
+### Object Boolean Operations
+
+Solid Union, Solid Intersection, and Solid Subtraction operate on object instances, not arbitrary selected faces. Select exactly two mesh object instances in the same parent context, then run the boolean command.
+
+The tool converts the two operand objects to world-space face sets, cuts faces along detected intersections, classifies faces against the opposite object, removes the two selected objects, and writes the result back as exploded mesh faces in the parent context. The result is left selected so it can be moved, grouped, painted, or corrected immediately.
+
+These tools are intended for mesh objects with coherent face normals and reasonably closed volumes. Open or inconsistent volumes may produce partial results; in that case, use Mesh Intersection or Cut With Plane to inspect and repair the operands before running the boolean again.
+
 ## Domain Tools
 
 Architecture tools include wall, slab, stair, hole, window frame, and door frame workflows. Voxel tools include voxel, volume, and frame blockout tools. HVAC tools exist in source and should be documented only after validating the current user workflow.

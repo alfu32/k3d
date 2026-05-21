@@ -17,120 +17,175 @@ class VolumeBooleanTool(
 ) : Tool {
     enum class Operation { UNION, INTERSECTION, SUBTRACTION }
 
-    override val message: String = "Select two connected face sets before running ${id.displayName}."
+    override val message: String = "Select exactly 2 mesh object instances, then run ${id.displayName}."
 
-    private val keyEpsilon = 1e-3f
+    private val intersectionEpsilon = 1e-4f
     private val rayEpsilon = 1e-5f
     private val rayDirection = Vector3(0.8713f, 0.3571f, 0.3359f).nor()
 
     override fun onEnter(status: StatusModel) {
-        val group = scene.activeGroup()
-        val faceStore = group.faceStore
-        val selected = faceStore.getSelected().toList()
-        if (selected.size < 2) {
-            status.message = "Select faces from two volumes first."
+        val selectedObjects = scene.selectedGroups().toList()
+        if (selectedObjects.size != 2) {
+            status.message = "${id.displayName}: select exactly 2 object instances."
             done()
             return
         }
 
-        val components = connectedComponents(selected).sortedByDescending { it.size }
-        if (components.size < 2) {
-            status.message = "Selection must contain two connected face sets."
+        val groupA = selectedObjects[0]
+        val groupB = selectedObjects[1]
+        val targetGroup = groupA.parent
+        if (targetGroup == null || groupB.parent != targetGroup) {
+            status.message = "${id.displayName}: selected objects must share the same parent context."
+            done()
+            return
+        }
+        if (scene.isVoxelGroup(groupA) || scene.isVoxelGroup(groupB)) {
+            status.message = "${id.displayName}: mesh object instances only; voxel objects are not supported yet."
             done()
             return
         }
 
-        val rawSetA = components[0]
-        val rawSetB = components[1]
-        val intersectionSegments = MeshIntersectionMath.dedupeSegments(intersectionSegments(rawSetA, rawSetB), keyEpsilon)
-        var cuts = 0
-        intersectionSegments.forEach { segment ->
-            cuts += faceStore.cutBySegmentInPlane(segment.start, segment.end)
+        val facesA = collectWorldFaces(groupA)
+        val facesB = collectWorldFaces(groupB)
+        if (facesA.isEmpty() || facesB.isEmpty()) {
+            status.message = "${id.displayName}: both selected objects must contain mesh faces."
+            done()
+            return
         }
 
-        val operationSelection = faceStore.getSelected().toList()
-        val operationComponents = connectedComponents(operationSelection).sortedByDescending { it.size }
-        val setA = operationComponents.getOrNull(0) ?: rawSetA
-        val setB = operationComponents.getOrNull(1) ?: rawSetB
-        val result = buildResult(faceStore, setA, setB)
+        val intersectionSegments = MeshIntersectionMath.dedupeSegments(
+            intersectionSegments(facesA, facesB),
+            intersectionEpsilon
+        )
+        val preparedA = prepareCutFaces(facesA, intersectionSegments)
+        val preparedB = prepareCutFaces(facesB, intersectionSegments)
+        val result = buildResult(preparedA.faces, preparedB.faces)
         if (result.isEmpty()) {
-            status.message = "${id.displayName} produced no faces. Check that the two selected face sets overlap."
+            status.message = "${id.displayName}: no result faces. The objects may not overlap or their face normals may be inconsistent."
             done()
             return
         }
 
+        scene.clearGroupSelection()
+        selectedObjects.forEach { scene.addGroupSelection(it) }
+        val removedObjects = scene.deleteSelectedGroups()
+
+        targetGroup.lineStore.clearSelection()
+        targetGroup.faceStore.clearSelection()
+        targetGroup.dimensionStore.clearSelection()
+        targetGroup.textStore.clearSelection()
+        targetGroup.voxelStore?.clearSelection()
+
+        val added = mutableListOf<DraftFaceStore.Triangle>()
+        val faceStore = targetGroup.faceStore
         faceStore.withChangeSuppressed {
-            faceStore.deleteTriangles(operationSelection)
             result.forEach { item ->
-                val added = faceStore.appendTriangleRaw(item.a, item.b, item.c, item.color)
-                faceStore.addSelection(added)
+                val a = targetGroup.toLocal(item.a)
+                val b = targetGroup.toLocal(item.b)
+                val c = targetGroup.toLocal(item.c)
+                added.add(faceStore.appendTriangleRaw(a, b, c, item.color))
             }
         }
         faceStore.notifyExternalChange()
-        status.message = "${id.displayName} created ${result.size} face(s). Intersection cuts: $cuts."
+        added.forEach(faceStore::addSelection)
+
+        status.message =
+            "${id.displayName}: replaced $removedObjects object(s) with ${added.size} selected exploded mesh face(s). Cuts: A ${preparedA.cuts}, B ${preparedB.cuts}."
         done()
     }
 
-    private data class VertexKey(val x: Int, val y: Int, val z: Int)
     private data class FaceItem(val a: Vector3, val b: Vector3, val c: Vector3, val color: Color)
+    private data class PreparedFaces(val faces: List<FaceItem>, val cuts: Int)
 
-    private fun buildResult(
-        faceStore: DraftFaceStore,
-        setA: List<DraftFaceStore.Triangle>,
-        setB: List<DraftFaceStore.Triangle>
-    ): List<FaceItem> {
+    private fun collectWorldFaces(group: GroupScene.GroupNode): List<FaceItem> {
+        return group.faceStore.getTriangles().map { triangle ->
+            FaceItem(
+                group.toWorld(triangle.a),
+                group.toWorld(triangle.b),
+                group.toWorld(triangle.c),
+                Color(group.faceStore.colorFor(triangle))
+            )
+        }
+    }
+
+    private fun prepareCutFaces(
+        faces: List<FaceItem>,
+        intersectionSegments: List<MeshIntersectionMath.Segment3>
+    ): PreparedFaces {
+        if (faces.isEmpty()) {
+            return PreparedFaces(emptyList(), 0)
+        }
+        val store = DraftFaceStore()
+        store.withChangeSuppressed {
+            faces.forEach { face ->
+                store.appendTriangleRaw(face.a, face.b, face.c, face.color)
+            }
+        }
+        store.notifyExternalChange()
+
+        var cuts = 0
+        intersectionSegments.forEach { segment ->
+            cuts += store.cutBySegmentInPlane(segment.start, segment.end)
+        }
+        val prepared = store.getTriangles().map { triangle ->
+            FaceItem(
+                Vector3(triangle.a),
+                Vector3(triangle.b),
+                Vector3(triangle.c),
+                Color(store.colorFor(triangle))
+            )
+        }
+        return PreparedFaces(prepared, cuts)
+    }
+
+    private fun buildResult(setA: List<FaceItem>, setB: List<FaceItem>): List<FaceItem> {
         val out = mutableListOf<FaceItem>()
         when (operation) {
             Operation.UNION -> {
-                setA.filterNot { centroidInside(it, setB) }.forEach { out.add(faceItem(faceStore, it)) }
-                setB.filterNot { centroidInside(it, setA) }.forEach { out.add(faceItem(faceStore, it)) }
+                setA.filterNot { centroidInside(it, setB) }.forEach(out::add)
+                setB.filterNot { centroidInside(it, setA) }.forEach(out::add)
                 if (out.isEmpty()) {
-                    setA.forEach { out.add(faceItem(faceStore, it)) }
-                    setB.forEach { out.add(faceItem(faceStore, it)) }
+                    out.addAll(setA)
+                    out.addAll(setB)
                 }
             }
             Operation.INTERSECTION -> {
-                setA.filter { centroidInside(it, setB) }.forEach { out.add(faceItem(faceStore, it)) }
-                setB.filter { centroidInside(it, setA) }.forEach { out.add(faceItem(faceStore, it)) }
+                setA.filter { centroidInside(it, setB) }.forEach(out::add)
+                setB.filter { centroidInside(it, setA) }.forEach(out::add)
             }
             Operation.SUBTRACTION -> {
-                setA.filterNot { centroidInside(it, setB) }.forEach { out.add(faceItem(faceStore, it)) }
-                setB.filter { centroidInside(it, setA) }.forEach { out.add(faceItem(faceStore, it, flip = true)) }
+                setA.filterNot { centroidInside(it, setB) }.forEach(out::add)
+                setB.filter { centroidInside(it, setA) }.forEach { out.add(it.flipped()) }
             }
         }
         return out
     }
 
     private fun intersectionSegments(
-        setA: List<DraftFaceStore.Triangle>,
-        setB: List<DraftFaceStore.Triangle>
+        setA: List<FaceItem>,
+        setB: List<FaceItem>
     ): List<MeshIntersectionMath.Segment3> {
         val segments = mutableListOf<MeshIntersectionMath.Segment3>()
         setA.forEach { a ->
             val triA = MeshIntersectionMath.Triangle3(a.a, a.b, a.c)
             setB.forEach { b ->
                 val triB = MeshIntersectionMath.Triangle3(b.a, b.b, b.c)
-                MeshIntersectionMath.intersectTriangles(triA, triB, keyEpsilon)?.let(segments::add)
+                MeshIntersectionMath.intersectTriangles(triA, triB, intersectionEpsilon)?.let(segments::add)
             }
         }
         return segments
     }
 
-    private fun faceItem(faceStore: DraftFaceStore, triangle: DraftFaceStore.Triangle, flip: Boolean = false): FaceItem {
-        val color = Color(faceStore.colorFor(triangle))
-        return if (flip) {
-            FaceItem(Vector3(triangle.a), Vector3(triangle.c), Vector3(triangle.b), color)
-        } else {
-            FaceItem(Vector3(triangle.a), Vector3(triangle.b), Vector3(triangle.c), color)
-        }
+    private fun FaceItem.flipped(): FaceItem {
+        return FaceItem(Vector3(a), Vector3(c), Vector3(b), Color(color))
     }
 
-    private fun centroidInside(triangle: DraftFaceStore.Triangle, volume: List<DraftFaceStore.Triangle>): Boolean {
+    private fun centroidInside(triangle: FaceItem, volume: List<FaceItem>): Boolean {
         val centroid = Vector3(triangle.a).add(triangle.b).add(triangle.c).scl(1f / 3f)
         return isInsideByRayCast(centroid, volume)
     }
 
-    private fun isInsideByRayCast(point: Vector3, volume: List<DraftFaceStore.Triangle>): Boolean {
+    private fun isInsideByRayCast(point: Vector3, volume: List<FaceItem>): Boolean {
         var hits = 0
         volume.forEach { triangle ->
             val t = rayTriangleIntersection(point, rayDirection, triangle)
@@ -144,7 +199,7 @@ class VolumeBooleanTool(
     private fun rayTriangleIntersection(
         origin: Vector3,
         direction: Vector3,
-        triangle: DraftFaceStore.Triangle
+        triangle: FaceItem
     ): Float? {
         val edge1 = Vector3(triangle.b).sub(triangle.a)
         val edge2 = Vector3(triangle.c).sub(triangle.a)
@@ -166,47 +221,5 @@ class VolumeBooleanTool(
         }
         val t = invDet * edge2.dot(q)
         return if (t > rayEpsilon) t else null
-    }
-
-    private fun connectedComponents(triangles: List<DraftFaceStore.Triangle>): List<List<DraftFaceStore.Triangle>> {
-        val vertexToFaces = linkedMapOf<VertexKey, MutableList<DraftFaceStore.Triangle>>()
-        triangles.forEach { triangle ->
-            listOf(triangle.a, triangle.b, triangle.c).forEach { point ->
-                vertexToFaces.getOrPut(vertexKey(point)) { mutableListOf() }.add(triangle)
-            }
-        }
-        val visited = mutableSetOf<DraftFaceStore.Triangle>()
-        val components = mutableListOf<List<DraftFaceStore.Triangle>>()
-        triangles.forEach { seed ->
-            if (seed in visited) {
-                return@forEach
-            }
-            val component = mutableListOf<DraftFaceStore.Triangle>()
-            val stack = ArrayDeque<DraftFaceStore.Triangle>()
-            stack.add(seed)
-            visited.add(seed)
-            while (stack.isNotEmpty()) {
-                val current = stack.removeLast()
-                component.add(current)
-                listOf(current.a, current.b, current.c).forEach { point ->
-                    vertexToFaces[vertexKey(point)].orEmpty().forEach { neighbor ->
-                        if (neighbor !in visited) {
-                            visited.add(neighbor)
-                            stack.add(neighbor)
-                        }
-                    }
-                }
-            }
-            components.add(component)
-        }
-        return components
-    }
-
-    private fun vertexKey(point: Vector3): VertexKey {
-        return VertexKey(
-            kotlin.math.round(point.x / keyEpsilon).toInt(),
-            kotlin.math.round(point.y / keyEpsilon).toInt(),
-            kotlin.math.round(point.z / keyEpsilon).toInt()
-        )
     }
 }
