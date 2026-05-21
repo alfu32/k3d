@@ -23,6 +23,6 @@ For documentation captures, generate a deterministic base face first, then valid
 
 Solid Union, Solid Intersection, and Solid Subtraction are object-level mesh tools. They do not consume loose face selections. Select exactly two mesh object instances that share the same parent context, then run the operation from the toolbar or command palette.
 
-The operation replaces the selected objects with loose selected mesh faces. This is deliberate: the result is immediately editable, can be inspected face-by-face, and can be grouped into a new object only after the user is satisfied with the topology.
+The operation first cuts both operands along their detected intersection segments, reusing the same cut routine as Mesh Intersection. It then removes or keeps the resulting face fragments according to the requested operation. The selected objects are replaced with loose selected mesh faces; this is deliberate because the result is immediately editable, can be inspected face-by-face, and can be grouped into a new object only after the user is satisfied with the topology.
 
 Use closed, consistently wound mesh objects for best results. If the result is empty or incomplete, run Mesh Intersection first to see whether the operands really cross, then repair open faces or flipped normals before retrying.

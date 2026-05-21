@@ -57,8 +57,8 @@ class VolumeBooleanTool(
             intersectionSegments(facesA, facesB),
             intersectionEpsilon
         )
-        val preparedA = prepareCutFaces(facesA, intersectionSegments)
-        val preparedB = prepareCutFaces(facesB, intersectionSegments)
+        val preparedA = prepareCutFaces(groupA, intersectionSegments)
+        val preparedB = prepareCutFaces(groupB, intersectionSegments)
         val result = buildResult(preparedA.faces, preparedB.faces)
         if (result.isEmpty()) {
             status.message = "${id.displayName}: no result faces. The objects may not overlap or their face normals may be inconsistent."
@@ -109,29 +109,35 @@ class VolumeBooleanTool(
     }
 
     private fun prepareCutFaces(
-        faces: List<FaceItem>,
+        group: GroupScene.GroupNode,
         intersectionSegments: List<MeshIntersectionMath.Segment3>
     ): PreparedFaces {
-        if (faces.isEmpty()) {
+        val sourceFaces = group.faceStore.getTriangles().toList()
+        if (sourceFaces.isEmpty()) {
             return PreparedFaces(emptyList(), 0)
         }
         val store = DraftFaceStore()
         store.withChangeSuppressed {
-            faces.forEach { face ->
-                store.appendTriangleRaw(face.a, face.b, face.c, face.color)
+            sourceFaces.forEach { triangle ->
+                store.appendTriangleRaw(
+                    triangle.a,
+                    triangle.b,
+                    triangle.c,
+                    Color(group.faceStore.colorFor(triangle))
+                )
             }
         }
         store.notifyExternalChange()
 
         var cuts = 0
         intersectionSegments.forEach { segment ->
-            cuts += store.cutBySegmentInPlane(segment.start, segment.end)
+            cuts += store.cutBySegmentInPlane(group.toLocal(segment.start), group.toLocal(segment.end))
         }
         val prepared = store.getTriangles().map { triangle ->
             FaceItem(
-                Vector3(triangle.a),
-                Vector3(triangle.b),
-                Vector3(triangle.c),
+                group.toWorld(triangle.a),
+                group.toWorld(triangle.b),
+                group.toWorld(triangle.c),
                 Color(store.colorFor(triangle))
             )
         }
