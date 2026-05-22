@@ -1463,6 +1463,7 @@ class SketchUiOverlay(
             ToolId.SURFACE_RECTANGLE,
             ToolId.FACE_OUTLINE,
             ToolId.POLYLINE_MESH,
+            ToolId.OBJECT_CUT,
             ToolId.SOLID_UNION,
             ToolId.SOLID_INTERSECTION,
             ToolId.SOLID_SUBTRACTION,
@@ -6731,6 +6732,7 @@ class SketchUiOverlay(
             ToolId.MECH_ROUND_WASHER -> "mech_washer_round"
             ToolId.FACE_OUTLINE -> "face_outline"
             ToolId.POLYLINE_MESH -> "polyline_mesh"
+            ToolId.OBJECT_CUT -> "mesh_intersection"
             ToolId.SOLID_UNION -> "solid_union"
             ToolId.SOLID_INTERSECTION -> "solid_intersect"
             ToolId.SOLID_SUBTRACTION -> "solid_subtract"
@@ -6795,6 +6797,7 @@ class SketchUiOverlay(
             ToolId.MECH_ROUND_WASHER -> Color(0.7f, 0.92f, 0.65f, 1f)
             ToolId.FACE_OUTLINE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.POLYLINE_MESH -> Color(0.65f, 0.9f, 0.65f, 1f)
+            ToolId.OBJECT_CUT -> Color(0.75f, 0.75f, 0.95f, 1f)
             ToolId.SOLID_UNION -> Color(0.45f, 0.85f, 0.55f, 1f)
             ToolId.SOLID_INTERSECTION -> Color(0.55f, 0.8f, 0.95f, 1f)
             ToolId.SOLID_SUBTRACTION -> Color(0.95f, 0.55f, 0.35f, 1f)

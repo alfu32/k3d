@@ -135,6 +135,7 @@ import com.github.alfu32.sketch.tools.MechRoundWasherTool
 import com.github.alfu32.sketch.tools.MechScrewTool
 import com.github.alfu32.sketch.tools.MeshTool
 import com.github.alfu32.sketch.tools.MoveTool
+import com.github.alfu32.sketch.tools.ObjectCutTool
 import com.github.alfu32.sketch.tools.ObjectPlaceTool
 import com.github.alfu32.sketch.tools.PaintTool
 import com.github.alfu32.sketch.tools.PlaneSectionTool
@@ -873,6 +874,7 @@ class Main @JvmOverloads constructor(
                 MechRoundWasherTool(scene) { circleSegments },
                 FaceOutlineTool(scene),
                 PolylineMeshTool(scene) { toolController.setTool(ToolId.SELECT) },
+                ObjectCutTool(scene) { toolController.setTool(ToolId.SELECT) },
                 VolumeBooleanTool(ToolId.SOLID_UNION, scene, VolumeBooleanTool.Operation.UNION) { toolController.setTool(ToolId.SELECT) },
                 VolumeBooleanTool(ToolId.SOLID_INTERSECTION, scene, VolumeBooleanTool.Operation.INTERSECTION) { toolController.setTool(ToolId.SELECT) },
                 VolumeBooleanTool(ToolId.SOLID_SUBTRACTION, scene, VolumeBooleanTool.Operation.SUBTRACTION) { toolController.setTool(ToolId.SELECT) },
@@ -1618,6 +1620,7 @@ class Main @JvmOverloads constructor(
             ToolId.QUAD,
             ToolId.CIRCLE,
             ToolId.FACE_OUTLINE,
+            ToolId.OBJECT_CUT,
             ToolId.LINE_OFFSET,
             ToolId.CUT_HOLES,
             ToolId.CUT_HOLES_2,

@@ -26,3 +26,9 @@ Solid Union, Solid Intersection, and Solid Subtraction are object-level mesh too
 The operation first computes the ordered intersection segment collection once and keeps it fixed. The cut phase then runs global convergence passes over that immutable segment list: the tool keeps mutating each face set until no fixed intersection segment crosses a remaining triangle interior. When a fixed segment only partly crosses a triangle, the cutter is clipped to the portion inside that triangle before the cut is applied. Segment/triangle pairs where the clipped segment already lies on a triangle border are ignored. It then removes or keeps the resulting face fragments according to the requested operation. The selected objects are replaced with loose selected mesh faces; this is deliberate because the result is immediately editable, can be inspected face-by-face, and can be grouped into a new object only after the user is satisfied with the topology.
 
 Use closed, consistently wound mesh objects for best results. If the result is empty or incomplete, run Mesh Intersection first to see whether the operands really cross, then repair open faces or flipped normals before retrying.
+
+## Cut Objects
+
+Cut Objects is the non-boolean version of the object cut phase. Select exactly two mesh object instances, then run the tool to replace them with loose selected cut triangles, original loose segments from both objects, and the generated intersection segments. No faces are removed for union, intersection, or subtraction.
+
+Use this tool when checking whether the cut phase is complete before reasoning about boolean classification.

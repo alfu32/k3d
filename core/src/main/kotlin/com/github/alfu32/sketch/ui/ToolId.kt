@@ -24,6 +24,7 @@ enum class ToolId(val displayName: String) {
     MECH_ROUND_WASHER("Round Washer"),
     FACE_OUTLINE("Face Outline"),
     POLYLINE_MESH("Polyline Mesh"),
+    OBJECT_CUT("Cut Objects"),
     SOLID_UNION("Solid Union"),
     SOLID_INTERSECTION("Solid Intersection"),
     SOLID_SUBTRACTION("Solid Subtraction"),
