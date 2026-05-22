@@ -32,6 +32,18 @@ Use this when validating the shared boolean preparation step. If the resulting t
 
 Architecture tools include wall, slab, stair, hole, window frame, and door frame workflows. Voxel tools include voxel, volume, and frame blockout tools. HVAC tools exist in source and should be documented only after validating the current user workflow.
 
+### Mechanical Tools
+
+The Mech toolbar contains Screw, Circular Hole, Round Washer, and Cog Wheel tools.
+
+Cog Wheel builds a repeated tooth wheel from selected line segments. Select one connected closed outline for a single tooth, activate Cog Wheel, then pick:
+
+1. the cog center `C`,
+2. the inner radius point `R`,
+3. the height point `H`.
+
+The tool uses `C-H` as the cog axis and extrusion vector. It projects `C-R` perpendicular to that axis to define the inner radius and first radial direction. The selected tooth outline is shifted so its innermost radial projection sits on the chosen inner radius, then the tangential width of the tooth estimates the tooth count around the circumference. Each copied tooth is extruded along `C-H`, so slanted tooth outlines and slanted cog axes are supported as long as the input loop is connected and non-degenerate.
+
 ## Command Naming
 
 Current docs describe built-in tool activation as `tool.builtin.<id>`, where `<id>` is the lower-case tool ID such as `rectangle` or `push_pull`. Automation must still call `/scene/listCommands` first.

@@ -21,9 +21,9 @@ class VolumeBooleanTool(
 
     override val message: String = "Select exactly 2 mesh object instances, then run ${id.displayName}."
 
-    private val intersectionEpsilon = 1e-4f
-    private val cutEpsilon = 1e-3f
-    private val planeEpsilon = 1e-3f
+    private val intersectionEpsilon = 1e-2f
+    private val cutEpsilon = 1e-2f
+    private val planeEpsilon = 1e-2f
     private val rayEpsilon = 1e-5f
     private val rayDirection = Vector3(0.8713f, 0.3571f, 0.3359f).nor()
 

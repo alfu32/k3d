@@ -22,6 +22,7 @@ enum class ToolId(val displayName: String) {
     MECH_SCREW("Screw"),
     MECH_CIRCULAR_HOLE("Circular Hole"),
     MECH_ROUND_WASHER("Round Washer"),
+    MECH_COG_WHEEL("Cog Wheel"),
     FACE_OUTLINE("Face Outline"),
     POLYLINE_MESH("Polyline Mesh"),
     OBJECT_CUT("Cut Objects"),

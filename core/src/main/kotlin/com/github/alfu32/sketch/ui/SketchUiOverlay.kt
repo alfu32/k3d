@@ -1524,7 +1524,8 @@ class SketchUiOverlay(
         val mechTools = listOf(
             ToolId.MECH_SCREW,
             ToolId.MECH_CIRCULAR_HOLE,
-            ToolId.MECH_ROUND_WASHER
+            ToolId.MECH_ROUND_WASHER,
+            ToolId.MECH_COG_WHEEL
         )
 
         val pointConstruction = buildToolsToolbarWindow(
@@ -6730,6 +6731,7 @@ class SketchUiOverlay(
             ToolId.MECH_SCREW -> "mech_screw_surface"
             ToolId.MECH_CIRCULAR_HOLE -> "mech_round_hole"
             ToolId.MECH_ROUND_WASHER -> "mech_washer_round"
+            ToolId.MECH_COG_WHEEL -> "mech_cog_wheel"
             ToolId.FACE_OUTLINE -> "face_outline"
             ToolId.POLYLINE_MESH -> "polyline_mesh"
             ToolId.OBJECT_CUT -> "mesh_intersection"
@@ -6795,6 +6797,7 @@ class SketchUiOverlay(
             ToolId.MECH_SCREW -> Color(0.9f, 0.7f, 0.45f, 1f)
             ToolId.MECH_CIRCULAR_HOLE -> Color(0.55f, 0.95f, 0.45f, 1f)
             ToolId.MECH_ROUND_WASHER -> Color(0.7f, 0.92f, 0.65f, 1f)
+            ToolId.MECH_COG_WHEEL -> Color(0.95f, 0.82f, 0.35f, 1f)
             ToolId.FACE_OUTLINE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.POLYLINE_MESH -> Color(0.65f, 0.9f, 0.65f, 1f)
             ToolId.OBJECT_CUT -> Color(0.75f, 0.75f, 0.95f, 1f)

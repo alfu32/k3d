@@ -131,6 +131,7 @@ import com.github.alfu32.sketch.tools.LinearDimensionTool
 import com.github.alfu32.sketch.tools.LineOffsetTool
 import com.github.alfu32.sketch.tools.LineTool
 import com.github.alfu32.sketch.tools.MechCircularHoleTool
+import com.github.alfu32.sketch.tools.MechCogWheelTool
 import com.github.alfu32.sketch.tools.MechRoundWasherTool
 import com.github.alfu32.sketch.tools.MechScrewTool
 import com.github.alfu32.sketch.tools.MeshTool
@@ -872,6 +873,7 @@ class Main @JvmOverloads constructor(
                 MechScrewTool(scene) { circleSegments },
                 MechCircularHoleTool(scene) { circleSegments },
                 MechRoundWasherTool(scene) { circleSegments },
+                MechCogWheelTool(scene),
                 FaceOutlineTool(scene),
                 PolylineMeshTool(scene) { toolController.setTool(ToolId.SELECT) },
                 ObjectCutTool(scene) { toolController.setTool(ToolId.SELECT) },
@@ -1615,6 +1617,7 @@ class Main @JvmOverloads constructor(
             ToolId.MECH_SCREW,
             ToolId.MECH_CIRCULAR_HOLE,
             ToolId.MECH_ROUND_WASHER,
+            ToolId.MECH_COG_WHEEL,
             ToolId.RECTANGLE,
             ToolId.SURFACE_RECTANGLE,
             ToolId.QUAD,

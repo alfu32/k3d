@@ -19,6 +19,10 @@ Drawing tools create edges, faces, dimensions, text, and specialized constructio
 - Face Outline, Line Offset, Plane Section, and Mesh Intersection for derived construction.
 - Linear Dimension, Text, and Vector Text for annotations.
 
+## Mechanical Construction
+
+The Mech toolbar adds generated geometry for screw surfaces, circular/square hole patches, washers, and cog wheels. Cog Wheel uses selected segments as the outline of one tooth: draw or select a closed tooth loop, then pick center, inner-radius point, and height point. The tool estimates how many copies fit around the chosen inner radius from the tooth's tangential width.
+
 ## Surface-Aligned Drawing
 
 Surface Rectangle is intended for drawing on existing face planes. Snapping and face hit detection should be checked in the current build before writing exact automation steps.
