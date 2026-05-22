@@ -148,6 +148,10 @@ class VolumeBooleanTool(
     }
 
     private data class CutSegment(val start: Vector3, val end: Vector3)
+    private data class TriangleCutTarget(
+        val triangle: DraftFaceStore.Triangle,
+        val segment: CutSegment
+    )
     private data class CutStats(val cuts: Int, val unresolved: Int)
     private data class DeadCutPair(val segmentIndex: Int, val triangleId: String)
 
@@ -166,23 +170,27 @@ class VolumeBooleanTool(
 
             segments.forEachIndexed { index, segment ->
                 while (operationGuard < 20_000) {
-                    val candidates = store.getTriangles().filter { triangle ->
-                        DeadCutPair(index, triangle.id) !in deadPairs && segmentCutsTriangle(segment, triangle)
-                    }
-                    if (candidates.isEmpty()) {
+                    val target = store.getTriangles().asSequence().mapNotNull { triangle ->
+                        if (DeadCutPair(index, triangle.id) in deadPairs) {
+                            null
+                        } else {
+                            clippedSegmentForTriangle(segment, triangle)?.let { clipped ->
+                                TriangleCutTarget(triangle, clipped)
+                            }
+                        }
+                    }.firstOrNull()
+                    if (target == null) {
                         break
                     }
                     operationGuard++
                     store.clearSelection()
-                    candidates.forEach(store::addSelection)
+                    store.addSelection(target.triangle)
                     val cut = store.cutSelectedByPolyline(
-                        points = listOf(segment.start, segment.end),
-                        segments = listOf(DraftLineStore.Segment(segment.start, segment.end))
+                        points = listOf(target.segment.start, target.segment.end),
+                        segments = listOf(DraftLineStore.Segment(target.segment.start, target.segment.end))
                     )
                     if (cut <= 0) {
-                        candidates.forEach { triangle ->
-                            deadPairs.add(DeadCutPair(index, triangle.id))
-                        }
+                        deadPairs.add(DeadCutPair(index, target.triangle.id))
                         break
                     }
                     totalCuts += cut
@@ -197,29 +205,29 @@ class VolumeBooleanTool(
         store.clearSelection()
         val unresolved = segments.withIndex().sumOf { (_, segment) ->
             store.getTriangles().count { triangle ->
-                segmentCutsTriangle(segment, triangle)
+                clippedSegmentForTriangle(segment, triangle) != null
             }
         }
         return CutStats(totalCuts, unresolved)
     }
 
-    private fun segmentCutsTriangle(
+    private fun clippedSegmentForTriangle(
         segment: CutSegment,
         triangle: DraftFaceStore.Triangle
-    ): Boolean {
+    ): CutSegment? {
         if (segment.start.dst2(segment.end) <= cutEpsilon * cutEpsilon) {
-            return false
+            return null
         }
         val normal = Vector3(triangle.b).sub(triangle.a).crs(Vector3(triangle.c).sub(triangle.a))
         if (normal.len2() <= cutEpsilon * cutEpsilon) {
-            return false
+            return null
         }
         normal.nor()
         val d = -normal.dot(triangle.a)
         val ds = normal.dot(segment.start) + d
         val de = normal.dot(segment.end) + d
         if (abs(ds) > planeEpsilon || abs(de) > planeEpsilon) {
-            return false
+            return null
         }
 
         val basis = planeBasisFromNormal(normal)
@@ -230,13 +238,13 @@ class VolumeBooleanTool(
         val s = to2d(segment.start, origin, basis)
         val e = to2d(segment.end, origin, basis)
         if (s.dst2(e) <= cutEpsilon * cutEpsilon) {
-            return false
+            return null
         }
         if (segmentCollinearOverlap2d(s, e, a, b) ||
             segmentCollinearOverlap2d(s, e, b, c) ||
             segmentCollinearOverlap2d(s, e, c, a)
         ) {
-            return false
+            return null
         }
 
         val hits = mutableListOf<Vector2>()
@@ -250,25 +258,43 @@ class VolumeBooleanTool(
         addUnique(hits, segmentIntersection2d(s, e, b, c))
         addUnique(hits, segmentIntersection2d(s, e, c, a))
         if (hits.size < 2) {
-            return false
+            return null
         }
 
         val dir = Vector2(e).sub(s)
         val len2 = dir.len2()
         if (len2 <= cutEpsilon * cutEpsilon) {
-            return false
+            return null
         }
         val sorted = hits.sortedBy { point -> Vector2(point).sub(s).dot(dir) / len2 }
         val first = sorted.first()
         val last = sorted.last()
         if (first.dst2(last) <= cutEpsilon * cutEpsilon) {
-            return false
+            return null
         }
         val mid = Vector2(first).add(last).scl(0.5f)
         if (pointOnTriangleBoundary2d(mid, a, b, c)) {
-            return false
+            return null
         }
-        return pointInTriangle2d(mid, a, b, c)
+        if (!pointInTriangle2d(mid, a, b, c)) {
+            return null
+        }
+
+        val firstT = Vector2(first).sub(s).dot(dir) / len2
+        val lastT = Vector2(last).sub(s).dot(dir) / len2
+        val startT = kotlin.math.min(firstT, lastT).coerceIn(0f, 1f)
+        val endT = kotlin.math.max(firstT, lastT).coerceIn(0f, 1f)
+        if (endT - startT <= cutEpsilon) {
+            return null
+        }
+        val segmentVector = Vector3(segment.end).sub(segment.start)
+        val clippedStart = Vector3(segment.start).mulAdd(segmentVector, startT)
+        val clippedEnd = Vector3(segment.start).mulAdd(segmentVector, endT)
+        return if (clippedStart.dst2(clippedEnd) > cutEpsilon * cutEpsilon) {
+            CutSegment(clippedStart, clippedEnd)
+        } else {
+            null
+        }
     }
 
     private fun to2d(point: Vector3, origin: Vector3, basis: PlaneBasis): Vector2 {
