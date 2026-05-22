@@ -57,10 +57,9 @@ class VolumeBooleanTool(
             return
         }
 
-        val intersectionSegments = MeshIntersectionMath.dedupeSegments(
-            intersectionSegments(facesA, facesB),
-            intersectionEpsilon
-        )
+        val intersectionSegments = intersectionSegments(facesA, facesB)
+            .filter { it.start.dst2(it.end) > intersectionEpsilon * intersectionEpsilon }
+            .map { MeshIntersectionMath.Segment3(Vector3(it.start), Vector3(it.end)) }
         val preparedA = prepareCutFaces(groupA, intersectionSegments)
         val preparedB = prepareCutFaces(groupB, intersectionSegments)
         val result = buildResult(preparedA.faces, preparedB.faces)
@@ -94,12 +93,12 @@ class VolumeBooleanTool(
         added.forEach(faceStore::addSelection)
 
         status.message =
-            "${id.displayName}: replaced $removedObjects object(s) with ${added.size} selected exploded mesh face(s). Cuts: A ${preparedA.cuts}, B ${preparedB.cuts}."
+            "${id.displayName}: replaced $removedObjects object(s) with ${added.size} selected exploded mesh face(s). Segments: ${intersectionSegments.size}. Cuts: A ${preparedA.cuts}, B ${preparedB.cuts}. Unresolved: A ${preparedA.unresolved}, B ${preparedB.unresolved}."
         done()
     }
 
     private data class FaceItem(val a: Vector3, val b: Vector3, val c: Vector3, val color: Color)
-    private data class PreparedFaces(val faces: List<FaceItem>, val cuts: Int)
+    private data class PreparedFaces(val faces: List<FaceItem>, val cuts: Int, val unresolved: Int)
 
     private fun collectWorldFaces(group: GroupScene.GroupNode): List<FaceItem> {
         return group.faceStore.getTriangles().map { triangle ->
@@ -118,7 +117,7 @@ class VolumeBooleanTool(
     ): PreparedFaces {
         val sourceFaces = group.faceStore.getTriangles().toList()
         if (sourceFaces.isEmpty()) {
-            return PreparedFaces(emptyList(), 0)
+            return PreparedFaces(emptyList(), 0, 0)
         }
         val store = DraftFaceStore()
         store.withChangeSuppressed {
@@ -136,7 +135,7 @@ class VolumeBooleanTool(
         val localSegments = intersectionSegments.map { segment ->
             CutSegment(group.toLocal(segment.start), group.toLocal(segment.end))
         }
-        val cuts = cutUntilConverged(store, localSegments)
+        val cutStats = cutUntilConverged(store, localSegments)
         val prepared = store.getTriangles().map { triangle ->
             FaceItem(
                 group.toWorld(triangle.a),
@@ -145,40 +144,63 @@ class VolumeBooleanTool(
                 Color(store.colorFor(triangle))
             )
         }
-        return PreparedFaces(prepared, cuts)
+        return PreparedFaces(prepared, cutStats.cuts, cutStats.unresolved)
     }
 
     private data class CutSegment(val start: Vector3, val end: Vector3)
+    private data class CutStats(val cuts: Int, val unresolved: Int)
+    private data class DeadCutPair(val segmentIndex: Int, val triangleId: String)
 
     private fun cutUntilConverged(
         store: DraftFaceStore,
         segments: List<CutSegment>
-    ): Int {
+    ): CutStats {
         var totalCuts = 0
-        segments.forEach { segment ->
-            val skipped = mutableSetOf<String>()
-            var guard = 0
-            while (guard < 1000) {
-                guard++
-                val target = store.getTriangles().firstOrNull { triangle ->
-                    triangle.id !in skipped && segmentCutsTriangle(segment, triangle)
-                } ?: break
-                store.clearSelection()
-                store.addSelection(target)
-                val cut = store.cutSelectedByPolyline(
-                    points = listOf(segment.start, segment.end),
-                    segments = listOf(DraftLineStore.Segment(segment.start, segment.end))
-                )
-                if (cut <= 0) {
-                    skipped.add(target.id)
-                } else {
+        val deadPairs = mutableSetOf<DeadCutPair>()
+        var pass = 0
+        var operationGuard = 0
+
+        while (pass < 200 && operationGuard < 20_000) {
+            pass++
+            var changedInPass = false
+
+            segments.forEachIndexed { index, segment ->
+                while (operationGuard < 20_000) {
+                    val candidates = store.getTriangles().filter { triangle ->
+                        DeadCutPair(index, triangle.id) !in deadPairs && segmentCutsTriangle(segment, triangle)
+                    }
+                    if (candidates.isEmpty()) {
+                        break
+                    }
+                    operationGuard++
+                    store.clearSelection()
+                    candidates.forEach(store::addSelection)
+                    val cut = store.cutSelectedByPolyline(
+                        points = listOf(segment.start, segment.end),
+                        segments = listOf(DraftLineStore.Segment(segment.start, segment.end))
+                    )
+                    if (cut <= 0) {
+                        candidates.forEach { triangle ->
+                            deadPairs.add(DeadCutPair(index, triangle.id))
+                        }
+                        break
+                    }
                     totalCuts += cut
-                    skipped.clear()
+                    changedInPass = true
                 }
+            }
+
+            if (!changedInPass) {
+                break
             }
         }
         store.clearSelection()
-        return totalCuts
+        val unresolved = segments.withIndex().sumOf { (_, segment) ->
+            store.getTriangles().count { triangle ->
+                segmentCutsTriangle(segment, triangle)
+            }
+        }
+        return CutStats(totalCuts, unresolved)
     }
 
     private fun segmentCutsTriangle(
