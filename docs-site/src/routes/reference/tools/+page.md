@@ -36,13 +36,13 @@ Architecture tools include wall, slab, stair, hole, window frame, and door frame
 
 The Mech toolbar contains Screw, Circular Hole, Round Washer, and Cog Wheel tools.
 
-Cog Wheel builds a repeated tooth wheel from selected line segments. Select one connected closed outline for a single tooth, activate Cog Wheel, then pick:
+Cog Wheel builds a planar cog-wheel outline from selected line segments. Select the segments that define one tooth shape, activate Cog Wheel, then pick:
 
-1. the cog center `C`,
-2. the inner radius point `R`,
-3. the height point `H`.
+1. the tangent start point,
+2. the tangent end point,
+3. a tooth-count measure point.
 
-The tool uses `C-H` as the cog axis and extrusion vector. It projects `C-R` perpendicular to that axis to define the inner radius and first radial direction. The selected tooth outline is shifted so its innermost radial projection sits on the chosen inner radius, then the tangential width of the tooth estimates the tooth count around the circumference. Each copied tooth is extruded along `C-H`, so slanted tooth outlines and slanted cog axes are supported as long as the input loop is connected and non-degenerate.
+The tangent start/end segment defines one tooth pitch on a horizontal tangent. The cog center is always placed on the left-hand side of the tangent vector from start to end. The distance from tangent start to the third point, measured in model units and rounded, defines the number of teeth. The tool derives the cog center from that pitch length and tooth count, copies the selected tooth definition around the center in the horizontal plane, and adds a radial construction segment from the center to the midpoint of the tangent definition.
 
 ## Command Naming
 

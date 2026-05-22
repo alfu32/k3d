@@ -418,20 +418,20 @@ class MechCogWheelTool(
     private val scene: GroupScene
 ) : Tool {
     override val id: ToolId = ToolId.MECH_COG_WHEEL
-    override val message: String = "Select one connected tooth outline, then click cog center."
+    override val message: String = "Select tooth definition segments, then click tangent start."
 
     private val sourceSegments = mutableListOf<SourceSegment>()
-    private var centerWorld: Vector3? = null
-    private var radiusWorld: Vector3? = null
+    private var tangentStartWorld: Vector3? = null
+    private var tangentEndWorld: Vector3? = null
     private val hover = Vector3()
     private var hasHover = false
 
     override fun onEnter(status: StatusModel) {
         refreshSourceSegments()
         status.message = if (sourceSegments.isEmpty()) {
-            "Select tooth outline segments first, then click cog center."
+            "Select tooth definition segments first, then click tangent start."
         } else {
-            "Click cog center. Selected tooth outline segments: ${sourceSegments.size}."
+            "Click tangent start. Selected tooth definition segments: ${sourceSegments.size}."
         }
     }
 
@@ -458,204 +458,142 @@ class MechCogWheelTool(
         if (button != Input.Buttons.LEFT || !valid || world == null) {
             return false
         }
-        if (centerWorld == null) {
+        if (tangentStartWorld == null) {
             refreshSourceSegments()
-            val outline = orderedToothOutline()
-            if (outline == null) {
-                status.message = "Cog Wheel needs selected segments forming one connected closed tooth outline."
+            if (sourceSegments.isEmpty()) {
+                status.message = "Cog Wheel needs selected tooth definition segments."
                 return true
             }
-            centerWorld = Vector3(world)
-            status.message = "Click inner radius point."
+            tangentStartWorld = Vector3(world)
+            status.message = "Click tangent end point."
             return true
         }
 
-        if (radiusWorld == null) {
-            radiusWorld = Vector3(world)
-            status.message = "Click cog height point."
+        if (tangentEndWorld == null) {
+            tangentEndWorld = Vector3(world)
+            status.message = "Click tooth count point. Distance from tangent start in model units rounds to the number of teeth."
             return true
         }
 
-        val center = centerWorld ?: return false
-        val radius = radiusWorld ?: return false
-        val result = commitCogWheel(center, radius, Vector3(world))
+        val tangentStart = tangentStartWorld ?: return false
+        val tangentEnd = tangentEndWorld ?: return false
+        val result = commitCogWheel(tangentStart, tangentEnd, Vector3(world))
         clearTransient()
         status.message = result.message
         return true
     }
 
     override fun anchorWorld(): Vector3? {
-        return radiusWorld ?: centerWorld
+        return tangentEndWorld ?: tangentStartWorld
     }
 
     override fun measurement(status: StatusModel): ToolMeasurement? {
-        val start = radiusWorld ?: centerWorld ?: return null
+        val start = tangentStartWorld ?: return null
         if (!hasHover) return null
         return ToolMeasurement(Vector3(start), Vector3(hover))
     }
 
     override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
-        val center = centerWorld ?: return emptyList()
-        if (!hasHover) return emptyList()
+        val tangentStart = tangentStartWorld ?: return emptyList()
         val lines = mutableListOf<Pair<Vector3, Vector3>>()
-        lines += center to Vector3(hover)
-        radiusWorld?.let { radius ->
-            lines += center to Vector3(radius)
+        val tangentEnd = tangentEndWorld
+        if (tangentEnd == null) {
+            if (hasHover) {
+                lines += tangentStart to Vector3(hover)
+            }
+            return lines
+        }
+        lines += tangentStart to Vector3(tangentEnd)
+        if (hasHover) {
+            lines += tangentStart to Vector3(hover)
+            previewCogCenter(tangentStart, tangentEnd, hover)?.let { center ->
+                val midpoint = horizontalMidpoint(tangentStart, tangentEnd)
+                lines += center to midpoint
+            }
         }
         return lines
     }
 
     override fun render(renderer: ShapeRenderer) {
-        val center = centerWorld ?: return
+        val tangentStart = tangentStartWorld ?: return
         renderer.color = ToolFeedbackColors.PRIMARY
-        drawCross(renderer, center, 0.18f)
-        radiusWorld?.let { radius ->
+        drawCross(renderer, tangentStart, 0.18f)
+        tangentEndWorld?.let { tangentEnd ->
             renderer.color = ToolFeedbackColors.SECONDARY
-            drawCross(renderer, radius, 0.18f)
-            renderer.line(center.x, center.y, center.z, radius.x, radius.y, radius.z)
+            drawCross(renderer, tangentEnd, 0.18f)
+            renderer.line(tangentStart.x, tangentStart.y, tangentStart.z, tangentEnd.x, tangentEnd.y, tangentEnd.z)
         }
         if (hasHover) {
             renderer.color = ToolFeedbackColors.TERTIARY
             drawCross(renderer, hover, 0.18f)
-            val start = radiusWorld ?: center
-            renderer.line(start.x, start.y, start.z, hover.x, hover.y, hover.z)
-        }
-    }
-
-    private fun commitCogWheel(centerWorld: Vector3, radiusWorld: Vector3, heightWorld: Vector3): CogResult {
-        refreshSourceSegments()
-        val outline = orderedToothOutline()
-            ?: return CogResult(false, "Cog Wheel canceled: selected tooth outline is not one connected closed loop.")
-        val group = scene.activeGroup()
-        val center = group.toLocal(centerWorld)
-        val radiusPoint = group.toLocal(radiusWorld)
-        val heightPoint = group.toLocal(heightWorld)
-        val axis = Vector3(heightPoint).sub(center)
-        if (axis.len2() <= EPSILON_SQ) {
-            return CogResult(false, "Cog Wheel canceled: height vector is too short.")
-        }
-        val axisUnit = Vector3(axis).nor()
-        val radiusDelta = Vector3(radiusPoint).sub(center)
-        val radial = Vector3(radiusDelta).mulAdd(axisUnit, -radiusDelta.dot(axisUnit))
-        if (radial.len2() <= EPSILON_SQ) {
-            return CogResult(false, "Cog Wheel canceled: radius point must be away from the cog axis.")
-        }
-        val innerRadius = radial.len()
-        val radialUnit = Vector3(radial).scl(1f / innerRadius)
-        val tangentUnit = Vector3(axisUnit).crs(radialUnit)
-        if (tangentUnit.len2() <= EPSILON_SQ) {
-            return CogResult(false, "Cog Wheel canceled: invalid radius direction.")
-        }
-        tangentUnit.nor()
-
-        val radialValues = outline.map { point ->
-            Vector3(point).sub(center).dot(radialUnit)
-        }
-        val currentInnerRadius = radialValues.minOrNull() ?: return CogResult(false, "Cog Wheel canceled: tooth outline is invalid.")
-        val fittedOutline = outline.map { point ->
-            Vector3(point).mulAdd(radialUnit, innerRadius - currentInnerRadius)
-        }
-        val tangentValues = fittedOutline.map { point ->
-            Vector3(point).sub(center).dot(tangentUnit)
-        }
-        val toothWidth = (tangentValues.maxOrNull() ?: 0f) - (tangentValues.minOrNull() ?: 0f)
-        if (toothWidth <= EPSILON) {
-            return CogResult(false, "Cog Wheel canceled: tooth outline has no measurable tangential width.")
-        }
-        val rawToothCount = (MathUtils.PI2 * innerRadius / toothWidth).roundToInt()
-        if (rawToothCount < 3) {
-            return CogResult(false, "Cog Wheel canceled: tooth is too wide for the selected inner radius.")
-        }
-        val toothCount = rawToothCount.coerceAtMost(MAX_COG_TEETH)
-        val pitch = MathUtils.PI2 / toothCount.toFloat()
-        val faceColor = Color(scene.defaultFaceColor)
-        var faces = 0
-        var edges = 0
-
-        group.faceStore.withChangeSuppressed {
-            group.lineStore.withChangeSuppressed {
-                for (tooth in 0 until toothCount) {
-                    val angle = pitch * tooth
-                    val bottom = fittedOutline.map { point -> rotatePointAroundAxis(point, center, axisUnit, angle) }
-                    val top = bottom.map { point -> Vector3(point).add(axis) }
-                    addPrismFaces(group, bottom, top, faceColor).also { faces += it }
-                    addPrismEdges(group, bottom, top).also { edges += it }
+            renderer.line(tangentStart.x, tangentStart.y, tangentStart.z, hover.x, hover.y, hover.z)
+            tangentEndWorld?.let { tangentEnd ->
+                previewCogCenter(tangentStart, tangentEnd, hover)?.let { center ->
+                    val midpoint = horizontalMidpoint(tangentStart, tangentEnd)
+                    renderer.line(center.x, center.y, center.z, midpoint.x, midpoint.y, midpoint.z)
+                    drawCross(renderer, center, 0.18f)
                 }
             }
         }
-        group.faceStore.notifyExternalChange()
+    }
+
+    private fun commitCogWheel(tangentStartWorld: Vector3, tangentEndWorld: Vector3, countWorld: Vector3): CogResult {
+        refreshSourceSegments()
+        if (sourceSegments.isEmpty()) {
+            return CogResult(false, "Cog Wheel canceled: no tooth definition segments selected.")
+        }
+        val group = scene.activeGroup()
+        val rawStart = group.toLocal(tangentStartWorld)
+        val planeY = rawStart.y
+        val tangentStart = horizontalPoint(rawStart, planeY)
+        val tangentEnd = horizontalPoint(group.toLocal(tangentEndWorld), planeY)
+        val countPoint = horizontalPoint(group.toLocal(countWorld), planeY)
+        val tangent = Vector3(tangentEnd).sub(tangentStart)
+        if (tangent.len2() <= EPSILON_SQ) {
+            return CogResult(false, "Cog Wheel canceled: tangent start and end are too close.")
+        }
+        val toothCountMeasure = horizontalDistance(tangentStart, countPoint)
+        if (toothCountMeasure < 3f) {
+            return CogResult(false, "Cog Wheel canceled: tooth count measure must be at least 3 units.")
+        }
+        val requestedToothCount = toothCountMeasure.roundToInt()
+        val toothCount = requestedToothCount.coerceAtMost(MAX_COG_TEETH)
+        val tangentLength = tangent.len()
+        val pitchRadius = tangentLength * toothCount.toFloat() / MathUtils.PI2
+        val tangentUnit = Vector3(tangent).scl(1f / tangentLength)
+        val leftNormal = Vector3(-tangentUnit.z, 0f, tangentUnit.x)
+        val tangentMidpoint = horizontalMidpoint(tangentStart, tangentEnd)
+        val cogCenter = Vector3(tangentMidpoint).mulAdd(leftNormal, pitchRadius)
+        val pitchAngle = MathUtils.PI2 / toothCount.toFloat()
+        val projectedSegments = sourceSegments.map { segment ->
+            SourceSegment(
+                horizontalPoint(segment.start, planeY),
+                horizontalPoint(segment.end, planeY)
+            )
+        }
+        var edges = 0
+
+        group.lineStore.withChangeSuppressed {
+            for (tooth in 0 until toothCount) {
+                val angle = pitchAngle * tooth.toFloat()
+                projectedSegments.forEach { segment ->
+                    group.lineStore.addSegment(
+                        rotateHorizontalPoint(segment.start, cogCenter, angle),
+                        rotateHorizontalPoint(segment.end, cogCenter, angle),
+                        autoCleanup = false
+                    )
+                    edges++
+                }
+            }
+            group.lineStore.addSegment(cogCenter, tangentMidpoint, autoCleanup = false)
+            edges++
+        }
         group.lineStore.notifyExternalChange()
+        val capMessage = if (requestedToothCount > MAX_COG_TEETH) " limited from $requestedToothCount" else ""
         return CogResult(
             true,
-            "Created cog wheel with $toothCount teeth from ${sourceSegments.size} tooth outline segment(s), $faces faces, $edges edges."
+            "Created planar cog wheel with $toothCount teeth$capMessage, ${sourceSegments.size} definition segment(s), and $edges new segment(s)."
         )
-    }
-
-    private fun addPrismFaces(
-        group: GroupScene.GroupNode,
-        bottom: List<Vector3>,
-        top: List<Vector3>,
-        color: Color
-    ): Int {
-        if (bottom.size < 3 || top.size != bottom.size) {
-            return 0
-        }
-        var count = 0
-        val capForward = polygonNormal(bottom).dot(Vector3(top[0]).sub(bottom[0])) >= 0f
-        for (i in bottom.indices) {
-            val next = (i + 1) % bottom.size
-            group.faceStore.addTriangle(bottom[i], bottom[next], top[next], color)
-            group.faceStore.addTriangle(bottom[i], top[next], top[i], color)
-            count += 2
-        }
-        for (i in 1 until bottom.size - 1) {
-            if (capForward) {
-                group.faceStore.addTriangle(top[0], top[i], top[i + 1], color)
-                group.faceStore.addTriangle(bottom[0], bottom[i + 1], bottom[i], color)
-            } else {
-                group.faceStore.addTriangle(top[0], top[i + 1], top[i], color)
-                group.faceStore.addTriangle(bottom[0], bottom[i], bottom[i + 1], color)
-            }
-            count += 2
-        }
-        return count
-    }
-
-    private fun addPrismEdges(group: GroupScene.GroupNode, bottom: List<Vector3>, top: List<Vector3>): Int {
-        var count = 0
-        for (i in bottom.indices) {
-            val next = (i + 1) % bottom.size
-            group.lineStore.addSegment(bottom[i], bottom[next], autoCleanup = false)
-            group.lineStore.addSegment(top[i], top[next], autoCleanup = false)
-            group.lineStore.addSegment(bottom[i], top[i], autoCleanup = false)
-            count += 3
-        }
-        return count
-    }
-
-    private fun orderedToothOutline(): List<Vector3>? {
-        if (sourceSegments.size < 3) {
-            return null
-        }
-        val remaining = sourceSegments.toMutableList()
-        val first = remaining.removeAt(0)
-        val ordered = mutableListOf(Vector3(first.start), Vector3(first.end))
-        while (remaining.isNotEmpty()) {
-            val tail = ordered.last()
-            val index = remaining.indexOfFirst { segment ->
-                near(segment.start, tail) || near(segment.end, tail)
-            }
-            if (index < 0) {
-                return null
-            }
-            val next = remaining.removeAt(index)
-            ordered += if (near(next.start, tail)) Vector3(next.end) else Vector3(next.start)
-        }
-        if (!near(ordered.first(), ordered.last())) {
-            return null
-        }
-        val cleaned = ordered.dropLast(1)
-        return if (cleaned.size >= 3 && polygonNormal(cleaned).len2() > EPSILON_SQ) cleaned else null
     }
 
     private fun refreshSourceSegments() {
@@ -668,8 +606,8 @@ class MechCogWheelTool(
     }
 
     private fun clearTransient() {
-        centerWorld = null
-        radiusWorld = null
+        tangentStartWorld = null
+        tangentEndWorld = null
         hasHover = false
     }
 }
@@ -680,6 +618,37 @@ private data class CogResult(val success: Boolean, val message: String)
 private const val EPSILON = 0.001f
 private const val EPSILON_SQ = EPSILON * EPSILON
 private const val MAX_COG_TEETH = 512
+
+private fun horizontalPoint(point: Vector3, planeY: Float): Vector3 {
+    return Vector3(point.x, planeY, point.z)
+}
+
+private fun horizontalDistance(a: Vector3, b: Vector3): Float {
+    val dx = b.x - a.x
+    val dz = b.z - a.z
+    return sqrt(dx * dx + dz * dz)
+}
+
+private fun horizontalMidpoint(a: Vector3, b: Vector3): Vector3 {
+    return Vector3((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f, (a.z + b.z) * 0.5f)
+}
+
+private fun previewCogCenter(tangentStart: Vector3, tangentEnd: Vector3, countPoint: Vector3): Vector3? {
+    val tangent = Vector3(tangentEnd.x - tangentStart.x, 0f, tangentEnd.z - tangentStart.z)
+    if (tangent.len2() <= EPSILON_SQ) {
+        return null
+    }
+    val toothCount = horizontalDistance(tangentStart, countPoint).roundToInt()
+    if (toothCount < 3) {
+        return null
+    }
+    val tangentLength = tangent.len()
+    val radius = tangentLength * toothCount.coerceAtMost(MAX_COG_TEETH).toFloat() / MathUtils.PI2
+    val tangentUnit = tangent.scl(1f / tangentLength)
+    val leftNormal = Vector3(-tangentUnit.z, 0f, tangentUnit.x)
+    val midpoint = horizontalMidpoint(tangentStart, tangentEnd)
+    return Vector3(midpoint).mulAdd(leftNormal, radius)
+}
 
 private fun ringPoints(center: Vector3, basis: PlaneBasis, radius: Float, segments: Int): List<Vector3> {
     val points = ArrayList<Vector3>(segments)
@@ -692,11 +661,16 @@ private fun ringPoints(center: Vector3, basis: PlaneBasis, radius: Float, segmen
     return points
 }
 
-private fun rotatePointAroundAxis(point: Vector3, center: Vector3, axisUnit: Vector3, angleRad: Float): Vector3 {
-    val relative = Vector3(point).sub(center)
-    val axial = Vector3(axisUnit).scl(relative.dot(axisUnit))
-    val radial = Vector3(relative).sub(axial)
-    return Vector3(center).add(axial).add(rotateAroundAxis(radial, axisUnit, angleRad))
+private fun rotateHorizontalPoint(point: Vector3, center: Vector3, angleRad: Float): Vector3 {
+    val cos = MathUtils.cos(angleRad)
+    val sin = MathUtils.sin(angleRad)
+    val dx = point.x - center.x
+    val dz = point.z - center.z
+    return Vector3(
+        center.x + dx * cos - dz * sin,
+        center.y,
+        center.z + dx * sin + dz * cos
+    )
 }
 
 private fun rotateAroundAxis(vector: Vector3, axisUnit: Vector3, angleRad: Float): Vector3 {
@@ -706,25 +680,6 @@ private fun rotateAroundAxis(vector: Vector3, axisUnit: Vector3, angleRad: Float
     val perpendicular = Vector3(vector).scl(cos)
     val cross = Vector3(axisUnit).crs(vector).scl(sin)
     return perpendicular.add(cross).add(parallel)
-}
-
-private fun polygonNormal(points: List<Vector3>): Vector3 {
-    val normal = Vector3()
-    if (points.size < 3) {
-        return normal
-    }
-    for (i in points.indices) {
-        val current = points[i]
-        val next = points[(i + 1) % points.size]
-        normal.x += (current.y - next.y) * (current.z + next.z)
-        normal.y += (current.z - next.z) * (current.x + next.x)
-        normal.z += (current.x - next.x) * (current.y + next.y)
-    }
-    return normal
-}
-
-private fun near(a: Vector3, b: Vector3): Boolean {
-    return a.dst2(b) <= EPSILON_SQ
 }
 
 private fun drawCross(renderer: ShapeRenderer, point: Vector3, size: Float) {
