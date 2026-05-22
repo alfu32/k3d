@@ -659,6 +659,8 @@ private fun cogGeometry(tangentStart: Vector3, tangentEnd: Vector3, toothCount: 
     val baseAngle = MathUtils.atan2(radialToMidpoint.z, radialToMidpoint.x)
     val pitchAngle = MathUtils.PI2 / toothCount.toFloat()
     val outerRadius = rootRadius + toothDepth.coerceAtLeast(0f)
+    val innerQuarterAngle = pitchAngle * COG_TOOTH_QUARTER_FRACTION
+    val outerQuarterAngle = innerQuarterAngle * rootRadius / outerRadius.coerceAtLeast(EPSILON)
     val outline = ArrayList<Vector3>(toothCount * 4 + 1)
 
     for (tooth in 0 until toothCount) {
@@ -666,9 +668,9 @@ private fun cogGeometry(tangentStart: Vector3, tangentEnd: Vector3, toothCount: 
         if (tooth == 0) {
             outline += polarHorizontal(center, rootRadius, toothAngle - pitchAngle * 0.5f)
         }
-        outline += polarHorizontal(center, outerRadius, toothAngle - pitchAngle * COG_TOOTH_QUARTER_FRACTION)
+        outline += polarHorizontal(center, outerRadius, toothAngle - outerQuarterAngle)
         outline += polarHorizontal(center, outerRadius, toothAngle)
-        outline += polarHorizontal(center, rootRadius, toothAngle + pitchAngle * COG_TOOTH_QUARTER_FRACTION)
+        outline += polarHorizontal(center, rootRadius, toothAngle + innerQuarterAngle)
         outline += polarHorizontal(center, rootRadius, toothAngle + pitchAngle * 0.5f)
     }
 
