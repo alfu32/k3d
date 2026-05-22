@@ -43,7 +43,7 @@ Cog Wheel builds a procedural planar cog-wheel outline. Activate Cog Wheel, then
 3. a tooth-count measure point,
 4. a tooth-depth point.
 
-The tangent start/end segment defines the tangential length of one tooth pitch. The cog center is placed on the left-hand side of the tangent vector from start to end. The distance from tangent start to the third point, measured in model units and rounded, defines the number of teeth. Once the third point is picked, the tool previews the potential cog center and planar outline. The distance from tangent start to the fourth point defines tooth depth. The result is a horizontal line outline with one radial construction segment from the center to the tangent midpoint.
+The tangent start/end segment defines the tangential length of one tooth pitch. The cog center is placed on the left-hand side of the tangent vector from start to end. The distance from tangent start to the third point, measured in model units and rounded, defines the number of teeth. Once the third point is picked, the tool previews the potential cog center and planar outline. The distance from tangent start to the fourth point defines tooth depth. Each pitch cell is divided into four equal stations along its arc: root start, outer flank point, outer middle point, outer flank point, and root end. This makes the tooth follow its corresponding circular arc instead of using arbitrary straight star points. The tool also adds one radial construction segment from the center to the tangent midpoint.
 
 ## Command Naming
 
