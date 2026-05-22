@@ -21,7 +21,7 @@ Drawing tools create edges, faces, dimensions, text, and specialized constructio
 
 ## Mechanical Construction
 
-The Mech toolbar adds generated geometry for screw surfaces, circular/square hole patches, washers, and cog wheels. Cog Wheel uses selected segments as one tooth definition: draw or select the tooth, then pick tangent start, tangent end, and a third point whose distance from tangent start gives the tooth count in model units. The center is placed on the left-hand side of the tangent vector from start to end, and the result is a horizontal planar cog outline with a radial center marker.
+The Mech toolbar adds generated geometry for screw surfaces, circular/square hole patches, washers, and cog wheels. Cog Wheel is a four-point procedural tool: pick tangent start, tangent end, a tooth-count measure point, and a tooth-depth point. The center is placed on the left-hand side of the tangent vector from start to end. After the count point is picked, the tool previews the potential wheel before committing the horizontal planar outline and radial center marker.
 
 ## Surface-Aligned Drawing
 
