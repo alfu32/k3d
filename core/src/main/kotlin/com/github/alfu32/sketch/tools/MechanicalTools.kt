@@ -668,7 +668,7 @@ private fun cogGeometry(tangentStart: Vector3, tangentEnd: Vector3, toothCount: 
         }
         outline += polarHorizontal(center, outerRadius, toothAngle - pitchAngle * COG_TOOTH_QUARTER_FRACTION)
         outline += polarHorizontal(center, outerRadius, toothAngle)
-        outline += polarHorizontal(center, outerRadius, toothAngle + pitchAngle * COG_TOOTH_QUARTER_FRACTION)
+        outline += polarHorizontal(center, rootRadius, toothAngle + pitchAngle * COG_TOOTH_QUARTER_FRACTION)
         outline += polarHorizontal(center, rootRadius, toothAngle + pitchAngle * 0.5f)
     }
 
