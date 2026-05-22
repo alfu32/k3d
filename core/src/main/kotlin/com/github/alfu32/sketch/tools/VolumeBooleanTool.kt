@@ -185,13 +185,16 @@ class VolumeBooleanTool(
                     operationGuard++
                     store.clearSelection()
                     store.addSelection(target.triangle)
-                    val cut = store.cutSelectedByPolyline(
+                    var cut = store.cutSelectedByPolyline(
                         points = listOf(target.segment.start, target.segment.end),
                         segments = listOf(DraftLineStore.Segment(target.segment.start, target.segment.end))
                     )
                     if (cut <= 0) {
+                        cut = fallbackCutSingleTriangle(store, target)
+                    }
+                    if (cut <= 0) {
                         deadPairs.add(DeadCutPair(index, target.triangle.id))
-                        break
+                        continue
                     }
                     totalCuts += cut
                     changedInPass = true
@@ -209,6 +212,28 @@ class VolumeBooleanTool(
             }
         }
         return CutStats(totalCuts, unresolved)
+    }
+
+    private fun fallbackCutSingleTriangle(
+        store: DraftFaceStore,
+        target: TriangleCutTarget
+    ): Int {
+        val color = Color(store.colorFor(target.triangle))
+        val temp = DraftFaceStore(color)
+        temp.appendTriangleRaw(target.triangle.a, target.triangle.b, target.triangle.c, color)
+        val cuts = temp.cutBySegmentInPlane(target.segment.start, target.segment.end)
+        val result = temp.getTriangles()
+        if (cuts <= 0 || result.size <= 1) {
+            return 0
+        }
+        store.deleteTriangles(listOf(target.triangle))
+        store.withChangeSuppressed {
+            result.forEach { triangle ->
+                store.appendTriangleRaw(triangle.a, triangle.b, triangle.c, color)
+            }
+        }
+        store.notifyExternalChange()
+        return result.size
     }
 
     private fun clippedSegmentForTriangle(
@@ -238,12 +263,6 @@ class VolumeBooleanTool(
         val s = to2d(segment.start, origin, basis)
         val e = to2d(segment.end, origin, basis)
         if (s.dst2(e) <= cutEpsilon * cutEpsilon) {
-            return null
-        }
-        if (segmentCollinearOverlap2d(s, e, a, b) ||
-            segmentCollinearOverlap2d(s, e, b, c) ||
-            segmentCollinearOverlap2d(s, e, c, a)
-        ) {
             return null
         }
 
