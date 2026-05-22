@@ -285,25 +285,31 @@ class VolumeBooleanTool(
         if (len2 <= cutEpsilon * cutEpsilon) {
             return null
         }
-        val sorted = hits.sortedBy { point -> Vector2(point).sub(s).dot(dir) / len2 }
-        val first = sorted.first()
-        val last = sorted.last()
-        if (first.dst2(last) <= cutEpsilon * cutEpsilon) {
-            return null
-        }
-        val mid = Vector2(first).add(last).scl(0.5f)
-        if (pointOnTriangleBoundary2d(mid, a, b, c)) {
-            return null
-        }
-        if (!pointInTriangle2d(mid, a, b, c)) {
+        val sortedT = hits
+            .map { point -> (Vector2(point).sub(s).dot(dir) / len2).coerceIn(0f, 1f) }
+            .distinctBy { kotlin.math.round(it / cutEpsilon).toInt() }
+            .sorted()
+        if (sortedT.size < 2) {
             return null
         }
 
-        val firstT = Vector2(first).sub(s).dot(dir) / len2
-        val lastT = Vector2(last).sub(s).dot(dir) / len2
-        val startT = kotlin.math.min(firstT, lastT).coerceIn(0f, 1f)
-        val endT = kotlin.math.max(firstT, lastT).coerceIn(0f, 1f)
-        if (endT - startT <= cutEpsilon) {
+        var startT: Float? = null
+        var endT: Float? = null
+        for (i in 0 until sortedT.size - 1) {
+            val aT = sortedT[i]
+            val bT = sortedT[i + 1]
+            if (bT - aT <= cutEpsilon) {
+                continue
+            }
+            val midT = (aT + bT) * 0.5f
+            val mid = Vector2(s).mulAdd(dir, midT)
+            if (!pointOnTriangleBoundary2d(mid, a, b, c) && pointInTriangle2d(mid, a, b, c)) {
+                startT = aT
+                endT = bT
+                break
+            }
+        }
+        if (startT == null || endT == null) {
             return null
         }
         val segmentVector = Vector3(segment.end).sub(segment.start)
