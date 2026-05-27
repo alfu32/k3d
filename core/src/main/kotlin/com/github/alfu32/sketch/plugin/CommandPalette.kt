@@ -6,6 +6,7 @@ class CommandPalette {
     private var isVisible = false
     private var currentSearch = ""
     private val maxHistory = 20
+    private val maxDefaultCommands = 200
 
     fun registerCommand(command: PaletteCommand) {
         if (commands.none { it.id == command.id }) {
@@ -40,7 +41,7 @@ class CommandPalette {
             val recent = getRecentCommands()
             (recent + commands.filter { !recent.contains(it) })
                 .distinct()
-                .take(20)
+                .take(maxDefaultCommands)
         } else {
             commands.filter {
                 it.name.contains(query, ignoreCase = true) ||

@@ -50,6 +50,10 @@ class ToolController(
         return activeTool
     }
 
+    fun availableToolIds(): List<ToolId> {
+        return ToolId.values().filter { toolMap.containsKey(it) }
+    }
+
     fun inToolOperators(): List<ToolOperator> {
         val operators = mutableListOf<ToolOperator>()
         val objectEditing = objectEditingProvider()

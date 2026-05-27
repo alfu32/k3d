@@ -1609,95 +1609,7 @@ class Main @JvmOverloads constructor(
                 }
             )
         )
-            listOf(
-            ToolId.SELECT,
-            ToolId.LINE,
-            ToolId.CONSTRUCTION_LINE,
-            ToolId.POLYLINE,
-            ToolId.DOUBLE_LINE,
-            ToolId.RIBBON_3D,
-            ToolId.VOXEL,
-            ToolId.VOXEL_VOLUME,
-            ToolId.VOXEL_FRAME,
-            ToolId.ARCH_WALL,
-            ToolId.ARCH_SLAB,
-            ToolId.ARCH_STAIR,
-            ToolId.ARCH_ADD_HOLE,
-            ToolId.ARCH_WINDOW_FRAME,
-            ToolId.ARCH_DOOR_FRAME,
-            ToolId.MECH_SCREW,
-            ToolId.MECH_CIRCULAR_HOLE,
-            ToolId.MECH_ROUND_WASHER,
-            ToolId.MECH_COG_WHEEL,
-            ToolId.RECTANGLE,
-            ToolId.SURFACE_RECTANGLE,
-            ToolId.QUAD,
-            ToolId.CIRCLE,
-            ToolId.FACE_OUTLINE,
-            ToolId.OBJECT_CUT,
-            ToolId.LINE_OFFSET,
-            ToolId.CUT_HOLES,
-            ToolId.CUT_HOLES_2,
-            ToolId.CUT_OUT_3,
-            ToolId.EXTRUDE_SWIPE,
-            ToolId.EXTRUDE_SWIPE_3D,
-            ToolId.PLANE_SECTION,
-            ToolId.MESH_INTERSECTION,
-            ToolId.CUT_WITH_PLANE,
-            ToolId.REVOLVE,
-            ToolId.LINEAR_DIMENSION,
-            ToolId.TEXT,
-            ToolId.VECTOR_TEXT,
-            ToolId.PUSH_PULL,
-            ToolId.MOVE,
-            ToolId.ROTATE,
-            ToolId.ROTATE_2,
-            ToolId.SCALE,
-            ToolId.STRETCH,
-            ToolId.STRETCH_SCALE,
-            ToolId.ROTATE_STRETCH,
-            ToolId.COPY_MULTIPLE,
-            ToolId.PLANAR_TRANSLATE_MULTIPLE,
-            ToolId.VOLUMETRIC_TRANSLATE_MULTIPLE,
-            ToolId.PLANAR_ROTATE_MULTIPLE,
-            ToolId.HELICOIDAL_ROTATE_MULTIPLE,
-            ToolId.ROTATIONAL_ARRAY,
-            ToolId.HELICAL_ARRAY,
-            ToolId.ROTATIONAL_ARRAY_EQUALIZED,
-            ToolId.HELICAL_ARRAY_EQUALIZED,
-            ToolId.PAINT
-            ).forEach { toolId ->
-                pluginHost.getCommandPalette().registerCommand(
-                com.github.alfu32.sketch.plugin.PaletteCommand(
-                    id = "tool.builtin.${toolId.name.lowercase()}",
-                    name = "Tool> ${toolId.displayName}",
-                    description = "Activate ${toolId.displayName} tool",
-                    icon = "tool",
-                    category = "Tools",
-                    tags = listOf(toolId.displayName.lowercase()),
-                    priority = 1,
-                    execute = {
-                        toolController.setTool(toolId)
-                        com.github.alfu32.sketch.plugin.PluginResult.success()
-                    }
-                )
-            )
-        }
-            pluginHost.getCommandPalette().registerCommand(
-            com.github.alfu32.sketch.plugin.PaletteCommand(
-                id = "tool.vector_text",
-                name = "Tool> Vector Text",
-                description = "Activate vector text tool",
-                icon = "tool",
-                category = "Tools",
-                tags = listOf("vector", "text", "glyph"),
-                priority = 1,
-                execute = {
-                    toolController.setTool(ToolId.VECTOR_TEXT)
-                    com.github.alfu32.sketch.plugin.PluginResult.success()
-                }
-            )
-            )
+            registerBuiltInToolCommands()
         }
 
         toolPointer = ToolPointerProcessor(toolController, snapper) { distanceOverrideSnap }
@@ -2131,6 +2043,40 @@ class Main @JvmOverloads constructor(
                 }
             )
         )
+    }
+
+    private fun registerBuiltInToolCommands() {
+        toolController.availableToolIds()
+            .filter { it != ToolId.PLUGIN }
+            .forEach { toolId ->
+                pluginHost.getCommandPalette().registerCommand(
+                    com.github.alfu32.sketch.plugin.PaletteCommand(
+                        id = "tool.builtin.${toolId.name.lowercase(Locale.US)}",
+                        name = "Tool> ${toolId.displayName}",
+                        description = "Activate ${toolId.displayName} tool",
+                        icon = "tool",
+                        category = "Tools",
+                        tags = builtInToolTags(toolId),
+                        priority = 1,
+                        execute = {
+                            toolController.setTool(toolId)
+                            com.github.alfu32.sketch.plugin.PluginResult.success()
+                        }
+                    )
+                )
+            }
+    }
+
+    private fun builtInToolTags(toolId: ToolId): List<String> {
+        val displayWords = toolId.displayName
+            .lowercase(Locale.US)
+            .split(Regex("[^a-z0-9]+"))
+            .filter { it.isNotBlank() }
+        val idWords = toolId.name
+            .lowercase(Locale.US)
+            .split("_")
+            .filter { it.isNotBlank() }
+        return (displayWords + idWords + "tool").distinct()
     }
 
     private fun syncCameraModesAfterOrbitStateChange() {
