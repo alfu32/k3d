@@ -1481,7 +1481,8 @@ class SketchUiOverlay(
             ToolId.EXTRUDE_SWIPE,
             ToolId.PLANE_SECTION,
             ToolId.MESH_INTERSECTION,
-            ToolId.CUT_WITH_PLANE
+            ToolId.CUT_WITH_PLANE,
+            ToolId.REVOLVE
         )
         val modificationTools = listOf(
             ToolId.SELECT,
@@ -1489,6 +1490,7 @@ class SketchUiOverlay(
             ToolId.ROTATE,
             ToolId.SCALE,
             ToolId.STRETCH,
+            ToolId.STRETCH_SCALE,
             ToolId.ROTATE_STRETCH,
             ToolId.COPY_MULTIPLE,
             ToolId.PLANAR_TRANSLATE_MULTIPLE,
@@ -6747,6 +6749,7 @@ class SketchUiOverlay(
             ToolId.PLANE_SECTION -> "plane_section"
             ToolId.MESH_INTERSECTION -> "mesh_intersection"
             ToolId.CUT_WITH_PLANE -> "plane_section"
+            ToolId.REVOLVE -> "revolve"
             ToolId.RECTANGLE -> "rectangle"
             ToolId.SURFACE_RECTANGLE -> "surface_rect"
             ToolId.QUAD -> "quad"
@@ -6760,6 +6763,7 @@ class SketchUiOverlay(
             ToolId.ROTATE_2 -> "rotate"
             ToolId.SCALE -> "scale"
             ToolId.STRETCH -> "stretch"
+            ToolId.STRETCH_SCALE -> "stretch_scale"
             ToolId.ROTATE_STRETCH -> "stretch-rotate"
             ToolId.COPY_MULTIPLE -> "multiple-copy-translate"
             ToolId.PLANAR_TRANSLATE_MULTIPLE -> "multiple-copy-translate-planar"
@@ -6813,6 +6817,7 @@ class SketchUiOverlay(
             ToolId.PLANE_SECTION -> Color(0.75f, 0.6f, 0.95f, 1f)
             ToolId.MESH_INTERSECTION -> Color(0.55f, 0.8f, 0.95f, 1f)
             ToolId.CUT_WITH_PLANE -> Color(0.95f, 0.65f, 0.9f, 1f)
+            ToolId.REVOLVE -> Color(0.55f, 0.9f, 0.95f, 1f)
             ToolId.RECTANGLE -> Color(0.35f, 0.75f, 0.95f, 1f)
             ToolId.SURFACE_RECTANGLE -> Color(0.35f, 0.85f, 0.65f, 1f)
             ToolId.QUAD -> Color(0.55f, 0.85f, 0.95f, 1f)
@@ -6826,6 +6831,7 @@ class SketchUiOverlay(
             ToolId.ROTATE_2 -> Color(0.8f, 0.6f, 0.95f, 1f)
             ToolId.SCALE -> Color(0.95f, 0.55f, 0.75f, 1f)
             ToolId.STRETCH -> Color(0.95f, 0.65f, 0.25f, 1f)
+            ToolId.STRETCH_SCALE -> Color(0.95f, 0.72f, 0.35f, 1f)
             ToolId.ROTATE_STRETCH -> Color(0.85f, 0.6f, 0.25f, 1f)
             ToolId.COPY_MULTIPLE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.PLANAR_TRANSLATE_MULTIPLE -> Color(0.55f, 0.8f, 0.95f, 1f)

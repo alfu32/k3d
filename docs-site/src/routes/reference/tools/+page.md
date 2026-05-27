@@ -8,11 +8,15 @@ Built-in tools are defined in the Kotlin source as `ToolId` values and exposed t
 
 ## Construction Tools
 
-Line, Construction Line, Polyline, Double Line, Rectangle, Surface Rectangle, Quad, Circle, Face Outline, Line Offset, Plane Section, Mesh Intersection, Dimension, Text, and Vector Text cover core sketching and annotation.
+Line, Construction Line, Polyline, Double Line, Rectangle, Surface Rectangle, Quad, Circle, Face Outline, Line Offset, Plane Section, Mesh Intersection, Revolve, Dimension, Text, and Vector Text cover core sketching and annotation.
+
+Revolve takes selected connected profile lines, orders them into one or more chains, then asks for two axis points: origin `C` and direction point `N`. It revolves each profile chain through 360 degrees using the current circle segment setting and creates the resulting revolution surface as mesh faces.
 
 ## Modification Tools
 
-Select, Push/Pull, Move, Rotate, Scale, Stretch, Rotate Stretch, copy-array tools, and Paint cover the direct modeling loop.
+Select, Push/Pull, Move, Rotate, Scale, Stretch, Stretch Scale, Rotate Stretch, copy-array tools, and Paint cover the direct modeling loop.
+
+Stretch Scale uses the same three points and constraint logic as Scale. Unlike normal Scale, it also transforms vertices of unselected entities when those vertices are connected to selected vertices, matching the stretch behavior for partially selected geometry.
 
 ### Object Boolean Operations
 

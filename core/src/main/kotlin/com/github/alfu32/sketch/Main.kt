@@ -147,11 +147,13 @@ import com.github.alfu32.sketch.tools.DoubleLineToolInternal
 import com.github.alfu32.sketch.tools.PushPullTool
 import com.github.alfu32.sketch.tools.QuadTool
 import com.github.alfu32.sketch.tools.RectangleTool
+import com.github.alfu32.sketch.tools.RevolveTool
 import com.github.alfu32.sketch.tools.RotateTool
 import com.github.alfu32.sketch.tools.RotateStretchTool
 import com.github.alfu32.sketch.tools.SurfaceRectangleTool
 import com.github.alfu32.sketch.tools.SelectTool
 import com.github.alfu32.sketch.tools.ScaleTool
+import com.github.alfu32.sketch.tools.StretchScaleTool
 import com.github.alfu32.sketch.tools.StretchTool
 import com.github.alfu32.sketch.tools.TextTool
 import com.github.alfu32.sketch.tools.EmbeddedVectorGlyphCatalog
@@ -889,6 +891,7 @@ class Main @JvmOverloads constructor(
                 PlaneSectionTool(scene) { toolController.setTool(ToolId.SELECT) },
                 MeshIntersectionTool(scene) { toolController.setTool(ToolId.SELECT) },
                 CutWithPlaneTool(scene),
+                RevolveTool(scene) { circleSegments },
                 RectangleTool(scene),
                 SurfaceRectangleTool(scene),
                 QuadTool(scene),
@@ -907,6 +910,7 @@ class Main @JvmOverloads constructor(
                 Rotate2Tool(scene),
                 ScaleTool(scene),
                 StretchTool(scene),
+                StretchScaleTool(scene),
                 RotateStretchTool(scene),
                 CopyMultipleTool(scene),
                 PlanarTranslateMultipleTool(scene),
@@ -1632,6 +1636,7 @@ class Main @JvmOverloads constructor(
             ToolId.PLANE_SECTION,
             ToolId.MESH_INTERSECTION,
             ToolId.CUT_WITH_PLANE,
+            ToolId.REVOLVE,
             ToolId.LINEAR_DIMENSION,
             ToolId.TEXT,
             ToolId.VECTOR_TEXT,
@@ -1641,6 +1646,7 @@ class Main @JvmOverloads constructor(
             ToolId.ROTATE_2,
             ToolId.SCALE,
             ToolId.STRETCH,
+            ToolId.STRETCH_SCALE,
             ToolId.ROTATE_STRETCH,
             ToolId.COPY_MULTIPLE,
             ToolId.PLANAR_TRANSLATE_MULTIPLE,
