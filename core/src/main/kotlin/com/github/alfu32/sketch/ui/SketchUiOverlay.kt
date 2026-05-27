@@ -1459,6 +1459,7 @@ class SketchUiOverlay(
             ToolId.CONSTRUCTION_LINE,
             ToolId.POLYLINE,
             ToolId.DOUBLE_LINE,
+            ToolId.RIBBON_3D,
             ToolId.RECTANGLE,
             ToolId.SURFACE_RECTANGLE,
             ToolId.FACE_OUTLINE,
@@ -1479,6 +1480,7 @@ class SketchUiOverlay(
             ToolId.CUT_OUT_3,
             ToolId.PUSH_PULL,
             ToolId.EXTRUDE_SWIPE,
+            ToolId.EXTRUDE_SWIPE_3D,
             ToolId.PLANE_SECTION,
             ToolId.MESH_INTERSECTION,
             ToolId.CUT_WITH_PLANE,
@@ -6719,6 +6721,7 @@ class SketchUiOverlay(
             ToolId.CONSTRUCTION_LINE -> "construction_line"
             ToolId.POLYLINE -> "polyline"
             ToolId.DOUBLE_LINE -> "double_line"
+            ToolId.RIBBON_3D -> "double_line"
             ToolId.VOXEL -> "voxel"
             ToolId.VOXEL_VOLUME -> "voxel_volume"
             ToolId.VOXEL_FRAME -> "voxel_frame"
@@ -6746,6 +6749,7 @@ class SketchUiOverlay(
             ToolId.CUT_HOLES_2 -> "cleanup"
             ToolId.CUT_OUT_3 -> "cleanup"
             ToolId.EXTRUDE_SWIPE -> "swipe_surface"
+            ToolId.EXTRUDE_SWIPE_3D -> "swipe_surface"
             ToolId.PLANE_SECTION -> "plane_section"
             ToolId.MESH_INTERSECTION -> "mesh_intersection"
             ToolId.CUT_WITH_PLANE -> "plane_section"
@@ -6787,6 +6791,7 @@ class SketchUiOverlay(
             ToolId.CONSTRUCTION_LINE -> Color(0.65f, 0.9f, 0.65f, 1f)
             ToolId.POLYLINE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.DOUBLE_LINE -> Color(0.35f, 0.75f, 0.95f, 1f)
+            ToolId.RIBBON_3D -> Color(0.45f, 0.82f, 0.95f, 1f)
             ToolId.VOXEL -> Color(0.75f, 0.85f, 0.45f, 1f)
             ToolId.VOXEL_VOLUME -> Color(0.55f, 0.85f, 0.95f, 1f)
             ToolId.VOXEL_FRAME -> Color(0.95f, 0.7f, 0.3f, 1f)
@@ -6814,6 +6819,7 @@ class SketchUiOverlay(
             ToolId.CUT_HOLES_2 -> Color(0.85f, 0.55f, 0.35f, 1f)
             ToolId.CUT_OUT_3 -> Color(0.85f, 0.55f, 0.35f, 1f)
             ToolId.EXTRUDE_SWIPE -> Color(0.4f, 0.85f, 0.95f, 1f)
+            ToolId.EXTRUDE_SWIPE_3D -> Color(0.42f, 0.9f, 0.9f, 1f)
             ToolId.PLANE_SECTION -> Color(0.75f, 0.6f, 0.95f, 1f)
             ToolId.MESH_INTERSECTION -> Color(0.55f, 0.8f, 0.95f, 1f)
             ToolId.CUT_WITH_PLANE -> Color(0.95f, 0.65f, 0.9f, 1f)

@@ -110,21 +110,27 @@ class RevolveTool(
         val steps = segmentsProvider().coerceAtLeast(3)
         val color = Color(scene.defaultFaceColor)
         var faces = 0
+        var edges = 0
 
         group.faceStore.withChangeSuppressed {
-            chains.forEach { chain ->
-                faces += addRevolveFaces(group, chain.points, chain.closed, origin, axisUnit, steps, color)
+            group.lineStore.withChangeSuppressed {
+                chains.forEach { chain ->
+                    val result = addRevolveQuads(group, chain.points, chain.closed, origin, axisUnit, steps, color)
+                    faces += result.faces
+                    edges += result.edges
+                }
             }
         }
         group.faceStore.notifyExternalChange()
+        group.lineStore.notifyExternalChange()
         return if (faces > 0) {
-            "Revolved ${chains.size} profile chain(s) into $faces face(s)."
+            "Revolved ${chains.size} profile chain(s) into $faces face(s) and $edges border segment(s)."
         } else {
             "Revolve created no faces."
         }
     }
 
-    private fun addRevolveFaces(
+    private fun addRevolveQuads(
         group: GroupScene.GroupNode,
         points: List<Vector3>,
         closedProfile: Boolean,
@@ -132,8 +138,9 @@ class RevolveTool(
         axisUnit: Vector3,
         steps: Int,
         color: Color
-    ): Int {
+    ): RevolveResult {
         var faces = 0
+        var edges = 0
         val rings = ArrayList<List<Vector3>>(steps)
         for (step in 0 until steps) {
             val angle = MathUtils.PI2 * step.toFloat() / steps.toFloat()
@@ -156,11 +163,30 @@ class RevolveTool(
                     group.faceStore.addTriangle(a, c, d, color)
                     faces++
                 }
+                edges += addQuadBorderSegments(group, a, b, c, d)
             }
         }
-        return faces
+        return RevolveResult(faces, edges)
     }
 
+    private fun addQuadBorderSegments(group: GroupScene.GroupNode, a: Vector3, b: Vector3, c: Vector3, d: Vector3): Int {
+        var edges = 0
+        edges += addBorderSegment(group, a, b)
+        edges += addBorderSegment(group, b, c)
+        edges += addBorderSegment(group, c, d)
+        edges += addBorderSegment(group, d, a)
+        return edges
+    }
+
+    private fun addBorderSegment(group: GroupScene.GroupNode, a: Vector3, b: Vector3): Int {
+        if (a.dst2(b) <= 1e-8f) {
+            return 0
+        }
+        group.lineStore.addSegment(a, b, autoCleanup = false)
+        return 1
+    }
+
+    private data class RevolveResult(val faces: Int, val edges: Int)
     private data class VertexKey(val x: Int, val y: Int, val z: Int)
     private data class SegmentKeys(val start: VertexKey, val end: VertexKey)
     private data class Chain(val points: List<Vector3>, val closed: Boolean)

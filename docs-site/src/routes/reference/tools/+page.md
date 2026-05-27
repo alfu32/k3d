@@ -8,9 +8,13 @@ Built-in tools are defined in the Kotlin source as `ToolId` values and exposed t
 
 ## Construction Tools
 
-Line, Construction Line, Polyline, Double Line, Rectangle, Surface Rectangle, Quad, Circle, Face Outline, Line Offset, Plane Section, Mesh Intersection, Revolve, Dimension, Text, and Vector Text cover core sketching and annotation.
+Line, Construction Line, Polyline, Double Line, Ribbon 3D, Rectangle, Surface Rectangle, Quad, Circle, Face Outline, Line Offset, Extrude Swipe, Extrude Swipe 3D, Plane Section, Mesh Intersection, Revolve, Dimension, Text, and Vector Text cover core sketching and annotation.
 
 Revolve takes selected connected profile lines, orders them into one or more chains, then asks for two axis points: origin `C` and direction point `N`. It revolves each profile chain through 360 degrees using the current circle segment setting and creates the resulting revolution surface as mesh faces.
+
+Ribbon 3D is a constant-width 3D ribbon using the Double Line size/offset settings and the Double Line icon. It constructs one cross-section per path point, uses miter-style section normals at bends, and parallel-transports the ribbon frame to reduce twist.
+
+Extrude Swipe 3D uses selected profile segments and the Extrude Swipe icon. It projects the profile into the first path section, builds compatible cross-sections along a 3D polyline, and connects corresponding profile vertices so adjacent sweep spans meet at shared path sections.
 
 ## Modification Tools
 

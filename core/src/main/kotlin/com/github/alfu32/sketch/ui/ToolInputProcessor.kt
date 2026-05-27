@@ -36,6 +36,7 @@ class ToolInputProcessor(
         ToolId.LINE_OFFSET,
         ToolId.PUSH_PULL,
         ToolId.EXTRUDE_SWIPE,
+        ToolId.EXTRUDE_SWIPE_3D,
         ToolId.PLANE_SECTION
     )
     private val cycleM = listOf(

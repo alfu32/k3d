@@ -144,10 +144,12 @@ import com.github.alfu32.sketch.tools.PolylineSettings
 import com.github.alfu32.sketch.tools.PolylineMeshTool
 import com.github.alfu32.sketch.tools.PolylineToolInternal
 import com.github.alfu32.sketch.tools.DoubleLineToolInternal
+import com.github.alfu32.sketch.tools.ExtrudeSwipe3dTool
 import com.github.alfu32.sketch.tools.PushPullTool
 import com.github.alfu32.sketch.tools.QuadTool
 import com.github.alfu32.sketch.tools.RectangleTool
 import com.github.alfu32.sketch.tools.RevolveTool
+import com.github.alfu32.sketch.tools.Ribbon3dTool
 import com.github.alfu32.sketch.tools.RotateTool
 import com.github.alfu32.sketch.tools.RotateStretchTool
 import com.github.alfu32.sketch.tools.SurfaceRectangleTool
@@ -861,6 +863,7 @@ class Main @JvmOverloads constructor(
                 ConstructionLineTool(scene) { toolController.setTool(ToolId.SELECT) },
                 PolylineToolInternal(scene, polylineSettings),
                 DoubleLineToolInternal(scene, polylineSettings),
+                Ribbon3dTool(scene, polylineSettings) { toolController.setTool(ToolId.SELECT) },
                 VoxelTool(scene, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveVoxelGroupForTools),
                 VoxelVolumeTool(scene, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveVoxelGroupForTools),
                 VoxelFrameTool(scene, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveVoxelGroupForTools),
@@ -888,6 +891,7 @@ class Main @JvmOverloads constructor(
                 CutHolesTool2(scene) { toolController.setTool(ToolId.SELECT) },
                 CutOut3Tool(scene) { toolController.setTool(ToolId.SELECT) },
                 ExtrudeSwipeTool(scene, polylineSettings) { toolController.setTool(ToolId.SELECT) },
+                ExtrudeSwipe3dTool(scene) { toolController.setTool(ToolId.SELECT) },
                 PlaneSectionTool(scene) { toolController.setTool(ToolId.SELECT) },
                 MeshIntersectionTool(scene) { toolController.setTool(ToolId.SELECT) },
                 CutWithPlaneTool(scene),
@@ -1609,6 +1613,9 @@ class Main @JvmOverloads constructor(
             ToolId.SELECT,
             ToolId.LINE,
             ToolId.CONSTRUCTION_LINE,
+            ToolId.POLYLINE,
+            ToolId.DOUBLE_LINE,
+            ToolId.RIBBON_3D,
             ToolId.VOXEL,
             ToolId.VOXEL_VOLUME,
             ToolId.VOXEL_FRAME,
@@ -1633,6 +1640,7 @@ class Main @JvmOverloads constructor(
             ToolId.CUT_HOLES_2,
             ToolId.CUT_OUT_3,
             ToolId.EXTRUDE_SWIPE,
+            ToolId.EXTRUDE_SWIPE_3D,
             ToolId.PLANE_SECTION,
             ToolId.MESH_INTERSECTION,
             ToolId.CUT_WITH_PLANE,
