@@ -1737,6 +1737,8 @@ class SketchUiOverlay(
         if (!force && signature == inToolOperatorsSignature) {
             return
         }
+        val oldX = inToolOperatorsWindow.x
+        val oldTop = inToolOperatorsWindow.y + inToolOperatorsWindow.height
         inToolOperatorsSignature = signature
         inToolOperatorsContent.clearChildren()
 
@@ -1764,6 +1766,7 @@ class SketchUiOverlay(
         inToolOperatorsContent.invalidateHierarchy()
         inToolOperatorsWindow.invalidateHierarchy()
         inToolOperatorsWindow.pack()
+        inToolOperatorsWindow.setPosition(oldX, oldTop - inToolOperatorsWindow.height)
         toolbarBindingsById[inToolOperatorsToolbarId]?.let { binding ->
             binding.slots = slots
             applyToolbarAutoCollapse(binding, force = true)
