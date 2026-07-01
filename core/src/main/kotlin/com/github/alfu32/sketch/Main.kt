@@ -1618,6 +1618,7 @@ class Main @JvmOverloads constructor(
             )
         )
             registerBuiltInToolCommands()
+            registerToolbarVisibilityCommands()
         }
 
         toolPointer = ToolPointerProcessor(toolController, snapper) { distanceOverrideSnap }
@@ -2073,6 +2074,39 @@ class Main @JvmOverloads constructor(
                     )
                 )
             }
+    }
+
+    private fun registerToolbarVisibilityCommands() {
+        uiOverlay.builtInToolbarCommandTargets().forEach { (toolbarId, label) ->
+            val commandStem = toolbarId
+                .removePrefix("builtin_toolbar_")
+                .replace(Regex("[^A-Za-z0-9]+"), "_")
+                .lowercase(Locale.US)
+            val tagWords = label
+                .lowercase(Locale.US)
+                .split(Regex("[^a-z0-9]+"))
+                .filter { it.isNotBlank() }
+            listOf(true to "Show", false to "Hide").forEach { (visible, verb) ->
+                pluginHost.getCommandPalette().registerCommand(
+                    com.github.alfu32.sketch.plugin.PaletteCommand(
+                        id = "view.toolbar.${commandStem}.${verb.lowercase(Locale.US)}",
+                        name = "View> Toolbars> $verb $label",
+                        description = "$verb the $label toolbar",
+                        icon = "view",
+                        category = "View",
+                        tags = listOf("toolbar", verb.lowercase(Locale.US)) + tagWords,
+                        priority = 1,
+                        execute = {
+                            if (uiOverlay.setBuiltInToolbarVisible(toolbarId, visible)) {
+                                com.github.alfu32.sketch.plugin.PluginResult.success()
+                            } else {
+                                com.github.alfu32.sketch.plugin.PluginResult.failure("Toolbar not found: $label")
+                            }
+                        }
+                    )
+                )
+            }
+        }
     }
 
     private fun builtInToolTags(toolId: ToolId): List<String> {

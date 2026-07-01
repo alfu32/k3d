@@ -440,7 +440,7 @@ class SketchUiOverlay(
     private var toolbarsVisible = true
     private val uiPrefs by lazy { Gdx.app.getPreferences("k3d-ui-layout") }
     private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
-    private val toolbarLayoutVersion = 14
+    private val toolbarLayoutVersion = 15
     private val inToolOperatorsToolbarId = "builtin_toolbar_in_tool_operators"
     private val toolbarsVisibleKey = "toolbars.visible"
     private val uiToolbarButtonSizeKey = "ui_toolbar_button_size_px"
@@ -467,6 +467,21 @@ class SketchUiOverlay(
         "builtin_toolbar_actions",
         "builtin_toolbar_camera",
         "builtin_toolbar_rendering"
+    )
+    private val builtInToolbarDisplayNames = mapOf(
+        inToolOperatorsToolbarId to "In-tool Operators",
+        "builtin_toolbar_construction_points" to "Point Construction",
+        "builtin_toolbar_construction_entities" to "Entity Construction",
+        "builtin_toolbar_modification" to "Modification",
+        "builtin_toolbar_modification_2" to "Modification 2",
+        "builtin_toolbar_architecture" to "Architecture",
+        "builtin_toolbar_hvac" to "HVAC",
+        "builtin_toolbar_primitives" to "Primitives",
+        "builtin_toolbar_mech" to "Mech",
+        "builtin_toolbar_voxel" to "Voxel",
+        "builtin_toolbar_actions" to "Actions",
+        "builtin_toolbar_camera" to "Camera",
+        "builtin_toolbar_rendering" to "Rendering"
     )
     private var toolbarButtonSize = 32f
     private var toolbarIconSizePx = 32
@@ -1390,6 +1405,25 @@ class SketchUiOverlay(
         applyToolbarsVisibility()
         toolbarsPositioned = false
         needsPanelLayout = true
+    }
+
+    fun builtInToolbarCommandTargets(): List<Pair<String, String>> {
+        return orderedBuiltInToolbarIds.mapNotNull { toolbarId ->
+            builtInToolbarDisplayNames[toolbarId]?.let { label -> toolbarId to label }
+        }
+    }
+
+    fun setBuiltInToolbarVisible(toolbarId: String, visible: Boolean): Boolean {
+        val window = builtInToolbars[toolbarId] ?: return false
+        toolbarDesiredVisibility[toolbarId] = visible
+        window.isVisible = toolbarsVisible && visible
+        if (visible) {
+            window.toFront()
+            toolbarsPositioned = false
+        }
+        saveToolbarState(toolbarId, window)
+        refreshToolbarAutoCollapseStates(force = true)
+        return true
     }
 
     fun setPanelsVisible(visible: Boolean) {
@@ -6277,7 +6311,11 @@ class SketchUiOverlay(
         uiPrefs.get().keys
             .filter { key ->
                 (key.startsWith("builtin_toolbar_") || key.startsWith("plugin_toolbar_")) &&
-                    (key.endsWith(".x") || key.endsWith(".y"))
+                    (key.endsWith(".x") ||
+                        key.endsWith(".y") ||
+                        key.endsWith(".w") ||
+                        key.endsWith(".h") ||
+                        key.endsWith(".visible"))
             }
             .forEach { key ->
                 uiPrefs.remove(key)

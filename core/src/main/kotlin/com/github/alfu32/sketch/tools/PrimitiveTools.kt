@@ -73,7 +73,7 @@ class SpherePrimitiveTool(
     override fun feedbackLines(): List<Pair<Vector3, Vector3>> {
         val center = centerWorld ?: return emptyList()
         if (!hasHover) return emptyList()
-        return listOf(center to Vector3(hover))
+        return listOf(center to Vector3(hover)) + spherePreviewEdges(center, hover, primitiveSegments())
     }
 
     override fun render(renderer: ShapeRenderer) {
@@ -84,6 +84,8 @@ class SpherePrimitiveTool(
             renderer.color = ToolFeedbackColors.SECONDARY
             drawPrimitiveCross(renderer, hover, 0.18f)
             renderer.line(center.x, center.y, center.z, hover.x, hover.y, hover.z)
+            renderer.color = ToolFeedbackColors.TERTIARY
+            drawPrimitiveEdges(renderer, spherePreviewEdges(center, hover, primitiveSegments()))
         }
     }
 
@@ -146,7 +148,7 @@ class SpherePrimitiveTool(
         return "Created sphere with $faces face(s), $edges segment(s), and $segments radial sides."
     }
 
-    private fun primitiveSegments(): Int = segmentsProvider().coerceIn(3, 256)
+    protected fun primitiveSegments(): Int = segmentsProvider().coerceIn(3, 256)
 
     private fun clearTransient() {
         centerWorld = null
@@ -230,7 +232,10 @@ abstract class AxisPrimitiveTool(
             return lines
         }
         lines += center to Vector3(radius)
-        if (hasHover) lines += center to Vector3(hover)
+        if (hasHover) {
+            lines += center to Vector3(hover)
+            lines += previewEdges(center, radius, hover)
+        }
         return lines
     }
 
@@ -247,7 +252,19 @@ abstract class AxisPrimitiveTool(
             renderer.color = ToolFeedbackColors.TERTIARY
             drawPrimitiveCross(renderer, hover, 0.18f)
             renderer.line(center.x, center.y, center.z, hover.x, hover.y, hover.z)
+            radiusWorld?.let { radius ->
+                drawPrimitiveEdges(renderer, previewEdges(center, radius, hover))
+            }
         }
+    }
+
+    protected open fun previewEdges(
+        centerWorld: Vector3,
+        radiusWorld: Vector3,
+        heightWorld: Vector3
+    ): List<Pair<Vector3, Vector3>> {
+        val basis = primitiveBasisForPreview(centerWorld, radiusWorld, heightWorld) ?: return emptyList()
+        return cylinderPreviewEdges(centerWorld, heightWorld, basis, basis.radius, primitiveSegments())
     }
 
     private fun commitAxisPrimitive(centerWorld: Vector3, radiusWorld: Vector3, heightWorld: Vector3): String {
@@ -286,7 +303,7 @@ abstract class AxisPrimitiveTool(
 
     protected fun faceColor(): Color = Color(scene.defaultFaceColor)
 
-    private fun primitiveSegments(): Int = segmentsProvider().coerceIn(3, 256)
+    protected fun primitiveSegments(): Int = segmentsProvider().coerceIn(3, 256)
 
     private fun clearTransient() {
         centerWorld = null
@@ -342,6 +359,15 @@ class ConePrimitiveTool(
     override val id: ToolId = ToolId.PRIMITIVE_CONE
     override val primitiveLabel: String = "cone"
 
+    override fun previewEdges(
+        centerWorld: Vector3,
+        radiusWorld: Vector3,
+        heightWorld: Vector3
+    ): List<Pair<Vector3, Vector3>> {
+        val basis = primitiveBasisForPreview(centerWorld, radiusWorld, heightWorld) ?: return emptyList()
+        return conePreviewEdges(centerWorld, heightWorld, basis, basis.radius, primitiveSegments())
+    }
+
     override fun buildPrimitive(
         group: GroupScene.GroupNode,
         center: Vector3,
@@ -378,6 +404,15 @@ class PillPrimitiveTool(
 ) : AxisPrimitiveTool(scene, segmentsProvider) {
     override val id: ToolId = ToolId.PRIMITIVE_PILL
     override val primitiveLabel: String = "pill"
+
+    override fun previewEdges(
+        centerWorld: Vector3,
+        radiusWorld: Vector3,
+        heightWorld: Vector3
+    ): List<Pair<Vector3, Vector3>> {
+        val basis = primitiveBasisForPreview(centerWorld, radiusWorld, heightWorld) ?: return emptyList()
+        return pillPreviewEdges(centerWorld, heightWorld, basis, basis.radius, primitiveSegments())
+    }
 
     override fun buildPrimitive(
         group: GroupScene.GroupNode,
@@ -451,6 +486,7 @@ class PillPrimitiveTool(
 }
 
 data class PrimitiveBasis(val axis: Vector3, val axisU: Vector3, val axisV: Vector3)
+private data class PrimitivePreviewBasis(val basis: PrimitiveBasis, val radius: Float)
 
 private const val PRIMITIVE_EPSILON = 0.001f
 private const val PRIMITIVE_EPSILON_SQ = PRIMITIVE_EPSILON * PRIMITIVE_EPSILON
@@ -462,12 +498,153 @@ private fun primitiveBasisFromAxis(axisUnit: Vector3): PrimitiveBasis {
     return PrimitiveBasis(Vector3(axisUnit), axisU, axisV)
 }
 
+private fun primitiveBasisForPreview(
+    center: Vector3,
+    radiusPoint: Vector3,
+    height: Vector3
+): PrimitivePreviewBasis? {
+    val axis = Vector3(height).sub(center)
+    if (axis.len2() <= PRIMITIVE_EPSILON_SQ) return null
+    val axisUnit = axis.nor()
+    val radialRaw = Vector3(radiusPoint).sub(center)
+    val radial = Vector3(radialRaw).mulAdd(axisUnit, -radialRaw.dot(axisUnit))
+    val radius = radial.len()
+    if (radius <= PRIMITIVE_EPSILON) return null
+    val axisU = radial.scl(1f / radius)
+    val axisV = Vector3(axisUnit).crs(axisU).nor()
+    return PrimitivePreviewBasis(PrimitiveBasis(axisUnit, axisU, axisV), radius)
+}
+
 private fun primitiveRing(center: Vector3, basis: PrimitiveBasis, radius: Float, segments: Int): List<Vector3> {
     return List(segments) { i ->
         val angle = MathUtils.PI2 * i.toFloat() / segments.toFloat()
         Vector3(center)
             .mulAdd(basis.axisU, MathUtils.cos(angle) * radius)
             .mulAdd(basis.axisV, MathUtils.sin(angle) * radius)
+    }
+}
+
+private fun spherePreviewEdges(center: Vector3, radiusPoint: Vector3, segments: Int): List<Pair<Vector3, Vector3>> {
+    val radius = center.dst(radiusPoint)
+    if (radius <= PRIMITIVE_EPSILON) return emptyList()
+    val stacks = max(2, segments / 2)
+    val rings = ArrayList<List<Vector3>>(stacks + 1)
+    for (stack in 0..stacks) {
+        val phi = -MathUtils.PI * 0.5f + MathUtils.PI * stack.toFloat() / stacks.toFloat()
+        val y = MathUtils.sin(phi) * radius
+        val ringRadius = MathUtils.cos(phi) * radius
+        rings += List(segments) { i ->
+            val theta = MathUtils.PI2 * i.toFloat() / segments.toFloat()
+            Vector3(
+                center.x + MathUtils.cos(theta) * ringRadius,
+                center.y + y,
+                center.z + MathUtils.sin(theta) * ringRadius
+            )
+        }
+    }
+    val edges = mutableListOf<Pair<Vector3, Vector3>>()
+    for (stack in 0 until stacks) {
+        val lower = rings[stack]
+        val upper = rings[stack + 1]
+        for (i in 0 until segments) {
+            val next = (i + 1) % segments
+            addPreviewEdge(edges, lower[i], lower[next])
+            addPreviewEdge(edges, lower[i], upper[i])
+        }
+    }
+    return edges
+}
+
+private fun cylinderPreviewEdges(
+    center: Vector3,
+    height: Vector3,
+    preview: PrimitivePreviewBasis,
+    radius: Float,
+    segments: Int
+): List<Pair<Vector3, Vector3>> {
+    val bottom = primitiveRing(center, preview.basis, radius, segments)
+    val top = primitiveRing(height, preview.basis, radius, segments)
+    val edges = mutableListOf<Pair<Vector3, Vector3>>()
+    for (i in 0 until segments) {
+        val next = (i + 1) % segments
+        addPreviewEdge(edges, bottom[i], bottom[next])
+        addPreviewEdge(edges, top[i], top[next])
+        addPreviewEdge(edges, bottom[i], top[i])
+    }
+    return edges
+}
+
+private fun conePreviewEdges(
+    center: Vector3,
+    height: Vector3,
+    preview: PrimitivePreviewBasis,
+    radius: Float,
+    segments: Int
+): List<Pair<Vector3, Vector3>> {
+    val bottom = primitiveRing(center, preview.basis, radius, segments)
+    val edges = mutableListOf<Pair<Vector3, Vector3>>()
+    for (i in 0 until segments) {
+        val next = (i + 1) % segments
+        addPreviewEdge(edges, bottom[i], bottom[next])
+        addPreviewEdge(edges, bottom[i], height)
+    }
+    return edges
+}
+
+private fun pillPreviewEdges(
+    center: Vector3,
+    height: Vector3,
+    preview: PrimitivePreviewBasis,
+    radius: Float,
+    segments: Int
+): List<Pair<Vector3, Vector3>> {
+    val axis = Vector3(height).sub(center)
+    val axisLen = axis.len()
+    if (axisLen <= PRIMITIVE_EPSILON) return emptyList()
+    val axisUnit = axis.scl(1f / axisLen)
+    val halfStacks = max(2, segments / 4)
+    val rings = ArrayList<List<Vector3>>(halfStacks * 2 + 2)
+    val bottomPole = Vector3(center).mulAdd(axisUnit, -radius)
+    val topPole = Vector3(height).mulAdd(axisUnit, radius)
+    rings += List(segments) { Vector3(bottomPole) }
+    for (stack in 1..halfStacks) {
+        val t = stack.toFloat() / halfStacks.toFloat()
+        val angle = -MathUtils.PI * 0.5f + t * MathUtils.PI * 0.5f
+        val offset = MathUtils.sin(angle) * radius
+        val ringRadius = MathUtils.cos(angle) * radius
+        rings += primitiveRing(Vector3(center).mulAdd(axisUnit, offset), preview.basis, ringRadius, segments)
+    }
+    rings += primitiveRing(height, preview.basis, radius, segments)
+    for (stack in 1 until halfStacks) {
+        val t = stack.toFloat() / halfStacks.toFloat()
+        val angle = t * MathUtils.PI * 0.5f
+        val offset = MathUtils.sin(angle) * radius
+        val ringRadius = MathUtils.cos(angle) * radius
+        rings += primitiveRing(Vector3(height).mulAdd(axisUnit, offset), preview.basis, ringRadius, segments)
+    }
+    rings += List(segments) { Vector3(topPole) }
+    val edges = mutableListOf<Pair<Vector3, Vector3>>()
+    for (ringIndex in 0 until rings.lastIndex) {
+        val aRing = rings[ringIndex]
+        val bRing = rings[ringIndex + 1]
+        for (i in 0 until segments) {
+            val next = (i + 1) % segments
+            addPreviewEdge(edges, aRing[i], aRing[next])
+            addPreviewEdge(edges, aRing[i], bRing[i])
+        }
+    }
+    return edges
+}
+
+private fun addPreviewEdge(edges: MutableList<Pair<Vector3, Vector3>>, a: Vector3, b: Vector3) {
+    if (a.dst2(b) > PRIMITIVE_EPSILON_SQ) {
+        edges += Vector3(a) to Vector3(b)
+    }
+}
+
+private fun drawPrimitiveEdges(renderer: ShapeRenderer, edges: List<Pair<Vector3, Vector3>>) {
+    edges.forEach { (a, b) ->
+        renderer.line(a.x, a.y, a.z, b.x, b.y, b.z)
     }
 }
 
