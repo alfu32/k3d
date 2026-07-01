@@ -81,7 +81,7 @@ parts:
       set -eux
 
       export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")"
-      export GRADLE_USER_HOME="$CRAFT_PART_BUILD/.gradle"
+      export GRADLE_USER_HOME="/home/devlin/Development/sketch3d-kt/.gradle-user"
       export PATH="$JAVA_HOME/bin:$PATH"
       SNAP_VERSION="${OCTODRAW_SNAP_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0)}"
 

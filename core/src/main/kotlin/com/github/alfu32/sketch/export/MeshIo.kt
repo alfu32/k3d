@@ -1276,16 +1276,23 @@ object MeshIo {
     private fun writeObj(triangles: List<Triangle>): String {
         val sb = StringBuilder()
         sb.append("# Octodraw OBJ export\n")
+        sb.append("# triangles: ").append(triangles.size).append('\n')
+        sb.append("# vertices: ").append(triangles.size * 3).append('\n')
+        sb.append("# normals: ").append(triangles.size).append('\n')
+        sb.append("o octodraw_mesh\n")
         var vertexIndex = 1
+        var normalIndex = 1
         triangles.forEach { tri ->
             appendObjVertex(sb, tri.a)
             appendObjVertex(sb, tri.b)
             appendObjVertex(sb, tri.c)
+            appendObjNormal(sb, normalFor(tri))
             sb.append("f ")
-                .append(vertexIndex).append(' ')
-                .append(vertexIndex + 1).append(' ')
-                .append(vertexIndex + 2).append('\n')
+                .append(vertexIndex).append("//").append(normalIndex).append(' ')
+                .append(vertexIndex + 1).append("//").append(normalIndex).append(' ')
+                .append(vertexIndex + 2).append("//").append(normalIndex).append('\n')
             vertexIndex += 3
+            normalIndex += 1
         }
         return sb.toString()
     }
@@ -1295,6 +1302,13 @@ object MeshIo {
             .append(fmt(v.x)).append(' ')
             .append(fmt(v.y)).append(' ')
             .append(fmt(v.z)).append('\n')
+    }
+
+    private fun appendObjNormal(sb: StringBuilder, normal: Vector3) {
+        sb.append("vn ")
+            .append(fmt(normal.x)).append(' ')
+            .append(fmt(normal.y)).append(' ')
+            .append(fmt(normal.z)).append('\n')
     }
 
     private fun writeStlAscii(triangles: List<Triangle>): String {
