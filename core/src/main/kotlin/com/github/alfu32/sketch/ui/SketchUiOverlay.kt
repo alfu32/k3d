@@ -440,7 +440,7 @@ class SketchUiOverlay(
     private var toolbarsVisible = true
     private val uiPrefs by lazy { Gdx.app.getPreferences("k3d-ui-layout") }
     private val toolbarLayoutVersionKey = "builtin_toolbar_layout_version"
-    private val toolbarLayoutVersion = 13
+    private val toolbarLayoutVersion = 14
     private val inToolOperatorsToolbarId = "builtin_toolbar_in_tool_operators"
     private val toolbarsVisibleKey = "toolbars.visible"
     private val uiToolbarButtonSizeKey = "ui_toolbar_button_size_px"
@@ -461,6 +461,7 @@ class SketchUiOverlay(
         "builtin_toolbar_modification_2",
         "builtin_toolbar_architecture",
         "builtin_toolbar_hvac",
+        "builtin_toolbar_primitives",
         "builtin_toolbar_mech",
         "builtin_toolbar_voxel",
         "builtin_toolbar_actions",
@@ -1525,6 +1526,12 @@ class SketchUiOverlay(
             ToolId.HVAC_PLUMBING,
             ToolId.HVAC_VENTILATION
         )
+        val primitiveTools = listOf(
+            ToolId.PRIMITIVE_SPHERE,
+            ToolId.PRIMITIVE_CYLINDER,
+            ToolId.PRIMITIVE_CONE,
+            ToolId.PRIMITIVE_PILL
+        )
         val mechTools = listOf(
             ToolId.MECH_SCREW,
             ToolId.MECH_CIRCULAR_HOLE,
@@ -1589,6 +1596,12 @@ class SketchUiOverlay(
             toolIds = hvacTools,
             group = toolGroup
         )
+        val primitives = buildToolsToolbarWindow(
+            title = "Primitives",
+            toolbarId = "builtin_toolbar_primitives",
+            toolIds = primitiveTools,
+            group = toolGroup
+        )
         val mech = buildToolsToolbarWindow(
             title = "Mech",
             toolbarId = "builtin_toolbar_mech",
@@ -1620,6 +1633,7 @@ class SketchUiOverlay(
         builtInToolbars["builtin_toolbar_modification_2"] = modification2
         builtInToolbars["builtin_toolbar_architecture"] = architecture
         builtInToolbars["builtin_toolbar_hvac"] = hvac
+        builtInToolbars["builtin_toolbar_primitives"] = primitives
         builtInToolbars["builtin_toolbar_mech"] = mech
         builtInToolbars["builtin_toolbar_voxel"] = voxel
         builtInToolbars["builtin_toolbar_actions"] = actions
@@ -6736,6 +6750,10 @@ class SketchUiOverlay(
             ToolId.ARCH_DOOR_FRAME -> "arch_door"
             ToolId.HVAC_PLUMBING -> "hvac_plumbing"
             ToolId.HVAC_VENTILATION -> "hvac_ventilation"
+            ToolId.PRIMITIVE_SPHERE -> "sphere"
+            ToolId.PRIMITIVE_CYLINDER -> "cylinder"
+            ToolId.PRIMITIVE_CONE -> "cone"
+            ToolId.PRIMITIVE_PILL -> "pill"
             ToolId.MECH_SCREW -> "mech_screw_surface"
             ToolId.MECH_CIRCULAR_HOLE -> "mech_round_hole"
             ToolId.MECH_ROUND_WASHER -> "mech_washer_round"
@@ -6806,6 +6824,10 @@ class SketchUiOverlay(
             ToolId.ARCH_DOOR_FRAME -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.HVAC_PLUMBING -> Color(0.55f, 0.8f, 0.95f, 1f)
             ToolId.HVAC_VENTILATION -> Color(0.82f, 0.82f, 0.82f, 1f)
+            ToolId.PRIMITIVE_SPHERE -> Color(0.75f, 0.9f, 0.95f, 1f)
+            ToolId.PRIMITIVE_CYLINDER -> Color(0.65f, 0.9f, 0.7f, 1f)
+            ToolId.PRIMITIVE_CONE -> Color(0.95f, 0.8f, 0.45f, 1f)
+            ToolId.PRIMITIVE_PILL -> Color(0.85f, 0.75f, 0.95f, 1f)
             ToolId.MECH_SCREW -> Color(0.9f, 0.7f, 0.45f, 1f)
             ToolId.MECH_CIRCULAR_HOLE -> Color(0.55f, 0.95f, 0.45f, 1f)
             ToolId.MECH_ROUND_WASHER -> Color(0.7f, 0.92f, 0.65f, 1f)

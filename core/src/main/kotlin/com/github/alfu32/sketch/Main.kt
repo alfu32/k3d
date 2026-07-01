@@ -152,6 +152,10 @@ import com.github.alfu32.sketch.tools.RevolveTool
 import com.github.alfu32.sketch.tools.Ribbon3dTool
 import com.github.alfu32.sketch.tools.RotateTool
 import com.github.alfu32.sketch.tools.RotateStretchTool
+import com.github.alfu32.sketch.tools.ConePrimitiveTool
+import com.github.alfu32.sketch.tools.CylinderPrimitiveTool
+import com.github.alfu32.sketch.tools.PillPrimitiveTool
+import com.github.alfu32.sketch.tools.SpherePrimitiveTool
 import com.github.alfu32.sketch.tools.SurfaceRectangleTool
 import com.github.alfu32.sketch.tools.SelectTool
 import com.github.alfu32.sketch.tools.ScaleTool
@@ -875,6 +879,10 @@ class Main @JvmOverloads constructor(
                 ArchitectureDoorFrameTool(scene, architectureSettings, { toolController.setTool(ToolId.SELECT) }, ::ensureActiveArchitectureGroupForTools),
                 HvacPlumbingTool(scene, hvacSettings) { toolController.setTool(ToolId.SELECT) },
                 HvacVentilationTool(scene, hvacSettings) { toolController.setTool(ToolId.SELECT) },
+                SpherePrimitiveTool(scene) { circleSegments },
+                CylinderPrimitiveTool(scene) { circleSegments },
+                ConePrimitiveTool(scene) { circleSegments },
+                PillPrimitiveTool(scene) { circleSegments },
                 MechScrewTool(scene) { circleSegments },
                 MechCircularHoleTool(scene) { circleSegments },
                 MechRoundWasherTool(scene) { circleSegments },
