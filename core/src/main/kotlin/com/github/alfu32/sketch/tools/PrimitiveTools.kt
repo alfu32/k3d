@@ -127,14 +127,14 @@ class SpherePrimitiveTool(
                         val c = upper[next]
                         val d = upper[i]
                         if (stack == 0) {
-                            group.faceStore.addTriangle(a, c, d, faceColor)
+                            group.faceStore.addTriangle(a, d, c, faceColor)
                             faces++
                         } else if (stack == stacks - 1) {
-                            group.faceStore.addTriangle(a, b, d, faceColor)
+                            group.faceStore.addTriangle(a, d, b, faceColor)
                             faces++
                         } else {
-                            group.faceStore.addTriangle(a, b, c, faceColor)
-                            group.faceStore.addTriangle(a, c, d, faceColor)
+                            group.faceStore.addTriangle(a, c, b, faceColor)
+                            group.faceStore.addTriangle(a, d, c, faceColor)
                             faces += 2
                         }
                         edges += addPrimitiveSegment(group, a, b)
