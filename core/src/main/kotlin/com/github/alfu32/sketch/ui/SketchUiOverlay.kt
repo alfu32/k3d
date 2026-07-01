@@ -1415,6 +1415,10 @@ class SketchUiOverlay(
 
     fun setBuiltInToolbarVisible(toolbarId: String, visible: Boolean): Boolean {
         val window = builtInToolbars[toolbarId] ?: return false
+        if (window.stage == null) {
+            stage.addActor(window)
+            toolbarsPositioned = false
+        }
         toolbarDesiredVisibility[toolbarId] = visible
         window.isVisible = toolbarsVisible && visible
         if (visible) {
@@ -1685,6 +1689,7 @@ class SketchUiOverlay(
             modification2,
             architecture,
             hvac,
+            primitives,
             mech,
             voxel,
             actions,
