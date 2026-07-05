@@ -5,7 +5,7 @@ i:b:/appicon.svg:116700:1
 i:b:/appicon_150x150.png:6685:1
 i:b:/appicon_300x300.png:12983:1
 i:b:/appicon_512x512.png:23452:1
-i:b:/icons.mapping.csv:6383:1
+i:b:/icons.mapping.csv:6527:1
 i:b:/appicon.6.png:51264:1
 i:b:/appicon_114x114.png:5159:1
 i:b:/shaders/sketch-default.fragment.glsl:7269:1

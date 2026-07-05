@@ -155,6 +155,7 @@ import com.github.alfu32.sketch.tools.RotateStretchTool
 import com.github.alfu32.sketch.tools.ConePrimitiveTool
 import com.github.alfu32.sketch.tools.CylinderPrimitiveTool
 import com.github.alfu32.sketch.tools.PillPrimitiveTool
+import com.github.alfu32.sketch.tools.RandomOffsetTool
 import com.github.alfu32.sketch.tools.SpherePrimitiveTool
 import com.github.alfu32.sketch.tools.SurfaceRectangleTool
 import com.github.alfu32.sketch.tools.SelectTool
@@ -923,6 +924,7 @@ class Main @JvmOverloads constructor(
                 ScaleTool(scene),
                 StretchTool(scene),
                 StretchScaleTool(scene),
+                RandomOffsetTool(scene),
                 RotateStretchTool(scene),
                 CopyMultipleTool(scene),
                 PlanarTranslateMultipleTool(scene),

@@ -1532,6 +1532,7 @@ class SketchUiOverlay(
             ToolId.SCALE,
             ToolId.STRETCH,
             ToolId.STRETCH_SCALE,
+            ToolId.RANDOM_OFFSET,
             ToolId.ROTATE_STRETCH,
             ToolId.COPY_MULTIPLE,
             ToolId.PLANAR_TRANSLATE_MULTIPLE,
@@ -6832,6 +6833,7 @@ class SketchUiOverlay(
             ToolId.SCALE -> "scale"
             ToolId.STRETCH -> "stretch"
             ToolId.STRETCH_SCALE -> "stretch_scale"
+            ToolId.RANDOM_OFFSET -> "random_offset"
             ToolId.ROTATE_STRETCH -> "stretch-rotate"
             ToolId.COPY_MULTIPLE -> "multiple-copy-translate"
             ToolId.PLANAR_TRANSLATE_MULTIPLE -> "multiple-copy-translate-planar"
@@ -6906,6 +6908,7 @@ class SketchUiOverlay(
             ToolId.SCALE -> Color(0.95f, 0.55f, 0.75f, 1f)
             ToolId.STRETCH -> Color(0.95f, 0.65f, 0.25f, 1f)
             ToolId.STRETCH_SCALE -> Color(0.95f, 0.72f, 0.35f, 1f)
+            ToolId.RANDOM_OFFSET -> Color(0.55f, 0.95f, 0.75f, 1f)
             ToolId.ROTATE_STRETCH -> Color(0.85f, 0.6f, 0.25f, 1f)
             ToolId.COPY_MULTIPLE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.PLANAR_TRANSLATE_MULTIPLE -> Color(0.55f, 0.8f, 0.95f, 1f)

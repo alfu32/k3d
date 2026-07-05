@@ -59,6 +59,7 @@ enum class ToolId(val displayName: String) {
     SCALE("Scale"),
     STRETCH("Stretch"),
     STRETCH_SCALE("Stretch Scale"),
+    RANDOM_OFFSET("Random Offset"),
     ROTATE_STRETCH("Rotate Stretch"),
     COPY_MULTIPLE("Copy Multiple"),
     PLANAR_TRANSLATE_MULTIPLE("Planar Translate Multiple"),
