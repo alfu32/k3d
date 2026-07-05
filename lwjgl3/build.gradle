@@ -969,6 +969,14 @@ tasks.register("bundleLinuxSnap") {
       .directory(rootProject.projectDir)
       .inheritIO()
     pack.environment().put("OCTODRAW_SNAP_VERSION", bundleVersion)
+    def linuxTar = rootProject.file("dist/octodraw-dist-${bundleVersion}-linux.tar.gz")
+    if (linuxTar.exists()) {
+      pack.environment().put("OCTODRAW_SNAP_LINUX_TAR", linuxTar.absolutePath)
+    }
+    def desktopJar = file("$buildDir/libs/octodraw-${bundleVersion}.jar")
+    if (desktopJar.exists()) {
+      pack.environment().put("OCTODRAW_SNAP_JAR", desktopJar.absolutePath)
+    }
     def process = pack.start()
     if (process.waitFor() != 0) {
       throw new GradleException("snapcraft failed while building ${outFile.name}.")

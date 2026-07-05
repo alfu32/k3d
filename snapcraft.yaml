@@ -4,9 +4,11 @@ base: core24
 adopt-info: octodraw
 summary: 3D drafting and modeling tool
 description: |
-  Octodraw is a 3D drafting and modeling application packaged directly
-  from the repository Gradle build. The snap ships the fat desktop jar,
-  runtime assets, tutorials, and a bundled JRE 21 built with jlink.
+  Octodraw is a 3D drafting and modeling application. The snap packages
+  the prebuilt Linux bundle or desktop jar when available, then falls back
+  to the repository Gradle build only when no prebuilt payload is present.
+  It ships the fat desktop jar, runtime assets, tutorials, and a bundled
+  JRE 21.
 icon: snap/gui/icon.png
 
 grade: stable
@@ -80,55 +82,152 @@ parts:
     override-build: |
       set -eux
 
+      SRC_ROOT="${CRAFT_PART_SRC:-${SNAPCRAFT_PART_SRC:-$PWD}}"
+      cd "$SRC_ROOT"
+
       export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")"
-      export GRADLE_USER_HOME="/home/devlin/Development/sketch3d-kt/.gradle-user"
+      export GRADLE_USER_HOME="${GRADLE_USER_HOME:-$SRC_ROOT/.gradle-user}"
       export PATH="$JAVA_HOME/bin:$PATH"
       SNAP_VERSION="${OCTODRAW_SNAP_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0)}"
+      INSTALL_ROOT="$CRAFT_PART_INSTALL/opt/octodraw"
+
+      newest_file() {
+        if [ "$#" -eq 0 ]; then
+          return 1
+        fi
+        find "$@" -maxdepth 0 -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | sed -n '1s/^[^ ]* //p'
+      }
+
+      find_prebuilt_tar() {
+        if [ -n "${OCTODRAW_SNAP_LINUX_TAR:-}" ] && [ -f "$OCTODRAW_SNAP_LINUX_TAR" ]; then
+          printf '%s\n' "$OCTODRAW_SNAP_LINUX_TAR"
+          return 0
+        fi
+        if [ -f "dist/octodraw-dist-$SNAP_VERSION-linux.tar.gz" ]; then
+          printf '%s\n' "dist/octodraw-dist-$SNAP_VERSION-linux.tar.gz"
+          return 0
+        fi
+        newest_file dist/octodraw-dist-*-linux.tar.gz
+      }
+
+      find_prebuilt_jar() {
+        if [ -n "${OCTODRAW_SNAP_JAR:-}" ] && [ -f "$OCTODRAW_SNAP_JAR" ]; then
+          printf '%s\n' "$OCTODRAW_SNAP_JAR"
+          return 0
+        fi
+        if [ -f "lwjgl3/build/libs/octodraw-$SNAP_VERSION.jar" ]; then
+          printf '%s\n' "lwjgl3/build/libs/octodraw-$SNAP_VERSION.jar"
+          return 0
+        fi
+        find lwjgl3/build/libs -maxdepth 1 -type f -name 'octodraw-*.jar' ! -name '*-linux.jar' ! -name '*-mac.jar' ! -name '*-win.jar' -printf '%T@ %p\n' 2>/dev/null | sort -nr | sed -n '1s/^[^ ]* //p'
+      }
+
+      install_from_linux_tar() {
+        TARBALL="$1"
+        EXTRACT_DIR="${CRAFT_PART_BUILD:-$PWD/.snapcraft-build}/prebuilt-linux-tar"
+        rm -rf "$EXTRACT_DIR"
+        install -d "$EXTRACT_DIR"
+        tar -xzf "$TARBALL" -C "$EXTRACT_DIR"
+
+        APP_JAR="$(find "$EXTRACT_DIR" -type f \( -name 'octodraw-editor.jar' -o -name 'octodraw-*.jar' \) ! -name '*-sources.jar' ! -name '*-javadoc.jar' -printf '%T@ %p\n' | sort -nr | sed -n '1s/^[^ ]* //p')"
+        if [ -z "$APP_JAR" ]; then
+          echo "Linux bundle $TARBALL does not contain an Octodraw jar." >&2
+          exit 1
+        fi
+
+        install -m 0644 "$APP_JAR" "$INSTALL_ROOT/octodraw-editor.jar"
+
+        BUNDLE_RUNTIME="$(find "$EXTRACT_DIR" -type d -path '*/jre/bin' -printf '%h\n' | sed -n '1p')"
+        if [ -n "$BUNDLE_RUNTIME" ]; then
+          rm -rf "$INSTALL_ROOT/runtime"
+          cp -a "$BUNDLE_RUNTIME" "$INSTALL_ROOT/runtime"
+        fi
+
+        BUNDLE_PLUGINS="$(find "$EXTRACT_DIR" -type d -name plugins -printf '%p\n' | sed -n '1p')"
+        if [ -n "$BUNDLE_PLUGINS" ]; then
+          cp -a "$BUNDLE_PLUGINS/." "$INSTALL_ROOT/plugins/"
+        fi
+
+        BUNDLE_TUTORIALS="$(find "$EXTRACT_DIR" -type d -name tutorials -printf '%p\n' | sed -n '1p')"
+        if [ -n "$BUNDLE_TUTORIALS" ]; then
+          install -d "$INSTALL_ROOT/tutorials"
+          cp -a "$BUNDLE_TUTORIALS/." "$INSTALL_ROOT/tutorials/"
+        fi
+
+        printf '%s\n' "$APP_JAR"
+      }
+
+      install_from_jar() {
+        APP_JAR="$1"
+        install -m 0644 "$APP_JAR" "$INSTALL_ROOT/octodraw-editor.jar"
+        printf '%s\n' "$APP_JAR"
+      }
 
       if [ -d .gradle-user/wrapper/dists ]; then
-        install -d "$GRADLE_USER_HOME/wrapper"
-        cp -a .gradle-user/wrapper/dists "$GRADLE_USER_HOME/wrapper/"
+        SOURCE_WRAPPER_DISTS="$(readlink -f .gradle-user/wrapper/dists)"
+        TARGET_WRAPPER_DISTS="$(readlink -m "$GRADLE_USER_HOME/wrapper/dists")"
+        if [ "$SOURCE_WRAPPER_DISTS" != "$TARGET_WRAPPER_DISTS" ]; then
+          install -d "$GRADLE_USER_HOME/wrapper"
+          cp -a .gradle-user/wrapper/dists "$GRADLE_USER_HOME/wrapper/"
+        fi
       fi
 
-      chmod 755 ./gradlew
-      ./gradlew --no-daemon -PreleaseNumber="$SNAP_VERSION" generateAssetList :lwjgl3:jar
-
-      APP_JAR="lwjgl3/build/libs/octodraw-$SNAP_VERSION.jar"
-      if [ ! -f "$APP_JAR" ]; then
-        APP_JAR="$(find lwjgl3/build/libs -maxdepth 1 -type f -name 'octodraw-*.jar' ! -name '*-linux.jar' ! -name '*-mac.jar' ! -name '*-win.jar' -printf '%T@ %p\n' | sort -nr | awk 'NR==1 {print $2}')"
-      fi
-      if [ -z "$APP_JAR" ]; then
-        echo "Unable to locate built desktop jar." >&2
-        exit 1
-      fi
-
-      MODULES_RAW="$("$JAVA_HOME/bin/jdeps" \
-        --ignore-missing-deps \
-        --multi-release 21 \
-        --print-module-deps \
-        "$APP_JAR"),jdk.crypto.ec,jdk.unsupported"
-      MODULES="$(printf '%s\n' "$MODULES_RAW" | tr ',' '\n' | sed '/^$/d' | sort -u | paste -sd, -)"
-
-      install -d "$CRAFT_PART_INSTALL/opt/octodraw"
-      install -d "$CRAFT_PART_INSTALL/opt/octodraw/plugins"
+      install -d "$INSTALL_ROOT"
+      install -d "$INSTALL_ROOT/plugins"
       install -d "$CRAFT_PART_INSTALL/bin"
       install -d "$CRAFT_PART_INSTALL/snap/gui"
-      rm -rf "$CRAFT_PART_INSTALL/opt/octodraw/runtime"
+      rm -rf "$INSTALL_ROOT/runtime"
 
-      "$JAVA_HOME/bin/jlink" \
-        --add-modules "$MODULES" \
-        --strip-debug \
-        --no-header-files \
-        --no-man-pages \
-        --compress=2 \
-        --output "$CRAFT_PART_INSTALL/opt/octodraw/runtime"
+      PREBUILT_TAR="$(find_prebuilt_tar || true)"
+      PREBUILT_JAR="$(find_prebuilt_jar || true)"
+      if [ -n "$PREBUILT_TAR" ]; then
+        echo "Using prebuilt Linux bundle for snap payload: $PREBUILT_TAR"
+        APP_JAR="$(install_from_linux_tar "$PREBUILT_TAR")"
+      elif [ -n "$PREBUILT_JAR" ]; then
+        echo "Using prebuilt desktop jar for snap payload: $PREBUILT_JAR"
+        APP_JAR="$(install_from_jar "$PREBUILT_JAR")"
+      else
+        if [ "${OCTODRAW_SNAP_REQUIRE_PREBUILT:-0}" = "1" ]; then
+          echo "No prebuilt Linux tarball or desktop jar found for snap packaging." >&2
+          echo "Build one first, for example:" >&2
+          echo "  ./gradlew :lwjgl3:bundleLinuxTar -PreleaseNumber=\"$SNAP_VERSION\"" >&2
+          echo "or:" >&2
+          echo "  ./gradlew :lwjgl3:jar -PreleaseNumber=\"$SNAP_VERSION\"" >&2
+          exit 1
+        fi
 
-      install -m 0644 "$APP_JAR" "$CRAFT_PART_INSTALL/opt/octodraw/octodraw-editor.jar"
+        echo "No prebuilt snap payload found; falling back to Gradle build."
+        chmod 755 ./gradlew
+        ./gradlew --no-daemon -PreleaseNumber="$SNAP_VERSION" generateAssetList :lwjgl3:jar
+        BUILT_JAR="$(find_prebuilt_jar || true)"
+        if [ -z "$BUILT_JAR" ]; then
+          echo "Unable to locate built desktop jar." >&2
+          exit 1
+        fi
+        APP_JAR="$(install_from_jar "$BUILT_JAR")"
+      fi
 
-      cp -a assets "$CRAFT_PART_INSTALL/opt/octodraw/"
+      if [ ! -x "$INSTALL_ROOT/runtime/bin/java" ]; then
+        MODULES_RAW="$("$JAVA_HOME/bin/jdeps" \
+          --ignore-missing-deps \
+          --multi-release 21 \
+          --print-module-deps \
+          "$APP_JAR"),jdk.crypto.ec,jdk.unsupported"
+        MODULES="$(printf '%s\n' "$MODULES_RAW" | tr ',' '\n' | sed '/^$/d' | sort -u | paste -sd, -)"
+
+        "$JAVA_HOME/bin/jlink" \
+          --add-modules "$MODULES" \
+          --strip-debug \
+          --no-header-files \
+          --no-man-pages \
+          --compress=2 \
+          --output "$INSTALL_ROOT/runtime"
+      fi
+
+      cp -a assets "$INSTALL_ROOT/"
       if [ -d docs/tutorial ]; then
-        install -d "$CRAFT_PART_INSTALL/opt/octodraw/tutorials"
-        cp -a docs/tutorial/. "$CRAFT_PART_INSTALL/opt/octodraw/tutorials/"
+        install -d "$INSTALL_ROOT/tutorials"
+        cp -a docs/tutorial/. "$INSTALL_ROOT/tutorials/"
       fi
       install -m 0644 snap/gui/octodraw.desktop "$CRAFT_PART_INSTALL/snap/gui/octodraw.desktop"
       install -m 0644 snap/gui/icon.png "$CRAFT_PART_INSTALL/snap/gui/icon.png"
