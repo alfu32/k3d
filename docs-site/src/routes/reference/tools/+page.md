@@ -18,7 +18,7 @@ Extrude Swipe 3D uses selected profile segments and the Extrude Swipe icon. It p
 
 ## Modification Tools
 
-Select, Push/Pull, Move, Rotate, Scale, Stretch, Stretch Scale, Rotate Stretch, copy-array tools, and Paint cover the direct modeling loop.
+Select, Push/Pull, Move, Rotate, Scale, Stretch, Stretch Scale, Rotate Stretch, copy-array tools, Paint, fuzzy tools, and object-level volume tools cover the direct modeling loop.
 
 Stretch Scale uses the same three points and constraint logic as Scale. Unlike normal Scale, it also transforms vertices of unselected entities when those vertices are connected to selected vertices, matching the stretch behavior for partially selected geometry.
 
@@ -35,6 +35,30 @@ These tools are intended for mesh objects with coherent face normals and reasona
 Cut Objects uses the same two-object input and the same intersection-cut preparation as the boolean tools, but it does not classify or discard any faces. Select exactly two mesh object instances, run Cut Objects, and the tool replaces both objects with loose selected triangles from both cut operands, the original loose segments from both objects, and loose selected intersection segments.
 
 Use this when validating the shared boolean preparation step. If the resulting triangles and intersection segments are complete, the remaining union/intersection/subtraction behavior can be reasoned about as face-set selection. If cuts are missing, diagnose the cut phase before changing boolean classification.
+
+### Fuzzy Tools
+
+Random Offset, Random Surface Array, and Mesh Regularize are topology-editing helpers for organic or generated modeling passes.
+
+- Random Offset (`tool.builtin.random_offset`) applies a controlled random displacement to selected connected vertices. For each moved vertex, the tool averages the normals of neighboring selected faces and offsets along that direction. Connected selected segments move through their shared vertices, so a segment lying on a face boundary follows the face instead of tearing away.
+- Random Surface Array (`tool.builtin.random_surface_array`) scatters selected payload geometry over selected target faces. The current workflow expects a selection containing surface faces plus source geometry or object instances to copy. The configuration controls copy count, whether copies align to target face normals, scale variation, and rotation variation.
+- Mesh Regularize (`tool.builtin.mesh_regularize`) rebuilds a near-planar selected patch as a regular rectangular grid of triangles. It is deliberately conservative: if the selected faces are not close enough to one plane, regularize the patch in smaller pieces or repair the surface first.
+
+Use low values first for random strength, scale fuzz, and rotation fuzz. These tools intentionally create new geometry states and are easiest to tune when the original source selection is still simple.
+
+### Volume Tool Workflow
+
+Volume tools are not generic loose-face commands. Solid Union, Solid Intersection, Solid Subtraction, and Cut Objects work from two selected mesh object instances so each operand has a clear local coordinate system and face set.
+
+Recommended workflow:
+
+1. create or group each operand as an object,
+2. select exactly two object instances in the same parent context,
+3. run Cut Objects or Mesh Intersection to inspect the crossing topology,
+4. run Union, Intersection, or Subtraction,
+5. inspect the exploded selected result before regrouping it.
+
+Boolean quality depends on complete intersection cutting before classification. If an operation produces a surprising result, use Cut Objects first; it exposes the same cut preparation without deleting any fragments.
 
 ## Domain Tools
 

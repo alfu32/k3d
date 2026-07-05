@@ -44,7 +44,24 @@ Example (`tool.builtin.rectangle`):
 - `rotate`
 - `scale`
 - `stretch`
+- `stretch_scale`
 - `paint`
+- `random_offset`
+- `random_surface_array`
+- `mesh_regularize`
+
+## Volume Tools
+- `object_cut`
+- `solid_union`
+- `solid_intersection`
+- `solid_subtraction`
+
+Volume tools operate on two selected mesh object instances. `object_cut` exposes the shared intersection-cut preparation step and keeps all fragments. `solid_union`, `solid_intersection`, and `solid_subtraction` run the same cut preparation, then classify and keep the requested fragments. Results are written back as loose selected geometry rather than as a new object.
+
+## Fuzzy Tools
+- `random_offset`: displaces selected connected vertices along averaged neighboring face normals.
+- `random_surface_array`: scatters selected payload geometry or objects over selected target faces with count, normal alignment, scale fuzz, and rotation fuzz controls.
+- `mesh_regularize`: replaces a near-planar selected face patch with a regular rectangular triangle grid.
 
 Example (`tool.builtin.push_pull`) outcome:
 

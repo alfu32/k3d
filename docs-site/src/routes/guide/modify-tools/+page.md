@@ -9,6 +9,8 @@ Modification tools transform existing geometry and convert sketches into volumes
 - Move, Rotate, Scale, and Stretch: transform selected geometry.
 - Rotate Stretch and copy-array tools: produce repeated or rotational edits.
 - Paint: apply color to selected faces.
+- Random Offset and Random Surface Array: create controlled irregularity from selected geometry.
+- Mesh Regularize: rebuild a near-planar selected patch into regular triangles.
 
 ## Push/Pull Workflow
 
@@ -32,3 +34,11 @@ Use closed, consistently wound mesh objects for best results. If the result is e
 Cut Objects is the non-boolean version of the object cut phase. Select exactly two mesh object instances, then run the tool to replace them with loose selected cut triangles, original loose segments from both objects, and the generated intersection segments. No faces are removed for union, intersection, or subtraction.
 
 Use this tool when checking whether the cut phase is complete before reasoning about boolean classification.
+
+## Fuzzy Tools
+
+Random Offset moves selected connected vertices along an averaged normal direction. Select a patch of faces or boundary segments, run the tool, and enter a low strength first. The implementation moves shared vertices once, so adjacent selected faces and selected edge segments stay attached.
+
+Random Surface Array distributes a selected payload over selected surface faces. Use it for rough coverage patterns such as panels, stones, vegetation placeholders, or randomized repeated details. Keep the first pass sparse, then increase count, scale fuzz, rotation fuzz, and normal alignment after the distribution looks correct.
+
+Mesh Regularize is a repair and remeshing helper for near-planar patches. It replaces the selected patch with a rectangular grid of triangles at the requested step size. If the selection is curved, folded, or noisy, split it into smaller planar regions before regularizing.

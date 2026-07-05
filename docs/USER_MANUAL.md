@@ -381,6 +381,12 @@ You can set shape/color globally as defaults (no hotspot selected) or per select
 - Input: left-click reference, left-click destination.
 - Modifiers: numeric input overrides distance.
 
+### Stretch Scale
+
+- Scales selected geometry using the normal Scale point workflow.
+- Connected vertices belonging to unselected entities are transformed when they share selected vertices, which makes it useful for resizing part of a mesh without disconnecting neighboring faces or segments.
+- Input: same point sequence as Scale.
+
 ### Paint
 
 - Click a face to apply the active color.
@@ -389,6 +395,19 @@ You can set shape/color globally as defaults (no hotspot selected) or per select
   - if voxels are selected, Paint recolors only selected voxels;
   - if no voxels are selected, Paint applies the color to the whole voxel model.
 - Input: left-click face to paint.
+
+### Volume Tools
+
+- Solid Union, Solid Intersection, and Solid Subtraction operate on two selected mesh object instances in the same parent context.
+- Cut Objects runs the shared intersection-cut step and leaves all resulting fragments selected without classifying or deleting faces.
+- Boolean results are written back as loose selected geometry, not as a new object. Group the result only after inspecting and cleaning it.
+- Best results require coherent face normals and operands that describe usable volumes.
+
+### Fuzzy Tools
+
+- Random Offset moves selected connected vertices along averaged neighboring face normals. Use a low strength first and increase only after checking the direction of the deformation.
+- Random Surface Array scatters selected payload geometry across selected target faces. Controls include copy count, normal alignment, scale variation, and rotation variation.
+- Mesh Regularize replaces a near-planar selected patch with a regular rectangular triangle grid. Non-planar selections should be split into smaller patches before regularization.
 
 ### Object
 

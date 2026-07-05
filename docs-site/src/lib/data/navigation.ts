@@ -49,6 +49,7 @@ export const navGroups: NavGroup[] = [
       { label: 'Modify a Box', href: '/tutorials/modify-a-box/' },
       { label: 'Translate Arrays', href: '/tutorials/translate-arrays/' },
       { label: 'Rotate Arrays', href: '/tutorials/rotate-arrays/' },
+      { label: 'Volume and Fuzzy Tools', href: '/tutorials/volume-and-fuzzy-tools/' },
       { label: 'Push/Pull House', href: '/tutorials/push-pull-house/' },
       { label: 'Snapping Basics', href: '/tutorials/snapping-basics/' },
       { label: 'Objects and Instances', href: '/tutorials/objects-and-instances/' },

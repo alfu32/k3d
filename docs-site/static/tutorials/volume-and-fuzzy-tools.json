@@ -1,0 +1,91 @@
+{
+  "id": "volume-and-fuzzy-tools",
+  "title": "Volume and Fuzzy Tools",
+  "level": "intermediate",
+  "estimatedMinutes": 8,
+  "initialScene": "empty",
+  "steps": [
+    {
+      "id": "prepare-two-objects",
+      "title": "Prepare two mesh objects",
+      "body": "Create or load two simple mesh objects that overlap. Keep them as object instances in the same parent context before running boolean tools.",
+      "actions": [
+        {
+          "type": "none",
+          "description": "Manual setup is used because object construction commands should be validated against the current build before automation."
+        }
+      ],
+      "success": [{ "type": "manual", "prompt": "Two overlapping mesh object instances are selected." }]
+    },
+    {
+      "id": "inspect-intersection",
+      "title": "Inspect intersections first",
+      "body": "Run Mesh Intersection or Cut Objects before committing a boolean operation. The cut result should show the intersection segments and split triangles clearly.",
+      "actions": [
+        {
+          "type": "command",
+          "commandId": "tool.builtin.object_cut",
+          "description": "Pending command discovery for the current build before automated playback.",
+          "pendingDiscovery": true
+        }
+      ],
+      "success": [{ "type": "manual", "prompt": "The result contains loose cut triangles and intersection segments." }]
+    },
+    {
+      "id": "choose-boolean",
+      "title": "Choose the volume operation",
+      "body": "Use Solid Union to merge, Solid Intersection to keep only the overlap, or Solid Subtraction to remove the second object from the first. Results are left exploded and selected for immediate cleanup.",
+      "actions": [
+        {
+          "type": "command",
+          "commandId": "tool.builtin.solid_union",
+          "description": "Example command only; choose the boolean operation that matches the exercise.",
+          "pendingDiscovery": true
+        }
+      ],
+      "success": [{ "type": "manual", "prompt": "The selected result matches the intended union, intersection, or subtraction." }]
+    },
+    {
+      "id": "random-offset",
+      "title": "Use Random Offset carefully",
+      "body": "Select a face or segment patch, run Random Offset, and enter a low strength first. Shared vertices move together so connected segments and faces remain attached.",
+      "actions": [
+        {
+          "type": "command",
+          "commandId": "tool.builtin.random_offset",
+          "description": "Pending command discovery for automated tutorial playback.",
+          "pendingDiscovery": true
+        }
+      ],
+      "success": [{ "type": "manual", "prompt": "The selected patch is visibly perturbed without tearing connected edges." }]
+    },
+    {
+      "id": "surface-array",
+      "title": "Scatter geometry on a surface",
+      "body": "Select the payload object or geometry and the target faces, then run Random Surface Array. Use count, normal alignment, scale fuzz, and rotation fuzz as small controlled values before increasing density.",
+      "actions": [
+        {
+          "type": "command",
+          "commandId": "tool.builtin.random_surface_array",
+          "description": "Pending command discovery for automated tutorial playback.",
+          "pendingDiscovery": true
+        }
+      ],
+      "success": [{ "type": "manual", "prompt": "Copies are distributed over the selected surface faces." }]
+    },
+    {
+      "id": "regularize-planar-patch",
+      "title": "Regularize a planar patch",
+      "body": "Select a near-planar mesh patch, run Mesh Regularize, and enter a grid step. The tool rejects non-planar selections because it currently creates a rectangular grid on one best-fit plane.",
+      "actions": [
+        {
+          "type": "command",
+          "commandId": "tool.builtin.mesh_regularize",
+          "description": "Pending command discovery for automated tutorial playback.",
+          "pendingDiscovery": true
+        }
+      ],
+      "success": [{ "type": "manual", "prompt": "The selected patch is replaced by regular grid triangles." }]
+    }
+  ]
+}

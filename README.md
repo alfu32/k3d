@@ -34,6 +34,8 @@ The current docs site lives in [`docs-site/`](docs-site/) and is the preferred p
 
 - Select, Line, Rectangle, Surface Rectangle, Quad, Circle
 - Push/Pull, Move, Rotate, Scale, Stretch
+- Object booleans: Solid Union, Solid Intersection, Solid Subtraction, Cut Objects
+- Fuzzy tools: Random Offset, Random Surface Array, Mesh Regularize
 - Linear Dimension, Text, Paint, Object placement
 - Eraser tool
 

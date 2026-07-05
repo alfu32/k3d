@@ -20,6 +20,7 @@ Tutorials are JSON-driven lessons displayed by `TutorialRunner.svelte` and paire
   <a class="doc-card" href="./modify-a-box/"><strong>Modify a Box</strong>Select one box and work through move, copy, rotate, rotate-copy, and stretch.</a>
   <a class="doc-card" href="./translate-arrays/"><strong>Translate Arrays</strong>Turn one small box into linear, planar, and volumetric copy layouts.</a>
   <a class="doc-card" href="./rotate-arrays/"><strong>Rotate Arrays</strong>Use rotational and helical array tools on a single seed volume.</a>
+  <a class="doc-card" href="./volume-and-fuzzy-tools/"><strong>Volume and Fuzzy Tools</strong>Prepare object booleans, inspect cut phases, and apply controlled random modeling helpers.</a>
   <a class="doc-card" href="./push-pull-house/"><strong>Push/Pull House</strong>Use direct modeling steps to block out a small house form.</a>
   <a class="doc-card" href="./snapping-basics/"><strong>Snapping Basics</strong>Practice grid, endpoint, midpoint, and guide snapping.</a>
   <a class="doc-card" href="./objects-and-instances/"><strong>Objects and Instances</strong>Create reusable geometry and reason about edit context.</a>
@@ -40,6 +41,12 @@ Tutorials are JSON-driven lessons displayed by `TutorialRunner.svelte` and paire
     { name: 'multiple-copy-translate-volumetric', label: 'Volumetric Array', hint: 'Use for 3D repeated layouts.' },
     { name: 'multiple-copy-planar-rotate', label: 'Rotational Array', hint: 'Use for circular copy patterns.' },
     { name: 'multiple-copy-helicoidal-rotate', label: 'Helical Array', hint: 'Use for spiral copy patterns.' },
+    { name: 'solid_union', label: 'Solid Union', hint: 'Merge two selected mesh object instances.' },
+    { name: 'solid_intersect', label: 'Solid Intersection', hint: 'Keep only overlapping volume fragments.' },
+    { name: 'solid_subtract', label: 'Solid Subtraction', hint: 'Subtract the second selected object from the first.' },
+    { name: 'fuzzy_offset', label: 'Random Offset', hint: 'Perturb selected connected vertices.' },
+    { name: 'fuzzy_cover', label: 'Random Surface Array', hint: 'Scatter selected payload geometry over selected faces.' },
+    { name: 'mesh_regularize', label: 'Mesh Regularize', hint: 'Rebuild a near-planar selected patch as regular triangles.' },
     { name: 'file_save', label: 'Save', hint: 'Use when the lesson asks you to keep the model.' }
   ]}
 />

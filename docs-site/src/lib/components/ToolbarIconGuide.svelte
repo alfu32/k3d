@@ -179,7 +179,6 @@
     width: var(--icon-w);
     height: var(--icon-h);
     background-repeat: no-repeat;
-    background-size: 256px 288px;
     background-position: calc(var(--icon-x) * -1) calc(var(--icon-y) * -1);
     image-rendering: pixelated;
   }

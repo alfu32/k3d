@@ -60,6 +60,8 @@ enum class ToolId(val displayName: String) {
     STRETCH("Stretch"),
     STRETCH_SCALE("Stretch Scale"),
     RANDOM_OFFSET("Random Offset"),
+    RANDOM_SURFACE_ARRAY("Random Surface Array"),
+    MESH_REGULARIZE("Mesh Regularize"),
     ROTATE_STRETCH("Rotate Stretch"),
     COPY_MULTIPLE("Copy Multiple"),
     PLANAR_TRANSLATE_MULTIPLE("Planar Translate Multiple"),

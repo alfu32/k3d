@@ -155,7 +155,9 @@ import com.github.alfu32.sketch.tools.RotateStretchTool
 import com.github.alfu32.sketch.tools.ConePrimitiveTool
 import com.github.alfu32.sketch.tools.CylinderPrimitiveTool
 import com.github.alfu32.sketch.tools.PillPrimitiveTool
+import com.github.alfu32.sketch.tools.MeshRegularizeTool
 import com.github.alfu32.sketch.tools.RandomOffsetTool
+import com.github.alfu32.sketch.tools.RandomSurfaceArrayTool
 import com.github.alfu32.sketch.tools.SpherePrimitiveTool
 import com.github.alfu32.sketch.tools.SurfaceRectangleTool
 import com.github.alfu32.sketch.tools.SelectTool
@@ -905,6 +907,7 @@ class Main @JvmOverloads constructor(
                 MeshIntersectionTool(scene) { toolController.setTool(ToolId.SELECT) },
                 CutWithPlaneTool(scene),
                 RevolveTool(scene) { circleSegments },
+                MeshRegularizeTool(scene),
                 RectangleTool(scene),
                 SurfaceRectangleTool(scene),
                 QuadTool(scene),
@@ -925,6 +928,7 @@ class Main @JvmOverloads constructor(
                 StretchTool(scene),
                 StretchScaleTool(scene),
                 RandomOffsetTool(scene),
+                RandomSurfaceArrayTool(scene),
                 RotateStretchTool(scene),
                 CopyMultipleTool(scene),
                 PlanarTranslateMultipleTool(scene),
