@@ -652,6 +652,7 @@ class MeshRegularizeTool(
 
     private var subdivisionCount = 12
     private var planarTolerance = 0.05f
+    private var lastRegularizeFailure = "Mesh Regularize: could not project a regular square grid onto the selected surface."
 
     override fun onEnter(status: StatusModel) {
         val initialConfig = MeshRegularizeConfig(subdivisionCount, planarTolerance)
@@ -731,7 +732,7 @@ class MeshRegularizeTool(
             return "Mesh Regularize: select faces first."
         }
         val result = buildRegularizedFaces(selected)
-            ?: return "Mesh Regularize: could not project a regular square grid onto the selected surface."
+            ?: return lastRegularizeFailure
         val newFaces = result.faces
         if (newFaces.isEmpty()) {
             return "Mesh Regularize: no regular cells fell inside the selected patch."
@@ -768,8 +769,10 @@ class MeshRegularizeTool(
     }
 
     private fun buildRegularizedFaces(selected: List<DraftFaceStore.Triangle>): RegularizeBuildResult? {
+        lastRegularizeFailure = "Mesh Regularize: could not project a regular square grid onto the selected surface."
         val normal = averageNormal(selected)
         if (normal.len2() <= RANDOM_OFFSET_EPSILON_SQ) {
+            lastRegularizeFailure = "Mesh Regularize: selected surface has no stable averaged normal."
             return null
         }
         normal.nor()
@@ -783,6 +786,7 @@ class MeshRegularizeTool(
                 project2d(tri.c, origin, basis)
             )
         }
+        val boundaryLoop = buildBoundaryLoop(selected, origin, basis) ?: return null
 
         val minU = projected.minOf { min(it.a.x, min(it.b.x, it.c.x)) }
         val maxU = projected.maxOf { max(it.a.x, max(it.b.x, it.c.x)) }
@@ -809,16 +813,35 @@ class MeshRegularizeTool(
                 val p10 = Vec2((u + cellSize).coerceAtMost(lastU), v)
                 val p11 = Vec2((u + cellSize).coerceAtMost(lastU), (v + cellSize).coerceAtMost(lastV))
                 val p01 = Vec2(u, (v + cellSize).coerceAtMost(lastV))
-                addRegularizedCell(projected, p00, p10, p11, p01, origin, basis, normal, raySpan, planarTolerance, newFaces, edgeMap)
+                addRegularizedCell(
+                    projected,
+                    boundaryLoop,
+                    p00,
+                    p10,
+                    p11,
+                    p01,
+                    origin,
+                    basis,
+                    normal,
+                    raySpan,
+                    cellSize,
+                    planarTolerance,
+                    newFaces,
+                    edgeMap
+                )
                 v += cellSize
             }
             u += cellSize
+        }
+        if (newFaces.isEmpty()) {
+            lastRegularizeFailure = "Mesh Regularize: no regular cells fit inside the selected open surface patch."
         }
         return RegularizeBuildResult(newFaces, edgeMap.values.toList())
     }
 
     private fun addRegularizedCell(
         source: List<ProjectedTriangle>,
+        boundaryLoop: BoundaryLoop,
         a: Vec2,
         b: Vec2,
         c: Vec2,
@@ -827,18 +850,19 @@ class MeshRegularizeTool(
         basis: PlaneBasis,
         surfaceNormal: Vector3,
         raySpan: Float,
+        cellSize: Float,
         tolerance: Float,
         target: MutableList<Triple<Vector3, Vector3, Vector3>>,
         edgeMap: MutableMap<EdgeKey, Pair<Vector3, Vector3>>
     ) {
         val center = Vec2((a.x + b.x + c.x + d.x) / 4f, (a.y + b.y + c.y + d.y) / 4f)
-        if (source.none { pointInTriangle(center, it.a, it.b, it.c) }) {
+        if (!pointInPolygon(center, boundaryLoop.polygon)) {
             return
         }
-        val a3 = projectRegularizedNode(a, source, origin, basis, surfaceNormal, raySpan, tolerance) ?: return
-        val b3 = projectRegularizedNode(b, source, origin, basis, surfaceNormal, raySpan, tolerance) ?: return
-        val c3 = projectRegularizedNode(c, source, origin, basis, surfaceNormal, raySpan, tolerance) ?: return
-        val d3 = projectRegularizedNode(d, source, origin, basis, surfaceNormal, raySpan, tolerance) ?: return
+        val a3 = projectRegularizedNode(a, source, boundaryLoop, origin, basis, surfaceNormal, raySpan, cellSize, tolerance) ?: return
+        val b3 = projectRegularizedNode(b, source, boundaryLoop, origin, basis, surfaceNormal, raySpan, cellSize, tolerance) ?: return
+        val c3 = projectRegularizedNode(c, source, boundaryLoop, origin, basis, surfaceNormal, raySpan, cellSize, tolerance) ?: return
+        val d3 = projectRegularizedNode(d, source, boundaryLoop, origin, basis, surfaceNormal, raySpan, cellSize, tolerance) ?: return
         target += Triple(a3, b3, c3)
         target += Triple(a3, c3, d3)
         registerEdge(edgeMap, a3, b3)
@@ -873,12 +897,15 @@ class MeshRegularizeTool(
     private fun projectRegularizedNode(
         point: Vec2,
         source: List<ProjectedTriangle>,
+        boundaryLoop: BoundaryLoop,
         origin: Vector3,
         basis: PlaneBasis,
         surfaceNormal: Vector3,
         raySpan: Float,
+        cellSize: Float,
         tolerance: Float
     ): Vector3? {
+        nearestBoundaryProjection(point, boundaryLoop, max(cellSize * 0.6f, tolerance * 4f))?.let { return it }
         val planePoint = unproject2d(point, origin, basis)
         val rayDir = Vector3(surfaceNormal).nor()
         val candidates = mutableListOf<Vector3>()
@@ -913,6 +940,101 @@ class MeshRegularizeTool(
         return bestPoint
     }
 
+    private fun nearestBoundaryProjection(point: Vec2, boundaryLoop: BoundaryLoop, threshold: Float): Vector3? {
+        var bestDistanceSq = Float.POSITIVE_INFINITY
+        var bestPoint: Vector3? = null
+        boundaryLoop.segments.forEach { segment ->
+            val nearest = closestPointOnSegment2d(point, segment.uvStart, segment.uvEnd)
+            val distanceSq = dst2(point, nearest)
+            if (distanceSq < bestDistanceSq) {
+                val uvLengthSq = dst2(segment.uvStart, segment.uvEnd)
+                val t = if (uvLengthSq <= RANDOM_OFFSET_EPSILON_SQ) 0f else
+                    (((nearest.x - segment.uvStart.x) * (segment.uvEnd.x - segment.uvStart.x)) +
+                        ((nearest.y - segment.uvStart.y) * (segment.uvEnd.y - segment.uvStart.y))) / uvLengthSq
+                bestDistanceSq = distanceSq
+                bestPoint = Vector3(segment.start3d).lerp(segment.end3d, t.coerceIn(0f, 1f))
+            }
+        }
+        return if (bestDistanceSq <= threshold * threshold) bestPoint else null
+    }
+
+    private fun buildBoundaryLoop(
+        faces: List<DraftFaceStore.Triangle>,
+        origin: Vector3,
+        basis: PlaneBasis
+    ): BoundaryLoop? {
+        val boundaryEdges = mutableMapOf<EdgeKey, BoundaryEdgeBuilder>()
+        faces.forEach { tri ->
+            accumulateBoundaryEdge(boundaryEdges, tri.a, tri.b, origin, basis)
+            accumulateBoundaryEdge(boundaryEdges, tri.b, tri.c, origin, basis)
+            accumulateBoundaryEdge(boundaryEdges, tri.c, tri.a, origin, basis)
+        }
+        val edges = boundaryEdges.values.filter { it.count == 1 }
+        if (edges.isEmpty()) {
+            lastRegularizeFailure = "Mesh Regularize: closed surfaces are not supported yet. Select a single open patch."
+            return null
+        }
+        val adjacency = linkedMapOf<VertexKey, MutableList<BoundaryEdge>>()
+        edges.forEach { edge ->
+            val built = edge.toBoundaryEdge()
+            adjacency.getOrPut(built.startKey) { mutableListOf() }.add(built)
+            adjacency.getOrPut(built.endKey) { mutableListOf() }.add(built)
+        }
+        if (adjacency.values.any { it.size != 2 }) {
+            lastRegularizeFailure = "Mesh Regularize: expected one open-patch boundary loop without branches."
+            return null
+        }
+        val start = edges.first().toBoundaryEdge()
+        val ordered = mutableListOf<BoundarySegmentSample>()
+        val visited = mutableSetOf<EdgeKey>()
+        var currentKey = start.startKey
+        var previousKey: VertexKey? = null
+        var safety = 0
+        while (safety++ < edges.size + 2) {
+            val nextEdge = adjacency[currentKey].orEmpty()
+                .firstOrNull { edge -> edge.key !in visited && edge.other(currentKey) != previousKey }
+                ?: adjacency[currentKey].orEmpty().firstOrNull { edge -> edge.key !in visited }
+                ?: break
+            visited += nextEdge.key
+            val forward = nextEdge.orientedFrom(currentKey)
+            ordered += forward
+            previousKey = currentKey
+            currentKey = nextEdge.other(currentKey)
+            if (currentKey == start.startKey) {
+                break
+            }
+        }
+        if (ordered.size != edges.size || currentKey != start.startKey) {
+            lastRegularizeFailure = "Mesh Regularize: could not order the boundary as a single loop."
+            return null
+        }
+        return BoundaryLoop(ordered.map { it.uvStart }, ordered)
+    }
+
+    private fun accumulateBoundaryEdge(
+        map: MutableMap<EdgeKey, BoundaryEdgeBuilder>,
+        start: Vector3,
+        end: Vector3,
+        origin: Vector3,
+        basis: PlaneBasis
+    ) {
+        val startKey = vertexKey(start)
+        val endKey = vertexKey(end)
+        val key = if (compareVertexKeys(startKey, endKey) <= 0) EdgeKey(startKey, endKey) else EdgeKey(endKey, startKey)
+        val builder = map.getOrPut(key) {
+            BoundaryEdgeBuilder(
+                key = key,
+                startKey = startKey,
+                endKey = endKey,
+                start3d = Vector3(start),
+                end3d = Vector3(end),
+                uvStart = project2d(start, origin, basis),
+                uvEnd = project2d(end, origin, basis)
+            )
+        }
+        builder.count++
+    }
+
     private data class ProjectedTriangle(
         val triangle: DraftFaceStore.Triangle,
         val a: Vec2,
@@ -927,6 +1049,42 @@ class MeshRegularizeTool(
         val sourceEdges: List<Pair<Vector3, Vector3>>,
         val gridEdges: List<Pair<Vector3, Vector3>>
     )
+    private data class BoundaryLoop(
+        val polygon: List<Vec2>,
+        val segments: List<BoundarySegmentSample>
+    )
+    private data class BoundarySegmentSample(
+        val uvStart: Vec2,
+        val uvEnd: Vec2,
+        val start3d: Vector3,
+        val end3d: Vector3
+    )
+    private data class BoundaryEdgeBuilder(
+        val key: EdgeKey,
+        val startKey: VertexKey,
+        val endKey: VertexKey,
+        val start3d: Vector3,
+        val end3d: Vector3,
+        val uvStart: Vec2,
+        val uvEnd: Vec2,
+        var count: Int = 0
+    ) {
+        fun toBoundaryEdge(): BoundaryEdge = BoundaryEdge(key, startKey, endKey, uvStart, uvEnd, start3d, end3d)
+    }
+    private data class BoundaryEdge(
+        val key: EdgeKey,
+        val startKey: VertexKey,
+        val endKey: VertexKey,
+        val uvStart: Vec2,
+        val uvEnd: Vec2,
+        val start3d: Vector3,
+        val end3d: Vector3
+    ) {
+        fun other(key: VertexKey): VertexKey = if (key == startKey) endKey else startKey
+        fun orientedFrom(key: VertexKey): BoundarySegmentSample =
+            if (key == startKey) BoundarySegmentSample(uvStart, uvEnd, start3d, end3d)
+            else BoundarySegmentSample(uvEnd, uvStart, end3d, start3d)
+    }
 }
 
 private data class VertexKey(val x: Int, val y: Int, val z: Int)
@@ -1046,8 +1204,45 @@ private fun pointInTriangle(p: Vec2, a: Vec2, b: Vec2, c: Vec2): Boolean {
     return !(hasNeg && hasPos)
 }
 
+private fun pointInPolygon(point: Vec2, polygon: List<Vec2>): Boolean {
+    if (polygon.size < 3) {
+        return false
+    }
+    var inside = false
+    var j = polygon.lastIndex
+    for (i in polygon.indices) {
+        val pi = polygon[i]
+        val pj = polygon[j]
+        val intersects = ((pi.y > point.y) != (pj.y > point.y)) &&
+            (point.x < (pj.x - pi.x) * (point.y - pi.y) / ((pj.y - pi.y).takeIf { kotlin.math.abs(it) > RANDOM_OFFSET_EPSILON } ?: RANDOM_OFFSET_EPSILON) + pi.x)
+        if (intersects) {
+            inside = !inside
+        }
+        j = i
+    }
+    return inside
+}
+
 private fun sign2d(p1: Vec2, p2: Vec2, p3: Vec2): Float {
     return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y)
+}
+
+private fun closestPointOnSegment2d(point: Vec2, start: Vec2, end: Vec2): Vec2 {
+    val dx = end.x - start.x
+    val dy = end.y - start.y
+    val lengthSq = dx * dx + dy * dy
+    if (lengthSq <= RANDOM_OFFSET_EPSILON_SQ) {
+        return start
+    }
+    val t = (((point.x - start.x) * dx) + ((point.y - start.y) * dy)) / lengthSq
+    val clamped = t.coerceIn(0f, 1f)
+    return Vec2(start.x + dx * clamped, start.y + dy * clamped)
+}
+
+private fun dst2(a: Vec2, b: Vec2): Float {
+    val dx = a.x - b.x
+    val dy = a.y - b.y
+    return dx * dx + dy * dy
 }
 
 private fun formatFloat(value: Float): String {
