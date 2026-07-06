@@ -730,7 +730,8 @@ class MeshRegularizeTool(
         if (selected.isEmpty()) {
             return "Mesh Regularize: select faces first."
         }
-        val result = buildRegularizedFaces(selected) ?: return "Mesh Regularize: selected patch is not near-planar enough for this first regularization pass."
+        val result = buildRegularizedFaces(selected)
+            ?: return "Mesh Regularize: could not project a regular square grid onto the selected surface."
         val newFaces = result.faces
         if (newFaces.isEmpty()) {
             return "Mesh Regularize: no regular cells fell inside the selected patch."
@@ -782,9 +783,6 @@ class MeshRegularizeTool(
                 project2d(tri.c, origin, basis)
             )
         }
-        if (!isNearPlanar(selected, origin, normal, planarTolerance)) {
-            return null
-        }
 
         val minU = projected.minOf { min(it.a.x, min(it.b.x, it.c.x)) }
         val maxU = projected.maxOf { max(it.a.x, max(it.b.x, it.c.x)) }
@@ -801,6 +799,7 @@ class MeshRegularizeTool(
         val lastV = ceil(maxV / cellSize) * cellSize
         val newFaces = mutableListOf<Triple<Vector3, Vector3, Vector3>>()
         val edgeMap = linkedMapOf<EdgeKey, Pair<Vector3, Vector3>>()
+        val raySpan = computeRegularizeRaySpan(selected, origin, normal, extent)
 
         var u = firstU
         while (u < lastU - RANDOM_OFFSET_EPSILON) {
@@ -810,7 +809,7 @@ class MeshRegularizeTool(
                 val p10 = Vec2((u + cellSize).coerceAtMost(lastU), v)
                 val p11 = Vec2((u + cellSize).coerceAtMost(lastU), (v + cellSize).coerceAtMost(lastV))
                 val p01 = Vec2(u, (v + cellSize).coerceAtMost(lastV))
-                addRegularizedCell(projected, p00, p10, p11, p01, origin, basis, newFaces, edgeMap)
+                addRegularizedCell(projected, p00, p10, p11, p01, origin, basis, normal, raySpan, planarTolerance, newFaces, edgeMap)
                 v += cellSize
             }
             u += cellSize
@@ -826,6 +825,9 @@ class MeshRegularizeTool(
         d: Vec2,
         origin: Vector3,
         basis: PlaneBasis,
+        surfaceNormal: Vector3,
+        raySpan: Float,
+        tolerance: Float,
         target: MutableList<Triple<Vector3, Vector3, Vector3>>,
         edgeMap: MutableMap<EdgeKey, Pair<Vector3, Vector3>>
     ) {
@@ -833,10 +835,10 @@ class MeshRegularizeTool(
         if (source.none { pointInTriangle(center, it.a, it.b, it.c) }) {
             return
         }
-        val a3 = unproject2d(a, origin, basis)
-        val b3 = unproject2d(b, origin, basis)
-        val c3 = unproject2d(c, origin, basis)
-        val d3 = unproject2d(d, origin, basis)
+        val a3 = projectRegularizedNode(a, source, origin, basis, surfaceNormal, raySpan, tolerance) ?: return
+        val b3 = projectRegularizedNode(b, source, origin, basis, surfaceNormal, raySpan, tolerance) ?: return
+        val c3 = projectRegularizedNode(c, source, origin, basis, surfaceNormal, raySpan, tolerance) ?: return
+        val d3 = projectRegularizedNode(d, source, origin, basis, surfaceNormal, raySpan, tolerance) ?: return
         target += Triple(a3, b3, c3)
         target += Triple(a3, c3, d3)
         registerEdge(edgeMap, a3, b3)
@@ -854,6 +856,61 @@ class MeshRegularizeTool(
 
     private fun formatConfig(): String {
         return "${subdivisionCount} ${formatFloat(planarTolerance)}"
+    }
+
+    private fun computeRegularizeRaySpan(
+        faces: List<DraftFaceStore.Triangle>,
+        origin: Vector3,
+        normal: Vector3,
+        extent: Float
+    ): Float {
+        val maxOffset = faces
+            .flatMap { listOf(it.a, it.b, it.c) }
+            .maxOf { point -> kotlin.math.abs(Vector3(point).sub(origin).dot(normal)) }
+        return max(extent * 2f, maxOffset + extent + 1f)
+    }
+
+    private fun projectRegularizedNode(
+        point: Vec2,
+        source: List<ProjectedTriangle>,
+        origin: Vector3,
+        basis: PlaneBasis,
+        surfaceNormal: Vector3,
+        raySpan: Float,
+        tolerance: Float
+    ): Vector3? {
+        val planePoint = unproject2d(point, origin, basis)
+        val rayDir = Vector3(surfaceNormal).nor()
+        val candidates = mutableListOf<Vector3>()
+
+        val aboveOrigin = Vector3(planePoint).mulAdd(rayDir, raySpan)
+        rayTriangleHit(aboveOrigin, Vector3(rayDir).scl(-1f), source, tolerance)?.let(candidates::add)
+
+        val belowOrigin = Vector3(planePoint).mulAdd(rayDir, -raySpan)
+        rayTriangleHit(belowOrigin, Vector3(rayDir), source, tolerance)?.let(candidates::add)
+
+        if (candidates.isEmpty()) {
+            return null
+        }
+        return candidates.minByOrNull { candidate -> candidate.dst2(planePoint) }?.let(::Vector3)
+    }
+
+    private fun rayTriangleHit(
+        origin: Vector3,
+        direction: Vector3,
+        source: List<ProjectedTriangle>,
+        tolerance: Float
+    ): Vector3? {
+        var bestT = Float.POSITIVE_INFINITY
+        var bestPoint: Vector3? = null
+        source.forEach { projected ->
+            val t = rayTriangleIntersection(origin, direction, projected.triangle, tolerance) ?: return@forEach
+            if (t < bestT) {
+                bestT = t
+                bestPoint = Vector3(origin).mulAdd(direction, t)
+            }
+        }
+        return bestPoint
     }
 
     private data class ProjectedTriangle(
@@ -934,17 +991,33 @@ private fun averageNormal(faces: List<DraftFaceStore.Triangle>): Vector3 {
     return normal
 }
 
-private fun isNearPlanar(
-    faces: List<DraftFaceStore.Triangle>,
+private fun rayTriangleIntersection(
     origin: Vector3,
-    normal: Vector3,
+    direction: Vector3,
+    triangle: DraftFaceStore.Triangle,
     tolerance: Float
-): Boolean {
-    return faces.all { tri ->
-        kotlin.math.abs(Vector3(tri.a).sub(origin).dot(normal)) <= tolerance &&
-            kotlin.math.abs(Vector3(tri.b).sub(origin).dot(normal)) <= tolerance &&
-            kotlin.math.abs(Vector3(tri.c).sub(origin).dot(normal)) <= tolerance
+): Float? {
+    val edge1 = Vector3(triangle.b).sub(triangle.a)
+    val edge2 = Vector3(triangle.c).sub(triangle.a)
+    val h = Vector3(direction).crs(edge2)
+    val det = edge1.dot(h)
+    val epsilon = max(tolerance, RANDOM_OFFSET_EPSILON)
+    if (kotlin.math.abs(det) <= epsilon) {
+        return null
     }
+    val invDet = 1f / det
+    val s = Vector3(origin).sub(triangle.a)
+    val u = invDet * s.dot(h)
+    if (u < -epsilon || u > 1f + epsilon) {
+        return null
+    }
+    val q = Vector3(s).crs(edge1)
+    val v = invDet * direction.dot(q)
+    if (v < -epsilon || u + v > 1f + epsilon) {
+        return null
+    }
+    val t = invDet * edge2.dot(q)
+    return if (t > epsilon) t else null
 }
 
 private fun compareVertexKeys(a: VertexKey, b: VertexKey): Int {
