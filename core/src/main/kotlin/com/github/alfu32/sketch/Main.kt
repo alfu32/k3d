@@ -135,6 +135,7 @@ import com.github.alfu32.sketch.tools.MechCogWheelTool
 import com.github.alfu32.sketch.tools.MechRoundWasherTool
 import com.github.alfu32.sketch.tools.MechScrewTool
 import com.github.alfu32.sketch.tools.MeshRegularizeConfig
+import com.github.alfu32.sketch.tools.MeshRegularizeMode
 import com.github.alfu32.sketch.tools.MeshTool
 import com.github.alfu32.sketch.tools.MoveTool
 import com.github.alfu32.sketch.tools.ObjectCutTool
@@ -910,7 +911,18 @@ class Main @JvmOverloads constructor(
                 MeshIntersectionTool(scene) { toolController.setTool(ToolId.SELECT) },
                 CutWithPlaneTool(scene),
                 RevolveTool(scene) { circleSegments },
-                MeshRegularizeTool(scene, ::showMeshRegularizeDialog) { toolController.setTool(ToolId.SELECT) },
+                MeshRegularizeTool(
+                    scene,
+                    ToolId.MESH_REGULARIZE,
+                    MeshRegularizeMode.PLANAR,
+                    ::showMeshRegularizeDialog
+                ) { toolController.setTool(ToolId.SELECT) },
+                MeshRegularizeTool(
+                    scene,
+                    ToolId.SURFACE_REMESH,
+                    MeshRegularizeMode.SURFACE,
+                    ::showMeshRegularizeDialog
+                ) { toolController.setTool(ToolId.SELECT) },
                 RectangleTool(scene),
                 SurfaceRectangleTool(scene),
                 QuadTool(scene),

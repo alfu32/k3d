@@ -37,6 +37,11 @@ data class MeshRegularizeConfig(
     val planarTolerance: Float = 0.05f
 )
 
+enum class MeshRegularizeMode {
+    PLANAR,
+    SURFACE
+}
+
 class RandomOffsetTool(
     private val scene: GroupScene,
     private val showConfigDialog: ((RandomOffsetConfig, (RandomOffsetConfig) -> Unit, (RandomOffsetConfig) -> Unit, () -> Unit) -> Unit)? = null,
@@ -644,20 +649,22 @@ class RandomSurfaceArrayTool(
 
 class MeshRegularizeTool(
     private val scene: GroupScene,
+    private val toolId: ToolId = ToolId.MESH_REGULARIZE,
+    private val mode: MeshRegularizeMode = MeshRegularizeMode.PLANAR,
     private val showConfigDialog: ((MeshRegularizeConfig, (MeshRegularizeConfig) -> Unit, (MeshRegularizeConfig) -> Unit, () -> Unit) -> Unit)? = null,
     private val onFinished: (() -> Unit)? = null
 ) : Tool {
-    override val id: ToolId = ToolId.MESH_REGULARIZE
-    override val message: String = "Mesh Regularize: select a near-planar face patch, configure subdivisions and tolerance, then remesh."
+    override val id: ToolId = toolId
+    override val message: String = "${toolLabel()}: select faces, configure subdivisions and tolerance, then remesh."
 
     private var subdivisionCount = 12
     private var planarTolerance = 0.05f
-    private var lastRegularizeFailure = "Mesh Regularize: could not project a regular square grid onto the selected surface."
+    private var lastRegularizeFailure = "${toolLabel()}: could not build a regular square grid from the selection."
 
     override fun onEnter(status: StatusModel) {
         val initialConfig = MeshRegularizeConfig(subdivisionCount, planarTolerance)
         status.inputBuffer = formatConfig()
-        status.message = "Mesh Regularize ${formatConfig()}. Select a near-planar patch and confirm."
+        status.message = "${toolLabel()} ${formatConfig()}. Select a face patch and confirm."
         showConfigDialog?.invoke(
             initialConfig,
             { config ->
@@ -671,13 +678,13 @@ class MeshRegularizeTool(
                 subdivisionCount = config.subdivisions.coerceIn(1, 512)
                 planarTolerance = config.planarTolerance.coerceAtLeast(0.0001f)
                 status.inputBuffer = formatConfig()
-                status.message = "Mesh Regularize ${formatConfig()}. Preview updated."
+                status.message = "${toolLabel()} ${formatConfig()}. Preview updated."
             },
             {
                 subdivisionCount = initialConfig.subdivisions
                 planarTolerance = initialConfig.planarTolerance
                 status.inputBuffer = formatConfig()
-                status.message = "Mesh Regularize cancelled."
+                status.message = "${toolLabel()} cancelled."
                 onFinished?.invoke()
             }
         )
@@ -688,7 +695,7 @@ class MeshRegularizeTool(
         val parts = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
         parts.getOrNull(0)?.toIntOrNull()?.let { subdivisionCount = it.coerceIn(1, 512) }
         parts.getOrNull(1)?.toFloatOrNull()?.let { planarTolerance = it.coerceAtLeast(0.0001f) }
-        status.message = "Mesh Regularize ${formatConfig()}. Click to remesh selected faces."
+        status.message = "${toolLabel()} ${formatConfig()}. Click to remesh selected faces."
     }
 
     override fun toolOperators(status: StatusModel): List<ToolOperator> {
@@ -729,13 +736,16 @@ class MeshRegularizeTool(
         val group = scene.activeGroup()
         val selected = group.faceStore.getSelected().toList()
         if (selected.isEmpty()) {
-            return "Mesh Regularize: select faces first."
+            return "${toolLabel()}: select faces first."
         }
-        val result = buildRegularizedFaces(selected)
+        val result = when (mode) {
+            MeshRegularizeMode.PLANAR -> buildPlanarRegularizedFaces(selected)
+            MeshRegularizeMode.SURFACE -> buildSurfaceRemeshedFaces(selected)
+        }
             ?: return lastRegularizeFailure
         val newFaces = result.faces
         if (newFaces.isEmpty()) {
-            return "Mesh Regularize: no regular cells fell inside the selected patch."
+            return "${toolLabel()}: no regular cells fell inside the selected patch."
         }
 
         val color = selected.firstOrNull()?.let { group.faceStore.colorFor(it) } ?: Color(0.93f, 0.93f, 0.93f, 1f)
@@ -753,7 +763,7 @@ class MeshRegularizeTool(
         }
         group.faceStore.notifyExternalChange()
         group.lineStore.notifyExternalChange()
-        return "Mesh Regularize replaced ${selected.size} face(s) with ${newFaces.size} regular triangle(s) and ${result.edges.size} border segment(s)."
+        return "${toolLabel()} replaced ${selected.size} face(s) with ${newFaces.size} regular triangle(s) and ${result.edges.size} border segment(s)."
     }
 
     private fun regularizePreview(): RegularizePreview? {
@@ -763,16 +773,53 @@ class MeshRegularizeTool(
             return null
         }
         val sourceEdges = surfaceEdges(selected, group)
-        val result = buildRegularizedFaces(selected)
+        val result = when (mode) {
+            MeshRegularizeMode.PLANAR -> buildPlanarRegularizedFaces(selected)
+            MeshRegularizeMode.SURFACE -> buildSurfaceRemeshedFaces(selected)
+        }
         val gridEdges = result?.edges.orEmpty().map { (a, b) -> group.toWorld(a) to group.toWorld(b) }
         return RegularizePreview(sourceEdges, gridEdges)
     }
 
-    private fun buildRegularizedFaces(selected: List<DraftFaceStore.Triangle>): RegularizeBuildResult? {
-        lastRegularizeFailure = "Mesh Regularize: could not project a regular square grid onto the selected surface."
+    private fun buildPlanarRegularizedFaces(selected: List<DraftFaceStore.Triangle>): RegularizeBuildResult? {
+        lastRegularizeFailure = "Planar Regularize: could not build a regular square grid on the selected near-planar patch."
         val normal = averageNormal(selected)
         if (normal.len2() <= RANDOM_OFFSET_EPSILON_SQ) {
-            lastRegularizeFailure = "Mesh Regularize: selected surface has no stable averaged normal."
+            lastRegularizeFailure = "Planar Regularize: selected patch has no stable averaged normal."
+            return null
+        }
+        normal.nor()
+        val origin = centroidOfFaces(selected)
+        val basis = planeBasisFromNormal(normal)
+        val projected = selected.map { tri ->
+            ProjectedTriangle(
+                tri,
+                project2d(tri.a, origin, basis),
+                project2d(tri.b, origin, basis),
+                project2d(tri.c, origin, basis)
+            )
+        }
+        if (!isNearPlanar(selected, origin, normal, planarTolerance)) {
+            lastRegularizeFailure = "Planar Regularize: selected patch exceeds planar tolerance ${formatFloat(planarTolerance)}."
+            return null
+        }
+        val grid = projectedGrid(projected) ?: return null
+        val newFaces = mutableListOf<Triple<Vector3, Vector3, Vector3>>()
+        val edgeMap = linkedMapOf<EdgeKey, Pair<Vector3, Vector3>>()
+        iterateGridCells(grid) { p00, p10, p11, p01 ->
+            addPlanarRegularizedCell(projected, p00, p10, p11, p01, origin, basis, newFaces, edgeMap)
+        }
+        if (newFaces.isEmpty()) {
+            lastRegularizeFailure = "Planar Regularize: no regular cells fit inside the selected patch."
+        }
+        return RegularizeBuildResult(newFaces, edgeMap.values.toList())
+    }
+
+    private fun buildSurfaceRemeshedFaces(selected: List<DraftFaceStore.Triangle>): RegularizeBuildResult? {
+        lastRegularizeFailure = "Surface Remesh: could not project a regular square grid onto the selected open surface patch."
+        val normal = averageNormal(selected)
+        if (normal.len2() <= RANDOM_OFFSET_EPSILON_SQ) {
+            lastRegularizeFailure = "Surface Remesh: selected surface has no stable averaged normal."
             return null
         }
         normal.nor()
@@ -788,58 +835,58 @@ class MeshRegularizeTool(
         }
         val boundaryLoop = buildBoundaryLoop(selected, origin, basis) ?: return null
 
-        val minU = projected.minOf { min(it.a.x, min(it.b.x, it.c.x)) }
-        val maxU = projected.maxOf { max(it.a.x, max(it.b.x, it.c.x)) }
-        val minV = projected.minOf { min(it.a.y, min(it.b.y, it.c.y)) }
-        val maxV = projected.maxOf { max(it.a.y, max(it.b.y, it.c.y)) }
-        val extent = max(maxU - minU, maxV - minV)
-        if (extent <= RANDOM_OFFSET_EPSILON) {
-            return null
-        }
-        val cellSize = (extent / subdivisionCount.toFloat()).coerceAtLeast(RANDOM_OFFSET_EPSILON)
-        val firstU = floor(minU / cellSize) * cellSize
-        val lastU = ceil(maxU / cellSize) * cellSize
-        val firstV = floor(minV / cellSize) * cellSize
-        val lastV = ceil(maxV / cellSize) * cellSize
+        val grid = projectedGrid(projected) ?: return null
         val newFaces = mutableListOf<Triple<Vector3, Vector3, Vector3>>()
         val edgeMap = linkedMapOf<EdgeKey, Pair<Vector3, Vector3>>()
-        val raySpan = computeRegularizeRaySpan(selected, origin, normal, extent)
+        val raySpan = computeRegularizeRaySpan(selected, origin, normal, grid.extent)
 
-        var u = firstU
-        while (u < lastU - RANDOM_OFFSET_EPSILON) {
-            var v = firstV
-            while (v < lastV - RANDOM_OFFSET_EPSILON) {
-                val p00 = Vec2(u, v)
-                val p10 = Vec2((u + cellSize).coerceAtMost(lastU), v)
-                val p11 = Vec2((u + cellSize).coerceAtMost(lastU), (v + cellSize).coerceAtMost(lastV))
-                val p01 = Vec2(u, (v + cellSize).coerceAtMost(lastV))
-                addRegularizedCell(
-                    projected,
-                    boundaryLoop,
-                    p00,
-                    p10,
-                    p11,
-                    p01,
-                    origin,
-                    basis,
-                    normal,
-                    raySpan,
-                    cellSize,
-                    planarTolerance,
-                    newFaces,
-                    edgeMap
-                )
-                v += cellSize
-            }
-            u += cellSize
+        iterateGridCells(grid) { p00, p10, p11, p01 ->
+            addSurfaceRemeshCell(
+                projected,
+                boundaryLoop,
+                p00,
+                p10,
+                p11,
+                p01,
+                origin,
+                basis,
+                normal,
+                raySpan,
+                grid.cellSize,
+                planarTolerance,
+                newFaces,
+                edgeMap
+            )
         }
         if (newFaces.isEmpty()) {
-            lastRegularizeFailure = "Mesh Regularize: no regular cells fit inside the selected open surface patch."
+            lastRegularizeFailure = "Surface Remesh: no regular cells fit inside the selected open surface patch."
         }
         return RegularizeBuildResult(newFaces, edgeMap.values.toList())
     }
 
-    private fun addRegularizedCell(
+    private fun addPlanarRegularizedCell(
+        source: List<ProjectedTriangle>,
+        a: Vec2,
+        b: Vec2,
+        c: Vec2,
+        d: Vec2,
+        origin: Vector3,
+        basis: PlaneBasis,
+        target: MutableList<Triple<Vector3, Vector3, Vector3>>,
+        edgeMap: MutableMap<EdgeKey, Pair<Vector3, Vector3>>
+    ) {
+        val center = Vec2((a.x + b.x + c.x + d.x) / 4f, (a.y + b.y + c.y + d.y) / 4f)
+        if (source.none { pointInTriangle(center, it.a, it.b, it.c) }) {
+            return
+        }
+        val a3 = unproject2d(a, origin, basis)
+        val b3 = unproject2d(b, origin, basis)
+        val c3 = unproject2d(c, origin, basis)
+        val d3 = unproject2d(d, origin, basis)
+        addRegularizedQuad(a3, b3, c3, d3, target, edgeMap)
+    }
+
+    private fun addSurfaceRemeshCell(
         source: List<ProjectedTriangle>,
         boundaryLoop: BoundaryLoop,
         a: Vec2,
@@ -863,6 +910,17 @@ class MeshRegularizeTool(
         val b3 = projectRegularizedNode(b, source, boundaryLoop, origin, basis, surfaceNormal, raySpan, cellSize, tolerance) ?: return
         val c3 = projectRegularizedNode(c, source, boundaryLoop, origin, basis, surfaceNormal, raySpan, cellSize, tolerance) ?: return
         val d3 = projectRegularizedNode(d, source, boundaryLoop, origin, basis, surfaceNormal, raySpan, cellSize, tolerance) ?: return
+        addRegularizedQuad(a3, b3, c3, d3, target, edgeMap)
+    }
+
+    private fun addRegularizedQuad(
+        a3: Vector3,
+        b3: Vector3,
+        c3: Vector3,
+        d3: Vector3,
+        target: MutableList<Triple<Vector3, Vector3, Vector3>>,
+        edgeMap: MutableMap<EdgeKey, Pair<Vector3, Vector3>>
+    ) {
         target += Triple(a3, b3, c3)
         target += Triple(a3, c3, d3)
         registerEdge(edgeMap, a3, b3)
@@ -880,6 +938,49 @@ class MeshRegularizeTool(
 
     private fun formatConfig(): String {
         return "${subdivisionCount} ${formatFloat(planarTolerance)}"
+    }
+
+    private fun toolLabel(): String {
+        return when (mode) {
+            MeshRegularizeMode.PLANAR -> "Planar Regularize"
+            MeshRegularizeMode.SURFACE -> "Surface Remesh"
+        }
+    }
+
+    private fun projectedGrid(projected: List<ProjectedTriangle>): ProjectedGrid? {
+        val minU = projected.minOf { min(it.a.x, min(it.b.x, it.c.x)) }
+        val maxU = projected.maxOf { max(it.a.x, max(it.b.x, it.c.x)) }
+        val minV = projected.minOf { min(it.a.y, min(it.b.y, it.c.y)) }
+        val maxV = projected.maxOf { max(it.a.y, max(it.b.y, it.c.y)) }
+        val extent = max(maxU - minU, maxV - minV)
+        if (extent <= RANDOM_OFFSET_EPSILON) {
+            return null
+        }
+        val cellSize = (extent / subdivisionCount.toFloat()).coerceAtLeast(RANDOM_OFFSET_EPSILON)
+        return ProjectedGrid(
+            firstU = floor(minU / cellSize) * cellSize,
+            lastU = ceil(maxU / cellSize) * cellSize,
+            firstV = floor(minV / cellSize) * cellSize,
+            lastV = ceil(maxV / cellSize) * cellSize,
+            cellSize = cellSize,
+            extent = extent
+        )
+    }
+
+    private fun iterateGridCells(grid: ProjectedGrid, block: (Vec2, Vec2, Vec2, Vec2) -> Unit) {
+        var u = grid.firstU
+        while (u < grid.lastU - RANDOM_OFFSET_EPSILON) {
+            var v = grid.firstV
+            while (v < grid.lastV - RANDOM_OFFSET_EPSILON) {
+                val p00 = Vec2(u, v)
+                val p10 = Vec2((u + grid.cellSize).coerceAtMost(grid.lastU), v)
+                val p11 = Vec2((u + grid.cellSize).coerceAtMost(grid.lastU), (v + grid.cellSize).coerceAtMost(grid.lastV))
+                val p01 = Vec2(u, (v + grid.cellSize).coerceAtMost(grid.lastV))
+                block(p00, p10, p11, p01)
+                v += grid.cellSize
+            }
+            u += grid.cellSize
+        }
     }
 
     private fun computeRegularizeRaySpan(
@@ -1049,6 +1150,14 @@ class MeshRegularizeTool(
         val sourceEdges: List<Pair<Vector3, Vector3>>,
         val gridEdges: List<Pair<Vector3, Vector3>>
     )
+    private data class ProjectedGrid(
+        val firstU: Float,
+        val lastU: Float,
+        val firstV: Float,
+        val lastV: Float,
+        val cellSize: Float,
+        val extent: Float
+    )
     private data class BoundaryLoop(
         val polygon: List<Vec2>,
         val segments: List<BoundarySegmentSample>
@@ -1147,6 +1256,19 @@ private fun averageNormal(faces: List<DraftFaceStore.Triangle>): Vector3 {
         }
     }
     return normal
+}
+
+private fun isNearPlanar(
+    faces: List<DraftFaceStore.Triangle>,
+    origin: Vector3,
+    normal: Vector3,
+    tolerance: Float
+): Boolean {
+    return faces.all { tri ->
+        kotlin.math.abs(Vector3(tri.a).sub(origin).dot(normal)) <= tolerance &&
+            kotlin.math.abs(Vector3(tri.b).sub(origin).dot(normal)) <= tolerance &&
+            kotlin.math.abs(Vector3(tri.c).sub(origin).dot(normal)) <= tolerance
+    }
 }
 
 private fun rayTriangleIntersection(

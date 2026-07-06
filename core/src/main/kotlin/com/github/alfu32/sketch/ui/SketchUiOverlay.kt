@@ -1524,7 +1524,8 @@ class SketchUiOverlay(
             ToolId.MESH_INTERSECTION,
             ToolId.CUT_WITH_PLANE,
             ToolId.REVOLVE,
-            ToolId.MESH_REGULARIZE
+            ToolId.MESH_REGULARIZE,
+            ToolId.SURFACE_REMESH
         )
         val modificationTools = listOf(
             ToolId.SELECT,
@@ -6838,6 +6839,7 @@ class SketchUiOverlay(
             ToolId.RANDOM_OFFSET -> "fuzzy_offset"
             ToolId.RANDOM_SURFACE_ARRAY -> "fuzzy_cover"
             ToolId.MESH_REGULARIZE -> "mesh_regularize"
+            ToolId.SURFACE_REMESH -> "mesh_regularize"
             ToolId.ROTATE_STRETCH -> "stretch-rotate"
             ToolId.COPY_MULTIPLE -> "multiple-copy-translate"
             ToolId.PLANAR_TRANSLATE_MULTIPLE -> "multiple-copy-translate-planar"
@@ -6915,6 +6917,7 @@ class SketchUiOverlay(
             ToolId.RANDOM_OFFSET -> Color(0.55f, 0.95f, 0.75f, 1f)
             ToolId.RANDOM_SURFACE_ARRAY -> Color(0.45f, 0.9f, 0.7f, 1f)
             ToolId.MESH_REGULARIZE -> Color(0.55f, 0.9f, 0.95f, 1f)
+            ToolId.SURFACE_REMESH -> Color(0.45f, 0.85f, 0.95f, 1f)
             ToolId.ROTATE_STRETCH -> Color(0.85f, 0.6f, 0.25f, 1f)
             ToolId.COPY_MULTIPLE -> Color(0.95f, 0.75f, 0.25f, 1f)
             ToolId.PLANAR_TRANSLATE_MULTIPLE -> Color(0.55f, 0.8f, 0.95f, 1f)
