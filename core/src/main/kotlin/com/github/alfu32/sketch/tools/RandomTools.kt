@@ -38,7 +38,8 @@ enum class MeshRegularizeMode {
 
 class RandomOffsetTool(
     private val scene: GroupScene,
-    private val settings: RandomToolSettings
+    private val settings: RandomToolSettings,
+    private val onFinished: (() -> Unit)? = null
 ) : Tool {
     override val id: ToolId = ToolId.RANDOM_OFFSET
     override val message: String = "Random Offset: type strength 0-100, then click to offset selected faces/segments."
@@ -80,6 +81,9 @@ class RandomOffsetTool(
         }
         val result = applyRandomOffset()
         status.message = result
+        if (result.startsWith("Random Offset moved")) {
+            onFinished?.invoke()
+        }
         return true
     }
 
@@ -309,7 +313,8 @@ class RandomOffsetTool(
 class RandomSurfaceArrayTool(
     private val scene: GroupScene,
     private val settings: RandomToolSettings,
-    private val pickPayloadGroup: (Int, Int) -> GroupScene.GroupNode? = { _, _ -> null }
+    private val pickPayloadGroup: (Int, Int) -> GroupScene.GroupNode? = { _, _ -> null },
+    private val onFinished: (() -> Unit)? = null
 ) : Tool {
     override val id: ToolId = ToolId.RANDOM_SURFACE_ARRAY
     override val message: String =
@@ -378,13 +383,13 @@ class RandomSurfaceArrayTool(
             val picked = pickPayloadGroup(screenX, screenY)
             status.message = if (picked != null) {
                 capturePayloadGroup(picked)
-                applyArray()
+                applyArrayAndFinish()
             } else {
                 "Random Surface Array: click an object instance to scatter, or use Payload after selecting payload geometry."
             }
             return true
         }
-        status.message = applyArray()
+        status.message = applyArrayAndFinish()
         return true
     }
 
@@ -398,7 +403,7 @@ class RandomSurfaceArrayTool(
         if (button != Input.Buttons.LEFT) {
             return false
         }
-        status.message = applyArray()
+        status.message = applyArrayAndFinish()
         return true
     }
 
@@ -502,6 +507,24 @@ class RandomSurfaceArrayTool(
         group.lineStore.notifyExternalChange()
         group.faceStore.notifyExternalChange()
         return "Random Surface Array copied $copiedGroups object instance(s), $copiedSegments segment(s), and $copiedFaces face(s)."
+    }
+
+    private fun applyArrayAndFinish(): String {
+        val result = applyArray()
+        if (result.startsWith("Random Surface Array copied")) {
+            restoreCapturedSurfaceSelection()
+            payloadSelection = null
+            surfaceSelection = null
+            onFinished?.invoke()
+        }
+        return result
+    }
+
+    private fun restoreCapturedSurfaceSelection() {
+        val group = scene.activeGroup()
+        val faces = surfaceSelection?.faces?.filter { it in group.faceStore.getTriangles() }.orEmpty()
+        scene.clearAllSelections()
+        faces.forEach { group.faceStore.addSelection(it) }
     }
 
     private fun surfaceArrayPreview(): SurfaceArrayPreview? {
@@ -734,7 +757,8 @@ class MeshRegularizeTool(
     private val scene: GroupScene,
     private val toolId: ToolId = ToolId.MESH_REGULARIZE,
     private val mode: MeshRegularizeMode = MeshRegularizeMode.PLANAR,
-    private val settings: RandomToolSettings
+    private val settings: RandomToolSettings,
+    private val onFinished: (() -> Unit)? = null
 ) : Tool {
     override val id: ToolId = toolId
     override val message: String = "${toolLabel()}: select faces, configure subdivisions and tolerance, then remesh."
@@ -771,7 +795,11 @@ class MeshRegularizeTool(
         if (button != Input.Buttons.LEFT) {
             return false
         }
-        status.message = regularize()
+        val result = regularize()
+        status.message = result
+        if (result.startsWith("${toolLabel()} replaced")) {
+            onFinished?.invoke()
+        }
         return true
     }
 

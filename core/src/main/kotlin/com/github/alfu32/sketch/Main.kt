@@ -915,13 +915,13 @@ class Main @JvmOverloads constructor(
                     ToolId.MESH_REGULARIZE,
                     MeshRegularizeMode.PLANAR,
                     randomToolSettings
-                ),
+                ) { toolController.setTool(ToolId.SELECT) },
                 MeshRegularizeTool(
                     scene,
                     ToolId.SURFACE_REMESH,
                     MeshRegularizeMode.SURFACE,
                     randomToolSettings
-                ),
+                ) { toolController.setTool(ToolId.SELECT) },
                 RectangleTool(scene),
                 SurfaceRectangleTool(scene),
                 QuadTool(scene),
@@ -941,8 +941,12 @@ class Main @JvmOverloads constructor(
                 ScaleTool(scene),
                 StretchTool(scene),
                 StretchScaleTool(scene),
-                RandomOffsetTool(scene, randomToolSettings),
-                RandomSurfaceArrayTool(scene, randomToolSettings, ::pickRandomSurfaceArrayPayloadGroup),
+                RandomOffsetTool(scene, randomToolSettings) { toolController.setTool(ToolId.SELECT) },
+                RandomSurfaceArrayTool(
+                    scene,
+                    randomToolSettings,
+                    ::pickRandomSurfaceArrayPayloadGroup
+                ) { toolController.setTool(ToolId.SELECT) },
                 RotateStretchTool(scene),
                 CopyMultipleTool(scene),
                 PlanarTranslateMultipleTool(scene),
