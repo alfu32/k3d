@@ -323,7 +323,7 @@ class RandomSurfaceArrayTool(
         status.inputBuffer = formatConfig()
         val captured = captureSurfaceSelection(clearSelection = true)
         status.message = if (surfaceSelection?.faces?.isNotEmpty() == true) {
-            "$captured Selection cleared; click the object to scatter."
+            "$captured Selection cleared; click the payload object to scatter immediately."
         } else {
             "Random Surface Array: select target faces first, then activate the tool."
         }

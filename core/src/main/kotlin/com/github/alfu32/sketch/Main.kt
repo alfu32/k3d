@@ -3052,7 +3052,8 @@ class Main @JvmOverloads constructor(
 
     private fun pickRandomSurfaceArrayPayloadGroup(screenX: Int, screenY: Int): GroupScene.GroupNode? {
         return PerfStats.measure("main.pickRandomSurfaceArrayPayloadGroup") {
-            val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
+            val viewCamera = activeCameraOrNull() ?: camera
+            val ray = viewCamera.getPickRay(screenX.toFloat(), screenY.toFloat())
             var bestGroup: GroupScene.GroupNode? = null
             var bestT = Float.POSITIVE_INFINITY
             scene.groupsInActiveContext().forEach { group ->
