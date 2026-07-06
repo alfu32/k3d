@@ -349,6 +349,8 @@ class RandomSurfaceArrayTool(
     private var scaleStrength = 0f
     private var rotationFuzz = 0f
     private var alignToNormal = true
+    private var surfaceSelection: SurfaceSelectionSnapshot? = null
+    private var payloadSelection: PayloadSelectionSnapshot? = null
 
     override fun onEnter(status: StatusModel) {
         val initialConfig = currentConfig()
@@ -393,9 +395,25 @@ class RandomSurfaceArrayTool(
 
     override fun toolOperators(status: StatusModel): List<ToolOperator> {
         return listOf(
+            ToolOperator.key("capture-surface", "Surface", Input.Keys.S),
+            ToolOperator.key("capture-payload", "Payload", Input.Keys.P),
             ToolOperator("config", "Config", ToolOperatorAction.ShowDistanceInput),
             ToolOperator.key("cancel", "Esc", Input.Keys.ESCAPE)
         )
+    }
+
+    override fun onKeyDown(status: StatusModel, keycode: Int): Boolean {
+        return when (keycode) {
+            Input.Keys.S -> {
+                status.message = captureSurfaceSelection()
+                true
+            }
+            Input.Keys.P -> {
+                status.message = capturePayloadSelection()
+                true
+            }
+            else -> false
+        }
     }
 
     override fun onPointerDown(
@@ -450,14 +468,13 @@ class RandomSurfaceArrayTool(
 
     private fun applyArray(): String {
         val group = scene.activeGroup()
-        val surface = group.faceStore.getSelected().toList()
+        val surface = currentSurfaceSelection(group)
         if (surface.isEmpty()) {
-            return "Random Surface Array: select one or more faces as the target surface."
+            return "Random Surface Array: select target faces and press Surface."
         }
-        val selectedGroups = scene.selectedGroups().toList()
-        val selectedSegments = group.lineStore.getSelected().toList()
-        if (selectedGroups.isEmpty() && selectedSegments.isEmpty()) {
-            return "Random Surface Array: select object instances or segments to scatter."
+        val payload = currentPayloadSelection(group)
+        if (payload.isEmpty()) {
+            return "Random Surface Array: select objects, faces, or segments and press Payload."
         }
 
         val weighted = surface.mapNotNull { tri ->
@@ -472,7 +489,8 @@ class RandomSurfaceArrayTool(
         val rng = Random(System.nanoTime())
         var copiedGroups = 0
         var copiedSegments = 0
-        val segmentCentroid = if (selectedSegments.isNotEmpty()) centroidOfSegments(selectedSegments) else Vector3()
+        var copiedFaces = 0
+        val payloadCentroid = payload.geometryCentroid()
 
         repeat(count) {
             val sample = sampleSurface(weighted, totalArea, rng)
@@ -480,7 +498,7 @@ class RandomSurfaceArrayTool(
             val scale = randomScale(rng)
             val twist = randomSignedUnit(rng) * rotationAmountRadians()
 
-            selectedGroups.forEach { source ->
+            payload.groups.forEach { source ->
                 val sourceOrigin = source.worldOrigin()
                 scene.clearGroupSelection()
                 scene.addGroupSelection(source)
@@ -495,31 +513,42 @@ class RandomSurfaceArrayTool(
                 copiedGroups++
             }
 
-            selectedSegments.forEach { segment ->
-                val a = Vector3(segment.start).sub(segmentCentroid)
-                val b = Vector3(segment.end).sub(segmentCentroid)
+            payload.segments.forEach { segment ->
+                val a = Vector3(segment.start).sub(payloadCentroid)
+                val b = Vector3(segment.end).sub(payloadCentroid)
                 val nextA = group.toLocal(Vector3(sample.point).add(transformPayloadVector(group.vectorToWorld(a), normal, scale, twist)))
                 val nextB = group.toLocal(Vector3(sample.point).add(transformPayloadVector(group.vectorToWorld(b), normal, scale, twist)))
                 group.lineStore.appendSegmentRaw(nextA, nextB)
                 copiedSegments++
             }
+
+            payload.faces.forEach { tri ->
+                val a = Vector3(tri.a).sub(payloadCentroid)
+                val b = Vector3(tri.b).sub(payloadCentroid)
+                val c = Vector3(tri.c).sub(payloadCentroid)
+                val nextA = group.toLocal(Vector3(sample.point).add(transformPayloadVector(group.vectorToWorld(a), normal, scale, twist)))
+                val nextB = group.toLocal(Vector3(sample.point).add(transformPayloadVector(group.vectorToWorld(b), normal, scale, twist)))
+                val nextC = group.toLocal(Vector3(sample.point).add(transformPayloadVector(group.vectorToWorld(c), normal, scale, twist)))
+                group.faceStore.appendTriangleRaw(nextA, nextB, nextC, group.faceStore.colorFor(tri))
+                copiedFaces++
+            }
         }
 
         scene.clearGroupSelection()
-        selectedGroups.forEach { scene.addGroupSelection(it) }
+        payload.groups.forEach { scene.addGroupSelection(it) }
         group.lineStore.notifyExternalChange()
-        return "Random Surface Array copied $copiedGroups object instance(s) and $copiedSegments segment(s)."
+        group.faceStore.notifyExternalChange()
+        return "Random Surface Array copied $copiedGroups object instance(s), $copiedSegments segment(s), and $copiedFaces face(s)."
     }
 
     private fun surfaceArrayPreview(): SurfaceArrayPreview? {
         val group = scene.activeGroup()
-        val surface = group.faceStore.getSelected().toList()
+        val surface = currentSurfaceSelection(group)
         if (surface.isEmpty()) {
             return null
         }
-        val selectedGroups = scene.selectedGroups().toList()
-        val selectedSegments = group.lineStore.getSelected().toList()
-        if (selectedGroups.isEmpty() && selectedSegments.isEmpty()) {
+        val payload = currentPayloadSelection(group)
+        if (payload.isEmpty()) {
             return SurfaceArrayPreview(surfaceEdges(surface, group), emptyList(), emptyList())
         }
 
@@ -535,7 +564,7 @@ class RandomSurfaceArrayTool(
         val rng = Random(RANDOM_PREVIEW_SEED)
         val payloadEdges = mutableListOf<Pair<Vector3, Vector3>>()
         val normalTicks = mutableListOf<Pair<Vector3, Vector3>>()
-        val segmentCentroid = if (selectedSegments.isNotEmpty()) centroidOfSegments(selectedSegments) else Vector3()
+        val payloadCentroid = payload.geometryCentroid()
         val previewCount = count.coerceAtMost(RANDOM_SURFACE_ARRAY_PREVIEW_LIMIT)
 
         repeat(previewCount) {
@@ -546,20 +575,76 @@ class RandomSurfaceArrayTool(
             val normalWorld = group.vectorToWorld(Vector3(normal)).nor()
             normalTicks += sample.point to Vector3(sample.point).add(Vector3(normalWorld).scl(SURFACE_ARRAY_NORMAL_TICK))
 
-            selectedGroups.forEach { source ->
+            payload.groups.forEach { source ->
                 appendGroupPreviewEdges(source, sample.point, normal, scale, twist, payloadEdges)
             }
 
-            selectedSegments.forEach { segment ->
-                val a = Vector3(segment.start).sub(segmentCentroid)
-                val b = Vector3(segment.end).sub(segmentCentroid)
+            payload.segments.forEach { segment ->
+                val a = Vector3(segment.start).sub(payloadCentroid)
+                val b = Vector3(segment.end).sub(payloadCentroid)
                 val nextA = Vector3(sample.point).add(transformPayloadVector(group.vectorToWorld(a), normal, scale, twist))
                 val nextB = Vector3(sample.point).add(transformPayloadVector(group.vectorToWorld(b), normal, scale, twist))
                 payloadEdges += nextA to nextB
             }
+
+            payload.faces.forEach { tri ->
+                val a = Vector3(tri.a).sub(payloadCentroid)
+                val b = Vector3(tri.b).sub(payloadCentroid)
+                val c = Vector3(tri.c).sub(payloadCentroid)
+                val nextA = Vector3(sample.point).add(transformPayloadVector(group.vectorToWorld(a), normal, scale, twist))
+                val nextB = Vector3(sample.point).add(transformPayloadVector(group.vectorToWorld(b), normal, scale, twist))
+                val nextC = Vector3(sample.point).add(transformPayloadVector(group.vectorToWorld(c), normal, scale, twist))
+                addTriangleEdges(payloadEdges, nextA, nextB, nextC)
+            }
         }
 
         return SurfaceArrayPreview(surfaceEdges(surface, group), payloadEdges, normalTicks)
+    }
+
+    private fun captureSurfaceSelection(): String {
+        val faces = scene.activeGroup().faceStore.getSelected().toList()
+        surfaceSelection = SurfaceSelectionSnapshot(faces)
+        return if (faces.isEmpty()) {
+            "Random Surface Array: no target faces captured."
+        } else {
+            "Random Surface Array: captured ${faces.size} target face(s)."
+        }
+    }
+
+    private fun capturePayloadSelection(): String {
+        val group = scene.activeGroup()
+        val payload = PayloadSelectionSnapshot(
+            groups = scene.selectedGroups().toList(),
+            segments = group.lineStore.getSelected().toList(),
+            faces = group.faceStore.getSelected().toList()
+        )
+        payloadSelection = payload
+        return if (payload.isEmpty()) {
+            "Random Surface Array: no payload captured."
+        } else {
+            "Random Surface Array: captured ${payload.groups.size} object(s), ${payload.segments.size} segment(s), and ${payload.faces.size} face(s)."
+        }
+    }
+
+    private fun currentSurfaceSelection(group: GroupScene.GroupNode): List<DraftFaceStore.Triangle> {
+        return surfaceSelection?.faces?.filter { it in group.faceStore.getTriangles() }
+            ?: group.faceStore.getSelected().toList()
+    }
+
+    private fun currentPayloadSelection(group: GroupScene.GroupNode): PayloadSelectionSnapshot {
+        val captured = payloadSelection
+        if (captured != null) {
+            return PayloadSelectionSnapshot(
+                groups = captured.groups,
+                segments = captured.segments.filter { it in group.lineStore.getSegments() },
+                faces = captured.faces.filter { it in group.faceStore.getTriangles() }
+            )
+        }
+        return PayloadSelectionSnapshot(
+            groups = scene.selectedGroups().toList(),
+            segments = group.lineStore.getSelected().toList(),
+            faces = group.faceStore.getSelected().toList()
+        )
     }
 
     private fun appendGroupPreviewEdges(
@@ -645,6 +730,30 @@ class RandomSurfaceArrayTool(
         val payloadEdges: List<Pair<Vector3, Vector3>>,
         val normalTicks: List<Pair<Vector3, Vector3>>
     )
+    private data class SurfaceSelectionSnapshot(
+        val faces: List<DraftFaceStore.Triangle>
+    )
+    private data class PayloadSelectionSnapshot(
+        val groups: List<GroupScene.GroupNode>,
+        val segments: List<com.github.alfu32.sketch.model.DraftLineStore.Segment>,
+        val faces: List<DraftFaceStore.Triangle>
+    ) {
+        fun isEmpty(): Boolean = groups.isEmpty() && segments.isEmpty() && faces.isEmpty()
+
+        fun geometryCentroid(): Vector3 {
+            val sum = Vector3()
+            var count = 0
+            segments.forEach { segment ->
+                sum.add(segment.start).add(segment.end)
+                count += 2
+            }
+            faces.forEach { tri ->
+                sum.add(tri.a).add(tri.b).add(tri.c)
+                count += 3
+            }
+            return if (count > 0) sum.scl(1f / count.toFloat()) else Vector3()
+        }
+    }
 }
 
 class MeshRegularizeTool(
