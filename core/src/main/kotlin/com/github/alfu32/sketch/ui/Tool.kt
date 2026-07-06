@@ -135,6 +135,18 @@ interface Tool {
         return false
     }
 
+    fun onPointerDown(
+        status: StatusModel,
+        screenX: Int,
+        screenY: Int,
+        world: Vector3?,
+        normal: Vector3?,
+        valid: Boolean,
+        button: Int
+    ): Boolean {
+        return onPointerDown(status, world, normal, valid, button)
+    }
+
     fun onPointerUp(status: StatusModel, world: Vector3?, normal: Vector3?, valid: Boolean, button: Int): Boolean {
         return false
     }

@@ -308,31 +308,38 @@ class RandomOffsetTool(
 
 class RandomSurfaceArrayTool(
     private val scene: GroupScene,
-    private val settings: RandomToolSettings
+    private val settings: RandomToolSettings,
+    private val pickPayloadGroup: (Int, Int) -> GroupScene.GroupNode? = { _, _ -> null }
 ) : Tool {
     override val id: ToolId = ToolId.RANDOM_SURFACE_ARRAY
     override val message: String =
-        "Random Surface Array: select distribution faces and payload objects or segments. Type: count scale fuzz align."
+        "Random Surface Array: select distribution faces, activate the tool, then click the object to scatter."
 
     private var surfaceSelection: SurfaceSelectionSnapshot? = null
     private var payloadSelection: PayloadSelectionSnapshot? = null
 
     override fun onEnter(status: StatusModel) {
+        payloadSelection = null
         status.inputBuffer = formatConfig()
-        status.message = "Random Surface Array: ${formatConfig()}. Press Surface/Payload, then click to scatter."
+        val captured = captureSurfaceSelection()
+        status.message = if (surfaceSelection?.faces?.isNotEmpty() == true) {
+            "$captured Click the object or selected payload to scatter."
+        } else {
+            "Random Surface Array: select target faces first, then activate the tool."
+        }
     }
 
     override fun onTextInput(status: StatusModel, text: String) {
         status.inputBuffer = text
         parseConfig(text)
-        status.message = "Random Surface Array: ${formatConfig()}. Click to apply."
+        status.message = "Random Surface Array: ${formatConfig()}. Click the payload object to scatter."
     }
 
     override fun toolOperators(status: StatusModel): List<ToolOperator> {
         return listOf(
             ToolOperator.key("capture-surface", "Surface", Input.Keys.S),
             ToolOperator.key("capture-payload", "Payload", Input.Keys.P),
-            ToolOperator("config", "Config", ToolOperatorAction.ShowDistanceInput),
+            ToolOperator("config", "Settings", ToolOperatorAction.ShowDistanceInput),
             ToolOperator.key("cancel", "Esc", Input.Keys.ESCAPE)
         )
     }
@@ -349,6 +356,36 @@ class RandomSurfaceArrayTool(
             }
             else -> false
         }
+    }
+
+    override fun onPointerDown(
+        status: StatusModel,
+        screenX: Int,
+        screenY: Int,
+        world: Vector3?,
+        normal: Vector3?,
+        valid: Boolean,
+        button: Int
+    ): Boolean {
+        if (button != Input.Buttons.LEFT) {
+            return false
+        }
+        if (surfaceSelection?.faces?.isEmpty() != false) {
+            status.message = "Random Surface Array: select target faces first, then activate the tool."
+            return true
+        }
+        if (payloadSelection?.isEmpty() != false) {
+            val picked = pickPayloadGroup(screenX, screenY)
+            status.message = if (picked != null) {
+                capturePayloadGroup(picked)
+                applyArray()
+            } else {
+                "Random Surface Array: click an object instance to scatter, or use Payload after selecting payload geometry."
+            }
+            return true
+        }
+        status.message = applyArray()
+        return true
     }
 
     override fun onPointerDown(
@@ -550,6 +587,14 @@ class RandomSurfaceArrayTool(
         } else {
             "Random Surface Array: captured ${payload.groups.size} object(s), ${payload.segments.size} segment(s), and ${payload.faces.size} face(s)."
         }
+    }
+
+    private fun capturePayloadGroup(group: GroupScene.GroupNode) {
+        payloadSelection = PayloadSelectionSnapshot(
+            groups = listOf(group),
+            segments = emptyList(),
+            faces = emptyList()
+        )
     }
 
     private fun currentSurfaceSelection(group: GroupScene.GroupNode): List<DraftFaceStore.Triangle> {

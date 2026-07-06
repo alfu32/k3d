@@ -942,7 +942,7 @@ class Main @JvmOverloads constructor(
                 StretchTool(scene),
                 StretchScaleTool(scene),
                 RandomOffsetTool(scene, randomToolSettings),
-                RandomSurfaceArrayTool(scene, randomToolSettings),
+                RandomSurfaceArrayTool(scene, randomToolSettings, ::pickRandomSurfaceArrayPayloadGroup),
                 RotateStretchTool(scene),
                 CopyMultipleTool(scene),
                 PlanarTranslateMultipleTool(scene),
@@ -3047,6 +3047,28 @@ class Main @JvmOverloads constructor(
                 testGroup(group)
             }
             bestPoint
+        }
+    }
+
+    private fun pickRandomSurfaceArrayPayloadGroup(screenX: Int, screenY: Int): GroupScene.GroupNode? {
+        return PerfStats.measure("main.pickRandomSurfaceArrayPayloadGroup") {
+            val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
+            var bestGroup: GroupScene.GroupNode? = null
+            var bestDist2 = Float.POSITIVE_INFINITY
+            scene.queryGroupsByRay(ray, includeRoot = false).forEach { group ->
+                val localRay = com.badlogic.gdx.math.collision.Ray(
+                    group.toLocal(ray.origin),
+                    group.vectorToLocal(ray.direction).nor()
+                )
+                val hit = group.faceStore.pickTriangle(localRay) ?: return@forEach
+                val worldHit = group.toWorld(hit.point)
+                val dist2 = worldHit.dst2(ray.origin)
+                if (dist2 < bestDist2) {
+                    bestDist2 = dist2
+                    bestGroup = group
+                }
+            }
+            bestGroup
         }
     }
 

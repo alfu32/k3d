@@ -40,7 +40,7 @@ class ToolPointerProcessor(
     override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
         rememberPointer(screenX, screenY)
         val snap = overrideSnapProvider() ?: snapper.compute(screenX, screenY)
-        return controller.pointerDown(snap.world, snap.normal, snap.valid, button)
+        return controller.pointerDown(screenX, screenY, snap.world, snap.normal, snap.valid, button)
     }
 
     override fun touchUp(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {

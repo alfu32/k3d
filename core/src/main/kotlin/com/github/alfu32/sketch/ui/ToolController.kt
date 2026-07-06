@@ -125,6 +125,14 @@ class ToolController(
         return handled
     }
 
+    fun pointerDown(screenX: Int, screenY: Int, world: Vector3?, normal: Vector3?, valid: Boolean, button: Int): Boolean {
+        val handled = activeTool.onPointerDown(status, screenX, screenY, world, normal, valid, button)
+        if (handled && valid && world != null) {
+            status.anchorWorld = Vector3(world)
+        }
+        return handled
+    }
+
     fun pointerUp(world: Vector3?, normal: Vector3?, valid: Boolean, button: Int): Boolean {
         return activeTool.onPointerUp(status, world, normal, valid, button)
     }
