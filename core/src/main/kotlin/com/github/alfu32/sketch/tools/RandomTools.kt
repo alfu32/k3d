@@ -321,9 +321,9 @@ class RandomSurfaceArrayTool(
     override fun onEnter(status: StatusModel) {
         payloadSelection = null
         status.inputBuffer = formatConfig()
-        val captured = captureSurfaceSelection()
+        val captured = captureSurfaceSelection(clearSelection = true)
         status.message = if (surfaceSelection?.faces?.isNotEmpty() == true) {
-            "$captured Click the object or selected payload to scatter."
+            "$captured Selection cleared; click the object to scatter."
         } else {
             "Random Surface Array: select target faces first, then activate the tool."
         }
@@ -347,7 +347,7 @@ class RandomSurfaceArrayTool(
     override fun onKeyDown(status: StatusModel, keycode: Int): Boolean {
         return when (keycode) {
             Input.Keys.S -> {
-                status.message = captureSurfaceSelection()
+                status.message = captureSurfaceSelection(clearSelection = true)
                 true
             }
             Input.Keys.P -> {
@@ -564,12 +564,15 @@ class RandomSurfaceArrayTool(
         return SurfaceArrayPreview(surfaceEdges(surface, group), payloadEdges, normalTicks)
     }
 
-    private fun captureSurfaceSelection(): String {
+    private fun captureSurfaceSelection(clearSelection: Boolean = false): String {
         val faces = scene.activeGroup().faceStore.getSelected().toList()
         surfaceSelection = SurfaceSelectionSnapshot(faces)
         return if (faces.isEmpty()) {
             "Random Surface Array: no target faces captured."
         } else {
+            if (clearSelection) {
+                scene.clearAllSelections()
+            }
             "Random Surface Array: captured ${faces.size} target face(s)."
         }
     }
