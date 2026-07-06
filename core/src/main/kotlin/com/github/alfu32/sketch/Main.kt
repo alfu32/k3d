@@ -3054,22 +3054,74 @@ class Main @JvmOverloads constructor(
         return PerfStats.measure("main.pickRandomSurfaceArrayPayloadGroup") {
             val ray = camera.getPickRay(screenX.toFloat(), screenY.toFloat())
             var bestGroup: GroupScene.GroupNode? = null
-            var bestDist2 = Float.POSITIVE_INFINITY
-            scene.queryGroupsByRay(ray, includeRoot = false).forEach { group ->
+            var bestT = Float.POSITIVE_INFINITY
+            scene.groupsInActiveContext().forEach { group ->
+                val bounds = group.worldBounds() ?: group.geometryWorldBounds() ?: return@forEach
+                val boundsT = rayAabbIntersectionT(ray.origin, ray.direction, bounds.min, bounds.max) ?: return@forEach
                 val localRay = com.badlogic.gdx.math.collision.Ray(
                     group.toLocal(ray.origin),
                     group.vectorToLocal(ray.direction).nor()
                 )
-                val hit = group.faceStore.pickTriangle(localRay) ?: return@forEach
-                val worldHit = group.toWorld(hit.point)
-                val dist2 = worldHit.dst2(ray.origin)
-                if (dist2 < bestDist2) {
-                    bestDist2 = dist2
+                val faceT = group.faceStore.pickTriangle(localRay)?.let { hit ->
+                    Vector3(group.toWorld(hit.point)).sub(ray.origin).dot(ray.direction)
+                }
+                val t = faceT ?: boundsT
+                if (t >= 0f && t < bestT) {
+                    bestT = t
                     bestGroup = group
                 }
             }
             bestGroup
         }
+    }
+
+    private fun rayAabbIntersectionT(origin: Vector3, direction: Vector3, min: Vector3, max: Vector3): Float? {
+        var tMin = Float.NEGATIVE_INFINITY
+        var tMax = Float.POSITIVE_INFINITY
+        for (axis in 0..2) {
+            val o = when (axis) {
+                0 -> origin.x
+                1 -> origin.y
+                else -> origin.z
+            }
+            val d = when (axis) {
+                0 -> direction.x
+                1 -> direction.y
+                else -> direction.z
+            }
+            val mn = when (axis) {
+                0 -> min.x
+                1 -> min.y
+                else -> min.z
+            }
+            val mx = when (axis) {
+                0 -> max.x
+                1 -> max.y
+                else -> max.z
+            }
+            if (kotlin.math.abs(d) <= 1e-6f) {
+                if (o < mn || o > mx) {
+                    return null
+                }
+                continue
+            }
+            var t1 = (mn - o) / d
+            var t2 = (mx - o) / d
+            if (t1 > t2) {
+                val tmp = t1
+                t1 = t2
+                t2 = tmp
+            }
+            tMin = kotlin.math.max(tMin, t1)
+            tMax = kotlin.math.min(tMax, t2)
+            if (tMax < tMin) {
+                return null
+            }
+        }
+        if (tMax < 0f) {
+            return null
+        }
+        return if (tMin >= 0f) tMin else tMax
     }
 
     private fun forEachCameraRayCandidateGroup(
