@@ -4778,25 +4778,25 @@ class Main @JvmOverloads constructor(
         val statusLabel = com.kotcrab.vis.ui.widget.VisLabel("")
         statusLabel.setWrap(true)
 
-        fun apply(): Boolean {
+        fun parseConfig(): RandomOffsetConfig? {
             val strength = strengthField.text?.trim()?.toFloatOrNull()
             if (strength == null) {
                 statusLabel.setText("Strength must be a number from 0 to 100.")
-                return false
+                return null
             }
-            onApply(RandomOffsetConfig(strength.coerceIn(0f, 100f)))
-            statusLabel.setText("Applied. Click in the viewport to commit to the current selection.")
-            return true
+            return RandomOffsetConfig(strength.coerceIn(0f, 100f))
         }
 
-        val applyButton = com.kotcrab.vis.ui.widget.VisTextButton("Apply")
-        applyButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+        val okButton = com.kotcrab.vis.ui.widget.VisTextButton("OK")
+        okButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
             override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
-                apply()
+                val config = parseConfig() ?: return
+                onApply(config)
+                dialog.remove()
             }
         })
-        val closeButton = com.kotcrab.vis.ui.widget.VisTextButton("Close")
-        closeButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+        val cancelButton = com.kotcrab.vis.ui.widget.VisTextButton("Cancel")
+        cancelButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
             override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
                 dialog.remove()
             }
@@ -4810,8 +4810,8 @@ class Main @JvmOverloads constructor(
         content.add(statusLabel).left().minWidth(320f).row()
         val buttons = com.kotcrab.vis.ui.widget.VisTable()
         buttons.defaults().pad(4f)
-        buttons.add(applyButton)
-        buttons.add(closeButton)
+        buttons.add(okButton)
+        buttons.add(cancelButton)
         content.add(buttons).right().row()
 
         dialog.add(content).pad(8f)
@@ -4820,7 +4820,6 @@ class Main @JvmOverloads constructor(
         dialog.centerWindow()
         dialog.toFront()
         dialog.fadeIn()
-        apply()
     }
 
     private fun showRandomSurfaceArrayDialog(
@@ -4842,42 +4841,40 @@ class Main @JvmOverloads constructor(
         val statusLabel = com.kotcrab.vis.ui.widget.VisLabel("")
         statusLabel.setWrap(true)
 
-        fun apply(): Boolean {
+        fun parseConfig(): RandomSurfaceArrayConfig? {
             val count = countField.text?.trim()?.toIntOrNull()
             val scale = scaleField.text?.trim()?.toFloatOrNull()
             val rotation = rotationField.text?.trim()?.toFloatOrNull()
             if (count == null || count < 1) {
                 statusLabel.setText("Count must be an integer from 1 to 5000.")
-                return false
+                return null
             }
             if (scale == null) {
                 statusLabel.setText("Scale fuzz must be a number from 0 to 100.")
-                return false
+                return null
             }
             if (rotation == null) {
                 statusLabel.setText("Rotation fuzz must be a number from 0 to 100.")
-                return false
+                return null
             }
-            onApply(
-                RandomSurfaceArrayConfig(
-                    count = count.coerceIn(1, 5000),
-                    scaleStrength = scale.coerceIn(0f, 100f),
-                    rotationFuzz = rotation.coerceIn(0f, 100f),
-                    alignToNormal = alignCheck.isChecked
-                )
+            return RandomSurfaceArrayConfig(
+                count = count.coerceIn(1, 5000),
+                scaleStrength = scale.coerceIn(0f, 100f),
+                rotationFuzz = rotation.coerceIn(0f, 100f),
+                alignToNormal = alignCheck.isChecked
             )
-            statusLabel.setText("Applied. Click in the viewport to scatter the selected payload on selected faces.")
-            return true
         }
 
-        val applyButton = com.kotcrab.vis.ui.widget.VisTextButton("Apply")
-        applyButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+        val okButton = com.kotcrab.vis.ui.widget.VisTextButton("OK")
+        okButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
             override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
-                apply()
+                val config = parseConfig() ?: return
+                onApply(config)
+                dialog.remove()
             }
         })
-        val closeButton = com.kotcrab.vis.ui.widget.VisTextButton("Close")
-        closeButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+        val cancelButton = com.kotcrab.vis.ui.widget.VisTextButton("Cancel")
+        cancelButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
             override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
                 dialog.remove()
             }
@@ -4896,8 +4893,8 @@ class Main @JvmOverloads constructor(
         content.add(statusLabel).left().minWidth(380f).row()
         val buttons = com.kotcrab.vis.ui.widget.VisTable()
         buttons.defaults().pad(4f)
-        buttons.add(applyButton)
-        buttons.add(closeButton)
+        buttons.add(okButton)
+        buttons.add(cancelButton)
         content.add(buttons).right().row()
 
         dialog.add(content).pad(8f)
@@ -4906,7 +4903,6 @@ class Main @JvmOverloads constructor(
         dialog.centerWindow()
         dialog.toFront()
         dialog.fadeIn()
-        apply()
     }
 
     private fun formatDialogFloat(value: Float): String {
