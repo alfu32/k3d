@@ -4767,6 +4767,7 @@ class Main @JvmOverloads constructor(
     private fun showRandomOffsetDialog(
         initial: RandomOffsetConfig,
         onApply: (RandomOffsetConfig) -> Unit,
+        onPreview: (RandomOffsetConfig) -> Unit,
         onCancel: () -> Unit
     ) {
         val stage = uiOverlay.stage
@@ -4786,7 +4787,12 @@ class Main @JvmOverloads constructor(
                 statusLabel.setText("Strength must be a number from 0 to 100.")
                 return null
             }
+            statusLabel.setText("")
             return RandomOffsetConfig(strength.coerceIn(0f, 100f))
+        }
+
+        fun updatePreview() {
+            parseConfig()?.let(onPreview)
         }
 
         val okButton = com.kotcrab.vis.ui.widget.VisTextButton("OK")
@@ -4802,6 +4808,11 @@ class Main @JvmOverloads constructor(
             override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
                 dialog.remove()
                 onCancel()
+            }
+        })
+        strengthField.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ChangeListener() {
+            override fun changed(event: com.badlogic.gdx.scenes.scene2d.utils.ChangeListener.ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                updatePreview()
             }
         })
 
@@ -4823,11 +4834,13 @@ class Main @JvmOverloads constructor(
         dialog.centerWindow()
         dialog.toFront()
         dialog.fadeIn()
+        updatePreview()
     }
 
     private fun showRandomSurfaceArrayDialog(
         initial: RandomSurfaceArrayConfig,
         onApply: (RandomSurfaceArrayConfig) -> Unit,
+        onPreview: (RandomSurfaceArrayConfig) -> Unit,
         onCancel: () -> Unit
     ) {
         val stage = uiOverlay.stage
@@ -4861,12 +4874,17 @@ class Main @JvmOverloads constructor(
                 statusLabel.setText("Rotation fuzz must be a number from 0 to 100.")
                 return null
             }
+            statusLabel.setText("")
             return RandomSurfaceArrayConfig(
                 count = count.coerceIn(1, 5000),
                 scaleStrength = scale.coerceIn(0f, 100f),
                 rotationFuzz = rotation.coerceIn(0f, 100f),
                 alignToNormal = alignCheck.isChecked
             )
+        }
+
+        fun updatePreview() {
+            parseConfig()?.let(onPreview)
         }
 
         val okButton = com.kotcrab.vis.ui.widget.VisTextButton("OK")
@@ -4884,6 +4902,15 @@ class Main @JvmOverloads constructor(
                 onCancel()
             }
         })
+        val previewChangeListener = object : com.badlogic.gdx.scenes.scene2d.utils.ChangeListener() {
+            override fun changed(event: com.badlogic.gdx.scenes.scene2d.utils.ChangeListener.ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                updatePreview()
+            }
+        }
+        countField.addListener(previewChangeListener)
+        scaleField.addListener(previewChangeListener)
+        rotationField.addListener(previewChangeListener)
+        alignCheck.addListener(previewChangeListener)
 
         val content = com.kotcrab.vis.ui.widget.VisTable()
         content.defaults().pad(4f).growX()
@@ -4908,11 +4935,13 @@ class Main @JvmOverloads constructor(
         dialog.centerWindow()
         dialog.toFront()
         dialog.fadeIn()
+        updatePreview()
     }
 
     private fun showMeshRegularizeDialog(
         initial: MeshRegularizeConfig,
         onApply: (MeshRegularizeConfig) -> Unit,
+        onPreview: (MeshRegularizeConfig) -> Unit,
         onCancel: () -> Unit
     ) {
         val stage = uiOverlay.stage
@@ -4938,10 +4967,15 @@ class Main @JvmOverloads constructor(
                 statusLabel.setText("Planar tolerance must be a positive number.")
                 return null
             }
+            statusLabel.setText("")
             return MeshRegularizeConfig(
                 subdivisions = subdivisions.coerceIn(1, 512),
                 planarTolerance = tolerance.coerceAtLeast(0.0001f)
             )
+        }
+
+        fun updatePreview() {
+            parseConfig()?.let(onPreview)
         }
 
         val okButton = com.kotcrab.vis.ui.widget.VisTextButton("OK")
@@ -4959,6 +4993,13 @@ class Main @JvmOverloads constructor(
                 onCancel()
             }
         })
+        val previewChangeListener = object : com.badlogic.gdx.scenes.scene2d.utils.ChangeListener() {
+            override fun changed(event: com.badlogic.gdx.scenes.scene2d.utils.ChangeListener.ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
+                updatePreview()
+            }
+        }
+        subdivisionsField.addListener(previewChangeListener)
+        toleranceField.addListener(previewChangeListener)
 
         val content = com.kotcrab.vis.ui.widget.VisTable()
         content.defaults().pad(4f).growX()
@@ -4980,6 +5021,7 @@ class Main @JvmOverloads constructor(
         dialog.centerWindow()
         dialog.toFront()
         dialog.fadeIn()
+        updatePreview()
     }
 
     private fun formatDialogFloat(value: Float): String {

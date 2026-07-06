@@ -39,7 +39,7 @@ data class MeshRegularizeConfig(
 
 class RandomOffsetTool(
     private val scene: GroupScene,
-    private val showConfigDialog: ((RandomOffsetConfig, (RandomOffsetConfig) -> Unit, () -> Unit) -> Unit)? = null,
+    private val showConfigDialog: ((RandomOffsetConfig, (RandomOffsetConfig) -> Unit, (RandomOffsetConfig) -> Unit, () -> Unit) -> Unit)? = null,
     private val onFinished: (() -> Unit)? = null
 ) : Tool {
     override val id: ToolId = ToolId.RANDOM_OFFSET
@@ -48,17 +48,25 @@ class RandomOffsetTool(
     private var strengthInput = 1f
 
     override fun onEnter(status: StatusModel) {
+        val initialConfig = RandomOffsetConfig(strengthInput)
         status.message = "Random Offset strength ${formatStrength()}. Type a new strength or click to apply."
         status.inputBuffer = formatStrength()
         showConfigDialog?.invoke(
-            RandomOffsetConfig(strengthInput),
+            initialConfig,
             { config ->
                 strengthInput = config.strength.coerceAtLeast(0f)
                 status.inputBuffer = formatStrength()
                 status.message = applyRandomOffset()
                 onFinished?.invoke()
             },
+            { config ->
+                strengthInput = config.strength.coerceAtLeast(0f)
+                status.inputBuffer = formatStrength()
+                status.message = "Random Offset strength ${formatStrength()}. Preview updated."
+            },
             {
+                strengthInput = initialConfig.strength
+                status.inputBuffer = formatStrength()
                 status.message = "Random Offset cancelled."
                 onFinished?.invoke()
             }
@@ -325,7 +333,7 @@ class RandomOffsetTool(
 
 class RandomSurfaceArrayTool(
     private val scene: GroupScene,
-    private val showConfigDialog: ((RandomSurfaceArrayConfig, (RandomSurfaceArrayConfig) -> Unit, () -> Unit) -> Unit)? = null,
+    private val showConfigDialog: ((RandomSurfaceArrayConfig, (RandomSurfaceArrayConfig) -> Unit, (RandomSurfaceArrayConfig) -> Unit, () -> Unit) -> Unit)? = null,
     private val onFinished: (() -> Unit)? = null
 ) : Tool {
     override val id: ToolId = ToolId.RANDOM_SURFACE_ARRAY
@@ -338,10 +346,11 @@ class RandomSurfaceArrayTool(
     private var alignToNormal = true
 
     override fun onEnter(status: StatusModel) {
+        val initialConfig = currentConfig()
         status.inputBuffer = formatConfig()
         status.message = "Random Surface Array: ${formatConfig()}. Click to scatter selected objects or segments on selected faces."
         showConfigDialog?.invoke(
-            currentConfig(),
+            initialConfig,
             { config ->
                 count = config.count.coerceIn(1, 5000)
                 scaleStrength = config.scaleStrength.coerceIn(0f, 100f)
@@ -351,7 +360,20 @@ class RandomSurfaceArrayTool(
                 status.message = applyArray()
                 onFinished?.invoke()
             },
+            { config ->
+                count = config.count.coerceIn(1, 5000)
+                scaleStrength = config.scaleStrength.coerceIn(0f, 100f)
+                rotationFuzz = config.rotationFuzz.coerceIn(0f, 100f)
+                alignToNormal = config.alignToNormal
+                status.inputBuffer = formatConfig()
+                status.message = "Random Surface Array: ${formatConfig()}. Preview updated."
+            },
             {
+                count = initialConfig.count
+                scaleStrength = initialConfig.scaleStrength
+                rotationFuzz = initialConfig.rotationFuzz
+                alignToNormal = initialConfig.alignToNormal
+                status.inputBuffer = formatConfig()
                 status.message = "Random Surface Array cancelled."
                 onFinished?.invoke()
             }
@@ -622,7 +644,7 @@ class RandomSurfaceArrayTool(
 
 class MeshRegularizeTool(
     private val scene: GroupScene,
-    private val showConfigDialog: ((MeshRegularizeConfig, (MeshRegularizeConfig) -> Unit, () -> Unit) -> Unit)? = null,
+    private val showConfigDialog: ((MeshRegularizeConfig, (MeshRegularizeConfig) -> Unit, (MeshRegularizeConfig) -> Unit, () -> Unit) -> Unit)? = null,
     private val onFinished: (() -> Unit)? = null
 ) : Tool {
     override val id: ToolId = ToolId.MESH_REGULARIZE
@@ -632,10 +654,11 @@ class MeshRegularizeTool(
     private var planarTolerance = 0.05f
 
     override fun onEnter(status: StatusModel) {
+        val initialConfig = MeshRegularizeConfig(subdivisionCount, planarTolerance)
         status.inputBuffer = formatConfig()
         status.message = "Mesh Regularize ${formatConfig()}. Select a near-planar patch and confirm."
         showConfigDialog?.invoke(
-            MeshRegularizeConfig(subdivisionCount, planarTolerance),
+            initialConfig,
             { config ->
                 subdivisionCount = config.subdivisions.coerceIn(1, 512)
                 planarTolerance = config.planarTolerance.coerceAtLeast(0.0001f)
@@ -643,7 +666,16 @@ class MeshRegularizeTool(
                 status.message = regularize()
                 onFinished?.invoke()
             },
+            { config ->
+                subdivisionCount = config.subdivisions.coerceIn(1, 512)
+                planarTolerance = config.planarTolerance.coerceAtLeast(0.0001f)
+                status.inputBuffer = formatConfig()
+                status.message = "Mesh Regularize ${formatConfig()}. Preview updated."
+            },
             {
+                subdivisionCount = initialConfig.subdivisions
+                planarTolerance = initialConfig.planarTolerance
+                status.inputBuffer = formatConfig()
                 status.message = "Mesh Regularize cancelled."
                 onFinished?.invoke()
             }
