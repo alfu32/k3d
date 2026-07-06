@@ -32,9 +32,15 @@ data class RandomSurfaceArrayConfig(
     val alignToNormal: Boolean = true
 )
 
+data class MeshRegularizeConfig(
+    val subdivisions: Int = 12,
+    val planarTolerance: Float = 0.05f
+)
+
 class RandomOffsetTool(
     private val scene: GroupScene,
-    private val showConfigDialog: ((RandomOffsetConfig, (RandomOffsetConfig) -> Unit) -> Unit)? = null
+    private val showConfigDialog: ((RandomOffsetConfig, (RandomOffsetConfig) -> Unit, () -> Unit) -> Unit)? = null,
+    private val onFinished: (() -> Unit)? = null
 ) : Tool {
     override val id: ToolId = ToolId.RANDOM_OFFSET
     override val message: String = "Random Offset: type strength 0-100, then click to offset selected faces/segments."
@@ -44,11 +50,19 @@ class RandomOffsetTool(
     override fun onEnter(status: StatusModel) {
         status.message = "Random Offset strength ${formatStrength()}. Type a new strength or click to apply."
         status.inputBuffer = formatStrength()
-        showConfigDialog?.invoke(RandomOffsetConfig(strengthInput)) { config ->
-            strengthInput = config.strength.coerceIn(0f, 100f)
-            status.inputBuffer = formatStrength()
-            status.message = "Random Offset strength ${formatStrength()}. Click to apply to selection."
-        }
+        showConfigDialog?.invoke(
+            RandomOffsetConfig(strengthInput),
+            { config ->
+                strengthInput = config.strength.coerceAtLeast(0f)
+                status.inputBuffer = formatStrength()
+                status.message = applyRandomOffset()
+                onFinished?.invoke()
+            },
+            {
+                status.message = "Random Offset cancelled."
+                onFinished?.invoke()
+            }
+        )
     }
 
     override fun onTextInput(status: StatusModel, text: String) {
@@ -126,7 +140,7 @@ class RandomOffsetTool(
         val selectedNormals = averageNormalsFor(targetKeys, selectedFaces)
         val fallbackNormals = averageNormalsFor(targetKeys, group.faceStore.getTriangles())
         val displacementByKey = linkedMapOf<VertexKey, Vector3>()
-        val amplitude = (E.toFloat().pow(strengthInput) - 1f).coerceAtLeast(0f)
+        val amplitude = randomOffsetAmplitude(strengthInput)
         val rng = Random(System.nanoTime())
         targetKeys.forEach { key ->
             val direction = selectedNormals[key] ?: fallbackNormals[key] ?: Vector3(0f, 1f, 0f)
@@ -233,7 +247,7 @@ class RandomOffsetTool(
     ): Map<VertexKey, Vector3> {
         val selectedNormals = averageNormalsFor(targetKeys, selectedFaces)
         val fallbackNormals = averageNormalsFor(targetKeys, group.faceStore.getTriangles())
-        val amplitude = (E.toFloat().pow(strengthInput) - 1f).coerceAtLeast(0f)
+        val amplitude = randomOffsetAmplitude(strengthInput)
         val rng = Random(RANDOM_PREVIEW_SEED)
         return targetKeys.associateWith { key ->
             val direction = selectedNormals[key] ?: fallbackNormals[key] ?: Vector3(0f, 1f, 0f)
@@ -298,6 +312,10 @@ class RandomOffsetTool(
         return if (rounded == rounded.toInt().toFloat()) rounded.toInt().toString() else rounded.toString()
     }
 
+    private fun randomOffsetAmplitude(value: Float): Float {
+        return ((E.toFloat().pow(value) - 1f).coerceAtLeast(0f)) / 10f
+    }
+
     private data class OffsetPreview(
         val originalEdges: List<Pair<Vector3, Vector3>>,
         val displacedEdges: List<Pair<Vector3, Vector3>>,
@@ -307,7 +325,8 @@ class RandomOffsetTool(
 
 class RandomSurfaceArrayTool(
     private val scene: GroupScene,
-    private val showConfigDialog: ((RandomSurfaceArrayConfig, (RandomSurfaceArrayConfig) -> Unit) -> Unit)? = null
+    private val showConfigDialog: ((RandomSurfaceArrayConfig, (RandomSurfaceArrayConfig) -> Unit, () -> Unit) -> Unit)? = null,
+    private val onFinished: (() -> Unit)? = null
 ) : Tool {
     override val id: ToolId = ToolId.RANDOM_SURFACE_ARRAY
     override val message: String =
@@ -321,14 +340,22 @@ class RandomSurfaceArrayTool(
     override fun onEnter(status: StatusModel) {
         status.inputBuffer = formatConfig()
         status.message = "Random Surface Array: ${formatConfig()}. Click to scatter selected objects or segments on selected faces."
-        showConfigDialog?.invoke(currentConfig()) { config ->
-            count = config.count.coerceIn(1, 5000)
-            scaleStrength = config.scaleStrength.coerceIn(0f, 100f)
-            rotationFuzz = config.rotationFuzz.coerceIn(0f, 100f)
-            alignToNormal = config.alignToNormal
-            status.inputBuffer = formatConfig()
-            status.message = "Random Surface Array: ${formatConfig()}. Click to apply."
-        }
+        showConfigDialog?.invoke(
+            currentConfig(),
+            { config ->
+                count = config.count.coerceIn(1, 5000)
+                scaleStrength = config.scaleStrength.coerceIn(0f, 100f)
+                rotationFuzz = config.rotationFuzz.coerceIn(0f, 100f)
+                alignToNormal = config.alignToNormal
+                status.inputBuffer = formatConfig()
+                status.message = applyArray()
+                onFinished?.invoke()
+            },
+            {
+                status.message = "Random Surface Array cancelled."
+                onFinished?.invoke()
+            }
+        )
     }
 
     override fun onTextInput(status: StatusModel, text: String) {
@@ -594,27 +621,46 @@ class RandomSurfaceArrayTool(
 }
 
 class MeshRegularizeTool(
-    private val scene: GroupScene
+    private val scene: GroupScene,
+    private val showConfigDialog: ((MeshRegularizeConfig, (MeshRegularizeConfig) -> Unit, () -> Unit) -> Unit)? = null,
+    private val onFinished: (() -> Unit)? = null
 ) : Tool {
     override val id: ToolId = ToolId.MESH_REGULARIZE
-    override val message: String = "Mesh Regularize: select a near-planar face patch, type grid step, click to remesh."
+    override val message: String = "Mesh Regularize: select a near-planar face patch, configure subdivisions and tolerance, then remesh."
 
-    private var step = 1f
+    private var subdivisionCount = 12
+    private var planarTolerance = 0.05f
 
     override fun onEnter(status: StatusModel) {
-        status.inputBuffer = formatFloat(step)
-        status.message = "Mesh Regularize step ${formatFloat(step)}. Select a near-planar patch and click."
+        status.inputBuffer = formatConfig()
+        status.message = "Mesh Regularize ${formatConfig()}. Select a near-planar patch and confirm."
+        showConfigDialog?.invoke(
+            MeshRegularizeConfig(subdivisionCount, planarTolerance),
+            { config ->
+                subdivisionCount = config.subdivisions.coerceIn(1, 512)
+                planarTolerance = config.planarTolerance.coerceAtLeast(0.0001f)
+                status.inputBuffer = formatConfig()
+                status.message = regularize()
+                onFinished?.invoke()
+            },
+            {
+                status.message = "Mesh Regularize cancelled."
+                onFinished?.invoke()
+            }
+        )
     }
 
     override fun onTextInput(status: StatusModel, text: String) {
         status.inputBuffer = text
-        text.trim().toFloatOrNull()?.let { step = it.coerceAtLeast(0.01f) }
-        status.message = "Mesh Regularize step ${formatFloat(step)}. Click to remesh selected faces."
+        val parts = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        parts.getOrNull(0)?.toIntOrNull()?.let { subdivisionCount = it.coerceIn(1, 512) }
+        parts.getOrNull(1)?.toFloatOrNull()?.let { planarTolerance = it.coerceAtLeast(0.0001f) }
+        status.message = "Mesh Regularize ${formatConfig()}. Click to remesh selected faces."
     }
 
     override fun toolOperators(status: StatusModel): List<ToolOperator> {
         return listOf(
-            ToolOperator("step", "Step", ToolOperatorAction.ShowDistanceInput),
+            ToolOperator("config", "Config", ToolOperatorAction.ShowDistanceInput),
             ToolOperator.key("cancel", "Esc", Input.Keys.ESCAPE)
         )
     }
@@ -666,8 +712,14 @@ class MeshRegularizeTool(
                 group.faceStore.addSelection(tri)
             }
         }
+        group.lineStore.withChangeSuppressed {
+            result.edges.forEach { (a, b) ->
+                group.lineStore.addSegment(a, b, autoCleanup = false)
+            }
+        }
         group.faceStore.notifyExternalChange()
-        return "Mesh Regularize replaced ${selected.size} face(s) with ${newFaces.size} regular triangle(s)."
+        group.lineStore.notifyExternalChange()
+        return "Mesh Regularize replaced ${selected.size} face(s) with ${newFaces.size} regular triangle(s) and ${result.edges.size} border segment(s)."
     }
 
     private fun regularizePreview(): RegularizePreview? {
@@ -678,9 +730,7 @@ class MeshRegularizeTool(
         }
         val sourceEdges = surfaceEdges(selected, group)
         val result = buildRegularizedFaces(selected)
-        val gridEdges = result?.faces.orEmpty().flatMap { (a, b, c) ->
-            listOf(group.toWorld(a) to group.toWorld(b), group.toWorld(b) to group.toWorld(c), group.toWorld(c) to group.toWorld(a))
-        }
+        val gridEdges = result?.edges.orEmpty().map { (a, b) -> group.toWorld(a) to group.toWorld(b) }
         return RegularizePreview(sourceEdges, gridEdges)
     }
 
@@ -700,7 +750,7 @@ class MeshRegularizeTool(
                 project2d(tri.c, origin, basis)
             )
         }
-        if (!isNearPlanar(selected, origin, normal)) {
+        if (!isNearPlanar(selected, origin, normal, planarTolerance)) {
             return null
         }
 
@@ -708,43 +758,70 @@ class MeshRegularizeTool(
         val maxU = projected.maxOf { max(it.a.x, max(it.b.x, it.c.x)) }
         val minV = projected.minOf { min(it.a.y, min(it.b.y, it.c.y)) }
         val maxV = projected.maxOf { max(it.a.y, max(it.b.y, it.c.y)) }
-        val firstU = floor(minU / step) * step
-        val lastU = ceil(maxU / step) * step
-        val firstV = floor(minV / step) * step
-        val lastV = ceil(maxV / step) * step
+        val extent = max(maxU - minU, maxV - minV)
+        if (extent <= RANDOM_OFFSET_EPSILON) {
+            return null
+        }
+        val cellSize = (extent / subdivisionCount.toFloat()).coerceAtLeast(RANDOM_OFFSET_EPSILON)
+        val firstU = floor(minU / cellSize) * cellSize
+        val lastU = ceil(maxU / cellSize) * cellSize
+        val firstV = floor(minV / cellSize) * cellSize
+        val lastV = ceil(maxV / cellSize) * cellSize
         val newFaces = mutableListOf<Triple<Vector3, Vector3, Vector3>>()
+        val edgeMap = linkedMapOf<EdgeKey, Pair<Vector3, Vector3>>()
 
         var u = firstU
         while (u < lastU - RANDOM_OFFSET_EPSILON) {
             var v = firstV
             while (v < lastV - RANDOM_OFFSET_EPSILON) {
                 val p00 = Vec2(u, v)
-                val p10 = Vec2((u + step).coerceAtMost(lastU), v)
-                val p11 = Vec2((u + step).coerceAtMost(lastU), (v + step).coerceAtMost(lastV))
-                val p01 = Vec2(u, (v + step).coerceAtMost(lastV))
-                addRegularizedTriangle(projected, p00, p10, p11, origin, basis, newFaces)
-                addRegularizedTriangle(projected, p00, p11, p01, origin, basis, newFaces)
-                v += step
+                val p10 = Vec2((u + cellSize).coerceAtMost(lastU), v)
+                val p11 = Vec2((u + cellSize).coerceAtMost(lastU), (v + cellSize).coerceAtMost(lastV))
+                val p01 = Vec2(u, (v + cellSize).coerceAtMost(lastV))
+                addRegularizedCell(projected, p00, p10, p11, p01, origin, basis, newFaces, edgeMap)
+                v += cellSize
             }
-            u += step
+            u += cellSize
         }
-        return RegularizeBuildResult(newFaces)
+        return RegularizeBuildResult(newFaces, edgeMap.values.toList())
     }
 
-    private fun addRegularizedTriangle(
+    private fun addRegularizedCell(
         source: List<ProjectedTriangle>,
         a: Vec2,
         b: Vec2,
         c: Vec2,
+        d: Vec2,
         origin: Vector3,
         basis: PlaneBasis,
-        target: MutableList<Triple<Vector3, Vector3, Vector3>>
+        target: MutableList<Triple<Vector3, Vector3, Vector3>>,
+        edgeMap: MutableMap<EdgeKey, Pair<Vector3, Vector3>>
     ) {
-        val center = Vec2((a.x + b.x + c.x) / 3f, (a.y + b.y + c.y) / 3f)
+        val center = Vec2((a.x + b.x + c.x + d.x) / 4f, (a.y + b.y + c.y + d.y) / 4f)
         if (source.none { pointInTriangle(center, it.a, it.b, it.c) }) {
             return
         }
-        target += Triple(unproject2d(a, origin, basis), unproject2d(b, origin, basis), unproject2d(c, origin, basis))
+        val a3 = unproject2d(a, origin, basis)
+        val b3 = unproject2d(b, origin, basis)
+        val c3 = unproject2d(c, origin, basis)
+        val d3 = unproject2d(d, origin, basis)
+        target += Triple(a3, b3, c3)
+        target += Triple(a3, c3, d3)
+        registerEdge(edgeMap, a3, b3)
+        registerEdge(edgeMap, b3, c3)
+        registerEdge(edgeMap, c3, d3)
+        registerEdge(edgeMap, d3, a3)
+    }
+
+    private fun registerEdge(edgeMap: MutableMap<EdgeKey, Pair<Vector3, Vector3>>, a: Vector3, b: Vector3) {
+        val keyA = vertexKey(a)
+        val keyB = vertexKey(b)
+        val key = if (compareVertexKeys(keyA, keyB) <= 0) EdgeKey(keyA, keyB) else EdgeKey(keyB, keyA)
+        edgeMap.putIfAbsent(key, Vector3(a) to Vector3(b))
+    }
+
+    private fun formatConfig(): String {
+        return "${subdivisionCount} ${formatFloat(planarTolerance)}"
     }
 
     private data class ProjectedTriangle(
@@ -753,7 +830,10 @@ class MeshRegularizeTool(
         val b: Vec2,
         val c: Vec2
     )
-    private data class RegularizeBuildResult(val faces: List<Triple<Vector3, Vector3, Vector3>>)
+    private data class RegularizeBuildResult(
+        val faces: List<Triple<Vector3, Vector3, Vector3>>,
+        val edges: List<Pair<Vector3, Vector3>>
+    )
     private data class RegularizePreview(
         val sourceEdges: List<Pair<Vector3, Vector3>>,
         val gridEdges: List<Pair<Vector3, Vector3>>
@@ -761,6 +841,7 @@ class MeshRegularizeTool(
 }
 
 private data class VertexKey(val x: Int, val y: Int, val z: Int)
+private data class EdgeKey(val a: VertexKey, val b: VertexKey)
 private data class Vec2(val x: Float, val y: Float)
 
 private const val RANDOM_OFFSET_EPSILON = 0.001f
@@ -821,13 +902,23 @@ private fun averageNormal(faces: List<DraftFaceStore.Triangle>): Vector3 {
     return normal
 }
 
-private fun isNearPlanar(faces: List<DraftFaceStore.Triangle>, origin: Vector3, normal: Vector3): Boolean {
-    val tolerance = 0.05f
+private fun isNearPlanar(
+    faces: List<DraftFaceStore.Triangle>,
+    origin: Vector3,
+    normal: Vector3,
+    tolerance: Float
+): Boolean {
     return faces.all { tri ->
         kotlin.math.abs(Vector3(tri.a).sub(origin).dot(normal)) <= tolerance &&
             kotlin.math.abs(Vector3(tri.b).sub(origin).dot(normal)) <= tolerance &&
             kotlin.math.abs(Vector3(tri.c).sub(origin).dot(normal)) <= tolerance
     }
+}
+
+private fun compareVertexKeys(a: VertexKey, b: VertexKey): Int {
+    if (a.x != b.x) return a.x.compareTo(b.x)
+    if (a.y != b.y) return a.y.compareTo(b.y)
+    return a.z.compareTo(b.z)
 }
 
 private fun project2d(point: Vector3, origin: Vector3, basis: PlaneBasis): Vec2 {
