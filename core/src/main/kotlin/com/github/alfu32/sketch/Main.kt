@@ -134,7 +134,6 @@ import com.github.alfu32.sketch.tools.MechCircularHoleTool
 import com.github.alfu32.sketch.tools.MechCogWheelTool
 import com.github.alfu32.sketch.tools.MechRoundWasherTool
 import com.github.alfu32.sketch.tools.MechScrewTool
-import com.github.alfu32.sketch.tools.MeshRegularizeConfig
 import com.github.alfu32.sketch.tools.MeshRegularizeMode
 import com.github.alfu32.sketch.tools.MeshTool
 import com.github.alfu32.sketch.tools.MoveTool
@@ -158,10 +157,9 @@ import com.github.alfu32.sketch.tools.ConePrimitiveTool
 import com.github.alfu32.sketch.tools.CylinderPrimitiveTool
 import com.github.alfu32.sketch.tools.PillPrimitiveTool
 import com.github.alfu32.sketch.tools.MeshRegularizeTool
-import com.github.alfu32.sketch.tools.RandomOffsetConfig
 import com.github.alfu32.sketch.tools.RandomOffsetTool
-import com.github.alfu32.sketch.tools.RandomSurfaceArrayConfig
 import com.github.alfu32.sketch.tools.RandomSurfaceArrayTool
+import com.github.alfu32.sketch.tools.RandomToolSettings
 import com.github.alfu32.sketch.tools.SpherePrimitiveTool
 import com.github.alfu32.sketch.tools.SurfaceRectangleTool
 import com.github.alfu32.sketch.tools.SelectTool
@@ -354,6 +352,7 @@ class Main @JvmOverloads constructor(
     private val architectureSettings = ArchitectureSettings()
     private val hvacSettings = HvacSettings()
     private val hotspotSettings = HotspotSettings()
+    private val randomToolSettings = RandomToolSettings()
     private lateinit var statusModel: StatusModel
     private lateinit var scene: GroupScene
     private lateinit var modelCleanup: ModelCleanup
@@ -915,14 +914,14 @@ class Main @JvmOverloads constructor(
                     scene,
                     ToolId.MESH_REGULARIZE,
                     MeshRegularizeMode.PLANAR,
-                    ::showMeshRegularizeDialog
-                ) { toolController.setTool(ToolId.SELECT) },
+                    randomToolSettings
+                ),
                 MeshRegularizeTool(
                     scene,
                     ToolId.SURFACE_REMESH,
                     MeshRegularizeMode.SURFACE,
-                    ::showMeshRegularizeDialog
-                ) { toolController.setTool(ToolId.SELECT) },
+                    randomToolSettings
+                ),
                 RectangleTool(scene),
                 SurfaceRectangleTool(scene),
                 QuadTool(scene),
@@ -942,8 +941,8 @@ class Main @JvmOverloads constructor(
                 ScaleTool(scene),
                 StretchTool(scene),
                 StretchScaleTool(scene),
-                RandomOffsetTool(scene, ::showRandomOffsetDialog) { toolController.setTool(ToolId.SELECT) },
-                RandomSurfaceArrayTool(scene, ::showRandomSurfaceArrayDialog) { toolController.setTool(ToolId.SELECT) },
+                RandomOffsetTool(scene, randomToolSettings),
+                RandomSurfaceArrayTool(scene, randomToolSettings),
                 RotateStretchTool(scene),
                 CopyMultipleTool(scene),
                 PlanarTranslateMultipleTool(scene),
@@ -1093,6 +1092,7 @@ class Main @JvmOverloads constructor(
             architectureSettings,
             hvacSettings,
             hotspotSettings,
+            randomToolSettings,
             ::architectureSelectionInfo,
             ::architectureSelectionSummary,
             ::updateArchitectureElementName,
@@ -1309,6 +1309,21 @@ class Main @JvmOverloads constructor(
                 priority = 1,
                 execute = {
                     uiOverlay.showHotspotSettingsPanel()
+                    com.github.alfu32.sketch.plugin.PluginResult.success()
+                }
+            )
+        )
+        pluginHost.getCommandPalette().registerCommand(
+            com.github.alfu32.sketch.plugin.PaletteCommand(
+                id = "view.random_tool_settings",
+                name = "View> Random Tool Settings",
+                description = "Show fuzzy, scatter, and remesh tool settings panel",
+                icon = "view",
+                category = "View",
+                tags = listOf("random", "fuzzy", "scatter", "remesh", "settings", "panel"),
+                priority = 1,
+                execute = {
+                    uiOverlay.showRandomToolSettingsPanel()
                     com.github.alfu32.sketch.plugin.PluginResult.success()
                 }
             )
@@ -4774,271 +4789,6 @@ class Main @JvmOverloads constructor(
         dialog.centerWindow()
         dialog.toFront()
         dialog.fadeIn()
-    }
-
-    private fun showRandomOffsetDialog(
-        initial: RandomOffsetConfig,
-        onApply: (RandomOffsetConfig) -> Unit,
-        onPreview: (RandomOffsetConfig) -> Unit,
-        onCancel: () -> Unit
-    ) {
-        val stage = uiOverlay.stage
-        val dialog = com.kotcrab.vis.ui.widget.VisWindow("Random Offset Parameters", true).apply {
-            isModal = true
-            isMovable = true
-            isResizable = false
-            setKeepWithinParent(true)
-        }
-        val strengthField = com.github.alfu32.sketch.ui.AppTextField(formatDialogFloat(initial.strength))
-        val statusLabel = com.kotcrab.vis.ui.widget.VisLabel("")
-        statusLabel.setWrap(true)
-
-        fun parseConfig(): RandomOffsetConfig? {
-            val strength = strengthField.text?.trim()?.toFloatOrNull()
-            if (strength == null) {
-                statusLabel.setText("Strength must be a number from 0 to 100.")
-                return null
-            }
-            statusLabel.setText("")
-            return RandomOffsetConfig(strength.coerceIn(0f, 100f))
-        }
-
-        fun updatePreview() {
-            parseConfig()?.let(onPreview)
-        }
-
-        val okButton = com.kotcrab.vis.ui.widget.VisTextButton("OK")
-        okButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
-            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
-                val config = parseConfig() ?: return
-                onApply(config)
-                dialog.remove()
-            }
-        })
-        val cancelButton = com.kotcrab.vis.ui.widget.VisTextButton("Cancel")
-        cancelButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
-            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
-                dialog.remove()
-                onCancel()
-            }
-        })
-        strengthField.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ChangeListener() {
-            override fun changed(event: com.badlogic.gdx.scenes.scene2d.utils.ChangeListener.ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
-                updatePreview()
-            }
-        })
-
-        val content = com.kotcrab.vis.ui.widget.VisTable()
-        content.defaults().pad(4f).growX()
-        content.add(com.kotcrab.vis.ui.widget.VisLabel("Randomly displace selected connected vertices along averaged normals.")).left().row()
-        content.add(com.kotcrab.vis.ui.widget.VisLabel("Strength [0..100, decimals allowed]")).left().row()
-        content.add(strengthField).width(180f).left().row()
-        content.add(statusLabel).left().minWidth(320f).row()
-        val buttons = com.kotcrab.vis.ui.widget.VisTable()
-        buttons.defaults().pad(4f)
-        buttons.add(okButton)
-        buttons.add(cancelButton)
-        content.add(buttons).right().row()
-
-        dialog.add(content).pad(8f)
-        dialog.pack()
-        stage.addActor(dialog)
-        dialog.centerWindow()
-        dialog.toFront()
-        dialog.fadeIn()
-        updatePreview()
-    }
-
-    private fun showRandomSurfaceArrayDialog(
-        initial: RandomSurfaceArrayConfig,
-        onApply: (RandomSurfaceArrayConfig) -> Unit,
-        onPreview: (RandomSurfaceArrayConfig) -> Unit,
-        onCancel: () -> Unit
-    ) {
-        val stage = uiOverlay.stage
-        val dialog = com.kotcrab.vis.ui.widget.VisWindow("Random Surface Array Parameters", true).apply {
-            isModal = true
-            isMovable = true
-            isResizable = false
-            setKeepWithinParent(true)
-        }
-        val countField = com.github.alfu32.sketch.ui.AppTextField(initial.count.toString())
-        val scaleField = com.github.alfu32.sketch.ui.AppTextField(formatDialogFloat(initial.scaleStrength))
-        val rotationField = com.github.alfu32.sketch.ui.AppTextField(formatDialogFloat(initial.rotationFuzz))
-        val alignCheck = com.kotcrab.vis.ui.widget.VisCheckBox("Align copies to surface normal")
-        alignCheck.isChecked = initial.alignToNormal
-        val statusLabel = com.kotcrab.vis.ui.widget.VisLabel("")
-        statusLabel.setWrap(true)
-
-        fun parseConfig(): RandomSurfaceArrayConfig? {
-            val count = countField.text?.trim()?.toIntOrNull()
-            val scale = scaleField.text?.trim()?.toFloatOrNull()
-            val rotation = rotationField.text?.trim()?.toFloatOrNull()
-            if (count == null || count < 1) {
-                statusLabel.setText("Count must be an integer from 1 to 5000.")
-                return null
-            }
-            if (scale == null) {
-                statusLabel.setText("Scale fuzz must be a number from 0 to 100.")
-                return null
-            }
-            if (rotation == null) {
-                statusLabel.setText("Rotation fuzz must be a number from 0 to 100.")
-                return null
-            }
-            statusLabel.setText("")
-            return RandomSurfaceArrayConfig(
-                count = count.coerceIn(1, 5000),
-                scaleStrength = scale.coerceIn(0f, 100f),
-                rotationFuzz = rotation.coerceIn(0f, 100f),
-                alignToNormal = alignCheck.isChecked
-            )
-        }
-
-        fun updatePreview() {
-            parseConfig()?.let(onPreview)
-        }
-
-        val okButton = com.kotcrab.vis.ui.widget.VisTextButton("OK")
-        okButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
-            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
-                val config = parseConfig() ?: return
-                onApply(config)
-                dialog.remove()
-            }
-        })
-        val cancelButton = com.kotcrab.vis.ui.widget.VisTextButton("Cancel")
-        cancelButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
-            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
-                dialog.remove()
-                onCancel()
-            }
-        })
-        val previewChangeListener = object : com.badlogic.gdx.scenes.scene2d.utils.ChangeListener() {
-            override fun changed(event: com.badlogic.gdx.scenes.scene2d.utils.ChangeListener.ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
-                updatePreview()
-            }
-        }
-        countField.addListener(previewChangeListener)
-        scaleField.addListener(previewChangeListener)
-        rotationField.addListener(previewChangeListener)
-        alignCheck.addListener(previewChangeListener)
-
-        val content = com.kotcrab.vis.ui.widget.VisTable()
-        content.defaults().pad(4f).growX()
-        content.add(com.kotcrab.vis.ui.widget.VisLabel("Scatter selected payload objects or segments over selected target faces.")).left().row()
-        content.add(com.kotcrab.vis.ui.widget.VisLabel("Copy count [1..5000]")).left().row()
-        content.add(countField).width(180f).left().row()
-        content.add(com.kotcrab.vis.ui.widget.VisLabel("Scale fuzz [0..100]")).left().row()
-        content.add(scaleField).width(180f).left().row()
-        content.add(com.kotcrab.vis.ui.widget.VisLabel("Rotation fuzz [0..100]")).left().row()
-        content.add(rotationField).width(180f).left().row()
-        content.add(alignCheck).left().row()
-        content.add(statusLabel).left().minWidth(380f).row()
-        val buttons = com.kotcrab.vis.ui.widget.VisTable()
-        buttons.defaults().pad(4f)
-        buttons.add(okButton)
-        buttons.add(cancelButton)
-        content.add(buttons).right().row()
-
-        dialog.add(content).pad(8f)
-        dialog.pack()
-        stage.addActor(dialog)
-        dialog.centerWindow()
-        dialog.toFront()
-        dialog.fadeIn()
-        updatePreview()
-    }
-
-    private fun showMeshRegularizeDialog(
-        initial: MeshRegularizeConfig,
-        onApply: (MeshRegularizeConfig) -> Unit,
-        onPreview: (MeshRegularizeConfig) -> Unit,
-        onCancel: () -> Unit
-    ) {
-        val stage = uiOverlay.stage
-        val dialog = com.kotcrab.vis.ui.widget.VisWindow("Mesh Regularize Parameters", true).apply {
-            isModal = true
-            isMovable = true
-            isResizable = false
-            setKeepWithinParent(true)
-        }
-        val subdivisionsField = com.github.alfu32.sketch.ui.AppTextField(initial.subdivisions.toString())
-        val toleranceField = com.github.alfu32.sketch.ui.AppTextField(formatDialogFloat(initial.planarTolerance))
-        val statusLabel = com.kotcrab.vis.ui.widget.VisLabel("")
-        statusLabel.setWrap(true)
-
-        fun parseConfig(): MeshRegularizeConfig? {
-            val subdivisions = subdivisionsField.text?.trim()?.toIntOrNull()
-            val tolerance = toleranceField.text?.trim()?.toFloatOrNull()
-            if (subdivisions == null || subdivisions < 1) {
-                statusLabel.setText("Subdivision count must be an integer from 1 to 512.")
-                return null
-            }
-            if (tolerance == null || tolerance <= 0f) {
-                statusLabel.setText("Planar tolerance must be a positive number.")
-                return null
-            }
-            statusLabel.setText("")
-            return MeshRegularizeConfig(
-                subdivisions = subdivisions.coerceIn(1, 512),
-                planarTolerance = tolerance.coerceAtLeast(0.0001f)
-            )
-        }
-
-        fun updatePreview() {
-            parseConfig()?.let(onPreview)
-        }
-
-        val okButton = com.kotcrab.vis.ui.widget.VisTextButton("OK")
-        okButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
-            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
-                val config = parseConfig() ?: return
-                onApply(config)
-                dialog.remove()
-            }
-        })
-        val cancelButton = com.kotcrab.vis.ui.widget.VisTextButton("Cancel")
-        cancelButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
-            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
-                dialog.remove()
-                onCancel()
-            }
-        })
-        val previewChangeListener = object : com.badlogic.gdx.scenes.scene2d.utils.ChangeListener() {
-            override fun changed(event: com.badlogic.gdx.scenes.scene2d.utils.ChangeListener.ChangeEvent?, actor: com.badlogic.gdx.scenes.scene2d.Actor?) {
-                updatePreview()
-            }
-        }
-        subdivisionsField.addListener(previewChangeListener)
-        toleranceField.addListener(previewChangeListener)
-
-        val content = com.kotcrab.vis.ui.widget.VisTable()
-        content.defaults().pad(4f).growX()
-        content.add(com.kotcrab.vis.ui.widget.VisLabel("Rebuild a near-planar selected patch into a square grid with explicit border segments.")).left().row()
-        content.add(com.kotcrab.vis.ui.widget.VisLabel("Subdivision count [1..512]")).left().row()
-        content.add(subdivisionsField).width(180f).left().row()
-        content.add(com.kotcrab.vis.ui.widget.VisLabel("Planar tolerance (> 0)")).left().row()
-        content.add(toleranceField).width(180f).left().row()
-        content.add(statusLabel).left().minWidth(380f).row()
-        val buttons = com.kotcrab.vis.ui.widget.VisTable()
-        buttons.defaults().pad(4f)
-        buttons.add(okButton)
-        buttons.add(cancelButton)
-        content.add(buttons).right().row()
-
-        dialog.add(content).pad(8f)
-        dialog.pack()
-        stage.addActor(dialog)
-        dialog.centerWindow()
-        dialog.toFront()
-        dialog.fadeIn()
-        updatePreview()
-    }
-
-    private fun formatDialogFloat(value: Float): String {
-        val rounded = kotlin.math.round(value * 100f) / 100f
-        return if (rounded == rounded.toInt().toFloat()) rounded.toInt().toString() else rounded.toString()
     }
 
     private data class MeshExportPayload(

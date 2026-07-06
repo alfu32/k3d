@@ -21,20 +21,14 @@ import kotlin.math.round
 import kotlin.math.pow
 import kotlin.random.Random
 
-data class RandomOffsetConfig(
-    val strength: Float = 1f
-)
-
-data class RandomSurfaceArrayConfig(
-    val count: Int = 12,
-    val scaleStrength: Float = 0f,
-    val rotationFuzz: Float = 0f,
-    val alignToNormal: Boolean = true
-)
-
-data class MeshRegularizeConfig(
-    val subdivisions: Int = 12,
-    val planarTolerance: Float = 0.05f
+data class RandomToolSettings(
+    var randomOffsetStrength: Float = 1f,
+    var surfaceArrayCount: Int = 12,
+    var surfaceArrayScaleStrength: Float = 0f,
+    var surfaceArrayRotationFuzz: Float = 0f,
+    var surfaceArrayAlignToNormal: Boolean = true,
+    var regularizeSubdivisions: Int = 12,
+    var regularizePlanarTolerance: Float = 0.05f
 )
 
 enum class MeshRegularizeMode {
@@ -44,45 +38,21 @@ enum class MeshRegularizeMode {
 
 class RandomOffsetTool(
     private val scene: GroupScene,
-    private val showConfigDialog: ((RandomOffsetConfig, (RandomOffsetConfig) -> Unit, (RandomOffsetConfig) -> Unit, () -> Unit) -> Unit)? = null,
-    private val onFinished: (() -> Unit)? = null
+    private val settings: RandomToolSettings
 ) : Tool {
     override val id: ToolId = ToolId.RANDOM_OFFSET
     override val message: String = "Random Offset: type strength 0-100, then click to offset selected faces/segments."
 
-    private var strengthInput = 1f
-
     override fun onEnter(status: StatusModel) {
-        val initialConfig = RandomOffsetConfig(strengthInput)
-        status.message = "Random Offset strength ${formatStrength()}. Type a new strength or click to apply."
+        status.message = "Random Offset strength ${formatStrength()}. Change Random Tools settings, type a strength, or click to apply."
         status.inputBuffer = formatStrength()
-        showConfigDialog?.invoke(
-            initialConfig,
-            { config ->
-                strengthInput = config.strength.coerceAtLeast(0f)
-                status.inputBuffer = formatStrength()
-                status.message = applyRandomOffset()
-                onFinished?.invoke()
-            },
-            { config ->
-                strengthInput = config.strength.coerceAtLeast(0f)
-                status.inputBuffer = formatStrength()
-                status.message = "Random Offset strength ${formatStrength()}. Preview updated."
-            },
-            {
-                strengthInput = initialConfig.strength
-                status.inputBuffer = formatStrength()
-                status.message = "Random Offset cancelled."
-                onFinished?.invoke()
-            }
-        )
     }
 
     override fun onTextInput(status: StatusModel, text: String) {
         status.inputBuffer = text
         val parsed = text.trim().toFloatOrNull()
         if (parsed != null) {
-            strengthInput = parsed.coerceIn(0f, 100f)
+            settings.randomOffsetStrength = parsed.coerceIn(0f, 100f)
             status.message = "Random Offset strength ${formatStrength()}. Click to apply to selection."
         } else if (text.isBlank()) {
             status.message = "Random Offset: type strength 0-100, then click to apply."
@@ -153,7 +123,7 @@ class RandomOffsetTool(
         val selectedNormals = averageNormalsFor(targetKeys, selectedFaces)
         val fallbackNormals = averageNormalsFor(targetKeys, group.faceStore.getTriangles())
         val displacementByKey = linkedMapOf<VertexKey, Vector3>()
-        val amplitude = randomOffsetAmplitude(strengthInput)
+        val amplitude = randomOffsetAmplitude(settings.randomOffsetStrength)
         val rng = Random(System.nanoTime())
         targetKeys.forEach { key ->
             val direction = selectedNormals[key] ?: fallbackNormals[key] ?: Vector3(0f, 1f, 0f)
@@ -260,7 +230,7 @@ class RandomOffsetTool(
     ): Map<VertexKey, Vector3> {
         val selectedNormals = averageNormalsFor(targetKeys, selectedFaces)
         val fallbackNormals = averageNormalsFor(targetKeys, group.faceStore.getTriangles())
-        val amplitude = randomOffsetAmplitude(strengthInput)
+        val amplitude = randomOffsetAmplitude(settings.randomOffsetStrength)
         val rng = Random(RANDOM_PREVIEW_SEED)
         return targetKeys.associateWith { key ->
             val direction = selectedNormals[key] ?: fallbackNormals[key] ?: Vector3(0f, 1f, 0f)
@@ -321,7 +291,7 @@ class RandomOffsetTool(
     }
 
     private fun formatStrength(): String {
-        val rounded = round(strengthInput * 100f) / 100f
+        val rounded = round(settings.randomOffsetStrength * 100f) / 100f
         return if (rounded == rounded.toInt().toFloat()) rounded.toInt().toString() else rounded.toString()
     }
 
@@ -338,53 +308,18 @@ class RandomOffsetTool(
 
 class RandomSurfaceArrayTool(
     private val scene: GroupScene,
-    private val showConfigDialog: ((RandomSurfaceArrayConfig, (RandomSurfaceArrayConfig) -> Unit, (RandomSurfaceArrayConfig) -> Unit, () -> Unit) -> Unit)? = null,
-    private val onFinished: (() -> Unit)? = null
+    private val settings: RandomToolSettings
 ) : Tool {
     override val id: ToolId = ToolId.RANDOM_SURFACE_ARRAY
     override val message: String =
         "Random Surface Array: select distribution faces and payload objects or segments. Type: count scale fuzz align."
 
-    private var count = 12
-    private var scaleStrength = 0f
-    private var rotationFuzz = 0f
-    private var alignToNormal = true
     private var surfaceSelection: SurfaceSelectionSnapshot? = null
     private var payloadSelection: PayloadSelectionSnapshot? = null
 
     override fun onEnter(status: StatusModel) {
-        val initialConfig = currentConfig()
         status.inputBuffer = formatConfig()
-        status.message = "Random Surface Array: ${formatConfig()}. Click to scatter selected objects or segments on selected faces."
-        showConfigDialog?.invoke(
-            initialConfig,
-            { config ->
-                count = config.count.coerceIn(1, 5000)
-                scaleStrength = config.scaleStrength.coerceIn(0f, 100f)
-                rotationFuzz = config.rotationFuzz.coerceIn(0f, 100f)
-                alignToNormal = config.alignToNormal
-                status.inputBuffer = formatConfig()
-                status.message = applyArray()
-                onFinished?.invoke()
-            },
-            { config ->
-                count = config.count.coerceIn(1, 5000)
-                scaleStrength = config.scaleStrength.coerceIn(0f, 100f)
-                rotationFuzz = config.rotationFuzz.coerceIn(0f, 100f)
-                alignToNormal = config.alignToNormal
-                status.inputBuffer = formatConfig()
-                status.message = "Random Surface Array: ${formatConfig()}. Preview updated."
-            },
-            {
-                count = initialConfig.count
-                scaleStrength = initialConfig.scaleStrength
-                rotationFuzz = initialConfig.rotationFuzz
-                alignToNormal = initialConfig.alignToNormal
-                status.inputBuffer = formatConfig()
-                status.message = "Random Surface Array cancelled."
-                onFinished?.invoke()
-            }
-        )
+        status.message = "Random Surface Array: ${formatConfig()}. Press Surface/Payload, then click to scatter."
     }
 
     override fun onTextInput(status: StatusModel, text: String) {
@@ -447,23 +382,14 @@ class RandomSurfaceArrayTool(
 
     private fun parseConfig(text: String) {
         val parts = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
-        parts.getOrNull(0)?.toIntOrNull()?.let { count = it.coerceIn(1, 5000) }
-        parts.getOrNull(1)?.toFloatOrNull()?.let { scaleStrength = it.coerceIn(0f, 100f) }
-        parts.getOrNull(2)?.toFloatOrNull()?.let { rotationFuzz = it.coerceIn(0f, 100f) }
-        parts.getOrNull(3)?.let { alignToNormal = it.equals("true", true) || it == "1" || it.equals("yes", true) }
+        parts.getOrNull(0)?.toIntOrNull()?.let { settings.surfaceArrayCount = it.coerceIn(1, 5000) }
+        parts.getOrNull(1)?.toFloatOrNull()?.let { settings.surfaceArrayScaleStrength = it.coerceIn(0f, 100f) }
+        parts.getOrNull(2)?.toFloatOrNull()?.let { settings.surfaceArrayRotationFuzz = it.coerceIn(0f, 100f) }
+        parts.getOrNull(3)?.let { settings.surfaceArrayAlignToNormal = it.equals("true", true) || it == "1" || it.equals("yes", true) }
     }
 
     private fun formatConfig(): String {
-        return "$count ${formatFloat(scaleStrength)} ${formatFloat(rotationFuzz)} ${if (alignToNormal) 1 else 0}"
-    }
-
-    private fun currentConfig(): RandomSurfaceArrayConfig {
-        return RandomSurfaceArrayConfig(
-            count = count,
-            scaleStrength = scaleStrength,
-            rotationFuzz = rotationFuzz,
-            alignToNormal = alignToNormal
-        )
+        return "${settings.surfaceArrayCount} ${formatFloat(settings.surfaceArrayScaleStrength)} ${formatFloat(settings.surfaceArrayRotationFuzz)} ${if (settings.surfaceArrayAlignToNormal) 1 else 0}"
     }
 
     private fun applyArray(): String {
@@ -492,7 +418,7 @@ class RandomSurfaceArrayTool(
         var copiedFaces = 0
         val payloadCentroid = payload.geometryCentroid()
 
-        repeat(count) {
+        repeat(settings.surfaceArrayCount) {
             val sample = sampleSurface(weighted, totalArea, rng)
             val normal = triangleNormal(sample.triangle)
             val scale = randomScale(rng)
@@ -565,7 +491,7 @@ class RandomSurfaceArrayTool(
         val payloadEdges = mutableListOf<Pair<Vector3, Vector3>>()
         val normalTicks = mutableListOf<Pair<Vector3, Vector3>>()
         val payloadCentroid = payload.geometryCentroid()
-        val previewCount = count.coerceAtMost(RANDOM_SURFACE_ARRAY_PREVIEW_LIMIT)
+        val previewCount = settings.surfaceArrayCount.coerceAtMost(RANDOM_SURFACE_ARRAY_PREVIEW_LIMIT)
 
         repeat(previewCount) {
             val sample = sampleSurface(weighted, totalArea, rng)
@@ -671,7 +597,7 @@ class RandomSurfaceArrayTool(
 
     private fun transformPayloadVector(vectorWorld: Vector3, surfaceNormal: Vector3, scale: Float, twistRadians: Float): Vector3 {
         val result = Vector3(vectorWorld).scl(scale)
-        if (alignToNormal && surfaceNormal.len2() > RANDOM_OFFSET_EPSILON_SQ) {
+        if (settings.surfaceArrayAlignToNormal && surfaceNormal.len2() > RANDOM_OFFSET_EPSILON_SQ) {
             val up = Vector3(0f, 1f, 0f)
             val target = Vector3(surfaceNormal).nor()
             val axis = Vector3(up).crs(target)
@@ -690,18 +616,18 @@ class RandomSurfaceArrayTool(
     }
 
     private fun randomScale(rng: Random): Float {
-        if (scaleStrength <= 0f) {
+        if (settings.surfaceArrayScaleStrength <= 0f) {
             return 1f
         }
-        val amplitude = (E.toFloat().pow(scaleStrength) - 1f).coerceAtMost(10_000f)
+        val amplitude = (E.toFloat().pow(settings.surfaceArrayScaleStrength) - 1f).coerceAtMost(10_000f)
         return (1f + randomSignedUnit(rng) * amplitude).coerceAtLeast(0.001f)
     }
 
     private fun rotationAmountRadians(): Float {
-        if (rotationFuzz <= 0f) {
+        if (settings.surfaceArrayRotationFuzz <= 0f) {
             return 0f
         }
-        val degrees = (E.toFloat().pow(rotationFuzz) - 1f).coerceAtMost(360f)
+        val degrees = (E.toFloat().pow(settings.surfaceArrayRotationFuzz) - 1f).coerceAtMost(360f)
         return degrees * MathUtilsDegreesToRadians
     }
 
@@ -760,50 +686,23 @@ class MeshRegularizeTool(
     private val scene: GroupScene,
     private val toolId: ToolId = ToolId.MESH_REGULARIZE,
     private val mode: MeshRegularizeMode = MeshRegularizeMode.PLANAR,
-    private val showConfigDialog: ((MeshRegularizeConfig, (MeshRegularizeConfig) -> Unit, (MeshRegularizeConfig) -> Unit, () -> Unit) -> Unit)? = null,
-    private val onFinished: (() -> Unit)? = null
+    private val settings: RandomToolSettings
 ) : Tool {
     override val id: ToolId = toolId
     override val message: String = "${toolLabel()}: select faces, configure subdivisions and tolerance, then remesh."
 
-    private var subdivisionCount = 12
-    private var planarTolerance = 0.05f
     private var lastRegularizeFailure = "${toolLabel()}: could not build a regular square grid from the selection."
 
     override fun onEnter(status: StatusModel) {
-        val initialConfig = MeshRegularizeConfig(subdivisionCount, planarTolerance)
         status.inputBuffer = formatConfig()
-        status.message = "${toolLabel()} ${formatConfig()}. Select a face patch and confirm."
-        showConfigDialog?.invoke(
-            initialConfig,
-            { config ->
-                subdivisionCount = config.subdivisions.coerceIn(1, 512)
-                planarTolerance = config.planarTolerance.coerceAtLeast(0.0001f)
-                status.inputBuffer = formatConfig()
-                status.message = regularize()
-                onFinished?.invoke()
-            },
-            { config ->
-                subdivisionCount = config.subdivisions.coerceIn(1, 512)
-                planarTolerance = config.planarTolerance.coerceAtLeast(0.0001f)
-                status.inputBuffer = formatConfig()
-                status.message = "${toolLabel()} ${formatConfig()}. Preview updated."
-            },
-            {
-                subdivisionCount = initialConfig.subdivisions
-                planarTolerance = initialConfig.planarTolerance
-                status.inputBuffer = formatConfig()
-                status.message = "${toolLabel()} cancelled."
-                onFinished?.invoke()
-            }
-        )
+        status.message = "${toolLabel()} ${formatConfig()}. Change Random Tools settings or click to remesh selected faces."
     }
 
     override fun onTextInput(status: StatusModel, text: String) {
         status.inputBuffer = text
         val parts = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
-        parts.getOrNull(0)?.toIntOrNull()?.let { subdivisionCount = it.coerceIn(1, 512) }
-        parts.getOrNull(1)?.toFloatOrNull()?.let { planarTolerance = it.coerceAtLeast(0.0001f) }
+        parts.getOrNull(0)?.toIntOrNull()?.let { settings.regularizeSubdivisions = it.coerceIn(1, 512) }
+        parts.getOrNull(1)?.toFloatOrNull()?.let { settings.regularizePlanarTolerance = it.coerceAtLeast(0.0001f) }
         status.message = "${toolLabel()} ${formatConfig()}. Click to remesh selected faces."
     }
 
@@ -908,8 +807,8 @@ class MeshRegularizeTool(
                 project2d(tri.c, origin, basis)
             )
         }
-        if (!isNearPlanar(selected, origin, normal, planarTolerance)) {
-            lastRegularizeFailure = "Planar Regularize: selected patch exceeds planar tolerance ${formatFloat(planarTolerance)}."
+        if (!isNearPlanar(selected, origin, normal, settings.regularizePlanarTolerance)) {
+            lastRegularizeFailure = "Planar Regularize: selected patch exceeds planar tolerance ${formatFloat(settings.regularizePlanarTolerance)}."
             return null
         }
         val grid = projectedGrid(projected) ?: return null
@@ -962,7 +861,7 @@ class MeshRegularizeTool(
                 normal,
                 raySpan,
                 grid.cellSize,
-                planarTolerance,
+                settings.regularizePlanarTolerance,
                 newFaces,
                 edgeMap
             )
@@ -1046,7 +945,7 @@ class MeshRegularizeTool(
     }
 
     private fun formatConfig(): String {
-        return "${subdivisionCount} ${formatFloat(planarTolerance)}"
+        return "${settings.regularizeSubdivisions} ${formatFloat(settings.regularizePlanarTolerance)}"
     }
 
     private fun toolLabel(): String {
@@ -1065,7 +964,7 @@ class MeshRegularizeTool(
         if (extent <= RANDOM_OFFSET_EPSILON) {
             return null
         }
-        val cellSize = (extent / subdivisionCount.toFloat()).coerceAtLeast(RANDOM_OFFSET_EPSILON)
+        val cellSize = (extent / settings.regularizeSubdivisions.toFloat()).coerceAtLeast(RANDOM_OFFSET_EPSILON)
         return ProjectedGrid(
             firstU = floor(minU / cellSize) * cellSize,
             lastU = ceil(maxU / cellSize) * cellSize,

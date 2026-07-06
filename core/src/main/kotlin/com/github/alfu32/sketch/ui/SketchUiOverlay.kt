@@ -51,6 +51,7 @@ import com.github.alfu32.sketch.tools.ArchitectureSettings
 import com.github.alfu32.sketch.tools.HotspotSettings
 import com.github.alfu32.sketch.tools.HvacSettings
 import com.github.alfu32.sketch.tools.PolylineSettings
+import com.github.alfu32.sketch.tools.RandomToolSettings
 import com.github.alfu32.sketch.tools.VectorTextSettings
 import java.util.Base64
 import java.util.IdentityHashMap
@@ -115,6 +116,7 @@ class SketchUiOverlay(
     private val architectureSettings: ArchitectureSettings,
     private val hvacSettings: HvacSettings,
     private val hotspotSettings: HotspotSettings,
+    private val randomToolSettings: RandomToolSettings,
     private val architectureElementProvider: () -> ArchitectureElementInfo?,
     private val architectureSelectionSummaryProvider: () -> ArchitectureSelectionSummary,
     private val architectureElementNameChanged: (ArchitectureElementKind, String, String) -> Unit,
@@ -609,6 +611,7 @@ class SketchUiOverlay(
     private lateinit var architectureFramesPanel: DockSection
     private lateinit var hvacSettingsPanel: DockSection
     private lateinit var hotspotSettingsPanel: DockSection
+    private lateinit var randomToolSettingsPanel: DockSection
     private lateinit var tutorialsPanel: DockSection
     private lateinit var tutorialsModeLabel: VisLabel
     private lateinit var tutorialsStepLabel: VisLabel
@@ -833,6 +836,7 @@ class SketchUiOverlay(
         buildArchitectureSettingsPanels()
         hvacSettingsPanel = buildHvacSettingsPanel()
         hotspotSettingsPanel = buildHotspotSettingsPanel()
+        randomToolSettingsPanel = buildRandomToolSettingsPanel()
         tutorialsPanel = buildTutorialsPanel()
         lightingPanel = buildLightingPanel()
         rightSidePanel = buildRightSidePanel()
@@ -1384,6 +1388,13 @@ class SketchUiOverlay(
     fun showHotspotSettingsPanel() {
         hotspotSettingsPanel.isVisible = true
         hotspotSettingsPanel.setCollapsedState(false)
+        if (::rightSidePanel.isInitialized) rightSidePanel.isVisible = true
+        needsPanelLayout = true
+    }
+
+    fun showRandomToolSettingsPanel() {
+        randomToolSettingsPanel.isVisible = true
+        randomToolSettingsPanel.setCollapsedState(false)
         if (::rightSidePanel.isInitialized) rightSidePanel.isVisible = true
         needsPanelLayout = true
     }
@@ -4040,6 +4051,88 @@ class SketchUiOverlay(
         return panel
     }
 
+    private fun buildRandomToolSettingsPanel(): DockSection {
+        val content = VisTable()
+        content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
+        content.defaults().pad(4f).left().growX()
+
+        val offsetStrengthField = AppTextField(formatPanelFloat(randomToolSettings.randomOffsetStrength))
+        val scatterCountField = AppTextField(randomToolSettings.surfaceArrayCount.toString())
+        val scatterScaleField = AppTextField(formatPanelFloat(randomToolSettings.surfaceArrayScaleStrength))
+        val scatterRotationField = AppTextField(formatPanelFloat(randomToolSettings.surfaceArrayRotationFuzz))
+        val scatterAlignCheck = VisCheckBox("Align to surface normal").apply {
+            isChecked = randomToolSettings.surfaceArrayAlignToNormal
+        }
+        val regularizeSubdivisionsField = AppTextField(randomToolSettings.regularizeSubdivisions.toString())
+        val regularizeToleranceField = AppTextField(formatPanelFloat(randomToolSettings.regularizePlanarTolerance))
+
+        content.add(VisLabel("Fuzzy Offset")).left().growX().row()
+        content.add(VisLabel("Strength [0..100]")).left().row()
+        content.add(offsetStrengthField).growX().row()
+        content.add(VisLabel("Random Surface Array")).left().growX().padTop(6f).row()
+        content.add(VisLabel("Copy count")).left().row()
+        content.add(scatterCountField).growX().row()
+        content.add(VisLabel("Scale fuzz [0..100]")).left().row()
+        content.add(scatterScaleField).growX().row()
+        content.add(VisLabel("Rotation fuzz [0..100]")).left().row()
+        content.add(scatterRotationField).growX().row()
+        content.add(scatterAlignCheck).left().growX().row()
+        content.add(VisLabel("Planar Regularize / Surface Remesh")).left().growX().padTop(6f).row()
+        content.add(VisLabel("Subdivisions")).left().row()
+        content.add(regularizeSubdivisionsField).growX().row()
+        content.add(VisLabel("Planar / projection tolerance")).left().row()
+        content.add(regularizeToleranceField).growX().row()
+
+        offsetStrengthField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                val value = offsetStrengthField.text?.trim()?.toFloatOrNull() ?: return
+                randomToolSettings.randomOffsetStrength = value.coerceIn(0f, 100f)
+            }
+        })
+        scatterCountField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                val value = scatterCountField.text?.trim()?.toIntOrNull() ?: return
+                randomToolSettings.surfaceArrayCount = value.coerceIn(1, 5000)
+            }
+        })
+        scatterScaleField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                val value = scatterScaleField.text?.trim()?.toFloatOrNull() ?: return
+                randomToolSettings.surfaceArrayScaleStrength = value.coerceIn(0f, 100f)
+            }
+        })
+        scatterRotationField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                val value = scatterRotationField.text?.trim()?.toFloatOrNull() ?: return
+                randomToolSettings.surfaceArrayRotationFuzz = value.coerceIn(0f, 100f)
+            }
+        })
+        scatterAlignCheck.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                randomToolSettings.surfaceArrayAlignToNormal = scatterAlignCheck.isChecked
+            }
+        })
+        regularizeSubdivisionsField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                val value = regularizeSubdivisionsField.text?.trim()?.toIntOrNull() ?: return
+                randomToolSettings.regularizeSubdivisions = value.coerceIn(1, 512)
+            }
+        })
+        regularizeToleranceField.addListener(object : ChangeListener() {
+            override fun changed(event: ChangeEvent?, actor: Actor?) {
+                val value = regularizeToleranceField.text?.trim()?.toFloatOrNull() ?: return
+                randomToolSettings.regularizePlanarTolerance = value.coerceAtLeast(0.0001f)
+            }
+        })
+
+        return buildDockSection("Random Tools", content, visible = true, collapsed = true)
+    }
+
+    private fun formatPanelFloat(value: Float): String {
+        val rounded = kotlin.math.round(value * 1000f) / 1000f
+        return if (rounded == rounded.toInt().toFloat()) rounded.toInt().toString() else String.format(Locale.US, "%.3f", rounded).trimEnd('0').trimEnd('.')
+    }
+
     private fun buildTutorialsPanel(): DockSection {
         val content = VisTable()
         content.background = darkBarDrawable ?: createDarkBarDrawable().also { darkBarDrawable = it }
@@ -5923,6 +6016,7 @@ class SketchUiOverlay(
             architectureFramesPanel,
             hvacSettingsPanel,
             hotspotSettingsPanel,
+            randomToolSettingsPanel,
             tutorialsPanel
         )
         lightingPanel?.let { panels.add(it) }
