@@ -21,8 +21,20 @@ import kotlin.math.round
 import kotlin.math.pow
 import kotlin.random.Random
 
+data class RandomOffsetConfig(
+    val strength: Float = 1f
+)
+
+data class RandomSurfaceArrayConfig(
+    val count: Int = 12,
+    val scaleStrength: Float = 0f,
+    val rotationFuzz: Float = 0f,
+    val alignToNormal: Boolean = true
+)
+
 class RandomOffsetTool(
-    private val scene: GroupScene
+    private val scene: GroupScene,
+    private val showConfigDialog: ((RandomOffsetConfig, (RandomOffsetConfig) -> Unit) -> Unit)? = null
 ) : Tool {
     override val id: ToolId = ToolId.RANDOM_OFFSET
     override val message: String = "Random Offset: type strength 0-100, then click to offset selected faces/segments."
@@ -32,6 +44,11 @@ class RandomOffsetTool(
     override fun onEnter(status: StatusModel) {
         status.message = "Random Offset strength ${formatStrength()}. Type a new strength or click to apply."
         status.inputBuffer = formatStrength()
+        showConfigDialog?.invoke(RandomOffsetConfig(strengthInput)) { config ->
+            strengthInput = config.strength.coerceIn(0f, 100f)
+            status.inputBuffer = formatStrength()
+            status.message = "Random Offset strength ${formatStrength()}. Click to apply to selection."
+        }
     }
 
     override fun onTextInput(status: StatusModel, text: String) {
@@ -289,7 +306,8 @@ class RandomOffsetTool(
 }
 
 class RandomSurfaceArrayTool(
-    private val scene: GroupScene
+    private val scene: GroupScene,
+    private val showConfigDialog: ((RandomSurfaceArrayConfig, (RandomSurfaceArrayConfig) -> Unit) -> Unit)? = null
 ) : Tool {
     override val id: ToolId = ToolId.RANDOM_SURFACE_ARRAY
     override val message: String =
@@ -303,6 +321,14 @@ class RandomSurfaceArrayTool(
     override fun onEnter(status: StatusModel) {
         status.inputBuffer = formatConfig()
         status.message = "Random Surface Array: ${formatConfig()}. Click to scatter selected objects or segments on selected faces."
+        showConfigDialog?.invoke(currentConfig()) { config ->
+            count = config.count.coerceIn(1, 5000)
+            scaleStrength = config.scaleStrength.coerceIn(0f, 100f)
+            rotationFuzz = config.rotationFuzz.coerceIn(0f, 100f)
+            alignToNormal = config.alignToNormal
+            status.inputBuffer = formatConfig()
+            status.message = "Random Surface Array: ${formatConfig()}. Click to apply."
+        }
     }
 
     override fun onTextInput(status: StatusModel, text: String) {
@@ -357,6 +383,15 @@ class RandomSurfaceArrayTool(
 
     private fun formatConfig(): String {
         return "$count ${formatFloat(scaleStrength)} ${formatFloat(rotationFuzz)} ${if (alignToNormal) 1 else 0}"
+    }
+
+    private fun currentConfig(): RandomSurfaceArrayConfig {
+        return RandomSurfaceArrayConfig(
+            count = count,
+            scaleStrength = scaleStrength,
+            rotationFuzz = rotationFuzz,
+            alignToNormal = alignToNormal
+        )
     }
 
     private fun applyArray(): String {

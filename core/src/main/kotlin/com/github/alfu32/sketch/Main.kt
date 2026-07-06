@@ -156,7 +156,9 @@ import com.github.alfu32.sketch.tools.ConePrimitiveTool
 import com.github.alfu32.sketch.tools.CylinderPrimitiveTool
 import com.github.alfu32.sketch.tools.PillPrimitiveTool
 import com.github.alfu32.sketch.tools.MeshRegularizeTool
+import com.github.alfu32.sketch.tools.RandomOffsetConfig
 import com.github.alfu32.sketch.tools.RandomOffsetTool
+import com.github.alfu32.sketch.tools.RandomSurfaceArrayConfig
 import com.github.alfu32.sketch.tools.RandomSurfaceArrayTool
 import com.github.alfu32.sketch.tools.SpherePrimitiveTool
 import com.github.alfu32.sketch.tools.SurfaceRectangleTool
@@ -927,8 +929,8 @@ class Main @JvmOverloads constructor(
                 ScaleTool(scene),
                 StretchTool(scene),
                 StretchScaleTool(scene),
-                RandomOffsetTool(scene),
-                RandomSurfaceArrayTool(scene),
+                RandomOffsetTool(scene, ::showRandomOffsetDialog),
+                RandomSurfaceArrayTool(scene, ::showRandomSurfaceArrayDialog),
                 RotateStretchTool(scene),
                 CopyMultipleTool(scene),
                 PlanarTranslateMultipleTool(scene),
@@ -4759,6 +4761,157 @@ class Main @JvmOverloads constructor(
         dialog.centerWindow()
         dialog.toFront()
         dialog.fadeIn()
+    }
+
+    private fun showRandomOffsetDialog(
+        initial: RandomOffsetConfig,
+        onApply: (RandomOffsetConfig) -> Unit
+    ) {
+        val stage = uiOverlay.stage
+        val dialog = com.kotcrab.vis.ui.widget.VisWindow("Random Offset Parameters", true).apply {
+            isModal = true
+            isMovable = true
+            isResizable = false
+            setKeepWithinParent(true)
+        }
+        val strengthField = com.github.alfu32.sketch.ui.AppTextField(formatDialogFloat(initial.strength))
+        val statusLabel = com.kotcrab.vis.ui.widget.VisLabel("")
+        statusLabel.setWrap(true)
+
+        fun apply(): Boolean {
+            val strength = strengthField.text?.trim()?.toFloatOrNull()
+            if (strength == null) {
+                statusLabel.setText("Strength must be a number from 0 to 100.")
+                return false
+            }
+            onApply(RandomOffsetConfig(strength.coerceIn(0f, 100f)))
+            statusLabel.setText("Applied. Click in the viewport to commit to the current selection.")
+            return true
+        }
+
+        val applyButton = com.kotcrab.vis.ui.widget.VisTextButton("Apply")
+        applyButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
+                apply()
+            }
+        })
+        val closeButton = com.kotcrab.vis.ui.widget.VisTextButton("Close")
+        closeButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
+                dialog.remove()
+            }
+        })
+
+        val content = com.kotcrab.vis.ui.widget.VisTable()
+        content.defaults().pad(4f).growX()
+        content.add(com.kotcrab.vis.ui.widget.VisLabel("Randomly displace selected connected vertices along averaged normals.")).left().row()
+        content.add(com.kotcrab.vis.ui.widget.VisLabel("Strength [0..100]")).left().row()
+        content.add(strengthField).width(180f).left().row()
+        content.add(statusLabel).left().minWidth(320f).row()
+        val buttons = com.kotcrab.vis.ui.widget.VisTable()
+        buttons.defaults().pad(4f)
+        buttons.add(applyButton)
+        buttons.add(closeButton)
+        content.add(buttons).right().row()
+
+        dialog.add(content).pad(8f)
+        dialog.pack()
+        stage.addActor(dialog)
+        dialog.centerWindow()
+        dialog.toFront()
+        dialog.fadeIn()
+        apply()
+    }
+
+    private fun showRandomSurfaceArrayDialog(
+        initial: RandomSurfaceArrayConfig,
+        onApply: (RandomSurfaceArrayConfig) -> Unit
+    ) {
+        val stage = uiOverlay.stage
+        val dialog = com.kotcrab.vis.ui.widget.VisWindow("Random Surface Array Parameters", true).apply {
+            isModal = true
+            isMovable = true
+            isResizable = false
+            setKeepWithinParent(true)
+        }
+        val countField = com.github.alfu32.sketch.ui.AppTextField(initial.count.toString())
+        val scaleField = com.github.alfu32.sketch.ui.AppTextField(formatDialogFloat(initial.scaleStrength))
+        val rotationField = com.github.alfu32.sketch.ui.AppTextField(formatDialogFloat(initial.rotationFuzz))
+        val alignCheck = com.kotcrab.vis.ui.widget.VisCheckBox("Align copies to surface normal")
+        alignCheck.isChecked = initial.alignToNormal
+        val statusLabel = com.kotcrab.vis.ui.widget.VisLabel("")
+        statusLabel.setWrap(true)
+
+        fun apply(): Boolean {
+            val count = countField.text?.trim()?.toIntOrNull()
+            val scale = scaleField.text?.trim()?.toFloatOrNull()
+            val rotation = rotationField.text?.trim()?.toFloatOrNull()
+            if (count == null || count < 1) {
+                statusLabel.setText("Count must be an integer from 1 to 5000.")
+                return false
+            }
+            if (scale == null) {
+                statusLabel.setText("Scale fuzz must be a number from 0 to 100.")
+                return false
+            }
+            if (rotation == null) {
+                statusLabel.setText("Rotation fuzz must be a number from 0 to 100.")
+                return false
+            }
+            onApply(
+                RandomSurfaceArrayConfig(
+                    count = count.coerceIn(1, 5000),
+                    scaleStrength = scale.coerceIn(0f, 100f),
+                    rotationFuzz = rotation.coerceIn(0f, 100f),
+                    alignToNormal = alignCheck.isChecked
+                )
+            )
+            statusLabel.setText("Applied. Click in the viewport to scatter the selected payload on selected faces.")
+            return true
+        }
+
+        val applyButton = com.kotcrab.vis.ui.widget.VisTextButton("Apply")
+        applyButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
+                apply()
+            }
+        })
+        val closeButton = com.kotcrab.vis.ui.widget.VisTextButton("Close")
+        closeButton.addListener(object : com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
+            override fun clicked(event: com.badlogic.gdx.scenes.scene2d.InputEvent?, x: Float, y: Float) {
+                dialog.remove()
+            }
+        })
+
+        val content = com.kotcrab.vis.ui.widget.VisTable()
+        content.defaults().pad(4f).growX()
+        content.add(com.kotcrab.vis.ui.widget.VisLabel("Scatter selected payload objects or segments over selected target faces.")).left().row()
+        content.add(com.kotcrab.vis.ui.widget.VisLabel("Copy count [1..5000]")).left().row()
+        content.add(countField).width(180f).left().row()
+        content.add(com.kotcrab.vis.ui.widget.VisLabel("Scale fuzz [0..100]")).left().row()
+        content.add(scaleField).width(180f).left().row()
+        content.add(com.kotcrab.vis.ui.widget.VisLabel("Rotation fuzz [0..100]")).left().row()
+        content.add(rotationField).width(180f).left().row()
+        content.add(alignCheck).left().row()
+        content.add(statusLabel).left().minWidth(380f).row()
+        val buttons = com.kotcrab.vis.ui.widget.VisTable()
+        buttons.defaults().pad(4f)
+        buttons.add(applyButton)
+        buttons.add(closeButton)
+        content.add(buttons).right().row()
+
+        dialog.add(content).pad(8f)
+        dialog.pack()
+        stage.addActor(dialog)
+        dialog.centerWindow()
+        dialog.toFront()
+        dialog.fadeIn()
+        apply()
+    }
+
+    private fun formatDialogFloat(value: Float): String {
+        val rounded = kotlin.math.round(value * 100f) / 100f
+        return if (rounded == rounded.toInt().toFloat()) rounded.toInt().toString() else rounded.toString()
     }
 
     private data class MeshExportPayload(
