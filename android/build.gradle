@@ -39,7 +39,7 @@ android {
   defaultConfig {
     applicationId "com.github.alfu32.sketch"
     minSdk = 26
-    targetSdk = 35
+    targetSdk = 36
     versionCode releaseVersionCode
     versionName releaseVersionName
     multiDexEnabled true
