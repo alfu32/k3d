@@ -274,6 +274,8 @@ class Main @JvmOverloads constructor(
     private lateinit var camera: PerspectiveCamera
     private lateinit var walkCamera: PerspectiveCamera
     private lateinit var orthoCamera: OrthographicCamera
+    private var appliedFramebufferWidth = 0
+    private var appliedFramebufferHeight = 0
     private lateinit var activeCamera: Camera
     private lateinit var orbitCameraController: ShiftCameraController
     private lateinit var walkCameraController: WalkthroughCameraController
@@ -3137,6 +3139,7 @@ class Main @JvmOverloads constructor(
     }
 
     override fun render() {
+        applyFramebufferResizeIfNeeded()
         if (deferredStartupLoad) {
             if (deferredStartupLoadFrames > 0) {
                 deferredStartupLoadFrames -= 1
@@ -3351,6 +3354,26 @@ class Main @JvmOverloads constructor(
     }
 
     override fun resize(width: Int, height: Int) {
+        applyFramebufferResize(width, height)
+    }
+
+    private fun applyFramebufferResizeIfNeeded() {
+        val width = Gdx.graphics.width
+        val height = Gdx.graphics.height
+        if (width <= 0 || height <= 0) {
+            return
+        }
+        if (width != appliedFramebufferWidth || height != appliedFramebufferHeight) {
+            applyFramebufferResize(width, height)
+        }
+    }
+
+    private fun applyFramebufferResize(width: Int, height: Int) {
+        if (width <= 0 || height <= 0) {
+            return
+        }
+        appliedFramebufferWidth = width
+        appliedFramebufferHeight = height
         camera.viewportWidth = width.toFloat()
         camera.viewportHeight = height.toFloat()
         camera.update()
