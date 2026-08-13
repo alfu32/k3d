@@ -6,6 +6,9 @@ on:
       tag:
         description: "Release tag (e.g., 2.0.0)"
         required: true
+      android_version_code:
+        description: "Android versionCode for Play Store uploads; must be greater than the previous uploaded bundle"
+        required: true
       draft:
         description: "Create release as draft"
         required: false
@@ -308,6 +311,14 @@ jobs:
       - name: Install Android SDK components
         run: |
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Validate Android versionCode
+        run: |
+          set -euo pipefail
+          version_code="${{ inputs.android_version_code }}"
+          if ! [[ "$version_code" =~ ^[1-9][0-9]*$ ]]; then
+            echo "android_version_code must be a positive integer, got: $version_code"
+            exit 1
+          fi
       - name: Prepare Android signing keystore
         env:
           ANDROID_UPLOAD_KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
@@ -331,7 +342,9 @@ jobs:
           } >> "$GITHUB_ENV"
       - name: Build Android APK + AAB bundles
         run: |
-          ./gradlew :android:bundleAndroidApk :android:bundleAndroidAab -PreleaseNumber="${{ inputs.tag }}"
+          ./gradlew :android:bundleAndroidApk :android:bundleAndroidAab \
+            -PreleaseNumber="${{ inputs.tag }}" \
+            -PandroidVersionCode="${{ inputs.android_version_code }}"
       - uses: actions/upload-artifact@v4
         with:
           name: octodraw-android
