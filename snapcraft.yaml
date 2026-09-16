@@ -63,6 +63,7 @@ parts:
       - libglx-mesa0
       - libglu1-mesa
       - libopengl0
+      - libgtk-3-0t64
       - libjpeg-turbo8
       - liblcms2-2
       - libwayland-client0

@@ -206,7 +206,9 @@ import java.util.Base64
 import java.util.EnumMap
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
+import javax.swing.JFileChooser
 import javax.swing.JOptionPane
+import javax.swing.filechooser.FileNameExtensionFilter
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.ceil
@@ -3878,6 +3880,19 @@ class Main @JvmOverloads constructor(
         if (!isDesktopFileDialogAvailable()) {
             return null
         }
+        val nativeResult = showNativeDesktopFileDialog(title, mode, defaultFileName, allowedExtensions)
+        if (nativeResult != null || !isSnapRuntime()) {
+            return nativeResult
+        }
+        return showSwingDesktopFileDialog(title, mode, defaultFileName, allowedExtensions)
+    }
+
+    private fun showNativeDesktopFileDialog(
+        title: String,
+        mode: Int,
+        defaultFileName: String?,
+        allowedExtensions: Set<String>
+    ): File? {
         val resultHolder = arrayOfNulls<File>(1)
         val openDialog = Runnable {
             val dialog = FileDialog(null as Frame?, title, mode)
@@ -3915,6 +3930,53 @@ class Main @JvmOverloads constructor(
         }
     }
 
+    private fun showSwingDesktopFileDialog(
+        title: String,
+        mode: Int,
+        defaultFileName: String?,
+        allowedExtensions: Set<String>
+    ): File? {
+        val resultHolder = arrayOfNulls<File>(1)
+        val openDialog = Runnable {
+            val chooser = JFileChooser(modelFileChooserDirectory()).apply {
+                dialogTitle = title
+                if (!defaultFileName.isNullOrBlank()) {
+                    selectedFile = File(defaultFileName)
+                }
+                if (allowedExtensions.isNotEmpty()) {
+                    val sortedExtensions = allowedExtensions.map { it.lowercase() }.sorted().toTypedArray()
+                    fileFilter = FileNameExtensionFilter(
+                        sortedExtensions.joinToString(prefix = "Files (", postfix = ")") { "*.$it" },
+                        *sortedExtensions
+                    )
+                }
+            }
+            val result = if (mode == FileDialog.SAVE) {
+                chooser.showSaveDialog(null)
+            } else {
+                chooser.showOpenDialog(null)
+            }
+            if (result == JFileChooser.APPROVE_OPTION) {
+                resultHolder[0] = chooser.selectedFile?.absoluteFile
+            }
+        }
+        return try {
+            if (EventQueue.isDispatchThread()) {
+                openDialog.run()
+            } else {
+                EventQueue.invokeAndWait(openDialog)
+            }
+            resultHolder[0]
+        } catch (t: Throwable) {
+            statusModel.message = "Desktop file chooser failed: ${t.message ?: t.javaClass.simpleName}"
+            null
+        }
+    }
+
+    private fun isSnapRuntime(): Boolean {
+        return !System.getenv("SNAP").isNullOrBlank()
+    }
+
     private fun chooseDesktopFileDialogOption(
         title: String,
         message: String,
@@ -3926,6 +3988,9 @@ class Main @JvmOverloads constructor(
         }
         if (options.size == 1 || !isDesktopFileDialogAvailable()) {
             return options.first()
+        }
+        if (isSnapRuntime()) {
+            return options[defaultIndex.coerceIn(0, options.lastIndex)]
         }
         val labels = options.map { it.label }.toTypedArray()
         val defaultLabel = labels[defaultIndex.coerceIn(0, labels.lastIndex)]
@@ -3975,23 +4040,11 @@ class Main @JvmOverloads constructor(
             }
             return
         }
-        val option = chooseDesktopFileDialogOption(
-            title = "Open Octodraw Model",
-            message = "Choose the file type to show in the system dialog.",
-            options = listOf(
-                DesktopFileDialogOption("All supported (*.octd, *.k3d)", setOf("octd", "k3d"), "octd"),
-                DesktopFileDialogOption("Octodraw (*.octd)", setOf("octd"), "octd"),
-                DesktopFileDialogOption("Legacy K3D (*.k3d)", setOf("k3d"), "k3d")
-            )
-        ) ?: run {
-            statusModel.message = "Open cancelled."
-            return
-        }
         val statusBefore = statusModel.message
         val target = showDesktopFileDialog(
-            title = "Open Octodraw Model - ${option.label}",
+            title = "Open Octodraw Model",
             mode = FileDialog.LOAD,
-            allowedExtensions = option.extensions
+            allowedExtensions = setOf("octd", "k3d")
         )
         if (target == null) {
             if (statusModel.message == statusBefore) {
@@ -4019,25 +4072,15 @@ class Main @JvmOverloads constructor(
             }
             return
         }
-        val option = chooseDesktopFileDialogOption(
-            title = "Save Octodraw Model As",
-            message = "Choose the target model format before opening the system dialog.",
-            options = listOf(
-                DesktopFileDialogOption("Octodraw (*.octd)", setOf("octd"), "octd"),
-                DesktopFileDialogOption("Legacy K3D (*.k3d)", setOf("k3d"), "k3d")
-            )
-        ) ?: run {
-            statusModel.message = "Save As cancelled."
-            return
-        }
         val statusBefore = statusModel.message
         val requested = showDesktopFileDialog(
-            title = "Save Octodraw Model As - ${option.label}",
+            title = "Save Octodraw Model As",
             mode = FileDialog.SAVE,
             defaultFileName = replaceFileExtension(
                 if (::modelFile.isInitialized) modelFile.name else "octodraw.octd",
-                option.defaultExtension
-            )
+                "octd"
+            ),
+            allowedExtensions = setOf("octd")
         )
         if (requested == null) {
             if (statusModel.message == statusBefore) {
@@ -4045,7 +4088,7 @@ class Main @JvmOverloads constructor(
             }
             return
         }
-        val target = ensureFileExtension(requested.absoluteFile, option.extensions, option.defaultExtension)
+        val target = ensureFileExtension(requested.absoluteFile, setOf("octd"), "octd")
         target.parentFile?.mkdirs()
         modelFile = target
         saveModel()
