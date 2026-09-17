@@ -130,7 +130,10 @@ parts:
         install -d "$EXTRACT_DIR"
         tar -xzf "$TARBALL" -C "$EXTRACT_DIR"
 
-        APP_JAR="$(find "$EXTRACT_DIR" -type f \( -name 'octodraw-editor.jar' -o -name 'octodraw-*.jar' \) ! -name '*-sources.jar' ! -name '*-javadoc.jar' -printf '%T@ %p\n' | sort -nr | sed -n '1s/^[^ ]* //p')"
+        APP_JAR="$(find "$EXTRACT_DIR" -type f -name 'octodraw-editor.jar' -print -quit)"
+        if [ -z "$APP_JAR" ]; then
+          APP_JAR="$(find "$EXTRACT_DIR" -type f -name 'octodraw-*.jar' ! -path '*/plugins/*' ! -name '*-sources.jar' ! -name '*-javadoc.jar' -printf '%T@ %p\n' | sort -nr | sed -n '1s/^[^ ]* //p')"
+        fi
         if [ -z "$APP_JAR" ]; then
           echo "Linux bundle $TARBALL does not contain an Octodraw jar." >&2
           exit 1
@@ -179,14 +182,14 @@ parts:
       install -d "$CRAFT_PART_INSTALL/snap/gui"
       rm -rf "$INSTALL_ROOT/runtime"
 
-      PREBUILT_TAR="$(find_prebuilt_tar || true)"
       PREBUILT_JAR="$(find_prebuilt_jar || true)"
-      if [ -n "$PREBUILT_TAR" ]; then
-        echo "Using prebuilt Linux bundle for snap payload: $PREBUILT_TAR"
-        APP_JAR="$(install_from_linux_tar "$PREBUILT_TAR")"
-      elif [ -n "$PREBUILT_JAR" ]; then
+      PREBUILT_TAR="$(find_prebuilt_tar || true)"
+      if [ -n "$PREBUILT_JAR" ]; then
         echo "Using prebuilt desktop jar for snap payload: $PREBUILT_JAR"
         APP_JAR="$(install_from_jar "$PREBUILT_JAR")"
+      elif [ -n "$PREBUILT_TAR" ]; then
+        echo "Using prebuilt Linux bundle for snap payload: $PREBUILT_TAR"
+        APP_JAR="$(install_from_linux_tar "$PREBUILT_TAR")"
       else
         if [ "${OCTODRAW_SNAP_REQUIRE_PREBUILT:-0}" = "1" ]; then
           echo "No prebuilt Linux tarball or desktop jar found for snap packaging." >&2
@@ -209,6 +212,7 @@ parts:
       fi
 
       if [ ! -x "$INSTALL_ROOT/runtime/bin/java" ]; then
+        rm -rf "$INSTALL_ROOT/runtime"
         MODULES_RAW="$("$JAVA_HOME/bin/jdeps" \
           --ignore-missing-deps \
           --multi-release 21 \

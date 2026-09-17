@@ -17,6 +17,7 @@ appsplash.png
 glyphs/alphabet.octd
 glyphs/alphabet.octd.bak
 icons.2.png
+icons.24.png
 icons.48.png
 icons.64.png
 icons.mapping.48.csv
