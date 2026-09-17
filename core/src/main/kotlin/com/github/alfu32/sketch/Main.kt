@@ -208,6 +208,7 @@ import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import javax.swing.JFileChooser
 import javax.swing.JOptionPane
+import javax.swing.UIManager
 import javax.swing.filechooser.FileNameExtensionFilter
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -3880,11 +3881,10 @@ class Main @JvmOverloads constructor(
         if (!isDesktopFileDialogAvailable()) {
             return null
         }
-        val nativeResult = showNativeDesktopFileDialog(title, mode, defaultFileName, allowedExtensions)
-        if (nativeResult != null || !isSnapRuntime()) {
-            return nativeResult
+        if (isSnapRuntime()) {
+            return showSwingDesktopFileDialog(title, mode, defaultFileName, allowedExtensions)
         }
-        return showSwingDesktopFileDialog(title, mode, defaultFileName, allowedExtensions)
+        return showNativeDesktopFileDialog(title, mode, defaultFileName, allowedExtensions)
     }
 
     private fun showNativeDesktopFileDialog(
@@ -3938,6 +3938,11 @@ class Main @JvmOverloads constructor(
     ): File? {
         val resultHolder = arrayOfNulls<File>(1)
         val openDialog = Runnable {
+            if (isSnapRuntime()) {
+                runCatching {
+                    UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName())
+                }
+            }
             val chooser = JFileChooser(modelFileChooserDirectory()).apply {
                 dialogTitle = title
                 if (!defaultFileName.isNullOrBlank()) {
@@ -4089,11 +4094,20 @@ class Main @JvmOverloads constructor(
             return
         }
         val target = ensureFileExtension(requested.absoluteFile, setOf("octd"), "octd")
-        target.parentFile?.mkdirs()
-        modelFile = target
-        saveModel()
-        updateWindowTitle()
-        statusModel.message = "Saved ${target.name}"
+        val previousModelFile = if (::modelFile.isInitialized) modelFile else null
+        try {
+            target.parentFile?.mkdirs()
+            modelFile = target
+            saveModel()
+            updateWindowTitle()
+            statusModel.message = "Saved " + target.name
+        } catch (t: Throwable) {
+            if (previousModelFile != null) {
+                modelFile = previousModelFile
+                updateWindowTitle()
+            }
+            statusModel.message = "Save As failed: " + (t.message ?: t.javaClass.simpleName)
+        }
     }
 
     private fun sanitizeModelFileName(raw: String): String {
