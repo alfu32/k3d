@@ -9620,7 +9620,7 @@ class Main @JvmOverloads constructor(
     }
 
     private fun maybeShowCompatibilityNotice() {
-        if (BuildFlags.WEB_BUILD || webSafeRuntime) {
+        if (BuildFlags.WEB_BUILD || isWebSafeRuntime()) {
             return
         }
         val version = K3DVersion().buildVersion
