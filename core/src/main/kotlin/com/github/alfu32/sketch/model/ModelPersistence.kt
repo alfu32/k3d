@@ -20,11 +20,7 @@ object ModelPersistence {
     private const val COMPRESS_THRESHOLD_BYTES = 10 * 1024 * 1024
     private class DecodeCanceledException : RuntimeException()
 
-    private fun createJson(): Json {
-        return Json().apply {
-            setOutputType(JsonWriter.OutputType.json)
-        }
-    }
+    private fun createJson(): Json = ExtrasJson()
 
     fun save(
         file: File,
@@ -96,9 +92,11 @@ object ModelPersistence {
                         }
                         .toMutableList()
                 }
+                attachExtensions(scene, prototype.id, dto)
                 dto
             }.toMutableList()
-            rootInstance = GroupInstanceDto.fromInstance(scene.root)
+            rootInstance = GroupInstanceDto.fromInstance(scene.root).also { attachInstanceExtensions(scene, it) }
+            extras.putAll(scene.extensions.get(SceneExtensions.DOC))
             cameraState = CameraDto(camera, cameraTarget)
             lightingState = LightingDto(lighting)
             shadowState = ShadowDto(shadow)
@@ -108,6 +106,19 @@ object ModelPersistence {
             this.circleSegments = circleSegments
             this.undoHistory = undoHistory
         }
+    }
+
+    private fun attachExtensions(scene: GroupScene, prototypeId: String, dto: ObjectPrototypeDto) {
+        dto.extras.putAll(scene.extensions.get(SceneExtensions.proto(prototypeId)))
+        dto.segments.forEach { it.extras.putAll(scene.extensions.get(SceneExtensions.segment(prototypeId, it.id))) }
+        dto.faces.forEach { it.extras.putAll(scene.extensions.get(SceneExtensions.face(prototypeId, it.id))) }
+    }
+
+    private fun attachInstanceExtensions(scene: GroupScene, dto: GroupInstanceDto) {
+        if (dto.id.isNotBlank()) {
+            dto.extras.putAll(scene.extensions.get(SceneExtensions.instance(dto.id)))
+        }
+        dto.children.forEach { attachInstanceExtensions(scene, it) }
     }
 
     data class LoadResult(val ok: Boolean, val needsResave: Boolean, val snapshot: ModelSnapshot? = null)
@@ -361,6 +372,7 @@ object ModelPersistence {
             fun step(deadlineNs: Long): Boolean {
                 if (!prepared) {
                     dto.preparePrototypeForIncrementalLoad(prototype, defaultColor)
+                    scene.extensions.set(SceneExtensions.proto(prototype.id), dto.extras)
                     prepared = true
                     completedWork += 1
                     updateProgress()
@@ -371,24 +383,28 @@ object ModelPersistence {
                         prototype.lineStore.withChangeSuppressed {
                             while (segmentIndex < dto.segments.size && System.nanoTime() < deadlineNs) {
                                 val segment = dto.segments[segmentIndex++]
+                                val segmentId = segment.id.ifBlank { java.util.UUID.randomUUID().toString() }
                                 prototype.lineStore.appendSegmentRaw(
                                     segment.start.toVector3(),
                                     segment.end.toVector3(),
-                                    id = segment.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                                    id = segmentId
                                 )
+                                scene.extensions.set(SceneExtensions.segment(prototype.id, segmentId), segment.extras)
                                 completedWork += 1
                                 changedLineOrFace = true
                                 geometryChanged = true
                             }
                             while (faceIndex < dto.faces.size && System.nanoTime() < deadlineNs) {
                                 val face = dto.faces[faceIndex++]
+                                val faceId = face.id.ifBlank { java.util.UUID.randomUUID().toString() }
                                 prototype.faceStore.appendTriangleRaw(
                                     face.a.toVector3(),
                                     face.b.toVector3(),
                                     face.c.toVector3(),
                                     face.color.toColor(),
-                                    id = face.id.ifBlank { java.util.UUID.randomUUID().toString() }
+                                    id = faceId
                                 )
+                                scene.extensions.set(SceneExtensions.face(prototype.id, faceId), face.extras)
                                 completedWork += 1
                                 changedLineOrFace = true
                                 geometryChanged = true
@@ -464,6 +480,9 @@ object ModelPersistence {
                 if (!prepared) {
                     val target = existingTarget ?: dto.createInstanceShell(prototypeMap, defaultColor)
                     group = target
+                    if (dto.id.isNotBlank()) {
+                        scene.extensions.set(SceneExtensions.instance(dto.id), dto.extras)
+                    }
                     target.instanceOrigin.set(dto.instanceOrigin.toVector3())
                     target.instanceAxisU.set(dto.instanceAxisU.toVector3())
                     target.instanceAxisV.set(dto.instanceAxisV.toVector3())
@@ -726,6 +745,8 @@ object ModelPersistence {
 
         private fun initialize() {
             resetScene(scene)
+            scene.extensions.clear()
+            scene.extensions.set(SceneExtensions.DOC, snapshot.extras)
             if (snapshot.rootInstance != null && snapshot.prototypes.isNotEmpty()) {
                 val rootPrototype = scene.rootPrototype()
                 snapshot.prototypes.forEach { dto ->
@@ -848,7 +869,9 @@ object ModelPersistence {
         )
     }
 
-    class ModelSnapshot {
+    class ModelSnapshot : JsonExtras {
+        @Transient
+        override val extras: MutableMap<String, com.badlogic.gdx.utils.JsonValue> = linkedMapOf()
         var version: Int = VERSION
         var segments: MutableList<SegmentDto> = mutableListOf()
         var faces: MutableList<FaceDto> = mutableListOf()
@@ -887,7 +910,9 @@ object ModelPersistence {
         }
     }
 
-    class ObjectPrototypeDto() {
+    class ObjectPrototypeDto() : JsonExtras {
+        @Transient
+        override val extras: MutableMap<String, com.badlogic.gdx.utils.JsonValue> = linkedMapOf()
         var id: String = ""
         var name: String = ""
         var definitionOrigin: Vec3Dto = Vec3Dto()
@@ -1796,7 +1821,9 @@ object ModelPersistence {
         }
     }
 
-    class GroupInstanceDto() {
+    class GroupInstanceDto() : JsonExtras {
+        @Transient
+        override val extras: MutableMap<String, com.badlogic.gdx.utils.JsonValue> = linkedMapOf()
         var id: String = ""
         var prototypeId: String = ""
         var instanceOrigin: Vec3Dto = Vec3Dto()
@@ -2041,7 +2068,9 @@ object ModelPersistence {
         fun toVertexKey(): HotspotStore.VertexKey = HotspotStore.VertexKey(x, y, z)
     }
 
-    class SegmentDto() {
+    class SegmentDto() : JsonExtras {
+        @Transient
+        override val extras: MutableMap<String, com.badlogic.gdx.utils.JsonValue> = linkedMapOf()
         var id: String = ""
         var start: Vec3Dto = Vec3Dto()
         var end: Vec3Dto = Vec3Dto()
@@ -2053,7 +2082,9 @@ object ModelPersistence {
         }
     }
 
-    class FaceDto() {
+    class FaceDto() : JsonExtras {
+        @Transient
+        override val extras: MutableMap<String, com.badlogic.gdx.utils.JsonValue> = linkedMapOf()
         var id: String = ""
         var a: Vec3Dto = Vec3Dto()
         var b: Vec3Dto = Vec3Dto()
@@ -2438,10 +2469,7 @@ object ModelPersistence {
     }
 
     fun encodeSnapshot(snapshot: ModelSnapshot): String {
-        val json = Json().apply {
-            setOutputType(JsonWriter.OutputType.json)
-        }
-        val text = json.toJson(snapshot)
+        val text = createJson().toJson(snapshot)
         val output = ByteArrayOutputStream()
         GZIPOutputStream(output).use { stream ->
             stream.write(text.toByteArray(Charsets.UTF_8))
@@ -2453,7 +2481,7 @@ object ModelPersistence {
         return try {
             val decoded = Base64.getDecoder().decode(encoded)
             val text = GZIPInputStream(ByteArrayInputStream(decoded)).bufferedReader().readText()
-            Json().fromJson(ModelSnapshot::class.java, text)
+            createJson().fromJson(ModelSnapshot::class.java, text)
         } catch (_: Exception) {
             null
         }

@@ -24,6 +24,9 @@ import kotlin.math.tan
 class GroupScene(
     val defaultFaceColor: Color
 ) {
+    /** JSON members this build does not model (for example Meshcraft materials), kept for round-trip. */
+    val extensions = SceneExtensions()
+
     data class Axes(val u: Vector3, val v: Vector3, val w: Vector3)
     data class MeshTriangle(val a: Vector3, val b: Vector3, val c: Vector3, val color: Color = Color(1f, 1f, 1f, 1f))
     data class MeshSegment(val start: Vector3, val end: Vector3)

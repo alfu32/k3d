@@ -1814,6 +1814,7 @@ class Main @JvmOverloads constructor(
             setupMcpServer()
         }
         maybeShowAndroidFirstRunInputDialog()
+        maybeShowCompatibilityNotice()
         applyWebEmbedUiOptions()
         emitWebEmbedReady()
         if (BuildFlags.WEB_BUILD) {
@@ -9615,6 +9616,16 @@ class Main @JvmOverloads constructor(
         return when (runtimeProfile) {
             RuntimeProfile.AUTO -> isWebRuntime()
             RuntimeProfile.WEB_SAFE -> true
+        }
+    }
+
+    private fun maybeShowCompatibilityNotice() {
+        if (BuildFlags.WEB_BUILD || webSafeRuntime) {
+            return
+        }
+        val version = K3DVersion().buildVersion
+        if (com.github.alfu32.sketch.ui.CompatibilityNoticeDialog.shouldShow(version)) {
+            com.github.alfu32.sketch.ui.CompatibilityNoticeDialog.show(uiOverlay.stage, version)
         }
     }
 
